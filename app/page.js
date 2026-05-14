@@ -321,43 +321,13 @@ function App() {
         prefill: {
           email,
           name: session?.user?.name || '',
-          // optional Indian context — keeps default country/UPI rail.
-          contact: '',
           method: 'upi',
         },
-        // Explicitly enable ALL methods (UPI prioritised)
         method: {
           upi: true,
-          card: true,
           netbanking: true,
+          card: true,
           wallet: true,
-          paylater: true,
-          emi: false,
-        },
-        // Prioritise UPI as the first/primary block in the checkout
-        config: {
-          display: {
-            blocks: {
-              upi_block: {
-                name: 'Pay via UPI (recommended)',
-                instruments: [
-                  { method: 'upi', flows: ['collect', 'intent', 'qr'] },
-                ],
-              },
-              other_block: {
-                name: 'Other payment methods',
-                instruments: [
-                  { method: 'card' },
-                  { method: 'netbanking' },
-                  { method: 'wallet' },
-                ],
-              },
-            },
-            sequence: ['block.upi_block', 'block.other_block'],
-            preferences: {
-              show_default_blocks: false,
-            },
-          },
         },
         theme: { color: '#0A2647' },
         handler: async (resp) => {
