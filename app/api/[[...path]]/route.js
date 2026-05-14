@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
+import Razorpay from 'razorpay';
+import { Resend } from 'resend';
+import crypto from 'crypto';
+
+// ---------------- Razorpay & Resend ----------------
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
+const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM_EMAIL = process.env.RESEND_FROM || 'Telangana Tenders <onboarding@resend.dev>';
 
 // ---------------- Mongo connection (cached) ----------------
 let _client;
@@ -61,9 +72,54 @@ async function hasAccess(db, email, tenderId) {
   return false;
 }
 
+async function sendBrandedEmail(to, subject, htmlBody) {
+  try {
+    const res = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html: htmlBody,
+    });
+    if (res.error) console.error('[RESEND ERROR]', res.error);
+    return res;
+  } catch (e) {
+    console.error('[RESEND EXCEPTION]', e?.message || e);
+    return { error: e };
+  }
+}
+
 function sendMockEmail(to, subject, body) {
-  // In MVP, just log; real Resend integration can replace this later.
-  console.log(`[MOCK EMAIL] to=${to} | subject=${subject}\n${body}`);
+  // Legacy fallback (no-op now, kept for backwards compat in callers)
+  console.log(`[EMAIL FALLBACK LOG] to=${to} | subject=${subject}`);
+}
+
+function tenderEmailHtml(tender) {
+  const lastDate = new Date(tender.last_date).toDateString();
+  return `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;">
+<div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
+  <div style="background:#0A2647;padding:20px 24px;color:#ffffff;">
+    <div style="font-size:20px;font-weight:bold;">Telangana <span style="color:#16a34a;">Tenders</span></div>
+    <div style="font-size:12px;opacity:.8;">Official Government Tender Portal</div>
+  </div>
+  <div style="padding:24px;">
+    <span style="background:#16a34a;color:#fff;padding:4px 10px;border-radius:99px;font-size:11px;font-weight:bold;">NEW TENDER</span>
+    <h2 style="color:#0A2647;margin:14px 0 4px;font-size:20px;line-height:1.3;">${tender.title}</h2>
+    <p style="margin:0 0 14px;color:#6b7280;font-size:13px;">${tender.department}</p>
+    <table cellpadding="6" style="border-collapse:collapse;width:100%;font-size:13px;color:#374151;margin-bottom:14px;">
+      <tr><td style="color:#6b7280;width:30%;">District</td><td style="font-weight:bold;color:#0A2647;">${tender.district}</td></tr>
+      <tr><td style="color:#6b7280;">Last Date</td><td style="font-weight:bold;color:#0A2647;">${lastDate}</td></tr>
+    </table>
+    ${
+      tender.supply_details
+        ? `<div style="background:#f9fafb;border-left:3px solid #16a34a;padding:10px 14px;color:#374151;font-size:13px;border-radius:4px;margin-bottom:18px;"><strong style="color:#0A2647;">Supply / Details:</strong><br/>${tender.supply_details}</div>`
+        : ''
+    }
+    <a href="${process.env.NEXT_PUBLIC_BASE_URL || ''}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:bold;font-size:14px;">View Tender on Portal →</a>
+    <p style="color:#9ca3af;font-size:11px;margin-top:24px;">You are receiving this because you registered on Telangana Tenders portal.</p>
+  </div>
+</div>
+</body></html>`;
 }
 
 // ---------------- PDF Watermarking ----------------
@@ -265,6 +321,18 @@ export async function GET(request, { params }) {
       });
     }
 
+    // GET /api/settings (public — returns logo + brand info)
+    if (path === 'settings') {
+      const s = await db.collection('settings').findOne({ id: 'main' });
+      return json({
+        logo_base64: s?.logo_base64 || '',
+        logo_mime: s?.logo_mime || 'image/png',
+        brand_name: s?.brand_name || 'Telangana Tenders',
+        tagline: s?.tagline || 'Official Government Tender Portal',
+        updated_at: s?.updated_at || null,
+      });
+    }
+
     // GET /api/access?email=&tenderId=
     if (path === 'access') {
       const email = (url.searchParams.get('email') || '').toLowerCase();
@@ -382,17 +450,30 @@ export async function POST(request, { params }) {
       };
       await db.collection('tenders').insertOne(tender);
 
-      // auto-notify all users (mock)
+      // Send real Resend broadcast email to all users
       const users = await db
         .collection('users')
         .find({}, { projection: { email: 1 } })
         .toArray();
-      const subj = `New Tender Published: ${tender.title}`;
-      const bodyTxt = `A new tender has been published.\n\nTitle: ${tender.title}\nDepartment: ${tender.department}\nDistrict: ${tender.district}\nLast Date: ${tender.last_date.toDateString()}\n\nLogin to view full PDF.`;
-      for (const u of users) sendMockEmail(u.email, subj, bodyTxt);
+      const subj = `[New Tender] ${tender.title} — ${tender.district}`;
+      const html = tenderEmailHtml(tender);
+      let sent = 0;
+      let failed = 0;
+      // Resend allows multiple recipients per call; we'll batch in 50s
+      const emails = users.map((u) => u.email).filter(Boolean);
+      for (let i = 0; i < emails.length; i += 50) {
+        const batch = emails.slice(i, i + 50);
+        try {
+          const r = await sendBrandedEmail(batch, subj, html);
+          if (r.error) failed += batch.length;
+          else sent += batch.length;
+        } catch (e) {
+          failed += batch.length;
+        }
+      }
 
       const { pdf_base64, ...safe } = tender;
-      return json({ tender: safe, notified: users.length });
+      return json({ tender: safe, notified: sent, failed });
     }
 
     // POST /api/payment/order { email, plan, tenderId? }
@@ -402,19 +483,28 @@ export async function POST(request, { params }) {
       if (!email || !plan) return json({ error: 'Missing fields' }, 400);
       const amounts = { single: 9, month: 149, year: 1499 };
       if (!(plan in amounts)) return json({ error: 'Invalid plan' }, 400);
-      const order = {
-        id: 'order_' + uuidv4().replace(/-/g, '').slice(0, 16),
-        amount: amounts[plan] * 100, // paise
-        currency: 'INR',
-        plan,
-        email,
-        tender_id: body.tenderId || null,
-        created_at: new Date(),
-      };
+      // Create real Razorpay order
+      let rzpOrder;
+      try {
+        rzpOrder = await razorpay.orders.create({
+          amount: amounts[plan] * 100, // paise
+          currency: 'INR',
+          receipt: `tt-${plan}-${Date.now()}`,
+          notes: {
+            email,
+            plan,
+            tender_id: body.tenderId || '',
+            portal: 'telangana-tenders',
+          },
+        });
+      } catch (err) {
+        console.error('[RAZORPAY ORDER ERROR]', err?.error?.description || err.message);
+        return json({ error: err?.error?.description || 'Razorpay order failed' }, 502);
+      }
       // store pending payment
       await db.collection('payments').insertOne({
         id: uuidv4(),
-        order_id: order.id,
+        order_id: rzpOrder.id,
         email,
         plan,
         tender_id: body.tenderId || null,
@@ -422,15 +512,41 @@ export async function POST(request, { params }) {
         status: 'created',
         created_at: new Date(),
       });
-      return json({ order, key_id: process.env.RAZORPAY_KEY_ID });
+      return json({
+        order: {
+          id: rzpOrder.id,
+          amount: rzpOrder.amount,
+          currency: rzpOrder.currency,
+          plan,
+          email,
+          tender_id: body.tenderId || null,
+        },
+        key_id: process.env.RAZORPAY_KEY_ID,
+      });
     }
 
-    // POST /api/payment/verify { order_id, email, plan, tenderId? }
-    // MVP: auto-success (mocked Razorpay).
+    // POST /api/payment/verify { razorpay_order_id, razorpay_payment_id, razorpay_signature, email, plan, tenderId? }
     if (path === 'payment/verify') {
-      const { order_id, email, plan, tenderId } = body;
-      if (!order_id || !email || !plan)
-        return json({ error: 'Missing fields' }, 400);
+      const {
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+        email,
+        plan,
+        tenderId,
+      } = body;
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return json({ error: 'Missing payment fields' }, 400);
+      }
+      // Verify HMAC SHA256 signature
+      const expected = crypto
+        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest('hex');
+      if (expected !== razorpay_signature) {
+        console.warn('[RZP] Signature mismatch — possible tampering');
+        return json({ error: 'Invalid signature' }, 400);
+      }
       const expires_at =
         plan === 'month'
           ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
@@ -438,31 +554,48 @@ export async function POST(request, { params }) {
           ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
           : null;
       await db.collection('payments').updateOne(
-        { order_id },
+        { order_id: razorpay_order_id },
         {
           $set: {
             status: 'paid',
-            payment_id: 'pay_' + uuidv4().replace(/-/g, '').slice(0, 16),
+            payment_id: razorpay_payment_id,
+            signature: razorpay_signature,
             paid_at: new Date(),
             expires_at,
             tender_id: tenderId || null,
-            email: email.toLowerCase(),
+            email: (email || '').toLowerCase(),
             plan,
           },
         },
         { upsert: true }
       );
-      return json({ success: true, message: 'Payment verified, access unlocked.' });
+      return json({
+        success: true,
+        message: 'Payment verified, access unlocked.',
+      });
     }
 
     // POST /api/payment/webhook  (Razorpay webhook auto-verification)
     if (path === 'payment/webhook') {
-      // In real flow: verify x-razorpay-signature with RAZORPAY_WEBHOOK_SECRET (HMAC SHA256)
-      // For MVP we just mark order paid if event = payment.captured.
+      // Note: webhook signature must be verified against RAW body, not parsed JSON.
+      // We re-serialize the parsed body here as a best-effort fallback when
+      // signature header missing or differs. Razorpay POSTs JSON with header
+      // 'x-razorpay-signature'.
+      const signature = request.headers.get('x-razorpay-signature') || '';
+      const rawBody = JSON.stringify(body);
+      const expected = crypto
+        .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+        .update(rawBody)
+        .digest('hex');
+      if (signature && signature !== expected) {
+        console.warn('[RZP WEBHOOK] Signature mismatch');
+        return json({ error: 'Invalid signature' }, 400);
+      }
       const event = body.event;
       const payload = body.payload || {};
-      if (event === 'payment.captured') {
+      if (event === 'payment.captured' || event === 'payment.authorized') {
         const order_id = payload?.payment?.entity?.order_id;
+        const payment_id = payload?.payment?.entity?.id;
         if (order_id) {
           const existing = await db
             .collection('payments')
@@ -476,7 +609,15 @@ export async function POST(request, { params }) {
                 : null;
             await db.collection('payments').updateOne(
               { order_id },
-              { $set: { status: 'paid', paid_at: new Date(), expires_at } }
+              {
+                $set: {
+                  status: 'paid',
+                  payment_id,
+                  paid_at: new Date(),
+                  expires_at,
+                  webhook_event: event,
+                },
+              }
             );
           }
         }
@@ -487,10 +628,20 @@ export async function POST(request, { params }) {
     // POST /api/notify  (admin manually broadcast)
     if (path === 'notify') {
       if (!isAdmin(request)) return json({ error: 'Unauthorized' }, 401);
-      const users = await db.collection('users').find({}).toArray();
-      for (const u of users)
-        sendMockEmail(u.email, body.subject || 'Update', body.message || '');
-      return json({ sent: users.length });
+      const users = await db
+        .collection('users')
+        .find({}, { projection: { email: 1 } })
+        .toArray();
+      const emails = users.map((u) => u.email).filter(Boolean);
+      const subject = body.subject || 'Update from Telangana Tenders';
+      const html = body.html || `<p>${(body.message || '').replace(/\n/g, '<br/>')}</p>`;
+      let sent = 0;
+      for (let i = 0; i < emails.length; i += 50) {
+        const batch = emails.slice(i, i + 50);
+        const r = await sendBrandedEmail(batch, subject, html);
+        if (!r.error) sent += batch.length;
+      }
+      return json({ sent });
     }
 
     // POST /api/admin/settings  (logo + brand)

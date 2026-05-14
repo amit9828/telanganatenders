@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import Script from 'next/script';
+import { useSession, signIn, signOut } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
 import {
   Card,
@@ -99,6 +101,7 @@ const monthName = (m) =>
 
 function App() {
   const today = new Date();
+  const { data: session } = useSession();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
   const [selectedDay, setSelectedDay] = useState(null);
@@ -116,12 +119,29 @@ function App() {
   const [pendingTender, setPendingTender] = useState(null);
   const [pdfData, setPdfData] = useState(null);
   const [subscription, setSubscription] = useState(null);
+  const [buying, setBuying] = useState(false);
 
-  // Load email from localStorage
+  // Sync Google session email -> local email
   useEffect(() => {
+    if (session?.user?.email) {
+      const e = session.user.email.toLowerCase();
+      setEmail(e);
+      if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
+      // Also create user record (idempotent)
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: e, name: session.user.name || '' }),
+      }).catch(() => {});
+    }
+  }, [session]);
+
+  // Load email from localStorage (for users who used email-only flow earlier)
+  useEffect(() => {
+    if (session?.user?.email) return; // session takes priority
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
     if (e) setEmail(e);
-  }, []);
+  }, [session]);
 
   // Refresh access info when email changes
   useEffect(() => {
@@ -241,49 +261,100 @@ function App() {
 
   const buyPlan = async (plan) => {
     if (!email) {
-      toast.error('Email missing');
+      toast.error('Please sign in first');
       return;
     }
-    toast.info('Creating Razorpay order...');
-    const r1 = await fetch('/api/payment/order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email,
-        plan,
-        tenderId: pendingTender?.id,
-      }),
-    });
-    const { order } = await r1.json();
-    // MOCK: in real flow we'd open Razorpay checkout. Here auto-verify.
-    await new Promise((res) => setTimeout(res, 800));
-    const r2 = await fetch('/api/payment/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        order_id: order.id,
-        email,
-        plan,
-        tenderId: pendingTender?.id,
-      }),
-    });
-    const d2 = await r2.json();
-    if (d2.success) {
-      toast.success('Payment successful — access unlocked!');
-      setPaywallModal(false);
-      // refresh subscription info
-      fetch(`/api/access?email=${encodeURIComponent(email)}`)
-        .then((r) => r.json())
-        .then((d) => setSubscription(d.subscription || null));
-      if (pendingTender) await tryUnlockPDF(pendingTender, email);
-    } else {
-      toast.error('Payment failed');
+    if (buying) return;
+    setBuying(true);
+    try {
+      // 1. Create Razorpay order on server
+      const r1 = await fetch('/api/payment/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, plan, tenderId: pendingTender?.id }),
+      });
+      const d1 = await r1.json();
+      if (!r1.ok || !d1.order) {
+        toast.error(d1.error || 'Failed to create order');
+        setBuying(false);
+        return;
+      }
+      // 2. Wait for Razorpay script
+      if (typeof window === 'undefined' || !window.Razorpay) {
+        toast.error('Razorpay not loaded yet, please retry');
+        setBuying(false);
+        return;
+      }
+      // 3. Open Razorpay Checkout popup
+      const options = {
+        key: d1.key_id,
+        amount: d1.order.amount,
+        currency: d1.order.currency,
+        name: 'Telangana Tenders',
+        description:
+          plan === 'single'
+            ? `PDF unlock — ${pendingTender?.title?.slice(0, 40) || ''}`
+            : plan === 'month'
+            ? '1-Month Pass'
+            : '1-Year Pro',
+        order_id: d1.order.id,
+        prefill: { email, name: session?.user?.name || '' },
+        theme: { color: '#0A2647' },
+        handler: async (resp) => {
+          try {
+            const r2 = await fetch('/api/payment/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: resp.razorpay_order_id,
+                razorpay_payment_id: resp.razorpay_payment_id,
+                razorpay_signature: resp.razorpay_signature,
+                email,
+                plan,
+                tenderId: pendingTender?.id,
+              }),
+            });
+            const d2 = await r2.json();
+            if (d2.success) {
+              toast.success('Payment verified — access unlocked!');
+              setPaywallModal(false);
+              fetch(`/api/access?email=${encodeURIComponent(email)}`)
+                .then((r) => r.json())
+                .then((d) => setSubscription(d.subscription || null));
+              if (pendingTender) await tryUnlockPDF(pendingTender, email);
+            } else {
+              toast.error(d2.error || 'Verification failed');
+            }
+          } catch (e) {
+            toast.error('Verification error');
+          } finally {
+            setBuying(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setBuying(false);
+            toast.info('Payment cancelled');
+          },
+        },
+      };
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (resp) => {
+        toast.error(`Payment failed: ${resp.error?.description || ''}`);
+        setBuying(false);
+      });
+      rzp.open();
+    } catch (e) {
+      toast.error('Could not start payment');
+      setBuying(false);
     }
   };
 
   // ---------------- RENDER ----------------
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* Razorpay Checkout script — loaded once */}
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       {/* Top bar */}
       <header className="border-b bg-white sticky top-0 z-30">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
@@ -313,6 +384,29 @@ function App() {
                 Admin
               </Button>
             </a>
+            {session ? (
+              <Button
+                onClick={() => signOut()}
+                variant="ghost"
+                size="sm"
+                className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex"
+                title={session.user.email}
+              >
+                {session.user.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={session.user.image} alt="" className="w-5 h-5 rounded-full mr-1" />
+                ) : null}
+                Sign out
+              </Button>
+            ) : (
+              <Button
+                onClick={() => signIn('google')}
+                size="sm"
+                className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d]"
+              >
+                Sign in
+              </Button>
+            )}
           </div>
         </div>
         {/* mobile sub-nav */}
@@ -613,39 +707,53 @@ function App() {
         </div>
       </footer>
 
-      {/* Email modal */}
+      {/* Email modal — now offers Google sign-in primary, email fallback */}
       <Dialog open={emailModal} onOpenChange={setEmailModal}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Mail className="w-5 h-5 text-[#16a34a]" /> Enter your email to
-              continue
+              <Mail className="w-5 h-5 text-[#16a34a]" /> Sign in to view this PDF
             </DialogTitle>
             <DialogDescription>
-              We use your email to send tender alerts and to verify your PDF
-              access.
+              Pick one option below. Your email is used to confirm your PDF
+              access and send tender alerts.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={submitEmail} className="space-y-3">
-            <div>
-              <Label>Email address</Label>
+          <div className="space-y-3">
+            <Button
+              onClick={() => {
+                setEmailModal(false);
+                signIn('google', { callbackUrl: typeof window !== 'undefined' ? window.location.href : '/' });
+              }}
+              className="w-full bg-white hover:bg-slate-50 border text-[#0A2647] gap-2 h-11"
+            >
+              {/* Google G logo */}
+              <svg className="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.5-5.9 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
+                <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8c1.8-4.4 6-7.5 11.1-7.5 3 0 5.8 1.1 7.9 3l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/>
+                <path fill="#4CAF50" d="M24 44c5.4 0 10.3-2.1 14-5.4l-6.5-5.5C29.6 34.6 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8l-6.6 5.1C9.5 39.5 16.2 44 24 44z"/>
+                <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4-4 5.4l6.5 5.5c-.4.4 6.9-5 6.9-15-.1-1.4-.2-2.7-.5-3.4z"/>
+              </svg>
+              Continue with Google
+            </Button>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="flex-1 h-px bg-slate-200" /> or use email <div className="flex-1 h-px bg-slate-200" />
+            </div>
+            <form onSubmit={submitEmail} className="space-y-2">
               <Input
                 name="email"
                 type="email"
                 placeholder="you@example.com"
                 required
-                autoFocus
               />
-            </div>
-            <DialogFooter>
               <Button
                 type="submit"
                 className="bg-[#0A2647] hover:bg-[#144272] w-full"
               >
-                Continue
+                Continue with Email
               </Button>
-            </DialogFooter>
-          </form>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
 
