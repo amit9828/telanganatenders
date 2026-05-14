@@ -50,19 +50,33 @@ function isAdmin(request) {
 
 async function hasAccess(db, email, tenderId) {
   if (!email) return false;
+  const e = email.toLowerCase();
   const now = new Date();
-  // active subscription (month/year)
+  // Source of truth: the user document
+  const user = await db.collection('users').findOne({ email: e });
+  if (user) {
+    if (user.premium_expiry_date && new Date(user.premium_expiry_date) > now) {
+      return true;
+    }
+    if (
+      tenderId &&
+      Array.isArray(user.purchased_tenders) &&
+      user.purchased_tenders.includes(tenderId)
+    ) {
+      return true;
+    }
+  }
+  // Fallback: legacy check from payments collection (covers users created before model migration)
   const sub = await db.collection('payments').findOne({
-    email: email.toLowerCase(),
+    email: e,
     status: 'paid',
     plan: { $in: ['month', 'year'] },
     expires_at: { $gt: now },
   });
   if (sub) return true;
-  // single PDF access
   if (tenderId) {
     const single = await db.collection('payments').findOne({
-      email: email.toLowerCase(),
+      email: e,
       status: 'paid',
       plan: 'single',
       tender_id: tenderId,
@@ -70,6 +84,60 @@ async function hasAccess(db, email, tenderId) {
     if (single) return true;
   }
   return false;
+}
+
+// Plans single source of truth
+const PLAN_AMOUNTS = { single: 10, month: 149, year: 1499 };
+const PLAN_DAYS = { month: 30, year: 365 };
+
+async function grantAccessToUser(db, email, plan, tenderId) {
+  const e = (email || '').toLowerCase();
+  if (!e) return;
+  const now = new Date();
+  // ensure user exists
+  await db.collection('users').updateOne(
+    { email: e },
+    {
+      $setOnInsert: {
+        id: uuidv4(),
+        email: e,
+        created_at: now,
+        purchased_tenders: [],
+      },
+    },
+    { upsert: true }
+  );
+  if (plan === 'month' || plan === 'year') {
+    const current = await db.collection('users').findOne({ email: e });
+    const currentExpiry =
+      current?.premium_expiry_date && new Date(current.premium_expiry_date) > now
+        ? new Date(current.premium_expiry_date)
+        : now;
+    const newExpiry = new Date(
+      currentExpiry.getTime() + PLAN_DAYS[plan] * 24 * 60 * 60 * 1000
+    );
+    await db.collection('users').updateOne(
+      { email: e },
+      {
+        $set: {
+          premium_expiry_date: newExpiry,
+          premium_plan: plan,
+          last_payment_at: now,
+        },
+      }
+    );
+    return newExpiry;
+  }
+  if (plan === 'single' && tenderId) {
+    await db.collection('users').updateOne(
+      { email: e },
+      {
+        $addToSet: { purchased_tenders: tenderId },
+        $set: { last_payment_at: now },
+      }
+    );
+  }
+  return null;
 }
 
 async function sendBrandedEmail(to, subject, htmlBody) {
@@ -231,28 +299,33 @@ export async function GET(request, { params }) {
       const email = (url.searchParams.get('email') || '').toLowerCase();
       if (!email) return json({ error: 'email required' }, 400);
       const user = await db.collection('users').findOne({ email });
+      const now = new Date();
+      const isPremium =
+        user?.premium_expiry_date && new Date(user.premium_expiry_date) > now;
+      const purchasedIds = user?.purchased_tenders || [];
+      const purchasedTenders = purchasedIds.length
+        ? await db
+            .collection('tenders')
+            .find({ id: { $in: purchasedIds } }, { projection: { pdf_base64: 0 } })
+            .toArray()
+        : [];
       const payments = await db
         .collection('payments')
         .find({ email, status: 'paid' })
         .sort({ paid_at: -1 })
         .toArray();
-      const now = new Date();
-      const active = payments.find(
-        (p) => ['month', 'year'].includes(p.plan) && p.expires_at && new Date(p.expires_at) > now
-      );
-      // single unlocked tenders
-      const singleIds = payments.filter((p) => p.plan === 'single' && p.tender_id).map((p) => p.tender_id);
-      const unlockedTenders = singleIds.length
-        ? await db
-            .collection('tenders')
-            .find({ id: { $in: singleIds } }, { projection: { pdf_base64: 0 } })
-            .toArray()
-        : [];
       return json({
         user: user || { email },
-        subscription: active
-          ? { plan: active.plan, expires_at: active.expires_at, paid_at: active.paid_at }
+        subscription: isPremium
+          ? {
+              plan: user.premium_plan || 'month',
+              expires_at: user.premium_expiry_date,
+            }
           : null,
+        premium_expiry_date: user?.premium_expiry_date || null,
+        is_premium: !!isPremium,
+        purchased_tenders: purchasedIds,
+        unlocked_tenders: purchasedTenders,
         payments: payments.map((p) => ({
           plan: p.plan,
           amount: p.amount,
@@ -260,7 +333,6 @@ export async function GET(request, { params }) {
           paid_at: p.paid_at,
           expires_at: p.expires_at,
         })),
-        unlocked_tenders: unlockedTenders,
       });
     }
 
@@ -338,22 +410,21 @@ export async function GET(request, { params }) {
       const email = (url.searchParams.get('email') || '').toLowerCase();
       const tenderId = url.searchParams.get('tenderId') || null;
       const ok = await hasAccess(db, email, tenderId);
-      const sub = await db
-        .collection('payments')
-        .findOne(
-          {
-            email,
-            status: 'paid',
-            plan: { $in: ['month', 'year'] },
-            expires_at: { $gt: new Date() },
-          },
-          { sort: { expires_at: -1 } }
-        );
+      const user = await db.collection('users').findOne({ email });
+      const now = new Date();
+      const isPremium =
+        user?.premium_expiry_date && new Date(user.premium_expiry_date) > now;
       return json({
         access: ok,
-        subscription: sub
-          ? { plan: sub.plan, expires_at: sub.expires_at }
+        subscription: isPremium
+          ? {
+              plan: user.premium_plan || 'month',
+              expires_at: user.premium_expiry_date,
+            }
           : null,
+        is_premium: !!isPremium,
+        premium_expiry_date: user?.premium_expiry_date || null,
+        purchased_tenders: user?.purchased_tenders || [],
       });
     }
 
@@ -481,13 +552,15 @@ export async function POST(request, { params }) {
       const email = (body.email || '').toLowerCase().trim();
       const plan = body.plan; // single | month | year
       if (!email || !plan) return json({ error: 'Missing fields' }, 400);
-      const amounts = { single: 9, month: 149, year: 1499 };
-      if (!(plan in amounts)) return json({ error: 'Invalid plan' }, 400);
+      if (!(plan in PLAN_AMOUNTS)) return json({ error: 'Invalid plan' }, 400);
+      if (plan === 'single' && !body.tenderId) {
+        return json({ error: 'tenderId required for single plan' }, 400);
+      }
       // Create real Razorpay order
       let rzpOrder;
       try {
         rzpOrder = await razorpay.orders.create({
-          amount: amounts[plan] * 100, // paise
+          amount: PLAN_AMOUNTS[plan] * 100, // paise
           currency: 'INR',
           receipt: `tt-${plan}-${Date.now()}`,
           notes: {
@@ -501,14 +574,13 @@ export async function POST(request, { params }) {
         console.error('[RAZORPAY ORDER ERROR]', err?.error?.description || err.message);
         return json({ error: err?.error?.description || 'Razorpay order failed' }, 502);
       }
-      // store pending payment
       await db.collection('payments').insertOne({
         id: uuidv4(),
         order_id: rzpOrder.id,
         email,
         plan,
         tender_id: body.tenderId || null,
-        amount: amounts[plan],
+        amount: PLAN_AMOUNTS[plan],
         status: 'created',
         created_at: new Date(),
       });
@@ -547,11 +619,10 @@ export async function POST(request, { params }) {
         console.warn('[RZP] Signature mismatch — possible tampering');
         return json({ error: 'Invalid signature' }, 400);
       }
+      const now = new Date();
       const expires_at =
-        plan === 'month'
-          ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-          : plan === 'year'
-          ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+        plan === 'month' || plan === 'year'
+          ? new Date(now.getTime() + PLAN_DAYS[plan] * 24 * 60 * 60 * 1000)
           : null;
       await db.collection('payments').updateOne(
         { order_id: razorpay_order_id },
@@ -560,7 +631,7 @@ export async function POST(request, { params }) {
             status: 'paid',
             payment_id: razorpay_payment_id,
             signature: razorpay_signature,
-            paid_at: new Date(),
+            paid_at: now,
             expires_at,
             tender_id: tenderId || null,
             email: (email || '').toLowerCase(),
@@ -569,18 +640,21 @@ export async function POST(request, { params }) {
         },
         { upsert: true }
       );
+      // Update USER MODEL (primary source of truth)
+      const newExpiry = await grantAccessToUser(db, email, plan, tenderId);
       return json({
         success: true,
-        message: 'Payment verified, access unlocked.',
+        message:
+          plan === 'single'
+            ? 'Payment verified — PDF unlocked.'
+            : `Payment verified — Premium active until ${newExpiry?.toDateString()}`,
+        plan,
+        premium_expiry_date: newExpiry,
       });
     }
 
     // POST /api/payment/webhook  (Razorpay webhook auto-verification)
     if (path === 'payment/webhook') {
-      // Note: webhook signature must be verified against RAW body, not parsed JSON.
-      // We re-serialize the parsed body here as a best-effort fallback when
-      // signature header missing or differs. Razorpay POSTs JSON with header
-      // 'x-razorpay-signature'.
       const signature = request.headers.get('x-razorpay-signature') || '';
       const rawBody = JSON.stringify(body);
       const expected = crypto
@@ -594,18 +668,20 @@ export async function POST(request, { params }) {
       const event = body.event;
       const payload = body.payload || {};
       if (event === 'payment.captured' || event === 'payment.authorized') {
-        const order_id = payload?.payment?.entity?.order_id;
-        const payment_id = payload?.payment?.entity?.id;
+        const entity = payload?.payment?.entity || {};
+        const order_id = entity.order_id;
+        const payment_id = entity.id;
+        const notes = entity.notes || {};
         if (order_id) {
-          const existing = await db
-            .collection('payments')
-            .findOne({ order_id });
+          const existing = await db.collection('payments').findOne({ order_id });
           if (existing) {
+            const plan = existing.plan || notes.plan;
+            const email = existing.email || notes.email;
+            const tender_id = existing.tender_id || notes.tender_id || null;
+            const now = new Date();
             const expires_at =
-              existing.plan === 'month'
-                ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-                : existing.plan === 'year'
-                ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+              plan === 'month' || plan === 'year'
+                ? new Date(now.getTime() + PLAN_DAYS[plan] * 24 * 60 * 60 * 1000)
                 : null;
             await db.collection('payments').updateOne(
               { order_id },
@@ -613,12 +689,14 @@ export async function POST(request, { params }) {
                 $set: {
                   status: 'paid',
                   payment_id,
-                  paid_at: new Date(),
+                  paid_at: now,
                   expires_at,
                   webhook_event: event,
                 },
               }
             );
+            // Update USER MODEL via webhook (idempotent — safe to run after /verify too)
+            await grantAccessToUser(db, email, plan, tender_id);
           }
         }
       }

@@ -57,29 +57,42 @@ const HYDERABAD = 'Hyderabad';
 const PLANS = [
   {
     id: 'single',
-    name: 'Single PDF',
-    price: 9,
-    desc: 'Unlock this one tender PDF',
-    perks: ['Instant 1 PDF unlock', 'No subscription', 'Best for one-time use'],
+    name: 'Single Document',
+    price: 10,
+    desc: 'Unlock only the PDF you clicked on',
+    perks: [
+      'Instant 1 PDF unlock',
+      'Email-watermarked download',
+      'No subscription, no auto-renew',
+    ],
+    cta: 'Pay ₹10 for this PDF',
   },
   {
     id: 'month',
-    name: '1-Month Pass',
+    name: 'Monthly Premium',
     price: 149,
-    desc: 'Unlimited tenders for 30 days',
-    perks: ['All tenders unlocked', 'Archive access', 'Email alerts'],
+    desc: 'Unlimited access to ALL tenders for 30 days',
+    perks: [
+      'Every current & future tender unlocked',
+      'Full archive & calendar access',
+      'Premium email alerts',
+      'Best for active bidders',
+    ],
+    cta: 'Go Premium for ₹149',
     highlight: true,
   },
   {
     id: 'year',
-    name: '1-Year Pro',
+    name: 'Yearly Premium',
     price: 1499,
-    desc: 'Best value — 12 months access',
+    desc: 'ALL tenders, 365 days — biggest savings',
     perks: [
-      'All tenders for 365 days',
-      'Full archive + priority alerts',
-      'Save ₹29 vs monthly',
+      'Everything in Monthly',
+      '365 days of unlimited access',
+      'Save ₹289 vs 12× monthly',
+      'Priority new-tender alerts',
     ],
+    cta: 'Save big at ₹1499',
   },
 ];
 
@@ -265,7 +278,16 @@ function App() {
       return;
     }
     if (buying) return;
+    if (plan === 'single' && !pendingTender?.id) {
+      toast.error('Please pick a tender first');
+      return;
+    }
     setBuying(true);
+    // CRITICAL: close the paywall dialog BEFORE opening Razorpay.
+    // shadcn/Radix Dialog focus-trap interferes with Razorpay iframe input.
+    setPaywallModal(false);
+    // small delay to ensure dialog overlay is removed from DOM
+    await new Promise((r) => setTimeout(r, 250));
     try {
       // 1. Create Razorpay order on server
       const r1 = await fetch('/api/payment/order', {
@@ -279,13 +301,11 @@ function App() {
         setBuying(false);
         return;
       }
-      // 2. Wait for Razorpay script
       if (typeof window === 'undefined' || !window.Razorpay) {
         toast.error('Razorpay not loaded yet, please retry');
         setBuying(false);
         return;
       }
-      // 3. Open Razorpay Checkout popup
       const options = {
         key: d1.key_id,
         amount: d1.order.amount,
@@ -295,8 +315,8 @@ function App() {
           plan === 'single'
             ? `PDF unlock — ${pendingTender?.title?.slice(0, 40) || ''}`
             : plan === 'month'
-            ? '1-Month Pass'
-            : '1-Year Pro',
+            ? 'Monthly Premium (30 days)'
+            : 'Yearly Premium (365 days)',
         order_id: d1.order.id,
         prefill: { email, name: session?.user?.name || '' },
         theme: { color: '#0A2647' },
@@ -316,8 +336,7 @@ function App() {
             });
             const d2 = await r2.json();
             if (d2.success) {
-              toast.success('Payment verified — access unlocked!');
-              setPaywallModal(false);
+              toast.success(d2.message || 'Payment successful — access unlocked!');
               fetch(`/api/access?email=${encodeURIComponent(email)}`)
                 .then((r) => r.json())
                 .then((d) => setSubscription(d.subscription || null));
@@ -336,6 +355,8 @@ function App() {
             setBuying(false);
             toast.info('Payment cancelled');
           },
+          escape: true,
+          backdropclose: false,
         },
       };
       const rzp = new window.Razorpay(options);
@@ -368,6 +389,9 @@ function App() {
             ) : null}
             <a href="/archive" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
               Archive
+            </a>
+            <a href="#pricing" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
+              Pricing
             </a>
             {email ? (
               <a href="/account" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
@@ -698,6 +722,36 @@ function App() {
             ))}
           </div>
         </div>
+
+        {/* Pricing section — public, sits above footer */}
+        <section id="pricing" className="pt-6 scroll-mt-24">
+          <div className="text-center max-w-2xl mx-auto mb-6">
+            <Badge className="bg-[#16a34a] hover:bg-[#15803d] mb-2">PRICING</Badge>
+            <h3 className="text-2xl sm:text-3xl font-extrabold text-[#0A2647]">
+              Pick the plan that fits you
+            </h3>
+            <p className="text-sm sm:text-base text-muted-foreground mt-2">
+              Pay once for a single PDF, or go Premium for unlimited tender
+              access. All payments handled securely by Razorpay.
+            </p>
+          </div>
+          <PlanGrid
+            plans={PLANS}
+            buying={buying}
+            onBuy={(p) => {
+              if (p === 'single') {
+                toast.info('Click "View PDF" on any tender to buy ₹10 single access.');
+                return;
+              }
+              setPendingTender(null);
+              if (!email) {
+                setEmailModal(true);
+                return;
+              }
+              buyPlan(p);
+            }}
+          />
+        </section>
       </main>
 
       <footer className="border-t mt-12 bg-slate-50">
@@ -757,70 +811,35 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Paywall modal */}
+      {/* Paywall modal — restructured for 3 clear plans */}
       <Dialog open={paywallModal} onOpenChange={setPaywallModal}>
         <DialogContent className="max-w-3xl w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <Lock className="w-5 h-5 text-[#16a34a]" /> Unlock this tender PDF
+              <Lock className="w-5 h-5 text-[#16a34a]" /> Unlock this Tender PDF
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
-              Choose a plan. Payment is instant — access unlocks automatically
-              after Razorpay confirmation.
+              <strong className="text-[#0A2647]">3 ways to access:</strong>{' '}
+              one-time ₹10 for this single PDF, or go Premium to unlock every
+              tender. Payments are secured by Razorpay; access is unlocked
+              instantly after verification.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid sm:grid-cols-3 gap-3 sm:gap-4 py-2">
-            {PLANS.map((p) => (
-              <div
-                key={p.id}
-                className={`rounded-xl border-2 p-5 flex flex-col ${
-                  p.highlight
-                    ? 'border-[#16a34a] bg-emerald-50 relative'
-                    : 'border-slate-200 bg-white'
-                }`}
-              >
-                {p.highlight && (
-                  <Badge className="absolute -top-3 right-4 bg-[#16a34a]">
-                    Most Popular
-                  </Badge>
-                )}
-                <h3 className="font-bold text-[#0A2647] text-lg">{p.name}</h3>
-                <p className="text-xs text-muted-foreground">{p.desc}</p>
-                <div className="my-3">
-                  <span className="text-3xl font-extrabold text-[#0A2647]">
-                    ₹{p.price}
-                  </span>
-                  <span className="text-sm text-muted-foreground ml-1">
-                    {p.id === 'single'
-                      ? '/PDF'
-                      : p.id === 'month'
-                      ? '/month'
-                      : '/year'}
-                  </span>
-                </div>
-                <ul className="text-xs text-slate-600 space-y-1 mb-4 flex-1">
-                  {p.perks.map((x) => (
-                    <li key={x} className="flex items-start gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-[#16a34a] mt-0.5 shrink-0" />
-                      {x}
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  onClick={() => buyPlan(p.id)}
-                  className={
-                    p.highlight
-                      ? 'bg-[#16a34a] hover:bg-[#15803d] w-full'
-                      : 'bg-[#0A2647] hover:bg-[#144272] w-full'
-                  }
-                >
-                  Pay ₹{p.price} with Razorpay
-                </Button>
-              </div>
-            ))}
-          </div>
+          {pendingTender && (
+            <div className="bg-slate-50 border rounded-md p-3 text-sm">
+              <span className="text-xs text-muted-foreground">Selected tender</span>
+              <p className="font-semibold text-[#0A2647] truncate">
+                {pendingTender.title}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {pendingTender.department} · {pendingTender.district}
+              </p>
+            </div>
+          )}
+          <PlanGrid plans={PLANS} buying={buying} onBuy={buyPlan} />
           <p className="text-[11px] text-center text-muted-foreground">
-            Secured by Razorpay. Webhook auto-verifies and unlocks instantly.
+            🔒 Secured by Razorpay · UPI, Cards, Net-banking, Wallets accepted ·
+            Webhook auto-verifies and unlocks instantly
           </p>
         </DialogContent>
       </Dialog>
@@ -875,3 +894,59 @@ function App() {
 }
 
 export default App;
+
+function PlanGrid({ plans, buying, onBuy }) {
+  return (
+    <div className="grid sm:grid-cols-3 gap-4">
+      {plans.map((p) => (
+        <div
+          key={p.id}
+          className={`rounded-xl border-2 p-5 flex flex-col ${
+            p.highlight
+              ? 'border-[#16a34a] bg-emerald-50 relative shadow-lg'
+              : 'border-slate-200 bg-white'
+          }`}
+        >
+          {p.highlight && (
+            <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#16a34a]">
+              ⭐ Most Popular
+            </Badge>
+          )}
+          <h3 className="font-bold text-[#0A2647] text-lg">{p.name}</h3>
+          <p className="text-xs text-muted-foreground min-h-[32px]">{p.desc}</p>
+          <div className="my-3 flex items-baseline gap-1">
+            <span className="text-3xl sm:text-4xl font-extrabold text-[#0A2647]">
+              ₹{p.price}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {p.id === 'single'
+                ? '/ PDF'
+                : p.id === 'month'
+                ? '/ 30 days'
+                : '/ 365 days'}
+            </span>
+          </div>
+          <ul className="text-xs sm:text-sm text-slate-600 space-y-1.5 mb-4 flex-1">
+            {p.perks.map((x) => (
+              <li key={x} className="flex items-start gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-[#16a34a] mt-0.5 shrink-0" />
+                <span>{x}</span>
+              </li>
+            ))}
+          </ul>
+          <Button
+            onClick={() => onBuy(p.id)}
+            disabled={buying}
+            className={
+              p.highlight
+                ? 'bg-[#16a34a] hover:bg-[#15803d] w-full h-11'
+                : 'bg-[#0A2647] hover:bg-[#144272] w-full h-11'
+            }
+          >
+            {buying ? 'Processing...' : p.cta || `Pay ₹${p.price}`}
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
