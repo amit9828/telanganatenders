@@ -191,49 +191,104 @@ function tenderEmailHtml(tender) {
 }
 
 // ---------------- PDF Watermarking ----------------
-async function watermarkPdf(base64, email) {
+async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
   try {
     const buf = Buffer.from(base64, 'base64');
     const pdfDoc = await PDFDocument.load(buf, { ignoreEncryption: true });
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const stamp = `Licensed to ${email} • ${new Date().toISOString().slice(0, 10)} • Telangana Tenders`;
+
+    // Try to embed the brand logo image
+    let logoImage = null;
+    if (logoBase64) {
+      try {
+        const logoBuf = Buffer.from(logoBase64, 'base64');
+        const mime = (logoMime || '').toLowerCase();
+        if (mime.includes('png')) {
+          logoImage = await pdfDoc.embedPng(logoBuf);
+        } else if (mime.includes('jpeg') || mime.includes('jpg')) {
+          logoImage = await pdfDoc.embedJpg(logoBuf);
+        }
+      } catch (e) {
+        console.warn('[Watermark] Could not embed logo image, using text fallback:', e?.message);
+        logoImage = null;
+      }
+    }
+
     const pages = pdfDoc.getPages();
     for (const page of pages) {
       const { width, height } = page.getSize();
-      // Diagonal large watermark
-      page.drawText(email, {
-        x: width / 6,
-        y: height / 2,
-        size: Math.max(36, width / 18),
-        font,
-        color: rgb(0.85, 0.15, 0.15),
-        opacity: 0.18,
-        rotate: degrees(45),
-      });
-      // Footer stamp on every page
+
+      if (logoImage) {
+        // Diagonal centered logo watermark (semi-transparent)
+        const dims = logoImage.scale(1);
+        const targetWidth = width * 0.55;
+        const scale = targetWidth / dims.width;
+        const w = dims.width * scale;
+        const h = dims.height * scale;
+        page.drawImage(logoImage, {
+          x: (width - w) / 2,
+          y: (height - h) / 2,
+          width: w,
+          height: h,
+          opacity: 0.12,
+          rotate: degrees(-30),
+        });
+        // Also a faint brand-name caption under the logo for extra context
+        const caption = 'TELANGANA TENDERS - OFFICIAL';
+        const captionSize = Math.max(14, width / 36);
+        page.drawText(caption, {
+          x: width * 0.18,
+          y: height * 0.38,
+          size: captionSize,
+          font,
+          color: rgb(0.04, 0.15, 0.28),
+          opacity: 0.08,
+          rotate: degrees(-30),
+        });
+      } else {
+        // Text-only fallback: large diagonal "TELANGANA TENDERS - OFFICIAL"
+        const text = 'TELANGANA TENDERS - OFFICIAL';
+        const fontSize = Math.max(28, width / 18);
+        page.drawText(text, {
+          x: width * 0.05,
+          y: height * 0.45,
+          size: fontSize,
+          font,
+          color: rgb(0.04, 0.15, 0.28),
+          opacity: 0.12,
+          rotate: degrees(-30),
+        });
+        // A second smaller line for visual balance
+        page.drawText('Government Tender Portal', {
+          x: width * 0.18,
+          y: height * 0.35,
+          size: Math.max(14, width / 36),
+          font,
+          color: rgb(0.08, 0.4, 0.2),
+          opacity: 0.1,
+          rotate: degrees(-30),
+        });
+      }
+
+      // Small tracking footer (preserves anti-piracy audit trail
+      // without making email the dominant watermark)
       page.drawRectangle({
         x: 0,
         y: 0,
         width,
-        height: 18,
+        height: 14,
         color: rgb(0.04, 0.15, 0.28),
-        opacity: 0.9,
+        opacity: 0.85,
       });
-      page.drawText(stamp, {
-        x: 8,
-        y: 5,
-        size: 8,
-        font,
-        color: rgb(1, 1, 1),
-      });
-      // Top right ID
-      page.drawText(`ID: ${uuidv4().slice(0, 8).toUpperCase()}`, {
-        x: width - 90,
-        y: height - 12,
+      const footer = `Telangana Tenders  •  Licensed to ${email}  •  ${new Date()
+        .toISOString()
+        .slice(0, 10)}  •  ID ${uuidv4().slice(0, 6).toUpperCase()}`;
+      page.drawText(footer, {
+        x: 6,
+        y: 4,
         size: 7,
         font,
-        color: rgb(0.04, 0.15, 0.28),
-        opacity: 0.7,
+        color: rgb(1, 1, 1),
       });
     }
     const out = await pdfDoc.save();
@@ -381,7 +436,14 @@ export async function GET(request, { params }) {
       let pdf_base64 = tender.pdf_base64 || '';
       let watermarked = false;
       if (!admin && pdf_base64 && email) {
-        pdf_base64 = await watermarkPdf(pdf_base64, email);
+        // Fetch brand logo from settings (used for image watermark)
+        const settings = await db.collection('settings').findOne({ id: 'main' });
+        pdf_base64 = await watermarkPdf(
+          pdf_base64,
+          email,
+          settings?.logo_base64 || '',
+          settings?.logo_mime || ''
+        );
         watermarked = true;
       }
       return json({
