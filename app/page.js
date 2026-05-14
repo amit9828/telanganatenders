@@ -60,6 +60,7 @@ const PLANS = [
     name: 'Single Document',
     price: 10,
     desc: 'Unlock only the PDF you clicked on',
+    mode: 'oneoff',
     perks: [
       'Instant 1 PDF unlock',
       'Email-watermarked download',
@@ -71,28 +72,30 @@ const PLANS = [
     id: 'month',
     name: 'Monthly Premium',
     price: 149,
-    desc: 'Unlimited access to ALL tenders for 30 days',
+    desc: 'Auto-renews every 30 days — cancel anytime',
+    mode: 'subscription',
     perks: [
       'Every current & future tender unlocked',
       'Full archive & calendar access',
-      'Premium email alerts',
+      'Auto-renew · cancel anytime',
       'Best for active bidders',
     ],
-    cta: 'Go Premium for ₹149',
+    cta: 'Subscribe ₹149/mo',
     highlight: true,
   },
   {
     id: 'year',
     name: 'Yearly Premium',
     price: 1499,
-    desc: 'ALL tenders, 365 days — biggest savings',
+    desc: 'Auto-renews every 365 days — save big',
+    mode: 'subscription',
     perks: [
       'Everything in Monthly',
-      '365 days of unlimited access',
+      'Auto-renews yearly',
       'Save ₹289 vs 12× monthly',
-      'Priority new-tender alerts',
+      'Cancel anytime',
     ],
-    cta: 'Save big at ₹1499',
+    cta: 'Subscribe ₹1499/yr',
   },
 ];
 
@@ -283,92 +286,148 @@ function App() {
       return;
     }
     setBuying(true);
-    // CRITICAL: close the paywall dialog BEFORE opening Razorpay.
-    // shadcn/Radix Dialog focus-trap interferes with Razorpay iframe input.
     setPaywallModal(false);
-    // small delay to ensure dialog overlay is removed from DOM
     await new Promise((r) => setTimeout(r, 250));
+
+    const isSubscription = plan === 'month' || plan === 'year';
+
     try {
-      // 1. Create Razorpay order on server
-      const r1 = await fetch('/api/payment/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, plan, tenderId: pendingTender?.id }),
-      });
-      const d1 = await r1.json();
-      if (!r1.ok || !d1.order) {
-        toast.error(d1.error || 'Failed to create order');
-        setBuying(false);
-        return;
-      }
-      if (typeof window === 'undefined' || !window.Razorpay) {
-        toast.error('Razorpay not loaded yet, please retry');
-        setBuying(false);
-        return;
-      }
-      const options = {
-        key: d1.key_id,
-        amount: d1.order.amount,
-        currency: d1.order.currency,
-        name: 'Telangana Tenders',
-        description:
-          plan === 'single'
-            ? `PDF unlock — ${pendingTender?.title?.slice(0, 40) || ''}`
-            : plan === 'month'
-            ? 'Monthly Premium (30 days)'
-            : 'Yearly Premium (365 days)',
-        order_id: d1.order.id,
-        prefill: {
-          email,
-          name: session?.user?.name || '',
-          method: 'upi',
-        },
-        method: {
-          upi: true,
-          netbanking: true,
-          card: true,
-          wallet: true,
-        },
-        theme: { color: '#0A2647' },
-        handler: async (resp) => {
-          try {
-            const r2 = await fetch('/api/payment/verify', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                razorpay_order_id: resp.razorpay_order_id,
-                razorpay_payment_id: resp.razorpay_payment_id,
-                razorpay_signature: resp.razorpay_signature,
-                email,
-                plan,
-                tenderId: pendingTender?.id,
-              }),
-            });
-            const d2 = await r2.json();
-            if (d2.success) {
-              toast.success(d2.message || 'Payment successful — access unlocked!');
-              fetch(`/api/access?email=${encodeURIComponent(email)}`)
-                .then((r) => r.json())
-                .then((d) => setSubscription(d.subscription || null));
-              if (pendingTender) await tryUnlockPDF(pendingTender, email);
-            } else {
-              toast.error(d2.error || 'Verification failed');
+      let options;
+      if (isSubscription) {
+        // ----- Subscription flow (auto-renew) -----
+        const r1 = await fetch('/api/subscription/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, plan }),
+        });
+        const d1 = await r1.json();
+        if (!r1.ok || !d1.subscription_id) {
+          toast.error(d1.error || 'Failed to create subscription');
+          setBuying(false);
+          return;
+        }
+        if (!window.Razorpay) {
+          toast.error('Razorpay not loaded yet, please retry');
+          setBuying(false);
+          return;
+        }
+        options = {
+          key: d1.key_id,
+          subscription_id: d1.subscription_id,
+          name: 'Telangana Tenders',
+          description:
+            plan === 'month'
+              ? 'Monthly Premium — auto-renews every 30 days'
+              : 'Yearly Premium — auto-renews every 365 days',
+          prefill: { email, name: session?.user?.name || '', method: 'upi' },
+          method: { upi: true, netbanking: true, card: true, wallet: true },
+          theme: { color: '#0A2647' },
+          handler: async (resp) => {
+            try {
+              const r2 = await fetch('/api/subscription/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  razorpay_payment_id: resp.razorpay_payment_id,
+                  razorpay_subscription_id: resp.razorpay_subscription_id,
+                  razorpay_signature: resp.razorpay_signature,
+                  email,
+                  plan,
+                }),
+              });
+              const d2 = await r2.json();
+              if (d2.success) {
+                toast.success(d2.message || 'Auto-renew active!');
+                fetch(`/api/access?email=${encodeURIComponent(email)}`)
+                  .then((r) => r.json())
+                  .then((d) => setSubscription(d.subscription || null));
+                if (pendingTender) await tryUnlockPDF(pendingTender, email);
+              } else {
+                toast.error(d2.error || 'Verification failed');
+              }
+            } catch (e) {
+              toast.error('Verification error');
+            } finally {
+              setBuying(false);
             }
-          } catch (e) {
-            toast.error('Verification error');
-          } finally {
-            setBuying(false);
-          }
-        },
-        modal: {
-          ondismiss: () => {
-            setBuying(false);
-            toast.info('Payment cancelled');
           },
-          escape: true,
-          backdropclose: false,
-        },
-      };
+          modal: {
+            ondismiss: () => {
+              setBuying(false);
+              toast.info('Payment cancelled');
+            },
+            escape: true,
+            backdropclose: false,
+          },
+        };
+      } else {
+        // ----- One-time payment flow (Single PDF) -----
+        const r1 = await fetch('/api/payment/order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, plan, tenderId: pendingTender?.id }),
+        });
+        const d1 = await r1.json();
+        if (!r1.ok || !d1.order) {
+          toast.error(d1.error || 'Failed to create order');
+          setBuying(false);
+          return;
+        }
+        if (!window.Razorpay) {
+          toast.error('Razorpay not loaded yet, please retry');
+          setBuying(false);
+          return;
+        }
+        options = {
+          key: d1.key_id,
+          amount: d1.order.amount,
+          currency: d1.order.currency,
+          name: 'Telangana Tenders',
+          description: `PDF unlock — ${pendingTender?.title?.slice(0, 40) || ''}`,
+          order_id: d1.order.id,
+          prefill: { email, name: session?.user?.name || '', method: 'upi' },
+          method: { upi: true, netbanking: true, card: true, wallet: true },
+          theme: { color: '#0A2647' },
+          handler: async (resp) => {
+            try {
+              const r2 = await fetch('/api/payment/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  razorpay_order_id: resp.razorpay_order_id,
+                  razorpay_payment_id: resp.razorpay_payment_id,
+                  razorpay_signature: resp.razorpay_signature,
+                  email,
+                  plan,
+                  tenderId: pendingTender?.id,
+                }),
+              });
+              const d2 = await r2.json();
+              if (d2.success) {
+                toast.success(d2.message || 'Payment successful — PDF unlocked!');
+                fetch(`/api/access?email=${encodeURIComponent(email)}`)
+                  .then((r) => r.json())
+                  .then((d) => setSubscription(d.subscription || null));
+                if (pendingTender) await tryUnlockPDF(pendingTender, email);
+              } else {
+                toast.error(d2.error || 'Verification failed');
+              }
+            } catch (e) {
+              toast.error('Verification error');
+            } finally {
+              setBuying(false);
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              setBuying(false);
+              toast.info('Payment cancelled');
+            },
+            escape: true,
+            backdropclose: false,
+          },
+        };
+      }
       const rzp = new window.Razorpay(options);
       rzp.on('payment.failed', (resp) => {
         toast.error(`Payment failed: ${resp.error?.description || ''}`);

@@ -90,6 +90,62 @@ async function hasAccess(db, email, tenderId) {
 const PLAN_AMOUNTS = { single: 10, month: 149, year: 1499 };
 const PLAN_DAYS = { month: 30, year: 365 };
 
+// Ensure Razorpay Plans exist (created once, cached in settings collection)
+async function ensureRazorpayPlans(db) {
+  let s = await db.collection('settings').findOne({ id: 'main' });
+  let monthlyId = s?.rzp_plan_monthly;
+  let yearlyId = s?.rzp_plan_yearly;
+  if (!monthlyId) {
+    try {
+      const p = await razorpay.plans.create({
+        period: 'monthly',
+        interval: 1,
+        item: {
+          name: 'Telangana Tenders — Monthly Premium',
+          amount: PLAN_AMOUNTS.month * 100,
+          currency: 'INR',
+          description: 'Unlimited tender access, auto-renewed every 30 days',
+        },
+        notes: { portal: 'telangana-tenders' },
+      });
+      monthlyId = p.id;
+      await db.collection('settings').updateOne(
+        { id: 'main' },
+        { $set: { rzp_plan_monthly: monthlyId }, $setOnInsert: { id: 'main', created_at: new Date() } },
+        { upsert: true }
+      );
+    } catch (e) {
+      console.error('[RZP plans.create monthly]', e?.error?.description || e.message);
+      throw e;
+    }
+  }
+  if (!yearlyId) {
+    try {
+      const p = await razorpay.plans.create({
+        period: 'yearly',
+        interval: 1,
+        item: {
+          name: 'Telangana Tenders — Yearly Premium',
+          amount: PLAN_AMOUNTS.year * 100,
+          currency: 'INR',
+          description: 'Unlimited tender access, auto-renewed every 365 days',
+        },
+        notes: { portal: 'telangana-tenders' },
+      });
+      yearlyId = p.id;
+      await db.collection('settings').updateOne(
+        { id: 'main' },
+        { $set: { rzp_plan_yearly: yearlyId } },
+        { upsert: true }
+      );
+    } catch (e) {
+      console.error('[RZP plans.create yearly]', e?.error?.description || e.message);
+      throw e;
+    }
+  }
+  return { monthlyId, yearlyId };
+}
+
 async function grantAccessToUser(db, email, plan, tenderId) {
   const e = (email || '').toLowerCase();
   if (!e) return;
@@ -161,15 +217,45 @@ function sendMockEmail(to, subject, body) {
   console.log(`[EMAIL FALLBACK LOG] to=${to} | subject=${subject}`);
 }
 
-function tenderEmailHtml(tender) {
-  const lastDate = new Date(tender.last_date).toDateString();
+async function getEmailBrand(db) {
+  const s = await db.collection('settings').findOne({ id: 'main' });
+  const brand_name = s?.brand_name || 'Telangana Tenders';
+  const tagline = s?.tagline || 'Official Government Tender Portal';
+  const logo_data_uri =
+    s?.logo_base64
+      ? `data:${s.logo_mime || 'image/png'};base64,${s.logo_base64}`
+      : '';
+  return { brand_name, tagline, logo_data_uri };
+}
+
+function brandedEmailFrame(brand, innerHtml) {
+  const logoHtml = brand.logo_data_uri
+    ? `<img src="${brand.logo_data_uri}" alt="logo" width="56" height="56" style="display:block;border-radius:8px;background:#ffffff;padding:4px;border:1px solid #e5e7eb;" />`
+    : `<div style="width:56px;height:56px;background:#16a34a;border-radius:8px;display:inline-block;text-align:center;line-height:56px;color:#fff;font-weight:bold;">TT</div>`;
   return `<!DOCTYPE html>
 <html><body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;">
-<div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
-  <div style="background:#0A2647;padding:20px 24px;color:#ffffff;">
-    <div style="font-size:20px;font-weight:bold;">Telangana <span style="color:#16a34a;">Tenders</span></div>
-    <div style="font-size:12px;opacity:.8;">Official Government Tender Portal</div>
+<div style="max-width:600px;margin:24px auto;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">
+  <div style="background:#0A2647;padding:18px 24px;color:#ffffff;display:flex;align-items:center;">
+    <table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+      <td width="64" valign="middle">${logoHtml}</td>
+      <td valign="middle" style="padding-left:14px;color:#ffffff;">
+        <div style="font-size:18px;font-weight:bold;line-height:1.2;">${brand.brand_name}</div>
+        <div style="font-size:11px;opacity:.8;">${brand.tagline}</div>
+      </td>
+    </tr></table>
   </div>
+  ${innerHtml}
+  <div style="background:#f9fafb;padding:14px 24px;color:#9ca3af;font-size:11px;text-align:center;border-top:1px solid #e5e7eb;">
+    You are receiving this because you registered on ${brand.brand_name}.<br/>
+    <a href="${process.env.NEXT_PUBLIC_BASE_URL || ''}" style="color:#0A2647;">Visit Portal</a>
+  </div>
+</div>
+</body></html>`;
+}
+
+function tenderEmailHtml(tender, brand) {
+  const lastDate = new Date(tender.last_date).toDateString();
+  const inner = `
   <div style="padding:24px;">
     <span style="background:#16a34a;color:#fff;padding:4px 10px;border-radius:99px;font-size:11px;font-weight:bold;">NEW TENDER</span>
     <h2 style="color:#0A2647;margin:14px 0 4px;font-size:20px;line-height:1.3;">${tender.title}</h2>
@@ -184,10 +270,8 @@ function tenderEmailHtml(tender) {
         : ''
     }
     <a href="${process.env.NEXT_PUBLIC_BASE_URL || ''}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:bold;font-size:14px;">View Tender on Portal →</a>
-    <p style="color:#9ca3af;font-size:11px;margin-top:24px;">You are receiving this because you registered on Telangana Tenders portal.</p>
-  </div>
-</div>
-</body></html>`;
+  </div>`;
+  return brandedEmailFrame(brand, inner);
 }
 
 // ---------------- PDF Watermarking ----------------
@@ -379,6 +463,10 @@ export async function GET(request, { params }) {
           : null,
         premium_expiry_date: user?.premium_expiry_date || null,
         is_premium: !!isPremium,
+        auto_renew: user?.subscription_status === 'active',
+        subscription_status: user?.subscription_status || null,
+        subscription_plan: user?.subscription_plan || null,
+        subscription_id: user?.subscription_id || null,
         purchased_tenders: purchasedIds,
         unlocked_tenders: purchasedTenders,
         payments: payments.map((p) => ({
@@ -589,7 +677,8 @@ export async function POST(request, { params }) {
         .find({}, { projection: { email: 1 } })
         .toArray();
       const subj = `[New Tender] ${tender.title} — ${tender.district}`;
-      const html = tenderEmailHtml(tender);
+      const brand = await getEmailBrand(db);
+      const html = tenderEmailHtml(tender, brand);
       let sent = 0;
       let failed = 0;
       // Resend allows multiple recipients per call; we'll batch in 50s
@@ -607,6 +696,130 @@ export async function POST(request, { params }) {
 
       const { pdf_base64, ...safe } = tender;
       return json({ tender: safe, notified: sent, failed });
+    }
+
+    // POST /api/subscription/create { email, plan }   plan = 'month' | 'year'
+    if (path === 'subscription/create') {
+      const email = (body.email || '').toLowerCase().trim();
+      const plan = body.plan;
+      if (!email || !['month', 'year'].includes(plan)) {
+        return json({ error: 'Invalid email or plan' }, 400);
+      }
+      try {
+        const { monthlyId, yearlyId } = await ensureRazorpayPlans(db);
+        const plan_id = plan === 'month' ? monthlyId : yearlyId;
+        // total_count: 120 cycles (=10 years monthly OR 120 years yearly) — effectively unlimited until cancel
+        const total_count = plan === 'month' ? 120 : 50;
+        const sub = await razorpay.subscriptions.create({
+          plan_id,
+          total_count,
+          quantity: 1,
+          customer_notify: 1,
+          notes: { email, plan, portal: 'telangana-tenders' },
+        });
+        await db.collection('subscriptions').insertOne({
+          id: uuidv4(),
+          razorpay_subscription_id: sub.id,
+          email,
+          plan,
+          status: sub.status,
+          short_url: sub.short_url,
+          created_at: new Date(),
+        });
+        return json({
+          subscription_id: sub.id,
+          plan,
+          key_id: process.env.RAZORPAY_KEY_ID,
+          short_url: sub.short_url,
+        });
+      } catch (err) {
+        console.error('[RZP SUBSCRIPTION CREATE]', err?.error?.description || err.message);
+        return json(
+          { error: err?.error?.description || 'Razorpay subscription failed' },
+          502
+        );
+      }
+    }
+
+    // POST /api/subscription/verify { razorpay_payment_id, razorpay_subscription_id, razorpay_signature, email, plan }
+    if (path === 'subscription/verify') {
+      const {
+        razorpay_payment_id,
+        razorpay_subscription_id,
+        razorpay_signature,
+        email,
+        plan,
+      } = body;
+      if (!razorpay_payment_id || !razorpay_subscription_id || !razorpay_signature) {
+        return json({ error: 'Missing fields' }, 400);
+      }
+      // Subscription signature is HMAC of payment_id|subscription_id
+      const expected = crypto
+        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .update(`${razorpay_payment_id}|${razorpay_subscription_id}`)
+        .digest('hex');
+      if (expected !== razorpay_signature) {
+        return json({ error: 'Invalid signature' }, 400);
+      }
+      const now = new Date();
+      const newExpiry = await grantAccessToUser(db, email, plan, null);
+      await db.collection('users').updateOne(
+        { email: (email || '').toLowerCase() },
+        {
+          $set: {
+            subscription_id: razorpay_subscription_id,
+            subscription_status: 'active',
+            subscription_plan: plan,
+            last_payment_at: now,
+          },
+        }
+      );
+      await db.collection('subscriptions').updateOne(
+        { razorpay_subscription_id },
+        {
+          $set: {
+            status: 'active',
+            first_payment_id: razorpay_payment_id,
+            activated_at: now,
+          },
+        }
+      );
+      return json({
+        success: true,
+        message: `Auto-renew active. Premium until ${newExpiry?.toDateString()}`,
+        premium_expiry_date: newExpiry,
+      });
+    }
+
+    // POST /api/subscription/cancel { email }
+    if (path === 'subscription/cancel') {
+      const email = (body.email || '').toLowerCase().trim();
+      if (!email) return json({ error: 'email required' }, 400);
+      const user = await db.collection('users').findOne({ email });
+      const subId = user?.subscription_id;
+      if (!subId) return json({ error: 'No active subscription' }, 404);
+      try {
+        // cancel_at_cycle_end=1 → keep premium until current cycle ends
+        await razorpay.subscriptions.cancel(subId, { cancel_at_cycle_end: 1 });
+        await db.collection('users').updateOne(
+          { email },
+          { $set: { subscription_status: 'cancelled_pending' } }
+        );
+        await db.collection('subscriptions').updateOne(
+          { razorpay_subscription_id: subId },
+          { $set: { status: 'cancelled_pending', cancelled_at: new Date() } }
+        );
+        return json({
+          ok: true,
+          message: 'Auto-renewal cancelled. You keep premium until current period ends.',
+        });
+      } catch (err) {
+        console.error('[RZP CANCEL]', err?.error?.description || err.message);
+        return json(
+          { error: err?.error?.description || 'Cancel failed' },
+          502
+        );
+      }
     }
 
     // POST /api/payment/order { email, plan, tenderId? }
@@ -729,6 +942,59 @@ export async function POST(request, { params }) {
       }
       const event = body.event;
       const payload = body.payload || {};
+
+      // ----- Subscription lifecycle events -----
+      if (event && event.startsWith('subscription.')) {
+        const sub = payload?.subscription?.entity;
+        const subId = sub?.id;
+        const notes = sub?.notes || {};
+        const email = (notes.email || '').toLowerCase();
+        const plan = notes.plan;
+        const now = new Date();
+
+        if (event === 'subscription.activated' || event === 'subscription.charged') {
+          // Charged = renewal — extend premium by plan days
+          if (email && plan) {
+            await grantAccessToUser(db, email, plan, null);
+            await db.collection('users').updateOne(
+              { email },
+              {
+                $set: {
+                  subscription_id: subId,
+                  subscription_status: 'active',
+                  subscription_plan: plan,
+                  last_payment_at: now,
+                },
+              }
+            );
+          }
+          await db.collection('subscriptions').updateOne(
+            { razorpay_subscription_id: subId },
+            { $set: { status: 'active', last_charged_at: now } }
+          );
+        }
+        if (event === 'subscription.cancelled' || event === 'subscription.halted') {
+          await db.collection('subscriptions').updateOne(
+            { razorpay_subscription_id: subId },
+            { $set: { status: 'cancelled', cancelled_at: now } }
+          );
+          if (email) {
+            await db.collection('users').updateOne(
+              { email },
+              { $set: { subscription_status: 'cancelled' } }
+            );
+          }
+        }
+        if (event === 'subscription.completed') {
+          await db.collection('subscriptions').updateOne(
+            { razorpay_subscription_id: subId },
+            { $set: { status: 'completed', completed_at: now } }
+          );
+        }
+        return json({ received: true, handled: event });
+      }
+
+      // ----- One-time payment events -----
       if (event === 'payment.captured' || event === 'payment.authorized') {
         const entity = payload?.payment?.entity || {};
         const order_id = entity.order_id;
@@ -774,7 +1040,11 @@ export async function POST(request, { params }) {
         .toArray();
       const emails = users.map((u) => u.email).filter(Boolean);
       const subject = body.subject || 'Update from Telangana Tenders';
-      const html = body.html || `<p>${(body.message || '').replace(/\n/g, '<br/>')}</p>`;
+      const brand = await getEmailBrand(db);
+      const inner = `<div style="padding:24px;color:#374151;font-size:14px;line-height:1.6;">${
+        body.html || (body.message || '').replace(/\n/g, '<br/>')
+      }</div>`;
+      const html = brandedEmailFrame(brand, inner);
       let sent = 0;
       for (let i = 0; i < emails.length; i += 50) {
         const batch = emails.slice(i, i + 50);

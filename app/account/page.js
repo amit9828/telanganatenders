@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   Mail,
@@ -112,16 +113,54 @@ function AccountPage() {
             {data?.subscription && (
               <Card className="tender-shadow bg-emerald-50 border-[#16a34a]">
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-3">
-                    <Calendar className="w-8 h-8 text-[#16a34a]" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Your {data.subscription.plan === 'year' ? 'annual' : 'monthly'} pass
-                      </p>
-                      <p className="text-lg font-bold text-[#0A2647]">
-                        Active until {new Date(data.subscription.expires_at).toDateString()}
-                      </p>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between">
+                    <div className="flex items-center gap-3">
+                      <Calendar className="w-8 h-8 text-[#16a34a]" />
+                      <div>
+                        <p className="text-sm text-muted-foreground">
+                          Your {data.subscription.plan === 'year' ? 'annual' : 'monthly'} pass
+                        </p>
+                        <p className="text-lg font-bold text-[#0A2647]">
+                          Active until {new Date(data.subscription.expires_at).toDateString()}
+                        </p>
+                        {data.auto_renew && (
+                          <p className="text-xs text-emerald-700 mt-1">
+                            🔁 Auto-renews via Razorpay — cancel anytime
+                          </p>
+                        )}
+                        {data.subscription_status === 'cancelled_pending' && (
+                          <p className="text-xs text-amber-700 mt-1">
+                            ⏳ Auto-renewal cancelled — premium ends at expiry
+                          </p>
+                        )}
+                      </div>
                     </div>
+                    {data.auto_renew && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          if (!confirm('Cancel auto-renewal? You keep premium until current expiry.')) return;
+                          const r = await fetch('/api/subscription/cancel', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email }),
+                          });
+                          const d = await r.json();
+                          if (r.ok) {
+                            toast.success(d.message || 'Cancelled');
+                            // re-fetch
+                            fetch(`/api/me?email=${encodeURIComponent(email)}`)
+                              .then((r) => r.json())
+                              .then((d) => setData(d));
+                          } else {
+                            toast.error(d.error || 'Failed');
+                          }
+                        }}
+                      >
+                        Cancel auto-renew
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
