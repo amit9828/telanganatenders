@@ -81,26 +81,76 @@ export async function GET(request, { params }) {
       return json({ status: 'ok', service: 'telangana-tenders' });
     }
 
-    // GET /api/tenders?district=&month=&year=
+    // GET /api/tenders?district=&month=&year=&q=&scope=
     if (path === 'tenders') {
       const district = url.searchParams.get('district');
       const month = url.searchParams.get('month'); // 1-12
       const year = url.searchParams.get('year');
+      const qstr = (url.searchParams.get('q') || '').trim();
+      const scope = url.searchParams.get('scope'); // 'all' to skip month filter
       const q = {};
       if (district && district !== 'all') q.district = district;
-      if (month && year) {
+      if (scope !== 'all' && month && year) {
         const m = parseInt(month, 10) - 1;
         const y = parseInt(year, 10);
         const start = new Date(y, m, 1);
         const end = new Date(y, m + 1, 1);
         q.last_date = { $gte: start, $lt: end };
       }
+      if (qstr) {
+        const rx = new RegExp(qstr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        q.$or = [
+          { title: rx },
+          { department: rx },
+          { supply_details: rx },
+          { district: rx },
+        ];
+      }
       const list = await db
         .collection('tenders')
         .find(q, { projection: { pdf_base64: 0 } })
         .sort({ last_date: 1, created_at: -1 })
+        .limit(500)
         .toArray();
       return json({ tenders: list });
+    }
+
+    // GET /api/me?email=...  user account summary
+    if (path === 'me') {
+      const email = (url.searchParams.get('email') || '').toLowerCase();
+      if (!email) return json({ error: 'email required' }, 400);
+      const user = await db.collection('users').findOne({ email });
+      const payments = await db
+        .collection('payments')
+        .find({ email, status: 'paid' })
+        .sort({ paid_at: -1 })
+        .toArray();
+      const now = new Date();
+      const active = payments.find(
+        (p) => ['month', 'year'].includes(p.plan) && p.expires_at && new Date(p.expires_at) > now
+      );
+      // single unlocked tenders
+      const singleIds = payments.filter((p) => p.plan === 'single' && p.tender_id).map((p) => p.tender_id);
+      const unlockedTenders = singleIds.length
+        ? await db
+            .collection('tenders')
+            .find({ id: { $in: singleIds } }, { projection: { pdf_base64: 0 } })
+            .toArray()
+        : [];
+      return json({
+        user: user || { email },
+        subscription: active
+          ? { plan: active.plan, expires_at: active.expires_at, paid_at: active.paid_at }
+          : null,
+        payments: payments.map((p) => ({
+          plan: p.plan,
+          amount: p.amount,
+          tender_id: p.tender_id,
+          paid_at: p.paid_at,
+          expires_at: p.expires_at,
+        })),
+        unlocked_tenders: unlockedTenders,
+      });
     }
 
     // GET /api/tenders/calendar?year=&month=

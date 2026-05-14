@@ -32,6 +32,7 @@ import {
   Mail,
   CheckCircle2,
   Filter,
+  Search,
   ShieldCheck,
   Sparkles,
   X,
@@ -105,6 +106,8 @@ function App() {
   const [calDays, setCalDays] = useState({});
   const [loading, setLoading] = useState(false);
 
+  const [searchQ, setSearchQ] = useState('');
+
   const [email, setEmail] = useState('');
   const [emailModal, setEmailModal] = useState(false);
   const [paywallModal, setPaywallModal] = useState(false);
@@ -136,6 +139,10 @@ function App() {
       if (district !== 'all') params.set('district', district);
       params.set('month', String(month));
       params.set('year', String(year));
+      if (searchQ.trim()) {
+        params.set('q', searchQ.trim());
+        params.set('scope', 'all'); // search across all months when query given
+      }
       const r = await fetch(`/api/tenders?${params.toString()}`);
       const d = await r.json();
       setTenders(d.tenders || []);
@@ -154,7 +161,7 @@ function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district]);
+  }, [month, year, district, searchQ]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -299,8 +306,16 @@ function App() {
                 {subscription.plan === 'year' ? 'Pro' : 'Monthly'} active
               </Badge>
             ) : null}
+            <a href="/archive" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
+              Archive
+            </a>
             {email ? (
-              <span className="text-sm text-muted-foreground hidden md:inline">
+              <a href="/account" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
+                My Account
+              </a>
+            ) : null}
+            {email ? (
+              <span className="text-xs text-muted-foreground hidden lg:inline">
                 {email}
               </span>
             ) : null}
@@ -328,6 +343,32 @@ function App() {
               Browse, filter, and instantly unlock official tender PDFs. Pay
               ₹9 for a single doc or go Pro for unlimited access.
             </p>
+            {/* Search bar */}
+            <div className="mt-6 flex gap-2 max-w-2xl bg-white rounded-lg p-1 tender-shadow-lg">
+              <div className="flex-1 flex items-center px-3 gap-2">
+                <Search className="w-4 h-4 text-[#0A2647]" />
+                <input
+                  type="text"
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  placeholder="Search by work, department, supply item..."
+                  className="flex-1 py-2 text-sm text-[#0A2647] outline-none bg-transparent placeholder:text-slate-400"
+                />
+                {searchQ && (
+                  <button
+                    onClick={() => setSearchQ('')}
+                    className="text-slate-400 hover:text-slate-700"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <a href="/archive">
+                <Button className="bg-[#16a34a] hover:bg-[#15803d]">
+                  Browse Archive
+                </Button>
+              </a>
+            </div>
           </div>
         </div>
       </section>
