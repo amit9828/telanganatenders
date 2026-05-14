@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
+import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Search,
-  ShieldCheck,
   FileText,
   MapPin,
   Building2,
@@ -54,18 +54,8 @@ function ArchivePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <header className="border-b bg-white sticky top-0 z-30">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 navy-gradient rounded-lg flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-[#0A2647] leading-none">
-                Telangana <span className="text-[#16a34a]">Tenders</span>
-              </h1>
-              <p className="text-xs text-muted-foreground">Tender Archive</p>
-            </div>
-          </a>
+        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <BrandLogo subtitle="Tender Archive" />
           <a href="/">
             <Button variant="outline" size="sm">
               <ArrowLeft className="w-3 h-3 mr-1" /> Home
@@ -75,34 +65,34 @@ function ArchivePage() {
       </header>
 
       <section className="navy-gradient text-white">
-        <div className="container mx-auto px-4 py-10">
-          <h2 className="text-3xl md:text-4xl font-extrabold mb-2">
+        <div className="container mx-auto px-3 sm:px-4 py-8 sm:py-10">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold mb-2">
             Tender Archive
           </h2>
-          <p className="text-slate-200 max-w-xl">
+          <p className="text-slate-200 max-w-xl text-sm sm:text-base">
             Search and browse every published tender. Use keywords like work
             type, department or item.
           </p>
           <div className="mt-5 flex gap-2 max-w-2xl bg-white rounded-lg p-1 tender-shadow-lg">
-            <div className="flex-1 flex items-center px-3 gap-2">
-              <Search className="w-4 h-4 text-[#0A2647]" />
+            <div className="flex-1 flex items-center px-3 gap-2 min-w-0">
+              <Search className="w-4 h-4 text-[#0A2647] shrink-0" />
               <input
                 type="text"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search across all tenders..."
-                className="flex-1 py-2 text-sm text-[#0A2647] outline-none bg-transparent"
+                className="flex-1 min-w-0 py-2 text-sm text-[#0A2647] outline-none bg-transparent"
               />
             </div>
           </div>
         </div>
       </section>
 
-      <main className="container mx-auto px-4 py-6 space-y-4">
-        <div className="flex flex-wrap gap-2">
+      <main className="container mx-auto px-3 sm:px-4 py-6 space-y-4">
+        <div className="flex flex-nowrap sm:flex-wrap gap-2 overflow-x-auto pb-1 -mx-2 px-2 sm:overflow-visible sm:mx-0 sm:px-0">
           <button
             onClick={() => setDistrict('all')}
-            className={`px-4 py-2 rounded-full text-sm font-medium border ${
+            className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium border ${
               district === 'all'
                 ? 'bg-[#0A2647] text-white border-[#0A2647]'
                 : 'bg-white text-[#0A2647] border-slate-200'
@@ -114,7 +104,7 @@ function ArchivePage() {
             <button
               key={d}
               onClick={() => setDistrict(d)}
-              className={`px-4 py-2 rounded-full text-sm font-medium border ${
+              className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium border ${
                 district === d
                   ? 'bg-[#0A2647] text-white border-[#0A2647]'
                   : d === 'Hyderabad'

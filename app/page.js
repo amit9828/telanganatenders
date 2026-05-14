@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import BrandLogo from '@/components/BrandLogo';
 import {
   Card,
   CardContent,
@@ -285,25 +286,13 @@ function App() {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       {/* Top bar */}
       <header className="border-b bg-white sticky top-0 z-30">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 navy-gradient rounded-lg flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-[#0A2647] leading-none">
-                Telangana <span className="text-[#16a34a]">Tenders</span>
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                Official Government Tender Portal
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
+        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <BrandLogo />
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {subscription ? (
-              <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white">
+              <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white text-[10px] sm:text-xs">
                 <CheckCircle2 className="w-3 h-3 mr-1" />
-                {subscription.plan === 'year' ? 'Pro' : 'Monthly'} active
+                {subscription.plan === 'year' ? 'Pro' : 'Monthly'}
               </Badge>
             ) : null}
             <a href="/archive" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
@@ -320,52 +309,61 @@ function App() {
               </span>
             ) : null}
             <a href="/admin">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="text-xs sm:text-sm h-8 sm:h-9">
                 Admin
               </Button>
             </a>
           </div>
         </div>
+        {/* mobile sub-nav */}
+        <div className="md:hidden border-t bg-slate-50/60 flex divide-x">
+          <a href="/archive" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
+            Archive
+          </a>
+          <a href="/account" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
+            My Account
+          </a>
+        </div>
       </header>
 
       {/* Hero */}
       <section className="navy-gradient text-white">
-        <div className="container mx-auto px-4 py-10 md:py-14">
+        <div className="container mx-auto px-3 sm:px-4 py-8 md:py-14">
           <div className="max-w-3xl">
-            <Badge className="bg-[#16a34a] hover:bg-[#15803d] mb-3">
+            <Badge className="bg-[#16a34a] hover:bg-[#15803d] mb-3 text-[10px] sm:text-xs">
               <Sparkles className="w-3 h-3 mr-1" />
               Updated daily — all 10 districts + Hyderabad
             </Badge>
-            <h2 className="text-3xl md:text-5xl font-extrabold leading-tight">
+            <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold leading-tight">
               Every Government Tender in Telangana — one calendar away.
             </h2>
-            <p className="text-slate-200 mt-3 max-w-2xl">
+            <p className="text-slate-200 mt-3 max-w-2xl text-sm sm:text-base">
               Browse, filter, and instantly unlock official tender PDFs. Pay
               ₹9 for a single doc or go Pro for unlimited access.
             </p>
             {/* Search bar */}
-            <div className="mt-6 flex gap-2 max-w-2xl bg-white rounded-lg p-1 tender-shadow-lg">
-              <div className="flex-1 flex items-center px-3 gap-2">
-                <Search className="w-4 h-4 text-[#0A2647]" />
+            <div className="mt-5 sm:mt-6 flex gap-2 max-w-2xl bg-white rounded-lg p-1 tender-shadow-lg">
+              <div className="flex-1 flex items-center px-2 sm:px-3 gap-2 min-w-0">
+                <Search className="w-4 h-4 text-[#0A2647] shrink-0" />
                 <input
                   type="text"
                   value={searchQ}
                   onChange={(e) => setSearchQ(e.target.value)}
-                  placeholder="Search by work, department, supply item..."
-                  className="flex-1 py-2 text-sm text-[#0A2647] outline-none bg-transparent placeholder:text-slate-400"
+                  placeholder="Search tenders..."
+                  className="flex-1 min-w-0 py-2 text-sm text-[#0A2647] outline-none bg-transparent placeholder:text-slate-400"
                 />
                 {searchQ && (
                   <button
                     onClick={() => setSearchQ('')}
-                    className="text-slate-400 hover:text-slate-700"
+                    className="text-slate-400 hover:text-slate-700 shrink-0"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
-              <a href="/archive">
-                <Button className="bg-[#16a34a] hover:bg-[#15803d]">
-                  Browse Archive
+              <a href="/archive" className="shrink-0">
+                <Button className="bg-[#16a34a] hover:bg-[#15803d] text-xs sm:text-sm px-3 sm:px-4">
+                  <span className="hidden sm:inline">Browse </span>Archive
                 </Button>
               </a>
             </div>
@@ -373,7 +371,7 @@ function App() {
         </div>
       </section>
 
-      <main className="container mx-auto px-4 py-8 space-y-8">
+      <main className="container mx-auto px-3 sm:px-4 py-6 sm:py-8 space-y-6 sm:space-y-8">
         {/* District filter */}
         <Card className="tender-shadow">
           <CardHeader className="pb-3">
@@ -383,13 +381,13 @@ function App() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-2 px-2 sm:flex-wrap sm:overflow-visible">
               <button
                 onClick={() => {
                   setDistrict('all');
                   setSelectedDay(null);
                 }}
-                className={`px-4 py-2 rounded-full text-sm font-medium border transition ${
+                className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium border transition ${
                   district === 'all'
                     ? 'bg-[#0A2647] text-white border-[#0A2647]'
                     : 'bg-white text-[#0A2647] border-slate-200 hover:border-[#0A2647]'
@@ -402,15 +400,15 @@ function App() {
                   setDistrict(HYDERABAD);
                   setSelectedDay(null);
                 }}
-                className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition ${
+                className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold border-2 transition ${
                   district === HYDERABAD
                     ? 'bg-[#16a34a] text-white border-[#16a34a]'
-                    : 'bg-emerald-50 text-[#15803d] border-[#16a34a] hover:bg-[#16a34a] hover:text-white'
+                    : 'bg-emerald-50 text-[#15803d] border-[#16a34a]'
                 }`}
               >
                 ★ Hyderabad
               </button>
-              <div className="w-px bg-slate-200 mx-1" />
+              <div className="w-px bg-slate-200 mx-1 shrink-0" />
               {DISTRICTS.map((d) => (
                 <button
                   key={d}
@@ -418,7 +416,7 @@ function App() {
                     setDistrict(d);
                     setSelectedDay(null);
                   }}
-                  className={`px-4 py-2 rounded-full text-sm font-medium border transition ${
+                  className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium border transition ${
                     district === d
                       ? 'bg-[#0A2647] text-white border-[#0A2647]'
                       : 'bg-white text-slate-700 border-slate-200 hover:border-[#0A2647]'
@@ -470,7 +468,7 @@ function App() {
               <div className="grid grid-cols-7 gap-1">
                 {calendarCells.map((d, idx) => {
                   if (d === null)
-                    return <div key={idx} className="h-14" />;
+                    return <div key={idx} className="h-12 sm:h-14" />;
                   const has = calDays[d];
                   const count = has ? has.length : 0;
                   const isToday =
@@ -483,7 +481,7 @@ function App() {
                       key={idx}
                       onClick={() => count > 0 && setSelectedDay(isSelected ? null : d)}
                       disabled={count === 0}
-                      className={`h-14 rounded-md border text-sm flex flex-col items-center justify-center transition ${
+                      className={`h-12 sm:h-14 rounded-md border text-xs sm:text-sm flex flex-col items-center justify-center transition ${
                         isSelected
                           ? 'bg-[#0A2647] text-white border-[#0A2647]'
                           : count > 0
@@ -494,7 +492,7 @@ function App() {
                       <span className="font-semibold">{d}</span>
                       {count > 0 && (
                         <span
-                          className={`text-[10px] mt-0.5 px-1.5 py-0.5 rounded-full ${
+                          className={`text-[9px] sm:text-[10px] mt-0.5 px-1 sm:px-1.5 py-0.5 rounded-full ${
                             isSelected
                               ? 'bg-white/20 text-white'
                               : 'bg-[#16a34a] text-white'
@@ -557,10 +555,10 @@ function App() {
                 key={t.id}
                 className="tender-shadow hover:tender-shadow-lg transition"
               >
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
+                <CardContent className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-start gap-3 sm:gap-4">
+                    <div className="flex-1 min-w-0 w-full">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
                         <Badge
                           className={
                             t.district === HYDERABAD
@@ -573,7 +571,6 @@ function App() {
                         </Badge>
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          Last date:{' '}
                           <strong className="text-[#0A2647]">
                             {new Date(t.last_date).toDateString()}
                           </strong>
@@ -597,7 +594,7 @@ function App() {
                     </div>
                     <Button
                       onClick={() => handleViewPDF(t)}
-                      className="bg-[#16a34a] hover:bg-[#15803d] text-white shrink-0"
+                      className="bg-[#16a34a] hover:bg-[#15803d] text-white shrink-0 w-full sm:w-auto"
                     >
                       <FileText className="w-4 h-4 mr-1" /> View PDF
                     </Button>
@@ -654,17 +651,17 @@ function App() {
 
       {/* Paywall modal */}
       <Dialog open={paywallModal} onOpenChange={setPaywallModal}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
               <Lock className="w-5 h-5 text-[#16a34a]" /> Unlock this tender PDF
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               Choose a plan. Payment is instant — access unlocks automatically
               after Razorpay confirmation.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid md:grid-cols-3 gap-4 py-2">
+          <div className="grid sm:grid-cols-3 gap-3 sm:gap-4 py-2">
             {PLANS.map((p) => (
               <div
                 key={p.id}
@@ -722,13 +719,20 @@ function App() {
 
       {/* PDF modal */}
       <Dialog open={pdfModal} onOpenChange={setPdfModal}>
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
+        <DialogContent className="max-w-4xl w-[95vw] h-[90vh] sm:h-[85vh] flex flex-col p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-[#16a34a]" />
-              {pdfData?.title}
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg pr-6">
+              <FileText className="w-5 h-5 text-[#16a34a] shrink-0" />
+              <span className="truncate">{pdfData?.title}</span>
             </DialogTitle>
-            <DialogDescription>{pdfData?.pdf_filename}</DialogDescription>
+            <DialogDescription className="flex items-center gap-1 text-xs">
+              {pdfData?.pdf_filename}
+              {pdfData?.watermarked && (
+                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 ml-2 text-[10px]">
+                  <Lock className="w-3 h-3 mr-1" /> Watermarked to {email}
+                </Badge>
+              )}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex-1 rounded-md border overflow-hidden bg-slate-100">
             {pdfData?.pdf_base64 ? (
@@ -748,9 +752,10 @@ function App() {
               <a
                 href={`data:application/pdf;base64,${pdfData.pdf_base64}`}
                 download={pdfData.pdf_filename}
+                className="w-full sm:w-auto"
               >
-                <Button className="bg-[#0A2647] hover:bg-[#144272]">
-                  Download PDF
+                <Button className="bg-[#0A2647] hover:bg-[#144272] w-full">
+                  Download Watermarked PDF
                 </Button>
               </a>
             )}

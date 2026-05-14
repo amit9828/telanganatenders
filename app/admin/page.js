@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import BrandLogo from '@/components/BrandLogo';
 import {
   Card,
   CardContent,
@@ -29,6 +30,8 @@ import {
   IndianRupee,
   Trash2,
   Plus,
+  Image as ImageIcon,
+  Lock,
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -249,36 +252,24 @@ function AdminPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 navy-gradient rounded-lg flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-[#0A2647]">
-                Admin Dashboard
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                Telangana Tenders Control Panel
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <BrandLogo subtitle="Admin Dashboard" />
+          <div className="flex items-center gap-1.5">
             <a href="/">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="text-xs sm:text-sm">
                 View Site
               </Button>
             </a>
-            <Button variant="ghost" size="sm" onClick={logout}>
-              <LogOut className="w-4 h-4 mr-1" /> Logout
+            <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm">
+              <LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6 space-y-6">
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Stats */}
-        <div className="grid md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           <StatCard
             icon={<FileText className="w-4 h-4" />}
             label="Tenders"
@@ -302,7 +293,10 @@ function AdminPage() {
           />
         </div>
 
-        <div className="grid lg:grid-cols-5 gap-6">
+        {/* Brand & Security Settings */}
+        <BrandSettings token={token} />
+
+        <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
           {/* Publish form */}
           <Card className="lg:col-span-2 tender-shadow">
             <CardHeader>
@@ -310,8 +304,7 @@ function AdminPage() {
                 <Plus className="w-4 h-4" /> Publish New Tender
               </CardTitle>
               <CardDescription>
-                Uploaded PDF is unlocked only for paid users. All registered
-                users will receive an email alert.
+                Uploaded PDF is unlocked only for paid users — each PDF is auto-watermarked with the buyer's email. All registered users will receive an email alert on publish.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -478,11 +471,160 @@ function AdminPage() {
 function StatCard({ icon, label, value, accent }) {
   return (
     <Card className={accent ? 'border-[#16a34a] bg-emerald-50' : ''}>
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-center gap-2 text-muted-foreground text-[10px] sm:text-xs mb-1">
           {icon} {label}
         </div>
-        <div className="text-2xl font-bold text-[#0A2647]">{value}</div>
+        <div className="text-xl sm:text-2xl font-bold text-[#0A2647]">{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BrandSettings({ token }) {
+  const [logoPreview, setLogoPreview] = useState('');
+  const [logoBase64, setLogoBase64] = useState('');
+  const [logoMime, setLogoMime] = useState('image/png');
+  const [brandName, setBrandName] = useState('Telangana Tenders');
+  const [tagline, setTagline] = useState('Official Government Tender Portal');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.logo_base64) {
+          setLogoPreview(`data:${d.logo_mime || 'image/png'};base64,${d.logo_base64}`);
+        }
+        if (d.brand_name) setBrandName(d.brand_name);
+        if (d.tagline) setTagline(d.tagline);
+      });
+  }, []);
+
+  const onLogoChange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.type.startsWith('image/')) {
+      toast.error('Please upload an image file (PNG/JPG/WebP/SVG)');
+      return;
+    }
+    if (f.size > 2 * 1024 * 1024) {
+      toast.error('Logo too large. Keep under 2 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result?.toString() || '';
+      setLogoPreview(result);
+      setLogoBase64(result.split(',')[1] || '');
+      setLogoMime(f.type);
+    };
+    reader.readAsDataURL(f);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const payload = { brand_name: brandName, tagline };
+      if (logoBase64) {
+        payload.logo_base64 = logoBase64;
+        payload.logo_mime = logoMime;
+      }
+      const r = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        toast.error('Failed to save');
+        return;
+      }
+      toast.success('Brand settings saved. Refresh other tabs to see the new logo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeLogo = async () => {
+    if (!confirm('Remove uploaded logo?')) return;
+    await fetch('/api/admin/settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ logo_base64: '', logo_mime: '' }),
+    });
+    setLogoPreview('');
+    setLogoBase64('');
+    toast.success('Logo removed');
+  };
+
+  return (
+    <Card className="tender-shadow">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-[#0A2647] text-base">
+          <ImageIcon className="w-4 h-4" /> Brand Identity & Security
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Upload your logo (shown across the site) and set the brand name.
+          Every paid PDF is automatically watermarked with the buyer's email.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid sm:grid-cols-3 gap-4 items-start">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 overflow-hidden flex items-center justify-center">
+              {logoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoPreview} alt="logo" className="w-full h-full object-contain" />
+              ) : (
+                <ImageIcon className="w-8 h-8 text-slate-300" />
+              )}
+            </div>
+            <div className="flex gap-2">
+              <label className="cursor-pointer">
+                <input type="file" accept="image/*" onChange={onLogoChange} className="hidden" />
+                <span className="inline-flex items-center text-xs px-3 py-1.5 bg-[#0A2647] text-white rounded-md">
+                  <Upload className="w-3 h-3 mr-1" /> Upload
+                </span>
+              </label>
+              {logoPreview && (
+                <button
+                  onClick={removeLogo}
+                  className="inline-flex items-center text-xs px-3 py-1.5 bg-white border rounded-md text-red-500"
+                >
+                  <Trash2 className="w-3 h-3 mr-1" /> Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="sm:col-span-2 space-y-3">
+            <div>
+              <Label>Brand Name</Label>
+              <Input value={brandName} onChange={(e) => setBrandName(e.target.value)} />
+            </div>
+            <div>
+              <Label>Tagline</Label>
+              <Input value={tagline} onChange={(e) => setTagline(e.target.value)} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={save}
+                disabled={saving}
+                className="bg-[#16a34a] hover:bg-[#15803d]"
+              >
+                {saving ? 'Saving...' : 'Save Brand Settings'}
+              </Button>
+              <span className="text-xs text-emerald-700 inline-flex items-center gap-1">
+                <Lock className="w-3 h-3" /> PDF watermarking is ON for all paid downloads
+              </span>
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

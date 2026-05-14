@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
+import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
-  ShieldCheck,
   ArrowLeft,
   Mail,
   CheckCircle2,
@@ -50,18 +50,8 @@ function AccountPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <header className="border-b bg-white sticky top-0 z-30">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 navy-gradient rounded-lg flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-[#0A2647] leading-none">
-                Telangana <span className="text-[#16a34a]">Tenders</span>
-              </h1>
-              <p className="text-xs text-muted-foreground">My Account</p>
-            </div>
-          </a>
+        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <BrandLogo subtitle="My Account" />
           <div className="flex items-center gap-2">
             {email && (
               <Button variant="ghost" size="sm" onClick={logout}>

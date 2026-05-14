@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
+import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 
 // ---------------- Mongo connection (cached) ----------------
 let _client;
@@ -63,6 +64,60 @@ async function hasAccess(db, email, tenderId) {
 function sendMockEmail(to, subject, body) {
   // In MVP, just log; real Resend integration can replace this later.
   console.log(`[MOCK EMAIL] to=${to} | subject=${subject}\n${body}`);
+}
+
+// ---------------- PDF Watermarking ----------------
+async function watermarkPdf(base64, email) {
+  try {
+    const buf = Buffer.from(base64, 'base64');
+    const pdfDoc = await PDFDocument.load(buf, { ignoreEncryption: true });
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const stamp = `Licensed to ${email} • ${new Date().toISOString().slice(0, 10)} • Telangana Tenders`;
+    const pages = pdfDoc.getPages();
+    for (const page of pages) {
+      const { width, height } = page.getSize();
+      // Diagonal large watermark
+      page.drawText(email, {
+        x: width / 6,
+        y: height / 2,
+        size: Math.max(36, width / 18),
+        font,
+        color: rgb(0.85, 0.15, 0.15),
+        opacity: 0.18,
+        rotate: degrees(45),
+      });
+      // Footer stamp on every page
+      page.drawRectangle({
+        x: 0,
+        y: 0,
+        width,
+        height: 18,
+        color: rgb(0.04, 0.15, 0.28),
+        opacity: 0.9,
+      });
+      page.drawText(stamp, {
+        x: 8,
+        y: 5,
+        size: 8,
+        font,
+        color: rgb(1, 1, 1),
+      });
+      // Top right ID
+      page.drawText(`ID: ${uuidv4().slice(0, 8).toUpperCase()}`, {
+        x: width - 90,
+        y: height - 12,
+        size: 7,
+        font,
+        color: rgb(0.04, 0.15, 0.28),
+        opacity: 0.7,
+      });
+    }
+    const out = await pdfDoc.save();
+    return Buffer.from(out).toString('base64');
+  } catch (e) {
+    console.error('Watermark failed, returning original PDF:', e.message);
+    return base64;
+  }
 }
 
 // ---------------- ROUTE HANDLERS ----------------
@@ -192,13 +247,21 @@ export async function GET(request, { params }) {
       const email = (url.searchParams.get('email') || '').toLowerCase();
       const tender = await db.collection('tenders').findOne({ id });
       if (!tender) return json({ error: 'Not found' }, 404);
-      const allowed = isAdmin(request) || (await hasAccess(db, email, id));
+      const admin = isAdmin(request);
+      const allowed = admin || (await hasAccess(db, email, id));
       if (!allowed) return json({ error: 'Payment required', locked: true }, 402);
+      let pdf_base64 = tender.pdf_base64 || '';
+      let watermarked = false;
+      if (!admin && pdf_base64 && email) {
+        pdf_base64 = await watermarkPdf(pdf_base64, email);
+        watermarked = true;
+      }
       return json({
         id: tender.id,
         title: tender.title,
-        pdf_base64: tender.pdf_base64,
+        pdf_base64,
         pdf_filename: tender.pdf_filename,
+        watermarked,
       });
     }
 
@@ -428,6 +491,24 @@ export async function POST(request, { params }) {
       for (const u of users)
         sendMockEmail(u.email, body.subject || 'Update', body.message || '');
       return json({ sent: users.length });
+    }
+
+    // POST /api/admin/settings  (logo + brand)
+    if (path === 'admin/settings') {
+      if (!isAdmin(request)) return json({ error: 'Unauthorized' }, 401);
+      const update = {
+        updated_at: new Date(),
+      };
+      if (body.logo_base64 !== undefined) update.logo_base64 = body.logo_base64;
+      if (body.logo_mime !== undefined) update.logo_mime = body.logo_mime;
+      if (body.brand_name !== undefined) update.brand_name = body.brand_name;
+      if (body.tagline !== undefined) update.tagline = body.tagline;
+      await db.collection('settings').updateOne(
+        { id: 'main' },
+        { $set: update, $setOnInsert: { id: 'main', created_at: new Date() } },
+        { upsert: true }
+      );
+      return json({ ok: true });
     }
 
     return json({ error: 'Not found', path }, 404);
