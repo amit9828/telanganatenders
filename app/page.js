@@ -829,7 +829,7 @@ function App() {
           
           {/* Social Links */}
           <div className="flex justify-center space-x-6 mb-8">
-            <a href="https://chat.whatsapp.com/LwGoNacVmxrAMntDSeQoX" target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-semibold text-sm sm:text-base">
+            <a href="https://whatsapp.com/channel/0029VbD5F2h2975IQSMPVK2x" target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-semibold text-sm sm:text-base">
               📱 WhatsApp Channel
             </a>
             <a href="https://www.youtube.com/@esakafficial1237" target="_blank" rel="noreferrer" className="text-red-400 hover:text-red-300 font-semibold text-sm sm:text-base">
