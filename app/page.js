@@ -821,8 +821,7 @@ function App() {
           />
         </section>
       </main>
-
-{/* --- NEW FOOTER SECTION --- */}
+{/* --- NEW FOOTER SECTION WITH ORIGINAL LINKS --- */}
       <footer className="border-t mt-14 bg-[#0A2647] text-white py-10 rounded-t-2xl">
         <div className="container mx-auto px-4 text-center">
           <h3 className="text-2xl font-bold mb-2">Telangana Tenders</h3>
@@ -830,13 +829,13 @@ function App() {
           
           {/* Social Links */}
           <div className="flex justify-center space-x-6 mb-8">
-            <a href="https://whatsapp.com/channel/నీ_వాట్సాప్_లింక్" target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-semibold text-sm sm:text-base">
+            <a href="https://chat.whatsapp.com/LwGoNacVmxrAMntDSeQoX" target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-semibold text-sm sm:text-base">
               📱 WhatsApp Channel
             </a>
-            <a href="https://youtube.com/@నీ_యూట్యూబ్_లింక్" target="_blank" rel="noreferrer" className="text-red-400 hover:text-red-300 font-semibold text-sm sm:text-base">
+            <a href="https://www.youtube.com/@esakafficial1237" target="_blank" rel="noreferrer" className="text-red-400 hover:text-red-300 font-semibold text-sm sm:text-base">
               ▶️ YouTube
             </a>
-            <a href="https://instagram.com/నీ_ఇన్‌స్టాగ్రామ్_లింక్" target="_blank" rel="noreferrer" className="text-pink-400 hover:text-pink-300 font-semibold text-sm sm:text-base">
+            <a href="https://www.instagram.com/telangana_tenders?igsh=MWIzbTAyZmE2OHkyMQ==" target="_blank" rel="noreferrer" className="text-pink-400 hover:text-pink-300 font-semibold text-sm sm:text-base">
               📸 Instagram
             </a>
           </div>
@@ -850,6 +849,7 @@ function App() {
         </div>
       </footer>
       {/* --- END FOOTER SECTION --- */}
+
 
       {/* Email modal — now offers Google sign-in primary, email fallback */}
       <Dialog open={emailModal} onOpenChange={setEmailModal}>
