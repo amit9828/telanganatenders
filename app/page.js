@@ -821,7 +821,7 @@ function App() {
           />
         </section>
       </main>
-{/* --- NEW FOOTER SECTION WITH ORIGINAL LINKS --- */}
+{/* --- NEW FOOTER SECTION WITH ORIGINAL LINKS & LEGAL --- */}
       <footer className="border-t mt-14 bg-[#0A2647] text-white py-10 rounded-t-2xl">
         <div className="container mx-auto px-4 text-center">
           <h3 className="text-2xl font-bold mb-2">Telangana Tenders</h3>
@@ -844,7 +844,16 @@ function App() {
             <p className="text-xs text-slate-400 mb-2 leading-relaxed">
               © {new Date().getFullYear()} Telangana Tenders. This is a private service portal and not an official government website.
             </p>
-            <p className="text-xs text-slate-500">Contact: support@tgtenders.co.in</p>
+            <p className="text-xs text-slate-500 mb-4">Contact: support@tgtenders.co.in</p>
+
+            {/* Legal Links for Razorpay */}
+            <div className="flex justify-center space-x-3 sm:space-x-6 text-[10px] sm:text-xs text-slate-400">
+              <a href="/legal#terms" className="hover:text-emerald-400 transition">Terms & Conditions</a>
+              <span>|</span>
+              <a href="/legal#privacy" className="hover:text-emerald-400 transition">Privacy Policy</a>
+              <span>|</span>
+              <a href="/legal#refund" className="hover:text-emerald-400 transition">Refund Policy</a>
+            </div>
           </div>
         </div>
       </footer>
