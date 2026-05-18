@@ -791,42 +791,6 @@ function App() {
             ))}
           </div>
         </div>
-{/* --- NEW ACHIEVEMENTS SECTION (ENGLISH) --- */}
-        <section className="py-10 sm:py-14 bg-emerald-50 mt-10 rounded-2xl border border-emerald-100">
-          <div className="max-w-6xl mx-auto px-4 text-center">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0A2647] mb-8">
-              Our Success Stories 🏆
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="w-20 h-20 mx-auto rounded-full bg-slate-100 mb-4 border-4 border-[#16a34a] overflow-hidden flex items-center justify-center">
-                  <img src="/achievements/user1.jpg" alt="User" className="w-full h-full object-cover" onError={(e) => e.target.style.display = 'none'} />
-                  <span className="text-2xl absolute">👨‍💼</span>
-                </div>
-                <h3 className="font-bold text-lg text-[#0A2647]">Raju, Warangal</h3>
-                <p className="text-sm text-slate-600 mt-2">"Thanks to Telangana Tenders, I successfully secured a ₹5 Lakh CC Road tender. Great platform!"</p>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="w-20 h-20 mx-auto rounded-full bg-slate-100 mb-4 border-4 border-[#16a34a] overflow-hidden flex items-center justify-center">
-                  <img src="/achievements/user2.jpg" alt="User" className="w-full h-full object-cover" onError={(e) => e.target.style.display = 'none'} />
-                  <span className="text-2xl absolute">👨‍💻</span>
-                </div>
-                <h3 className="font-bold text-lg text-[#0A2647]">Kiran, Khammam</h3>
-                <p className="text-sm text-slate-600 mt-2">"Earlier, finding tender information was a struggle. Now, I get all updates directly on my mobile."</p>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center items-center">
-                <div className="text-[#16a34a] text-5xl mb-3">🚀</div>
-                <h3 className="font-bold text-lg text-[#0A2647]">You could be next!</h3>
-                <p className="text-sm text-slate-600 mt-2">Upgrade to Premium and apply for daily tenders right away.</p>
-              </div>
-
-            </div>
-          </div>
-        </section>
-        {/* --- END ACHIEVEMENTS SECTION --- */}
         {/* Pricing section — public, sits above footer */}
         <section id="pricing" className="pt-6 scroll-mt-24">
           <div className="text-center max-w-2xl mx-auto mb-6">
