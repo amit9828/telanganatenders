@@ -2,15 +2,15 @@ import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
-import Razorpay from 'razorpay';
+import { Cashfree } from 'cashfree-pg';
 import { Resend } from 'resend';
 import crypto from 'crypto';
 
-// ---------------- Razorpay & Resend ----------------
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+// ---------------- Cashfree & Resend ----------------
+Cashfree.XClientId = process.env.CASHFREE_APP_ID;
+Cashfree.XClientSecret = process.env.CASHFREE_SECRET_KEY;
+Cashfree.XEnvironment = Cashfree.Environment.PRODUCTION;
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.RESEND_FROM || 'Telangana Tenders <onboarding@resend.dev>';
 
@@ -52,7 +52,6 @@ async function hasAccess(db, email, tenderId) {
   if (!email) return false;
   const e = email.toLowerCase();
   const now = new Date();
-  // Source of truth: the user document
   const user = await db.collection('users').findOne({ email: e });
   if (user) {
     if (user.premium_expiry_date && new Date(user.premium_expiry_date) > now) {
@@ -66,7 +65,6 @@ async function hasAccess(db, email, tenderId) {
       return true;
     }
   }
-  // Fallback: legacy check from payments collection (covers users created before model migration)
   const sub = await db.collection('payments').findOne({
     email: e,
     status: 'paid',
@@ -90,57 +88,67 @@ async function hasAccess(db, email, tenderId) {
 const PLAN_AMOUNTS = { single: 10, month: 149, year: 1499 };
 const PLAN_DAYS = { month: 30, year: 365 };
 
-// Ensure Razorpay Plans exist (created once, cached in settings collection)
-async function ensureRazorpayPlans(db) {
+// ---------------- Cashfree Subscription Helpers ----------------
+async function ensureCashfreePlans(db) {
   let s = await db.collection('settings').findOne({ id: 'main' });
-  let monthlyId = s?.rzp_plan_monthly;
-  let yearlyId = s?.rzp_plan_yearly;
+  let monthlyId = s?.cf_plan_monthly;
+  let yearlyId = s?.cf_plan_yearly;
+
+  const cfHeaders = {
+    'x-client-id': process.env.CASHFREE_APP_ID,
+    'x-client-secret': process.env.CASHFREE_SECRET_KEY,
+    'x-api-version': '2023-08-01',
+    'Content-Type': 'application/json'
+  };
+
   if (!monthlyId) {
     try {
-      const p = await razorpay.plans.create({
-        period: 'monthly',
-        interval: 1,
-        item: {
-          name: 'Telangana Tenders — Monthly Premium',
-          amount: PLAN_AMOUNTS.month * 100,
-          currency: 'INR',
-          description: 'Unlimited tender access, auto-renewed every 30 days',
-        },
-        notes: { portal: 'telangana-tenders' },
+      monthlyId = `tt_monthly_${Date.now()}`;
+      await fetch('https://api.cashfree.com/pg/subscriptions/plans', {
+        method: 'POST',
+        headers: cfHeaders,
+        body: JSON.stringify({
+          plan_id: monthlyId,
+          plan_name: 'Telangana Tenders Monthly Premium',
+          plan_type: 'PERIODIC',
+          plan_currency: 'INR',
+          plan_amount: PLAN_AMOUNTS.month,
+          plan_interval_type: 'MONTHS',
+          plan_intervals: 1
+        })
       });
-      monthlyId = p.id;
       await db.collection('settings').updateOne(
         { id: 'main' },
-        { $set: { rzp_plan_monthly: monthlyId }, $setOnInsert: { id: 'main', created_at: new Date() } },
+        { $set: { cf_plan_monthly: monthlyId }, $setOnInsert: { id: 'main', created_at: new Date() } },
         { upsert: true }
       );
     } catch (e) {
-      console.error('[RZP plans.create monthly]', e?.error?.description || e.message);
-      throw e;
+      console.error('[Cashfree plans.create monthly]', e.message);
     }
   }
   if (!yearlyId) {
     try {
-      const p = await razorpay.plans.create({
-        period: 'yearly',
-        interval: 1,
-        item: {
-          name: 'Telangana Tenders — Yearly Premium',
-          amount: PLAN_AMOUNTS.year * 100,
-          currency: 'INR',
-          description: 'Unlimited tender access, auto-renewed every 365 days',
-        },
-        notes: { portal: 'telangana-tenders' },
+      yearlyId = `tt_yearly_${Date.now()}`;
+      await fetch('https://api.cashfree.com/pg/subscriptions/plans', {
+        method: 'POST',
+        headers: cfHeaders,
+        body: JSON.stringify({
+          plan_id: yearlyId,
+          plan_name: 'Telangana Tenders Yearly Premium',
+          plan_type: 'PERIODIC',
+          plan_currency: 'INR',
+          plan_amount: PLAN_AMOUNTS.year,
+          plan_interval_type: 'YEARS',
+          plan_intervals: 1
+        })
       });
-      yearlyId = p.id;
       await db.collection('settings').updateOne(
         { id: 'main' },
-        { $set: { rzp_plan_yearly: yearlyId } },
+        { $set: { cf_plan_yearly: yearlyId } },
         { upsert: true }
       );
     } catch (e) {
-      console.error('[RZP plans.create yearly]', e?.error?.description || e.message);
-      throw e;
+      console.error('[Cashfree plans.create yearly]', e.message);
     }
   }
   return { monthlyId, yearlyId };
@@ -150,7 +158,6 @@ async function grantAccessToUser(db, email, plan, tenderId) {
   const e = (email || '').toLowerCase();
   if (!e) return;
   const now = new Date();
-  // ensure user exists
   await db.collection('users').updateOne(
     { email: e },
     {
@@ -210,11 +217,6 @@ async function sendBrandedEmail(to, subject, htmlBody) {
     console.error('[RESEND EXCEPTION]', e?.message || e);
     return { error: e };
   }
-}
-
-function sendMockEmail(to, subject, body) {
-  // Legacy fallback (no-op now, kept for backwards compat in callers)
-  console.log(`[EMAIL FALLBACK LOG] to=${to} | subject=${subject}`);
 }
 
 async function getEmailBrand(db) {
@@ -281,7 +283,6 @@ async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
     const pdfDoc = await PDFDocument.load(buf, { ignoreEncryption: true });
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // Try to embed the brand logo image
     let logoImage = null;
     if (logoBase64) {
       try {
@@ -293,7 +294,6 @@ async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
           logoImage = await pdfDoc.embedJpg(logoBuf);
         }
       } catch (e) {
-        console.warn('[Watermark] Could not embed logo image, using text fallback:', e?.message);
         logoImage = null;
       }
     }
@@ -303,7 +303,6 @@ async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
       const { width, height } = page.getSize();
 
       if (logoImage) {
-        // Diagonal centered logo watermark (semi-transparent)
         const dims = logoImage.scale(1);
         const targetWidth = width * 0.55;
         const scale = targetWidth / dims.width;
@@ -317,7 +316,6 @@ async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
           opacity: 0.12,
           rotate: degrees(-30),
         });
-        // Also a faint brand-name caption under the logo for extra context
         const caption = 'TELANGANA TENDERS - OFFICIAL';
         const captionSize = Math.max(14, width / 36);
         page.drawText(caption, {
@@ -330,7 +328,6 @@ async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
           rotate: degrees(-30),
         });
       } else {
-        // Text-only fallback: large diagonal "TELANGANA TENDERS - OFFICIAL"
         const text = 'TELANGANA TENDERS - OFFICIAL';
         const fontSize = Math.max(28, width / 18);
         page.drawText(text, {
@@ -342,7 +339,6 @@ async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
           opacity: 0.12,
           rotate: degrees(-30),
         });
-        // A second smaller line for visual balance
         page.drawText('Government Tender Portal', {
           x: width * 0.18,
           y: height * 0.35,
@@ -354,8 +350,6 @@ async function watermarkPdf(base64, email, logoBase64 = '', logoMime = '') {
         });
       }
 
-      // Small tracking footer (preserves anti-piracy audit trail
-      // without making email the dominant watermark)
       page.drawRectangle({
         x: 0,
         y: 0,
@@ -394,18 +388,16 @@ export async function GET(request, { params }) {
   const url = new URL(request.url);
 
   try {
-    // health
     if (path === '' || path === 'health') {
       return json({ status: 'ok', service: 'telangana-tenders' });
     }
 
-    // GET /api/tenders?district=&month=&year=&q=&scope=
     if (path === 'tenders') {
       const district = url.searchParams.get('district');
-      const month = url.searchParams.get('month'); // 1-12
+      const month = url.searchParams.get('month'); 
       const year = url.searchParams.get('year');
       const qstr = (url.searchParams.get('q') || '').trim();
-      const scope = url.searchParams.get('scope'); // 'all' to skip month filter
+      const scope = url.searchParams.get('scope'); 
       const q = {};
       if (district && district !== 'all') q.district = district;
       if (scope !== 'all' && month && year) {
@@ -433,7 +425,6 @@ export async function GET(request, { params }) {
       return json({ tenders: list });
     }
 
-    // GET /api/me?email=...  user account summary
     if (path === 'me') {
       const email = (url.searchParams.get('email') || '').toLowerCase();
       if (!email) return json({ error: 'email required' }, 400);
@@ -479,7 +470,6 @@ export async function GET(request, { params }) {
       });
     }
 
-    // GET /api/tenders/calendar?year=&month=
     if (path === 'tenders/calendar') {
       const month = parseInt(url.searchParams.get('month') || '0', 10);
       const year = parseInt(url.searchParams.get('year') || '0', 10);
@@ -502,7 +492,6 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
-    // GET /api/tenders/{id}
     if (path.startsWith('tenders/') && !path.endsWith('/pdf')) {
       const id = path.split('/')[1];
       const tender = await db
@@ -512,7 +501,6 @@ export async function GET(request, { params }) {
       return json({ tender });
     }
 
-    // GET /api/tenders/{id}/pdf?email=
     if (path.startsWith('tenders/') && path.endsWith('/pdf')) {
       const id = path.split('/')[1];
       const email = (url.searchParams.get('email') || '').toLowerCase();
@@ -524,7 +512,6 @@ export async function GET(request, { params }) {
       let pdf_base64 = tender.pdf_base64 || '';
       let watermarked = false;
       if (!admin && pdf_base64 && email) {
-        // Fetch brand logo from settings (used for image watermark)
         const settings = await db.collection('settings').findOne({ id: 'main' });
         pdf_base64 = await watermarkPdf(
           pdf_base64,
@@ -543,7 +530,6 @@ export async function GET(request, { params }) {
       });
     }
 
-    // GET /api/settings (public — returns logo + brand info)
     if (path === 'settings') {
       const s = await db.collection('settings').findOne({ id: 'main' });
       return json({
@@ -555,7 +541,6 @@ export async function GET(request, { params }) {
       });
     }
 
-    // GET /api/access?email=&tenderId=
     if (path === 'access') {
       const email = (url.searchParams.get('email') || '').toLowerCase();
       const tenderId = url.searchParams.get('tenderId') || null;
@@ -578,7 +563,6 @@ export async function GET(request, { params }) {
       });
     }
 
-    // GET /api/admin/tenders (full incl. pdf flag)
     if (path === 'admin/tenders') {
       if (!isAdmin(request)) return json({ error: 'Unauthorized' }, 401);
       const list = await db
@@ -589,7 +573,6 @@ export async function GET(request, { params }) {
       return json({ tenders: list });
     }
 
-    // GET /api/admin/stats
     if (path === 'admin/stats') {
       if (!isAdmin(request)) return json({ error: 'Unauthorized' }, 401);
       const [tenders, users, payments] = await Promise.all([
@@ -623,7 +606,6 @@ export async function POST(request, { params }) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    // POST /api/users  { email, name? }
     if (path === 'users') {
       const email = (body.email || '').toLowerCase().trim();
       if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
@@ -640,7 +622,6 @@ export async function POST(request, { params }) {
       return json({ user });
     }
 
-    // POST /api/admin/login { email, password }
     if (path === 'admin/login') {
       if (
         body.email === process.env.ADMIN_EMAIL &&
@@ -651,7 +632,6 @@ export async function POST(request, { params }) {
       return json({ error: 'Invalid credentials' }, 401);
     }
 
-    // POST /api/tenders  (admin)
     if (path === 'tenders') {
       if (!isAdmin(request)) return json({ error: 'Unauthorized' }, 401);
       const required = ['title', 'department', 'last_date', 'district'];
@@ -681,7 +661,7 @@ export async function POST(request, { params }) {
       const html = tenderEmailHtml(tender, brand);
       let sent = 0;
       let failed = 0;
-      // Resend allows multiple recipients per call; we'll batch in 50s
+      
       const emails = users.map((u) => u.email).filter(Boolean);
       for (let i = 0; i < emails.length; i += 50) {
         const batch = emails.slice(i, i + 50);
@@ -698,7 +678,7 @@ export async function POST(request, { params }) {
       return json({ tender: safe, notified: sent, failed });
     }
 
-    // POST /api/subscription/create { email, plan }   plan = 'month' | 'year'
+    // CASHFREE SUBSCRIPTION CREATION (Auto-Renewal)
     if (path === 'subscription/create') {
       const email = (body.email || '').toLowerCase().trim();
       const plan = body.plan;
@@ -706,68 +686,66 @@ export async function POST(request, { params }) {
         return json({ error: 'Invalid email or plan' }, 400);
       }
       try {
-        const { monthlyId, yearlyId } = await ensureRazorpayPlans(db);
+        const { monthlyId, yearlyId } = await ensureCashfreePlans(db);
         const plan_id = plan === 'month' ? monthlyId : yearlyId;
-        // total_count: 120 cycles (=10 years monthly OR 120 years yearly) — effectively unlimited until cancel
-        const total_count = plan === 'month' ? 120 : 50;
-        const sub = await razorpay.subscriptions.create({
-          plan_id,
-          total_count,
-          quantity: 1,
-          customer_notify: 1,
-          notes: { email, plan, portal: 'telangana-tenders' },
+        const sub_id = `sub_${Date.now()}`;
+        
+        const cfHeaders = {
+          'x-client-id': process.env.CASHFREE_APP_ID,
+          'x-client-secret': process.env.CASHFREE_SECRET_KEY,
+          'x-api-version': '2023-08-01',
+          'Content-Type': 'application/json'
+        };
+
+        const response = await fetch('https://api.cashfree.com/pg/subscriptions', {
+          method: 'POST',
+          headers: cfHeaders,
+          body: JSON.stringify({
+            subscription_id: sub_id,
+            plan_id: plan_id,
+            customer_name: email.split('@')[0],
+            customer_email: email,
+            customer_phone: "9999999999",
+            return_url: "https://tgtenders.in/payment-status?sub_id={subscription_id}"
+          })
         });
+        const subData = await response.json();
+
         await db.collection('subscriptions').insertOne({
           id: uuidv4(),
-          razorpay_subscription_id: sub.id,
+          cashfree_subscription_id: sub_id,
           email,
           plan,
-          status: sub.status,
-          short_url: sub.short_url,
+          status: 'CREATED',
+          short_url: subData.auth_link,
           created_at: new Date(),
         });
+        
         return json({
-          subscription_id: sub.id,
+          subscription_id: sub_id,
           plan,
-          key_id: process.env.RAZORPAY_KEY_ID,
-          short_url: sub.short_url,
+          key_id: process.env.CASHFREE_APP_ID,
+          short_url: subData.auth_link, // Frontend can use this link directly
         });
       } catch (err) {
-        console.error('[RZP SUBSCRIPTION CREATE]', err?.error?.description || err.message);
-        return json(
-          { error: err?.error?.description || 'Razorpay subscription failed' },
-          502
-        );
+        console.error('[CASHFREE SUBSCRIPTION CREATE]', err.message);
+        return json({ error: 'Cashfree subscription failed' }, 502);
       }
     }
 
-    // POST /api/subscription/verify { razorpay_payment_id, razorpay_subscription_id, razorpay_signature, email, plan }
+    // CASHFREE SUBSCRIPTION VERIFY
     if (path === 'subscription/verify') {
-      const {
-        razorpay_payment_id,
-        razorpay_subscription_id,
-        razorpay_signature,
-        email,
-        plan,
-      } = body;
-      if (!razorpay_payment_id || !razorpay_subscription_id || !razorpay_signature) {
-        return json({ error: 'Missing fields' }, 400);
-      }
-      // Subscription signature is HMAC of payment_id|subscription_id
-      const expected = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-        .update(`${razorpay_payment_id}|${razorpay_subscription_id}`)
-        .digest('hex');
-      if (expected !== razorpay_signature) {
-        return json({ error: 'Invalid signature' }, 400);
-      }
+      const { subscription_id, email, plan } = body;
+      if (!subscription_id) return json({ error: 'Missing fields' }, 400);
+      
       const now = new Date();
       const newExpiry = await grantAccessToUser(db, email, plan, null);
+      
       await db.collection('users').updateOne(
         { email: (email || '').toLowerCase() },
         {
           $set: {
-            subscription_id: razorpay_subscription_id,
+            subscription_id: subscription_id,
             subscription_status: 'active',
             subscription_plan: plan,
             last_payment_at: now,
@@ -775,11 +753,10 @@ export async function POST(request, { params }) {
         }
       );
       await db.collection('subscriptions').updateOne(
-        { razorpay_subscription_id },
+        { cashfree_subscription_id: subscription_id },
         {
           $set: {
-            status: 'active',
-            first_payment_id: razorpay_payment_id,
+            status: 'ACTIVE',
             activated_at: now,
           },
         }
@@ -791,7 +768,7 @@ export async function POST(request, { params }) {
       });
     }
 
-    // POST /api/subscription/cancel { email }
+    // CASHFREE SUBSCRIPTION CANCEL
     if (path === 'subscription/cancel') {
       const email = (body.email || '').toLowerCase().trim();
       if (!email) return json({ error: 'email required' }, 400);
@@ -799,113 +776,108 @@ export async function POST(request, { params }) {
       const subId = user?.subscription_id;
       if (!subId) return json({ error: 'No active subscription' }, 404);
       try {
-        // cancel_at_cycle_end=1 → keep premium until current cycle ends
-        await razorpay.subscriptions.cancel(subId, { cancel_at_cycle_end: 1 });
+        const cfHeaders = {
+          'x-client-id': process.env.CASHFREE_APP_ID,
+          'x-client-secret': process.env.CASHFREE_SECRET_KEY,
+          'x-api-version': '2023-08-01',
+          'Content-Type': 'application/json'
+        };
+        await fetch(`https://api.cashfree.com/pg/subscriptions/${subId}/cancel`, {
+          method: 'POST',
+          headers: cfHeaders
+        });
+
         await db.collection('users').updateOne(
           { email },
           { $set: { subscription_status: 'cancelled_pending' } }
         );
         await db.collection('subscriptions').updateOne(
-          { razorpay_subscription_id: subId },
-          { $set: { status: 'cancelled_pending', cancelled_at: new Date() } }
+          { cashfree_subscription_id: subId },
+          { $set: { status: 'CANCELLED', cancelled_at: new Date() } }
         );
         return json({
           ok: true,
           message: 'Auto-renewal cancelled. You keep premium until current period ends.',
         });
       } catch (err) {
-        console.error('[RZP CANCEL]', err?.error?.description || err.message);
-        return json(
-          { error: err?.error?.description || 'Cancel failed' },
-          502
-        );
+        console.error('[CASHFREE CANCEL]', err.message);
+        return json({ error: 'Cancel failed' }, 502);
       }
     }
 
-    // POST /api/payment/order { email, plan, tenderId? }
+    // CASHFREE SINGLE PAYMENT ORDER
     if (path === 'payment/order') {
       const email = (body.email || '').toLowerCase().trim();
-      const plan = body.plan; // single | month | year
+      const plan = body.plan;
       if (!email || !plan) return json({ error: 'Missing fields' }, 400);
       if (!(plan in PLAN_AMOUNTS)) return json({ error: 'Invalid plan' }, 400);
       if (plan === 'single' && !body.tenderId) {
         return json({ error: 'tenderId required for single plan' }, 400);
       }
-      // Create real Razorpay order
-      let rzpOrder;
+      
       try {
-        rzpOrder = await razorpay.orders.create({
-          amount: PLAN_AMOUNTS[plan] * 100, // paise
-          currency: 'INR',
-          receipt: `tt-${plan}-${Date.now()}`,
-          notes: {
-            email,
+        const requestObj = {
+            order_amount: PLAN_AMOUNTS[plan],
+            order_currency: "INR",
+            customer_details: {
+                customer_id: `cust_${Date.now()}`,
+                customer_phone: "9999999999",
+                customer_email: email
+            },
+            order_meta: {
+                return_url: "https://tgtenders.in/payment-status?order_id={order_id}"
+            }
+        };
+
+        const response = await Cashfree.PGCreateOrder("2023-08-01", requestObj);
+        const order_id = response.data.order_id;
+
+        await db.collection('payments').insertOne({
+          id: uuidv4(),
+          order_id: order_id,
+          email,
+          plan,
+          tender_id: body.tenderId || null,
+          amount: PLAN_AMOUNTS[plan],
+          status: 'created',
+          created_at: new Date(),
+        });
+
+        return json({
+          order: {
+            id: order_id,
+            amount: PLAN_AMOUNTS[plan],
+            currency: 'INR',
             plan,
-            tender_id: body.tenderId || '',
-            portal: 'telangana-tenders',
-          },
+            email,
+            tender_id: body.tenderId || null,
+            payment_session_id: response.data.payment_session_id
+          }
         });
       } catch (err) {
-        console.error('[RAZORPAY ORDER ERROR]', err?.error?.description || err.message);
-        return json({ error: err?.error?.description || 'Razorpay order failed' }, 502);
+        console.error('[CASHFREE ORDER ERROR]', err.message);
+        return json({ error: err.message }, 502);
       }
-      await db.collection('payments').insertOne({
-        id: uuidv4(),
-        order_id: rzpOrder.id,
-        email,
-        plan,
-        tender_id: body.tenderId || null,
-        amount: PLAN_AMOUNTS[plan],
-        status: 'created',
-        created_at: new Date(),
-      });
-      return json({
-        order: {
-          id: rzpOrder.id,
-          amount: rzpOrder.amount,
-          currency: rzpOrder.currency,
-          plan,
-          email,
-          tender_id: body.tenderId || null,
-        },
-        key_id: process.env.RAZORPAY_KEY_ID,
-      });
     }
 
-    // POST /api/payment/verify { razorpay_order_id, razorpay_payment_id, razorpay_signature, email, plan, tenderId? }
+    // CASHFREE SINGLE PAYMENT VERIFY
     if (path === 'payment/verify') {
-      const {
-        razorpay_order_id,
-        razorpay_payment_id,
-        razorpay_signature,
-        email,
-        plan,
-        tenderId,
-      } = body;
-      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-        return json({ error: 'Missing payment fields' }, 400);
-      }
-      // Verify HMAC SHA256 signature
-      const expected = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest('hex');
-      if (expected !== razorpay_signature) {
-        console.warn('[RZP] Signature mismatch — possible tampering');
-        return json({ error: 'Invalid signature' }, 400);
-      }
+      const order_id = body.order_id || body.razorpay_order_id; 
+      const { email, plan, tenderId } = body;
+      
+      if (!order_id) return json({ error: 'Missing payment fields' }, 400);
+
       const now = new Date();
       const expires_at =
         plan === 'month' || plan === 'year'
           ? new Date(now.getTime() + PLAN_DAYS[plan] * 24 * 60 * 60 * 1000)
           : null;
+
       await db.collection('payments').updateOne(
-        { order_id: razorpay_order_id },
+        { order_id: order_id },
         {
           $set: {
             status: 'paid',
-            payment_id: razorpay_payment_id,
-            signature: razorpay_signature,
             paid_at: now,
             expires_at,
             tender_id: tenderId || null,
@@ -915,12 +887,11 @@ export async function POST(request, { params }) {
         },
         { upsert: true }
       );
-      // Update USER MODEL (primary source of truth)
+      
       const newExpiry = await grantAccessToUser(db, email, plan, tenderId);
       return json({
         success: true,
-        message:
-          plan === 'single'
+        message: plan === 'single'
             ? 'Payment verified — PDF unlocked.'
             : `Payment verified — Premium active until ${newExpiry?.toDateString()}`,
         plan,
@@ -928,110 +899,58 @@ export async function POST(request, { params }) {
       });
     }
 
-    // POST /api/payment/webhook  (Razorpay webhook auto-verification)
+    // CASHFREE WEBHOOKS (Auto background updates)
     if (path === 'payment/webhook') {
-      const signature = request.headers.get('x-razorpay-signature') || '';
-      const rawBody = JSON.stringify(body);
-      const expected = crypto
-        .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
-        .update(rawBody)
-        .digest('hex');
-      if (signature && signature !== expected) {
-        console.warn('[RZP WEBHOOK] Signature mismatch');
-        return json({ error: 'Invalid signature' }, 400);
-      }
-      const event = body.event;
-      const payload = body.payload || {};
+      const event = body.type || body.event;
+      const data = body.data || body.payload || {};
+      const now = new Date();
 
-      // ----- Subscription lifecycle events -----
-      if (event && event.startsWith('subscription.')) {
-        const sub = payload?.subscription?.entity;
-        const subId = sub?.id;
-        const notes = sub?.notes || {};
-        const email = (notes.email || '').toLowerCase();
-        const plan = notes.plan;
-        const now = new Date();
-
-        if (event === 'subscription.activated' || event === 'subscription.charged') {
-          // Charged = renewal — extend premium by plan days
-          if (email && plan) {
-            await grantAccessToUser(db, email, plan, null);
+      // Subscription Webhooks
+      if (event && event.startsWith('SUBSCRIPTION_')) {
+        const subId = data.subscription?.subscription_id;
+        if (event === 'SUBSCRIPTION_NEW_PAYMENT_SUCCESS' || event === 'SUBSCRIPTION_CHARGED') {
+          const subDoc = await db.collection('subscriptions').findOne({ cashfree_subscription_id: subId });
+          if (subDoc) {
+            await grantAccessToUser(db, subDoc.email, subDoc.plan, null);
             await db.collection('users').updateOne(
-              { email },
-              {
-                $set: {
-                  subscription_id: subId,
-                  subscription_status: 'active',
-                  subscription_plan: plan,
-                  last_payment_at: now,
-                },
-              }
+              { email: subDoc.email },
+              { $set: { subscription_status: 'active', last_payment_at: now } }
             );
           }
           await db.collection('subscriptions').updateOne(
-            { razorpay_subscription_id: subId },
-            { $set: { status: 'active', last_charged_at: now } }
+            { cashfree_subscription_id: subId },
+            { $set: { status: 'ACTIVE', last_charged_at: now } }
           );
         }
-        if (event === 'subscription.cancelled' || event === 'subscription.halted') {
+        if (event === 'SUBSCRIPTION_CANCELLED') {
           await db.collection('subscriptions').updateOne(
-            { razorpay_subscription_id: subId },
-            { $set: { status: 'cancelled', cancelled_at: now } }
-          );
-          if (email) {
-            await db.collection('users').updateOne(
-              { email },
-              { $set: { subscription_status: 'cancelled' } }
-            );
-          }
-        }
-        if (event === 'subscription.completed') {
-          await db.collection('subscriptions').updateOne(
-            { razorpay_subscription_id: subId },
-            { $set: { status: 'completed', completed_at: now } }
+            { cashfree_subscription_id: subId },
+            { $set: { status: 'CANCELLED', cancelled_at: now } }
           );
         }
         return json({ received: true, handled: event });
       }
 
-      // ----- One-time payment events -----
-      if (event === 'payment.captured' || event === 'payment.authorized') {
-        const entity = payload?.payment?.entity || {};
-        const order_id = entity.order_id;
-        const payment_id = entity.id;
-        const notes = entity.notes || {};
+      // One-time Payment Webhooks
+      if (event === 'PAYMENT_SUCCESS_WEBHOOK') {
+        const order_id = data.order?.order_id;
         if (order_id) {
           const existing = await db.collection('payments').findOne({ order_id });
           if (existing) {
-            const plan = existing.plan || notes.plan;
-            const email = existing.email || notes.email;
-            const tender_id = existing.tender_id || notes.tender_id || null;
-            const now = new Date();
-            const expires_at =
-              plan === 'month' || plan === 'year'
-                ? new Date(now.getTime() + PLAN_DAYS[plan] * 24 * 60 * 60 * 1000)
+            const expires_at = (existing.plan === 'month' || existing.plan === 'year')
+                ? new Date(now.getTime() + PLAN_DAYS[existing.plan] * 24 * 60 * 60 * 1000)
                 : null;
             await db.collection('payments').updateOne(
               { order_id },
-              {
-                $set: {
-                  status: 'paid',
-                  payment_id,
-                  paid_at: now,
-                  expires_at,
-                  webhook_event: event,
-                },
-              }
+              { $set: { status: 'paid', paid_at: now, expires_at, webhook_event: event } }
             );
-            // Update USER MODEL via webhook (idempotent — safe to run after /verify too)
-            await grantAccessToUser(db, email, plan, tender_id);
+            await grantAccessToUser(db, existing.email, existing.plan, existing.tender_id);
           }
         }
       }
       return json({ received: true });
     }
 
-    // POST /api/notify  (admin manually broadcast)
     if (path === 'notify') {
       if (!isAdmin(request)) return json({ error: 'Unauthorized' }, 401);
       const users = await db
@@ -1054,7 +973,6 @@ export async function POST(request, { params }) {
       return json({ sent });
     }
 
-    // POST /api/admin/settings  (logo + brand)
     if (path === 'admin/settings') {
       if (!isAdmin(request)) return json({ error: 'Unauthorized' }, 401);
       const update = {
