@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { load } from '@cashfree/pg-js';
 import {
   Dialog,
   DialogContent,
@@ -306,11 +307,9 @@ function App() {
           setBuying(false);
           return;
         }
-        if (!window.Razorpay) {
-          toast.error('Razorpay not loaded yet, please retry');
-          setBuying(false);
-          return;
-        }
+        // Cashfree ని లోడ్ చేయి
+      const { load } = await import('@cashfree/pg-js');
+      const cashfree = await load({ mode: "production" });
         options = {
           key: d1.key_id,
           subscription_id: d1.subscription_id,
@@ -428,12 +427,11 @@ function App() {
           },
         };
       }
-      const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', (resp) => {
-        toast.error(`Payment failed: ${resp.error?.description || ''}`);
-        setBuying(false);
-      });
-      rzp.open();
+     const checkoutOptions = {
+        paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
+        returnUrl: "https://tgtenders.in/payment-status",
+      };
+      await cashfree.checkout(checkoutOptions);  
     } catch (e) {
       toast.error('Could not start payment');
       setBuying(false);
@@ -443,8 +441,7 @@ function App() {
   // ---------------- RENDER ----------------
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      {/* Razorpay Checkout script — loaded once */}
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+
       {/* Top bar */}
       <header className="border-b bg-white sticky top-0 z-30">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
