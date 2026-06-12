@@ -2,17 +2,23 @@ import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
-import { Cashfree } from 'cashfree-pg';
 import { Resend } from 'resend';
 import crypto from 'crypto';
 
-// ---------------- Cashfree & Resend ----------------
-Cashfree.XClientId = process.env.CASHFREE_APP_ID;
-Cashfree.XClientSecret = process.env.CASHFREE_SECRET_KEY;
-Cashfree.XEnvironment = Cashfree.Environment.PRODUCTION;
-
+// ---------------- Resend Setup ----------------
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.RESEND_FROM || 'Telangana Tenders <onboarding@resend.dev>';
+
+// ---------------- Cashfree API Details ----------------
+const CF_APP_ID = process.env.CASHFREE_APP_ID;
+const CF_SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
+const CF_API_URL = 'https://api.cashfree.com/pg';
+const CF_HEADERS = {
+  'x-client-id': CF_APP_ID,
+  'x-client-secret': CF_SECRET_KEY,
+  'x-api-version': '2023-08-01',
+  'Content-Type': 'application/json',
+};
 
 // ---------------- Mongo connection (cached) ----------------
 let _client;
@@ -94,19 +100,12 @@ async function ensureCashfreePlans(db) {
   let monthlyId = s?.cf_plan_monthly;
   let yearlyId = s?.cf_plan_yearly;
 
-  const cfHeaders = {
-    'x-client-id': process.env.CASHFREE_APP_ID,
-    'x-client-secret': process.env.CASHFREE_SECRET_KEY,
-    'x-api-version': '2023-08-01',
-    'Content-Type': 'application/json'
-  };
-
   if (!monthlyId) {
     try {
       monthlyId = `tt_monthly_${Date.now()}`;
-      await fetch('https://api.cashfree.com/pg/subscriptions/plans', {
+      await fetch(`${CF_API_URL}/subscriptions/plans`, {
         method: 'POST',
-        headers: cfHeaders,
+        headers: CF_HEADERS,
         body: JSON.stringify({
           plan_id: monthlyId,
           plan_name: 'Telangana Tenders Monthly Premium',
@@ -129,9 +128,9 @@ async function ensureCashfreePlans(db) {
   if (!yearlyId) {
     try {
       yearlyId = `tt_yearly_${Date.now()}`;
-      await fetch('https://api.cashfree.com/pg/subscriptions/plans', {
+      await fetch(`${CF_API_URL}/subscriptions/plans`, {
         method: 'POST',
-        headers: cfHeaders,
+        headers: CF_HEADERS,
         body: JSON.stringify({
           plan_id: yearlyId,
           plan_name: 'Telangana Tenders Yearly Premium',
@@ -690,16 +689,9 @@ export async function POST(request, { params }) {
         const plan_id = plan === 'month' ? monthlyId : yearlyId;
         const sub_id = `sub_${Date.now()}`;
         
-        const cfHeaders = {
-          'x-client-id': process.env.CASHFREE_APP_ID,
-          'x-client-secret': process.env.CASHFREE_SECRET_KEY,
-          'x-api-version': '2023-08-01',
-          'Content-Type': 'application/json'
-        };
-
-        const response = await fetch('https://api.cashfree.com/pg/subscriptions', {
+        const response = await fetch(`${CF_API_URL}/subscriptions`, {
           method: 'POST',
-          headers: cfHeaders,
+          headers: CF_HEADERS,
           body: JSON.stringify({
             subscription_id: sub_id,
             plan_id: plan_id,
@@ -723,9 +715,10 @@ export async function POST(request, { params }) {
         
         return json({
           subscription_id: sub_id,
+          payment_session_id: subData.payment_session_id, // Important for Frontend
           plan,
-          key_id: process.env.CASHFREE_APP_ID,
-          short_url: subData.auth_link, // Frontend can use this link directly
+          key_id: CF_APP_ID,
+          short_url: subData.auth_link,
         });
       } catch (err) {
         console.error('[CASHFREE SUBSCRIPTION CREATE]', err.message);
@@ -776,15 +769,9 @@ export async function POST(request, { params }) {
       const subId = user?.subscription_id;
       if (!subId) return json({ error: 'No active subscription' }, 404);
       try {
-        const cfHeaders = {
-          'x-client-id': process.env.CASHFREE_APP_ID,
-          'x-client-secret': process.env.CASHFREE_SECRET_KEY,
-          'x-api-version': '2023-08-01',
-          'Content-Type': 'application/json'
-        };
-        await fetch(`https://api.cashfree.com/pg/subscriptions/${subId}/cancel`, {
+        await fetch(`${CF_API_URL}/subscriptions/${subId}/cancel`, {
           method: 'POST',
-          headers: cfHeaders
+          headers: CF_HEADERS
         });
 
         await db.collection('users').updateOne(
@@ -816,7 +803,9 @@ export async function POST(request, { params }) {
       }
       
       try {
+        const order_id = `order_${Date.now()}`;
         const requestObj = {
+            order_id: order_id,
             order_amount: PLAN_AMOUNTS[plan],
             order_currency: "INR",
             customer_details: {
@@ -829,8 +818,17 @@ export async function POST(request, { params }) {
             }
         };
 
-        const response = await Cashfree.PGCreateOrder("2023-08-01", requestObj);
-        const order_id = response.data.order_id;
+        const response = await fetch(`${CF_API_URL}/orders`, {
+            method: 'POST',
+            headers: CF_HEADERS,
+            body: JSON.stringify(requestObj)
+        });
+        
+        const responseData = await response.json();
+
+        if(!responseData.payment_session_id) {
+             throw new Error(responseData.message || "Failed to generate session id");
+        }
 
         await db.collection('payments').insertOne({
           id: uuidv4(),
@@ -851,7 +849,7 @@ export async function POST(request, { params }) {
             plan,
             email,
             tender_id: body.tenderId || null,
-            payment_session_id: response.data.payment_session_id
+            payment_session_id: responseData.payment_session_id // This goes to frontend
           }
         });
       } catch (err) {
