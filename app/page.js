@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { load } from '@cashfree/cashfree-js';
+import { load } from '@cashfree/pg-js';
 import {
   Dialog,
   DialogContent,
