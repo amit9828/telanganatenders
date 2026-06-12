@@ -52,7 +52,7 @@
         "next-auth": "4",
         "next-themes": "^0.4.6",
         "pdf-lib": "^1.17.1",
-        "@cashfree/pg-js": "^1.0.0",
+        "@cashfree/cashfree-js": "^1.0.0",
         "react": "^18",
         "react-day-picker": "^9.7.0",
         "react-dom": "^18",
