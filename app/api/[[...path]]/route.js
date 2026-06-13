@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { MongoClient, ObjectId } from 'mongodb';
 
-// Database connection caching for Serverless
 let cachedClient = null;
 let cachedDb = null;
 
 async function getDb() {
   if (cachedDb) return cachedDb;
-  if (!process.env.MONGO_URL) throw new Error('MONGO_URL environment variable is missing.');
+  if (!process.env.MONGO_URL) throw new Error('MONGO_URL missing.');
 
   const client = await MongoClient.connect(process.env.MONGO_URL, {
     useNewUrlParser: true,
@@ -23,9 +22,6 @@ function json(data, status = 200) {
   return NextResponse.json(data, { status });
 }
 
-// =====================================================================
-// GET REQUESTS: Tenders, Filters, Calendar, Admin Stats, PDF
-// =====================================================================
 export async function GET(request, { params }) {
   const db = await getDb();
   const pathArray = params?.path || [];
@@ -33,40 +29,30 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
 
   try {
-    // 1. ADMIN DASHBOARD STATS (Fixes the "0" issue)
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments();
       const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
       
-      // Calculate Total Revenue
       const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
       const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-      return json({
-        tenders: tendersCount,
-        users: usersCount,
-        payments: paymentsCount,
-        revenue: totalRevenue
-      });
+      return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
 
-    // 2. TENDERS LIST WITH STRICT FILTERING (Fixes District & Month Filter)
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
       const month = searchParams.get('month');
       const year = searchParams.get('year');
-      const scope = searchParams.get('scope'); // 'all' is sent when user searches text
+      const scope = searchParams.get('scope');
       const q = searchParams.get('q');
 
       let query = {};
       if (district && district !== 'all') query.district = district;
       if (q) query.title = { $regex: q, $options: 'i' };
 
-      // Fetch from DB
       let tenders = await db.collection('tenders').find(query).sort({ last_date: -1 }).toArray();
 
-      // Filter by Month and Year (Only if user is NOT doing a text search)
       if (month && year && scope !== 'all') {
         tenders = tenders.filter(t => {
           if (!t.last_date) return false;
@@ -77,7 +63,6 @@ export async function GET(request, { params }) {
       return json({ tenders });
     }
 
-    // 3. CALENDAR DATA
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
@@ -97,7 +82,6 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
-    // 4. CHECK USER ACCESS
     if (path === 'access' || path === 'api/access') {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
@@ -105,7 +89,6 @@ export async function GET(request, { params }) {
       return json({ subscription: user?.subscription || null });
     }
 
-    // 5. PDF FETCH & PAYWALL (Watermark Fix included)
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
@@ -116,7 +99,6 @@ export async function GET(request, { params }) {
       const hasSubscription = user?.subscription?.status === 'active';
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
       
-      // Paywall check
       if (!hasSubscription && !hasBoughtSingle) {
          return json({ error: 'Payment required to view this PDF' }, 402);
       }
@@ -124,25 +106,20 @@ export async function GET(request, { params }) {
       const tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) });
       if (!tender || !tender.pdf_base64) return json({ error: 'PDF Document not found' }, 404);
 
-      // Return PDF with watermark UI flag
       return json({
          pdf_base64: tender.pdf_base64,
          pdf_filename: tender.pdf_filename || 'tender_document.pdf',
          title: tender.title,
-         watermarked: true // Triggers UI badge
+         watermarked: true
       });
     }
 
     return json({ error: 'GET endpoint not found', path }, 404);
   } catch (error) {
-    console.error('GET Error:', error);
     return json({ error: 'Internal Server Error' }, 500);
   }
 }
 
-// =====================================================================
-// POST REQUESTS: Admin Login, Publishing Tenders, Cashfree Payments
-// =====================================================================
 export async function POST(request, { params }) {
   const db = await getDb();
   const pathArray = params?.path || [];
@@ -151,7 +128,6 @@ export async function POST(request, { params }) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    // 1. ADMIN LOGIN
     if (path === 'admin/login' || path === 'api/admin/login') {
       if (!body.email || !body.password) return json({ error: 'Credentials required' }, 400);
       if (body.email === process.env.ADMIN_EMAIL && body.password === process.env.ADMIN_PASSWORD) {
@@ -160,15 +136,12 @@ export async function POST(request, { params }) {
       return json({ error: 'Invalid admin credentials' }, 401);
     }
 
-    // 2. ADMIN: PUBLISH NEW TENDER
     if (path === 'admin/tenders' || path === 'api/admin/tenders' || path === 'tenders') {
-      // Allows the admin dashboard to upload a new tender
       const newTender = { ...body, created_at: new Date() };
       await db.collection('tenders').insertOne(newTender);
       return json({ success: true, message: 'Tender published successfully' });
     }
 
-    // 3. ADMIN: SAVE BRAND SETTINGS
     if (path === 'settings' || path === 'api/settings') {
       await db.collection('settings').updateOne(
         { id: 'brand' },
@@ -178,7 +151,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 4. SAVE USER
     if (path === 'users' || path === 'api/users') {
       if (body.email) {
         const email = body.email.toLowerCase();
@@ -191,9 +163,7 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 5. CASHFREE PRODUCTION PAYMENT FIX
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
-      
       const plan = body.plan;
       let amount = 10; 
       if (plan === 'month') amount = 149;
@@ -205,11 +175,8 @@ export async function POST(request, { params }) {
       const appId = process.env.CASHFREE_APP_ID;
       const secretKey = process.env.CASHFREE_SECRET_KEY;
       
-      if (!appId || !secretKey) {
-          return json({ error: 'Cashfree API keys are missing in Vercel' }, 500);
-      }
+      if (!appId || !secretKey) return json({ error: 'Cashfree API keys missing' }, 500);
 
-      // STRICTLY using Cashfree Production URL to match your frontend mode: "production"
       const cashfreeUrl = 'https://api.cashfree.com/pg/orders'; 
 
       try {
@@ -231,37 +198,95 @@ export async function POST(request, { params }) {
               customer_phone: '9999999999'
             },
             order_meta: {
-              return_url: "https://tgtenders.in/payment-status?order_id={order_id}"
+              return_url: "https://www.tgtenders.in/payment-status?order_id={order_id}"
             }
           })
         });
 
         const data = await cashfreeResponse.json();
         
-        // Save initial pending payment state in DB
         if (data.payment_session_id) {
+          // Saving tenderId is CRITICAL for unlocking the PDF later
           await db.collection('payments').insertOne({
              order_id: orderId,
              email: body.email,
              amount: amount,
              plan: plan,
+             tenderId: body.tenderId || null, 
              status: 'PENDING',
              created_at: new Date()
           });
           return json({ payment_session_id: data.payment_session_id });
         } else {
-          console.error("Cashfree API Rejection:", data);
-          return json({ error: data.message || 'Cashfree rejected the order' }, 400);
+          return json({ error: data.message || 'Cashfree rejected order' }, 400);
         }
       } catch (err) {
-        console.error("Cashfree Network Error:", err);
         return json({ error: 'Failed to connect to Cashfree' }, 500);
+      }
+    }
+
+    // --- NEW LOGIC: VERIFY PAYMENT ---
+    if (path === 'payment/verify' || path === 'api/payment/verify') {
+      const orderId = body.order_id;
+      if (!orderId) return json({ error: 'Order ID missing' }, 400);
+
+      const appId = process.env.CASHFREE_APP_ID;
+      const secretKey = process.env.CASHFREE_SECRET_KEY;
+
+      try {
+        const cfRes = await fetch(`https://api.cashfree.com/pg/orders/${orderId}`, {
+          method: 'GET',
+          headers: {
+            'x-client-id': appId,
+            'x-client-secret': secretKey,
+            'x-api-version': '2023-08-01',
+          }
+        });
+        const cfData = await cfRes.json();
+
+        if (cfData.order_status === 'PAID') {
+          const paymentRecord = await db.collection('payments').findOne({ order_id: orderId });
+          
+          if (paymentRecord && paymentRecord.status !== 'SUCCESS') {
+            await db.collection('payments').updateOne(
+              { order_id: orderId },
+              { $set: { status: 'SUCCESS', paid_at: new Date() } }
+            );
+
+            const email = paymentRecord.email.toLowerCase();
+            
+            // Unlock Single PDF
+            if (paymentRecord.plan === 'single' && paymentRecord.tenderId) {
+              await db.collection('users').updateOne(
+                { email },
+                { $addToSet: { purchases: paymentRecord.tenderId } },
+                { upsert: true }
+              );
+            } 
+            // Unlock Subscription
+            else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
+              const days = paymentRecord.plan === 'year' ? 365 : 30;
+              const expireDate = new Date();
+              expireDate.setDate(expireDate.getDate() + days);
+              
+              await db.collection('users').updateOne(
+                { email },
+                { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } },
+                { upsert: true }
+              );
+            }
+          }
+          return json({ success: true, message: 'Payment verified' });
+        } else {
+          return json({ success: false, error: 'Payment not successful' }, 400);
+        }
+      } catch (err) {
+        return json({ error: 'Verification failed' }, 500);
       }
     }
 
     return json({ error: 'POST endpoint not found', path }, 404);
   } catch (error) {
-    console.error('POST Error:', error);
     return json({ error: 'Internal Server Error' }, 500);
   }
 }
