@@ -86,6 +86,15 @@ export async function GET(request, { params }) {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+      
+      // CHECK EXPIRY DATE FOR SUBSCRIPTION
+      const now = new Date();
+      if (user?.subscription?.status === 'active' && user?.subscription?.expires_at) {
+         const expiry = new Date(user.subscription.expires_at);
+         if (expiry < now) {
+            user.subscription.status = 'expired';
+         }
+      }
       return json({ subscription: user?.subscription || null });
     }
 
@@ -96,7 +105,15 @@ export async function GET(request, { params }) {
       if (!email) return json({ error: 'Email required' }, 400);
 
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
-      const hasSubscription = user?.subscription?.status === 'active';
+      
+      // STRICT SUBSCRIPTION DATE CHECK
+      let hasSubscription = false;
+      const now = new Date();
+      if (user?.subscription?.status === 'active' && user?.subscription?.expires_at) {
+          const expiry = new Date(user.subscription.expires_at);
+          if (expiry > now) hasSubscription = true;
+      }
+      
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
       
       if (!hasSubscription && !hasBoughtSingle) {
@@ -143,22 +160,14 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'settings' || path === 'api/settings') {
-      await db.collection('settings').updateOne(
-        { id: 'brand' },
-        { $set: { ...body, updated_at: new Date() } },
-        { upsert: true }
-      );
+      await db.collection('settings').updateOne({ id: 'brand' }, { $set: { ...body, updated_at: new Date() } }, { upsert: true });
       return json({ success: true });
     }
 
     if (path === 'users' || path === 'api/users') {
       if (body.email) {
         const email = body.email.toLowerCase();
-        await db.collection('users').updateOne(
-          { email },
-          { $set: { email, name: body.name || '', last_login: new Date() } },
-          { upsert: true }
-        );
+        await db.collection('users').updateOne({ email }, { $set: { email, name: body.name || '', last_login: new Date() } }, { upsert: true });
       }
       return json({ success: true });
     }
@@ -171,16 +180,13 @@ export async function POST(request, { params }) {
 
       const orderId = 'order_' + Date.now();
       const customerId = body.email ? body.email.replace(/[^a-zA-Z0-9]/g, '').substring(0, 50) : 'cust_' + Date.now();
-      
       const appId = process.env.CASHFREE_APP_ID;
       const secretKey = process.env.CASHFREE_SECRET_KEY;
       
       if (!appId || !secretKey) return json({ error: 'Cashfree API keys missing' }, 500);
 
-      const cashfreeUrl = 'https://api.cashfree.com/pg/orders'; 
-
       try {
-        const cashfreeResponse = await fetch(cashfreeUrl, {
+        const cashfreeResponse = await fetch('https://api.cashfree.com/pg/orders', {
           method: 'POST',
           headers: {
             'x-client-id': appId,
@@ -206,7 +212,6 @@ export async function POST(request, { params }) {
         const data = await cashfreeResponse.json();
         
         if (data.payment_session_id) {
-          // Saving tenderId is CRITICAL for unlocking the PDF later
           await db.collection('payments').insertOne({
              order_id: orderId,
              email: body.email,
@@ -225,7 +230,6 @@ export async function POST(request, { params }) {
       }
     }
 
-    // --- NEW LOGIC: VERIFY PAYMENT ---
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       const orderId = body.order_id;
       if (!orderId) return json({ error: 'Order ID missing' }, 400);
@@ -236,11 +240,7 @@ export async function POST(request, { params }) {
       try {
         const cfRes = await fetch(`https://api.cashfree.com/pg/orders/${orderId}`, {
           method: 'GET',
-          headers: {
-            'x-client-id': appId,
-            'x-client-secret': secretKey,
-            'x-api-version': '2023-08-01',
-          }
+          headers: { 'x-client-id': appId, 'x-client-secret': secretKey, 'x-api-version': '2023-08-01' }
         });
         const cfData = await cfRes.json();
 
@@ -248,35 +248,23 @@ export async function POST(request, { params }) {
           const paymentRecord = await db.collection('payments').findOne({ order_id: orderId });
           
           if (paymentRecord && paymentRecord.status !== 'SUCCESS') {
-            await db.collection('payments').updateOne(
-              { order_id: orderId },
-              { $set: { status: 'SUCCESS', paid_at: new Date() } }
-            );
+            await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'SUCCESS', paid_at: new Date() } });
 
             const email = paymentRecord.email.toLowerCase();
             
-            // Unlock Single PDF
             if (paymentRecord.plan === 'single' && paymentRecord.tenderId) {
-              await db.collection('users').updateOne(
-                { email },
-                { $addToSet: { purchases: paymentRecord.tenderId } },
-                { upsert: true }
-              );
-            } 
-            // Unlock Subscription
-            else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
+              await db.collection('users').updateOne({ email }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
+            } else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
+              // SUBSCRIPTION EXACT EXPIRY DATE SETTING (30 Days / 365 Days)
               const days = paymentRecord.plan === 'year' ? 365 : 30;
               const expireDate = new Date();
               expireDate.setDate(expireDate.getDate() + days);
               
-              await db.collection('users').updateOne(
-                { email },
-                { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } },
-                { upsert: true }
-              );
+              await db.collection('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true });
             }
           }
-          return json({ success: true, message: 'Payment verified' });
+          // Returns tenderId to trigger auto-open
+          return json({ success: true, message: 'Payment verified', tenderId: paymentRecord?.tenderId });
         } else {
           return json({ success: false, error: 'Payment not successful' }, 400);
         }
