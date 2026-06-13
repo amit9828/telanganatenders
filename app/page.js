@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
-import BrandLogo from '@/components/BrandLogo';
+// import BrandLogo from '@/components/BrandLogo'; // Replaced by dynamic logo
 import {
   Card,
   CardContent,
@@ -40,6 +40,7 @@ import {
   ShieldCheck,
   Sparkles,
   X,
+  Loader2, // Added Loader for instant loading UI
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -137,6 +138,19 @@ function App() {
   const [pdfData, setPdfData] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [buying, setBuying] = useState(false);
+
+  // Added state for dynamic logo and brand name
+  const [brandSettings, setBrandSettings] = useState({ name: 'Telangana Tenders', logo: null });
+
+  // Fetch Brand Identity from DB
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(d => {
+         if(d.settings) setBrandSettings(d.settings);
+      })
+      .catch(()=>{});
+  }, []);
 
   // Sync Google session email -> local email
   useEffect(() => {
@@ -264,16 +278,21 @@ function App() {
   };
 
   const tryUnlockPDF = async (t, mail) => {
+    // Show modal and loading state instantly
+    setPdfModal(true);
+    setPdfData(null);
+
     const r = await fetch(
       `/api/tenders/${t._id || t.id}/pdf?email=${encodeURIComponent(mail)}`
     );
+    
     if (r.status === 402) {
+      setPdfModal(false);
       setPaywallModal(true);
       return;
     }
     const d = await r.json();
     setPdfData(d);
-    setPdfModal(true);
   };
 
   const buyPlan = async (plan) => {
@@ -289,13 +308,13 @@ function App() {
     setBuying(true);
     setPaywallModal(false);
     
-    // UI స్మూత్ గా ఉండటానికి చిన్న డిలే
+    // Smooth UI delay
     await new Promise((r) => setTimeout(r, 250));
 
     const isSubscription = plan === 'month' || plan === 'year';
 
     try {
-      // 1. Payment Session ID తెచ్చుకోవడం
+      // 1. Get Payment Session ID
       const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
       const r1 = await fetch(endpoint, {
         method: 'POST',
@@ -310,10 +329,10 @@ function App() {
         return;
       }
 
-      // 2. Cashfree SDK లోడ్ చేయడం
+      // 2. Load Cashfree SDK
       const cashfree = await load({ mode: "production" });
 
-      // 3. Checkout పేజీ ఓపెన్ చేయడం
+      // 3. Open Checkout
       const checkoutOptions = {
         paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
         returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}",
@@ -329,17 +348,16 @@ function App() {
     }
   };
 
-  // ----- NEW LOGIC: FAST AUTO-OPEN PDF AFTER SUCCESSFUL PAYMENT -----
+  // ----- FAST AUTO-OPEN PDF AFTER SUCCESSFUL PAYMENT -----
   useEffect(() => {
     if (email) {
       const urlParams = new URLSearchParams(window.location.search);
       const openId = urlParams.get('open_tender');
       
       if (openId) {
-        // Fetch the PDF immediately without waiting for the full tenders list to load
+        // Automatically attempt to fetch the PDF and show the loading spinner immediately
         tryUnlockPDF({ id: openId }, email);
-        
-        // Remove the parameter from the URL so it doesn't reopen if the user refreshes
+        // Remove the parameter from the URL to avoid reopening on manual refresh
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
@@ -352,7 +370,18 @@ function App() {
       {/* Top bar */}
       <header className="border-b bg-white sticky top-0 z-30">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
-          <BrandLogo />
+          
+          {/* Dynamic Logo Replacement */}
+          <div className="flex items-center gap-2">
+            {brandSettings.logo ? (
+               // eslint-disable-next-line @next/next/no-img-element
+               <img src={brandSettings.logo} alt="Logo" className="w-8 h-8 rounded object-contain" />
+            ) : (
+               <div className="w-8 h-8 bg-[#16a34a] rounded flex items-center justify-center text-white font-bold">TT</div>
+            )}
+            <h1 className="font-bold text-[#0A2647] text-lg hidden sm:block">{brandSettings.name}</h1>
+          </div>
+
           <div className="flex items-center gap-1.5 sm:gap-3">
             {subscription && subscription.status === 'active' ? (
               <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white text-[10px] sm:text-xs">
@@ -728,7 +757,7 @@ function App() {
 {/* --- NEW FOOTER SECTION WITH ORIGINAL LINKS & LEGAL --- */}
       <footer className="border-t mt-14 bg-[#0A2647] text-white py-10 rounded-t-2xl">
         <div className="container mx-auto px-4 text-center">
-          <h3 className="text-2xl font-bold mb-2">Telangana Tenders</h3>
+          <h3 className="text-2xl font-bold mb-2">{brandSettings.name}</h3>
           <p className="text-slate-300 mb-6 text-sm">Government Tender Service Portal | Upto 10 Lakhs</p>
           
           {/* Social Links */}
@@ -746,7 +775,7 @@ function App() {
           
           <div className="max-w-2xl mx-auto border-t border-slate-700 pt-6">
             <p className="text-xs text-slate-400 mb-2 leading-relaxed">
-              © {new Date().getFullYear()} Telangana Tenders. This is a private service portal and not an official government website.
+              © {new Date().getFullYear()} {brandSettings.name}. This is a private service portal and not an official government website.
             </p>
             <p className="text-xs text-slate-500 mb-4">Contact: support@tgtenders.co.in</p>
 
@@ -846,25 +875,38 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      {/* PDF modal */}
+      {/* PDF Modal with Dynamic Watermark & Loading State */}
       <Dialog open={pdfModal} onOpenChange={setPdfModal}>
         <DialogContent className="max-w-4xl w-[95vw] h-[90vh] sm:h-[85vh] flex flex-col p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg pr-6">
               <FileText className="w-5 h-5 text-[#16a34a] shrink-0" />
-              <span className="truncate">{pdfData?.title}</span>
+              <span className="truncate">{pdfData ? pdfData.title : 'Loading Document...'}</span>
             </DialogTitle>
-            <DialogDescription className="flex items-center gap-1 text-xs">
-              {pdfData?.pdf_filename}
-              {pdfData?.watermarked && (
-                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 ml-2 text-[10px]">
-                  <Lock className="w-3 h-3 mr-1" /> Watermarked to {email}
-                </Badge>
-              )}
-            </DialogDescription>
+            
+            {/* OFFICIAL WATERMARK BANNER */}
+            {pdfData?.watermarked && (
+              <div className="flex flex-col sm:flex-row items-center gap-2 p-3 bg-emerald-50 rounded border border-emerald-100 mt-2 shadow-sm">
+                <div className="flex items-center gap-2 border-b sm:border-b-0 sm:border-r border-emerald-200 pb-2 sm:pb-0 sm:pr-3">
+                  {brandSettings.logo && <img src={brandSettings.logo} className="w-6 h-6 object-contain" alt="Logo" />}
+                  <span className="font-bold text-[#0A2647] text-sm">{brandSettings.name}</span>
+                </div>
+                <div className="flex items-center gap-1 text-emerald-800 text-xs font-medium">
+                  <Lock className="w-3 h-3" />
+                  <span>Licensed to: <strong>{email}</strong></span>
+                </div>
+              </div>
+            )}
           </DialogHeader>
-          <div className="flex-1 rounded-md border overflow-hidden bg-slate-100">
-            {pdfData?.pdf_base64 ? (
+
+          <div className="flex-1 rounded-md border overflow-hidden bg-slate-100 flex items-center justify-center">
+            {!pdfData ? (
+              <div className="flex flex-col items-center justify-center p-10">
+                <Loader2 className="w-12 h-12 text-[#16a34a] animate-spin mb-4" />
+                <p className="text-[#0A2647] font-semibold text-lg">Fetching your PDF...</p>
+                <p className="text-muted-foreground text-sm">Please wait a moment...</p>
+              </div>
+            ) : pdfData.pdf_base64 ? (
               <iframe
                 title="tender-pdf"
                 src={`data:application/pdf;base64,${pdfData.pdf_base64}`}
@@ -876,6 +918,7 @@ function App() {
               </div>
             )}
           </div>
+          
           <DialogFooter>
             {pdfData?.pdf_base64 && (
               <a
