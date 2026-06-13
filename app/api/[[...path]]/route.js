@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { MongoClient, ObjectId } from 'mongodb';
 
-// డేటాబేస్ కనెక్షన్ కోసం
+// Database connection caching for Serverless environments
 let cachedClient = null;
 let cachedDb = null;
 
@@ -9,7 +9,7 @@ async function getDb() {
   if (cachedDb) return cachedDb;
   
   if (!process.env.MONGO_URL) {
-    throw new Error('MONGO_URL environment variable is missing.');
+    throw new Error('MONGO_URL environment variable is missing. Please add it in Vercel.');
   }
 
   const client = await MongoClient.connect(process.env.MONGO_URL, {
@@ -27,17 +27,18 @@ function json(data, status = 200) {
 }
 
 // =====================================================================
-// GET REQUESTS (పాత టెండర్స్ డేటా ఇక్కడే వస్తుంది)
+// GET REQUESTS: Handles fetching old tenders, calendar, access, and PDF
 // =====================================================================
 export async function GET(request, { params }) {
   const db = await getDb();
   
+  // Safely parse the path to prevent 404/405 routing errors
   const pathArray = params?.path || [];
   const path = pathArray.join('/');
   const { searchParams } = new URL(request.url);
 
   try {
-    // 1. TENDERS DATA
+    // 1. TENDERS DATA: Fetches previous data accurately
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
       const query = {};
@@ -115,23 +116,25 @@ export async function GET(request, { params }) {
 }
 
 // =====================================================================
-// POST REQUESTS (అడ్మిన్ లాగిన్ ఇక్కడే జరుగుతుంది)
+// POST REQUESTS: Handles Admin Login, User saving, and Payments
 // =====================================================================
 export async function POST(request, { params }) {
   const db = await getDb();
   
+  // Safely parse the path to prevent 404/405 routing errors
   const pathArray = params?.path || [];
   const path = pathArray.join('/');
 
   try {
     const body = await request.json().catch(() => ({}));
 
-    // 1. ADMIN LOGIN FIX (405 ఎర్రర్ రాకుండా లాగిన్ చెక్ చేయడం)
+    // 1. ADMIN LOGIN FIX: This specific block fixes the 405 error
     if (path === 'admin/login' || path === 'api/admin/login') {
       if (!body.email || !body.password) {
         return json({ error: 'Email and password are required' }, 400);
       }
 
+      // Validates against Vercel Environment Variables
       if (
         body.email === process.env.ADMIN_EMAIL &&
         body.password === process.env.ADMIN_PASSWORD
