@@ -265,7 +265,7 @@ function App() {
 
   const tryUnlockPDF = async (t, mail) => {
     const r = await fetch(
-      `/api/tenders/${t.id}/pdf?email=${encodeURIComponent(mail)}`
+      `/api/tenders/${t._id || t.id}/pdf?email=${encodeURIComponent(mail)}`
     );
     if (r.status === 402) {
       setPaywallModal(true);
@@ -282,7 +282,7 @@ function App() {
       return;
     }
     if (buying) return;
-    if (plan === 'single' && !pendingTender?.id) {
+    if (plan === 'single' && !pendingTender?.id && !pendingTender?._id) {
       toast.error('Please pick a tender first');
       return;
     }
@@ -300,7 +300,7 @@ function App() {
       const r1 = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, plan, tenderId: pendingTender?.id }),
+        body: JSON.stringify({ email, plan, tenderId: pendingTender?._id || pendingTender?.id }),
       });
       const d1 = await r1.json();
 
@@ -329,6 +329,22 @@ function App() {
     }
   };
 
+  // ----- NEW LOGIC: AUTO-OPEN PDF AFTER SUCCESSFUL PAYMENT -----
+  useEffect(() => {
+    if (tenders.length > 0 && email) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const openId = urlParams.get('open_tender');
+      if (openId) {
+        const target = tenders.find(t => t._id === openId || t.id === openId);
+        if (target) {
+          handleViewPDF(target);
+          // Remove parameter from URL so it doesn't reopen on every refresh
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    }
+  }, [tenders, email]);
+
   // ---------------- RENDER ----------------
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -338,7 +354,7 @@ function App() {
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
           <BrandLogo />
           <div className="flex items-center gap-1.5 sm:gap-3">
-            {subscription ? (
+            {subscription && subscription.status === 'active' ? (
               <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white text-[10px] sm:text-xs">
                 <CheckCircle2 className="w-3 h-3 mr-1" />
                 {subscription.plan === 'year' ? 'Pro' : 'Monthly'}
@@ -627,7 +643,7 @@ function App() {
 
             {filteredTenders.map((t) => (
               <Card
-                key={t.id}
+                key={t._id || t.id}
                 className="tender-shadow hover:tender-shadow-lg transition"
               >
                 <CardContent className="p-4 sm:p-5">
@@ -695,7 +711,7 @@ function App() {
             plans={PLANS}
             buying={buying}
             onBuy={(p) => {
-              if (p === 'single') {
+              if (p === 'single' && !pendingTender) {
                 toast.info('Click "View PDF" on any tender to buy ₹10 single access.');
                 return;
               }
