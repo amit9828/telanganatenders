@@ -60,7 +60,12 @@ export async function GET(request, { params }) {
       if (district && district !== 'all') query.district = district;
       if (q) query.title = { $regex: q, $options: 'i' };
 
-      let tenders = await db.collection('tenders').find(query).sort({ last_date: -1 }).toArray();
+      // PERFORMANCE FIX: Added .project({ pdf_base64: 0 }) to exclude massive PDF strings from the list
+      let tenders = await db.collection('tenders')
+        .find(query)
+        .project({ pdf_base64: 0 }) 
+        .sort({ last_date: -1 })
+        .toArray();
 
       if (month && year && scope !== 'all') {
         tenders = tenders.filter(t => {
@@ -76,7 +81,8 @@ export async function GET(request, { params }) {
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
-      const tenders = await db.collection('tenders').find({}).toArray();
+      // Performance Fix: Exclude PDF data here too
+      const tenders = await db.collection('tenders').find({}).project({ pdf_base64: 0 }).toArray();
       const days = {};
       tenders.forEach(t => {
         if (t.last_date) {
@@ -134,8 +140,51 @@ export async function GET(request, { params }) {
       });
     }
 
+    // 7. MY ACCOUNT DATA FIX (/api/me)
+    if (path === 'me' || path === 'api/me') {
+      const email = searchParams.get('email');
+      if (!email) return json({ error: 'Email required' }, 400);
+
+      const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+      if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [] });
+
+      // Fetch user's purchased single tenders
+      let unlocked_tenders = [];
+      if (user.purchases && user.purchases.length > 0) {
+        const objectIds = user.purchases.map(id => {
+          try { return new ObjectId(id); } catch(e) { return id; }
+        });
+        
+        const tendersData = await db.collection('tenders')
+          .find({ _id: { $in: objectIds } })
+          .project({ title: 1, department: 1, district: 1 }) // No PDF data needed here
+          .toArray();
+        
+        unlocked_tenders = tendersData.map(t => ({
+          id: t._id.toString(),
+          title: t.title,
+          department: t.department,
+          district: t.district
+        }));
+      }
+
+      // Fetch user's payment history
+      const payments = await db.collection('payments')
+        .find({ email: email.toLowerCase(), status: 'SUCCESS' })
+        .sort({ paid_at: -1 })
+        .toArray();
+
+      return json({
+        subscription: user.subscription || null,
+        unlocked_tenders: unlocked_tenders,
+        payments: payments,
+        auto_renew: user.auto_renew !== false
+      });
+    }
+
     return json({ error: 'GET endpoint not found', path }, 404);
   } catch (error) {
+    console.error(error);
     return json({ error: 'Server Error' }, 500);
   }
 }
@@ -176,6 +225,16 @@ export async function POST(request, { params }) {
         await db.collection('users').updateOne({ email }, { $set: { email, name: body.name || '', last_login: new Date() } }, { upsert: true });
       }
       return json({ success: true });
+    }
+
+    // CANCEL SUBSCRIPTION (Triggered from My Account Page)
+    if (path === 'subscription/cancel' || path === 'api/subscription/cancel') {
+      if (!body.email) return json({ error: 'Email required' }, 400);
+      await db.collection('users').updateOne(
+        { email: body.email.toLowerCase() },
+        { $set: { 'subscription.status': 'cancelled_pending', auto_renew: false } }
+      );
+      return json({ success: true, message: 'Auto-renewal cancelled successfully.' });
     }
 
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
