@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server';
 import { MongoClient, ObjectId } from 'mongodb';
 
-// Database connection caching for Serverless environments
+// Database connection caching for Serverless
 let cachedClient = null;
 let cachedDb = null;
 
 async function getDb() {
   if (cachedDb) return cachedDb;
-  
-  if (!process.env.MONGO_URL) {
-    throw new Error('MONGO_URL environment variable is missing. Please add it in Vercel.');
-  }
+  if (!process.env.MONGO_URL) throw new Error('MONGO_URL environment variable is missing.');
 
   const client = await MongoClient.connect(process.env.MONGO_URL, {
     useNewUrlParser: true,
@@ -27,31 +24,60 @@ function json(data, status = 200) {
 }
 
 // =====================================================================
-// GET REQUESTS: Handles fetching old tenders, calendar, access, and PDF
+// GET REQUESTS: Tenders, Filters, Calendar, Admin Stats, PDF
 // =====================================================================
 export async function GET(request, { params }) {
   const db = await getDb();
-  
-  // Safely parse the path to prevent 404/405 routing errors
   const pathArray = params?.path || [];
   const path = pathArray.join('/');
   const { searchParams } = new URL(request.url);
 
   try {
-    // 1. TENDERS DATA: Fetches previous data accurately
+    // 1. ADMIN DASHBOARD STATS (Fixes the "0" issue)
+    if (path === 'admin/stats' || path === 'api/admin/stats') {
+      const tendersCount = await db.collection('tenders').countDocuments();
+      const usersCount = await db.collection('users').countDocuments();
+      const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
+      
+      // Calculate Total Revenue
+      const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
+      const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+      return json({
+        tenders: tendersCount,
+        users: usersCount,
+        payments: paymentsCount,
+        revenue: totalRevenue
+      });
+    }
+
+    // 2. TENDERS LIST WITH STRICT FILTERING (Fixes District & Month Filter)
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
-      const query = {};
-      
-      if (district && district !== 'all') {
-        query.district = district;
+      const month = searchParams.get('month');
+      const year = searchParams.get('year');
+      const scope = searchParams.get('scope'); // 'all' is sent when user searches text
+      const q = searchParams.get('q');
+
+      let query = {};
+      if (district && district !== 'all') query.district = district;
+      if (q) query.title = { $regex: q, $options: 'i' };
+
+      // Fetch from DB
+      let tenders = await db.collection('tenders').find(query).sort({ last_date: -1 }).toArray();
+
+      // Filter by Month and Year (Only if user is NOT doing a text search)
+      if (month && year && scope !== 'all') {
+        tenders = tenders.filter(t => {
+          if (!t.last_date) return false;
+          const d = new Date(t.last_date);
+          return d.getMonth() + 1 === parseInt(month) && d.getFullYear() === parseInt(year);
+        });
       }
-      
-      const tenders = await db.collection('tenders').find(query).sort({ last_date: -1 }).toArray();
       return json({ tenders });
     }
 
-    // 2. CALENDAR DATA
+    // 3. CALENDAR DATA
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
@@ -71,16 +97,15 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
-    // 3. USER ACCESS
+    // 4. CHECK USER ACCESS
     if (path === 'access' || path === 'api/access') {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
-      
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
       return json({ subscription: user?.subscription || null });
     }
 
-    // 4. PDF FETCH & PAYWALL
+    // 5. PDF FETCH & PAYWALL (Watermark Fix included)
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
@@ -91,20 +116,20 @@ export async function GET(request, { params }) {
       const hasSubscription = user?.subscription?.status === 'active';
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
       
+      // Paywall check
       if (!hasSubscription && !hasBoughtSingle) {
          return json({ error: 'Payment required to view this PDF' }, 402);
       }
 
       const tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) });
-      if (!tender || !tender.pdf_base64) {
-         return json({ error: 'PDF Document not found' }, 404);
-      }
+      if (!tender || !tender.pdf_base64) return json({ error: 'PDF Document not found' }, 404);
 
+      // Return PDF with watermark UI flag
       return json({
          pdf_base64: tender.pdf_base64,
          pdf_filename: tender.pdf_filename || 'tender_document.pdf',
          title: tender.title,
-         watermarked: true
+         watermarked: true // Triggers UI badge
       });
     }
 
@@ -116,62 +141,122 @@ export async function GET(request, { params }) {
 }
 
 // =====================================================================
-// POST REQUESTS: Handles Admin Login, User saving, and Payments
+// POST REQUESTS: Admin Login, Publishing Tenders, Cashfree Payments
 // =====================================================================
 export async function POST(request, { params }) {
   const db = await getDb();
-  
-  // Safely parse the path to prevent 404/405 routing errors
   const pathArray = params?.path || [];
   const path = pathArray.join('/');
 
   try {
     const body = await request.json().catch(() => ({}));
 
-    // 1. ADMIN LOGIN FIX: This specific block fixes the 405 error
+    // 1. ADMIN LOGIN
     if (path === 'admin/login' || path === 'api/admin/login') {
-      if (!body.email || !body.password) {
-        return json({ error: 'Email and password are required' }, 400);
+      if (!body.email || !body.password) return json({ error: 'Credentials required' }, 400);
+      if (body.email === process.env.ADMIN_EMAIL && body.password === process.env.ADMIN_PASSWORD) {
+        return json({ token: process.env.ADMIN_TOKEN || 'admin_success' });
       }
-
-      // Validates against Vercel Environment Variables
-      if (
-        body.email === process.env.ADMIN_EMAIL &&
-        body.password === process.env.ADMIN_PASSWORD
-      ) {
-        return json({ token: process.env.ADMIN_TOKEN || 'admin_token_success' });
-      }
-      
       return json({ error: 'Invalid admin credentials' }, 401);
     }
 
-    // 2. USER RECORD SAVING
+    // 2. ADMIN: PUBLISH NEW TENDER
+    if (path === 'admin/tenders' || path === 'api/admin/tenders' || path === 'tenders') {
+      // Allows the admin dashboard to upload a new tender
+      const newTender = { ...body, created_at: new Date() };
+      await db.collection('tenders').insertOne(newTender);
+      return json({ success: true, message: 'Tender published successfully' });
+    }
+
+    // 3. ADMIN: SAVE BRAND SETTINGS
+    if (path === 'settings' || path === 'api/settings') {
+      await db.collection('settings').updateOne(
+        { id: 'brand' },
+        { $set: { ...body, updated_at: new Date() } },
+        { upsert: true }
+      );
+      return json({ success: true });
+    }
+
+    // 4. SAVE USER
     if (path === 'users' || path === 'api/users') {
       if (body.email) {
         const email = body.email.toLowerCase();
         await db.collection('users').updateOne(
-          { email: email },
-          { $set: { email: email, name: body.name || '', last_login: new Date() } },
+          { email },
+          { $set: { email, name: body.name || '', last_login: new Date() } },
           { upsert: true }
         );
       }
       return json({ success: true });
     }
 
-    // 3. CASHFREE SUBSCRIPTION API
-    if (path === 'subscription/create' || path === 'api/subscription/create') {
-      return json({ 
-        payment_session_id: 'session_' + Date.now(),
-        message: 'Subscription session initialized'
-      });
-    }
+    // 5. CASHFREE PRODUCTION PAYMENT FIX
+    if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
+      
+      const plan = body.plan;
+      let amount = 10; 
+      if (plan === 'month') amount = 149;
+      if (plan === 'year') amount = 1499;
 
-    // 4. CASHFREE ONE-TIME PAYMENT API
-    if (path === 'payment/order' || path === 'api/payment/order') {
-      return json({ 
-        payment_session_id: 'session_' + Date.now(),
-        message: 'Order session initialized'
-      });
+      const orderId = 'order_' + Date.now();
+      const customerId = body.email ? body.email.replace(/[^a-zA-Z0-9]/g, '').substring(0, 50) : 'cust_' + Date.now();
+      
+      const appId = process.env.CASHFREE_APP_ID;
+      const secretKey = process.env.CASHFREE_SECRET_KEY;
+      
+      if (!appId || !secretKey) {
+          return json({ error: 'Cashfree API keys are missing in Vercel' }, 500);
+      }
+
+      // STRICTLY using Cashfree Production URL to match your frontend mode: "production"
+      const cashfreeUrl = 'https://api.cashfree.com/pg/orders'; 
+
+      try {
+        const cashfreeResponse = await fetch(cashfreeUrl, {
+          method: 'POST',
+          headers: {
+            'x-client-id': appId,
+            'x-client-secret': secretKey,
+            'x-api-version': '2023-08-01',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            order_amount: amount,
+            order_currency: 'INR',
+            order_id: orderId,
+            customer_details: {
+              customer_id: customerId,
+              customer_email: body.email || 'guest@example.com',
+              customer_phone: '9999999999'
+            },
+            order_meta: {
+              return_url: "https://tgtenders.in/payment-status?order_id={order_id}"
+            }
+          })
+        });
+
+        const data = await cashfreeResponse.json();
+        
+        // Save initial pending payment state in DB
+        if (data.payment_session_id) {
+          await db.collection('payments').insertOne({
+             order_id: orderId,
+             email: body.email,
+             amount: amount,
+             plan: plan,
+             status: 'PENDING',
+             created_at: new Date()
+          });
+          return json({ payment_session_id: data.payment_session_id });
+        } else {
+          console.error("Cashfree API Rejection:", data);
+          return json({ error: data.message || 'Cashfree rejected the order' }, 400);
+        }
+      } catch (err) {
+        console.error("Cashfree Network Error:", err);
+        return json({ error: 'Failed to connect to Cashfree' }, 500);
+      }
     }
 
     return json({ error: 'POST endpoint not found', path }, 404);
