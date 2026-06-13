@@ -13,15 +13,19 @@ import {
   FileText,
   IndianRupee,
   Calendar,
+  Loader2
 } from 'lucide-react';
 
 function AccountPage() {
+  const [isMounted, setIsMounted] = useState(false); // FIX 1: Prevents hydration crash
   const [email, setEmail] = useState('');
   const [tempEmail, setTempEmail] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // FIX 1: Safely load localStorage only after component mounts in the browser
   useEffect(() => {
+    setIsMounted(true);
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
     if (e) setEmail(e);
   }, []);
@@ -32,6 +36,7 @@ function AccountPage() {
     fetch(`/api/me?email=${encodeURIComponent(email)}`)
       .then((r) => r.json())
       .then((d) => setData(d))
+      .catch((err) => console.error(err))
       .finally(() => setLoading(false));
   }, [email]);
 
@@ -47,6 +52,9 @@ function AccountPage() {
     setEmail('');
     setData(null);
   };
+
+  // FIX 1: Do not render HTML until the client is fully mounted to prevent mismatch errors
+  if (!isMounted) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -125,7 +133,7 @@ function AccountPage() {
                         </p>
                         {data.auto_renew && (
                           <p className="text-xs text-emerald-700 mt-1">
-                            🔁 Auto-renews via Razorpay — cancel anytime
+                            🔁 Auto-renews via Cashfree — cancel anytime
                           </p>
                         )}
                         {data.subscription_status === 'cancelled_pending' && (
@@ -149,7 +157,6 @@ function AccountPage() {
                           const d = await r.json();
                           if (r.ok) {
                             toast.success(d.message || 'Cancelled');
-                            // re-fetch
                             fetch(`/api/me?email=${encodeURIComponent(email)}`)
                               .then((r) => r.json())
                               .then((d) => setData(d));
@@ -168,19 +175,21 @@ function AccountPage() {
 
             <Card className="tender-shadow">
               <CardHeader>
-                <CardTitle className="text-[#0A2647]">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2">
                   Purchased PDFs ({data?.unlocked_tenders?.length || 0})
+                  {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {(!data || data.unlocked_tenders.length === 0) && (
+                {/* FIX 2: Safe checking for empty or undefined arrays */}
+                {(!data || !data.unlocked_tenders || data.unlocked_tenders.length === 0) && (
                   <p className="text-sm text-muted-foreground text-center py-6">
                     No single PDF unlocks yet.
                   </p>
                 )}
                 {data?.unlocked_tenders?.map((t) => (
                   <div
-                    key={t.id}
+                    key={t.id || t._id}
                     className="border rounded-md p-3 flex items-center justify-between hover:bg-slate-50"
                   >
                     <div className="min-w-0">
@@ -189,7 +198,7 @@ function AccountPage() {
                         {t.department} · {t.district}
                       </p>
                     </div>
-                    <a href="/">
+                    <a href={`/?open_tender=${t.id || t._id}`}>
                       <Button size="sm" className="bg-[#0A2647] hover:bg-[#144272]">
                         <FileText className="w-3 h-3 mr-1" /> Open
                       </Button>
@@ -206,7 +215,8 @@ function AccountPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {(!data || data.payments.length === 0) && (
+                {/* FIX 2: Safe checking for empty or undefined arrays */}
+                {(!data || !data.payments || data.payments.length === 0) && (
                   <p className="text-sm text-muted-foreground text-center py-6">
                     No payments yet.
                   </p>
