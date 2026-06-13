@@ -316,7 +316,7 @@ function App() {
       // 3. Checkout పేజీ ఓపెన్ చేయడం
       const checkoutOptions = {
         paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
-        returnUrl: "https://tgtenders.in/payment-status",
+        returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}",
       };
 
       await cashfree.checkout(checkoutOptions);
