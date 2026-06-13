@@ -329,21 +329,21 @@ function App() {
     }
   };
 
-  // ----- NEW LOGIC: AUTO-OPEN PDF AFTER SUCCESSFUL PAYMENT -----
+  // ----- NEW LOGIC: FAST AUTO-OPEN PDF AFTER SUCCESSFUL PAYMENT -----
   useEffect(() => {
-    if (tenders.length > 0 && email) {
+    if (email) {
       const urlParams = new URLSearchParams(window.location.search);
       const openId = urlParams.get('open_tender');
+      
       if (openId) {
-        const target = tenders.find(t => t._id === openId || t.id === openId);
-        if (target) {
-          handleViewPDF(target);
-          // Remove parameter from URL so it doesn't reopen on every refresh
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
+        // Fetch the PDF immediately without waiting for the full tenders list to load
+        tryUnlockPDF({ id: openId }, email);
+        
+        // Remove the parameter from the URL so it doesn't reopen if the user refreshes
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
-  }, [tenders, email]);
+  }, [email]);
 
   // ---------------- RENDER ----------------
   return (
