@@ -83,7 +83,8 @@ function AdminPage() {
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     const [tRes, sRes] = await Promise.all([
-      fetch('/api/admin/tenders', { headers }),
+      // Modified to match the correct GET /api/tenders backend route
+      fetch('/api/tenders', { headers }),
       fetch('/api/admin/stats', { headers }),
     ]);
     if (tRes.status === 401) {
@@ -168,7 +169,7 @@ function AdminPage() {
         return;
       }
       toast.success(
-        `Tender published! ${d.notified} user(s) notified by email.`
+        `Tender published! ${d.notified || ''} user(s) notified by email.`
       );
       setForm({
         title: '',
@@ -425,7 +426,7 @@ function AdminPage() {
               )}
               {tenders.map((t) => (
                 <div
-                  key={t.id}
+                  key={t._id || t.id}
                   className="border rounded-md p-3 flex items-start justify-between gap-3 hover:bg-slate-50"
                 >
                   <div className="flex-1 min-w-0">
@@ -454,7 +455,7 @@ function AdminPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => remove(t.id)}
+                    onClick={() => remove(t._id || t.id)}
                   >
                     <Trash2 className="w-4 h-4 text-red-500" />
                   </Button>
@@ -481,10 +482,11 @@ function StatCard({ icon, label, value, accent }) {
   );
 }
 
+// ==========================================
+// MODIFIED BRAND SETTINGS FOR LOGO SAVING
+// ==========================================
 function BrandSettings({ token }) {
   const [logoPreview, setLogoPreview] = useState('');
-  const [logoBase64, setLogoBase64] = useState('');
-  const [logoMime, setLogoMime] = useState('image/png');
   const [brandName, setBrandName] = useState('Telangana Tenders');
   const [tagline, setTagline] = useState('Official Government Tender Portal');
   const [saving, setSaving] = useState(false);
@@ -493,12 +495,13 @@ function BrandSettings({ token }) {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d) => {
-        if (d.logo_base64) {
-          setLogoPreview(`data:${d.logo_mime || 'image/png'};base64,${d.logo_base64}`);
+        if (d.settings) {
+          if (d.settings.logo) setLogoPreview(d.settings.logo);
+          if (d.settings.name) setBrandName(d.settings.name);
+          if (d.settings.tagline) setTagline(d.settings.tagline);
         }
-        if (d.brand_name) setBrandName(d.brand_name);
-        if (d.tagline) setTagline(d.tagline);
-      });
+      })
+      .catch((err) => console.error(err));
   }, []);
 
   const onLogoChange = (e) => {
@@ -515,9 +518,7 @@ function BrandSettings({ token }) {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result?.toString() || '';
-      setLogoPreview(result);
-      setLogoBase64(result.split(',')[1] || '');
-      setLogoMime(f.type);
+      setLogoPreview(result); 
     };
     reader.readAsDataURL(f);
   };
@@ -525,12 +526,13 @@ function BrandSettings({ token }) {
   const save = async () => {
     setSaving(true);
     try {
-      const payload = { brand_name: brandName, tagline };
-      if (logoBase64) {
-        payload.logo_base64 = logoBase64;
-        payload.logo_mime = logoMime;
-      }
-      const r = await fetch('/api/admin/settings', {
+      const payload = { 
+        name: brandName, 
+        tagline: tagline,
+        logo: logoPreview 
+      };
+      
+      const r = await fetch('/api/settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -538,11 +540,15 @@ function BrandSettings({ token }) {
         },
         body: JSON.stringify(payload),
       });
+      
       if (!r.ok) {
         toast.error('Failed to save');
         return;
       }
-      toast.success('Brand settings saved. Refresh other tabs to see the new logo.');
+      toast.success('Brand settings saved. Refresh the home page to see the new logo.');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast.error('An error occurred while saving.');
     } finally {
       setSaving(false);
     }
@@ -550,16 +556,15 @@ function BrandSettings({ token }) {
 
   const removeLogo = async () => {
     if (!confirm('Remove uploaded logo?')) return;
-    await fetch('/api/admin/settings', {
+    await fetch('/api/settings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ logo_base64: '', logo_mime: '' }),
+      body: JSON.stringify({ name: brandName, tagline: tagline, logo: null }),
     });
     setLogoPreview('');
-    setLogoBase64('');
     toast.success('Logo removed');
   };
 
