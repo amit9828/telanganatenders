@@ -24,7 +24,12 @@ function PaymentStatusContent() {
     .then(data => {
       if (data.success) {
         setStatus('success');
-        setTimeout(() => router.push('/'), 3000);
+        // Auto-open magic link: Sends the tender ID back to home page
+        if (data.tenderId) {
+            setTimeout(() => router.push('/?open_tender=' + data.tenderId), 3000);
+        } else {
+            setTimeout(() => router.push('/'), 3000);
+        }
       } else {
         setStatus('failed');
         setTimeout(() => router.push('/'), 4000);
@@ -52,7 +57,7 @@ function PaymentStatusContent() {
           <div className="flex flex-col items-center">
             <CheckCircle2 className="w-20 h-20 text-[#16a34a] mb-4" />
             <h2 className="text-3xl font-bold text-[#16a34a]">Payment Successful!</h2>
-            <p className="text-slate-600 mt-3">Your PDF has been unlocked. Redirecting to portal...</p>
+            <p className="text-slate-600 mt-3">Access granted. Redirecting back to portal...</p>
           </div>
         )}
 
