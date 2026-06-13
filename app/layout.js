@@ -32,9 +32,9 @@ export const metadata = {
   alternates: {
     canonical: 'https://www.tgtenders.in',
   },
-  // Connects directly to your Google Search Console verification code
+  // Google Search Console verification code
   verification: {
-    google: 'googlebaf661f8a9a9c7cd', // Injected from file 5926b395-f3f9-4b04-98d0-4ca3d6a96aee
+    google: 'TIofzqsOpScixFgiAUOjXsJ9INu_f_fs4GCAm1WV-mg',
   },
   robots: {
     index: true,
