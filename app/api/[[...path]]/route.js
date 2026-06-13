@@ -6,7 +6,7 @@ let cachedDb = null;
 
 async function getDb() {
   if (cachedDb) return cachedDb;
-  if (!process.env.MONGO_URL) throw new Error('MONGO_URL missing.');
+  if (!process.env.MONGO_URL) throw new Error('MONGO_URL environment variable is missing.');
 
   const client = await MongoClient.connect(process.env.MONGO_URL, {
     useNewUrlParser: true,
@@ -22,6 +22,9 @@ function json(data, status = 200) {
   return NextResponse.json(data, { status });
 }
 
+// =====================================================================
+// GET REQUESTS
+// =====================================================================
 export async function GET(request, { params }) {
   const db = await getDb();
   const pathArray = params?.path || [];
@@ -29,17 +32,23 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
 
   try {
+    // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments();
       const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
-      
       const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
       const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
 
+    // 2. BRAND SETTINGS (Logo & Name)
+    if (path === 'settings' || path === 'api/settings') {
+      const settings = await db.collection('settings').findOne({ id: 'brand' });
+      return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
+    }
+
+    // 3. TENDERS
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
       const month = searchParams.get('month');
@@ -63,12 +72,12 @@ export async function GET(request, { params }) {
       return json({ tenders });
     }
 
+    // 4. CALENDAR
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
       const tenders = await db.collection('tenders').find({}).toArray();
       const days = {};
-      
       tenders.forEach(t => {
         if (t.last_date) {
           const d = new Date(t.last_date);
@@ -82,31 +91,28 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
+    // 5. ACCESS CHECK
     if (path === 'access' || path === 'api/access') {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
       
-      // CHECK EXPIRY DATE FOR SUBSCRIPTION
       const now = new Date();
       if (user?.subscription?.status === 'active' && user?.subscription?.expires_at) {
          const expiry = new Date(user.subscription.expires_at);
-         if (expiry < now) {
-            user.subscription.status = 'expired';
-         }
+         if (expiry < now) user.subscription.status = 'expired';
       }
       return json({ subscription: user?.subscription || null });
     }
 
+    // 6. PDF FETCH
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
-      
       if (!email) return json({ error: 'Email required' }, 400);
 
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
       
-      // STRICT SUBSCRIPTION DATE CHECK
       let hasSubscription = false;
       const now = new Date();
       if (user?.subscription?.status === 'active' && user?.subscription?.expires_at) {
@@ -115,13 +121,10 @@ export async function GET(request, { params }) {
       }
       
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
-      
-      if (!hasSubscription && !hasBoughtSingle) {
-         return json({ error: 'Payment required to view this PDF' }, 402);
-      }
+      if (!hasSubscription && !hasBoughtSingle) return json({ error: 'Payment required' }, 402);
 
       const tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) });
-      if (!tender || !tender.pdf_base64) return json({ error: 'PDF Document not found' }, 404);
+      if (!tender || !tender.pdf_base64) return json({ error: 'PDF not found' }, 404);
 
       return json({
          pdf_base64: tender.pdf_base64,
@@ -133,10 +136,13 @@ export async function GET(request, { params }) {
 
     return json({ error: 'GET endpoint not found', path }, 404);
   } catch (error) {
-    return json({ error: 'Internal Server Error' }, 500);
+    return json({ error: 'Server Error' }, 500);
   }
 }
 
+// =====================================================================
+// POST REQUESTS
+// =====================================================================
 export async function POST(request, { params }) {
   const db = await getDb();
   const pathArray = params?.path || [];
@@ -150,13 +156,13 @@ export async function POST(request, { params }) {
       if (body.email === process.env.ADMIN_EMAIL && body.password === process.env.ADMIN_PASSWORD) {
         return json({ token: process.env.ADMIN_TOKEN || 'admin_success' });
       }
-      return json({ error: 'Invalid admin credentials' }, 401);
+      return json({ error: 'Invalid credentials' }, 401);
     }
 
     if (path === 'admin/tenders' || path === 'api/admin/tenders' || path === 'tenders') {
       const newTender = { ...body, created_at: new Date() };
       await db.collection('tenders').insertOne(newTender);
-      return json({ success: true, message: 'Tender published successfully' });
+      return json({ success: true, message: 'Tender published' });
     }
 
     if (path === 'settings' || path === 'api/settings') {
@@ -183,57 +189,37 @@ export async function POST(request, { params }) {
       const appId = process.env.CASHFREE_APP_ID;
       const secretKey = process.env.CASHFREE_SECRET_KEY;
       
-      if (!appId || !secretKey) return json({ error: 'Cashfree API keys missing' }, 500);
+      if (!appId || !secretKey) return json({ error: 'Keys missing' }, 500);
 
       try {
         const cashfreeResponse = await fetch('https://api.cashfree.com/pg/orders', {
           method: 'POST',
-          headers: {
-            'x-client-id': appId,
-            'x-client-secret': secretKey,
-            'x-api-version': '2023-08-01',
-            'Content-Type': 'application/json',
-          },
+          headers: { 'x-client-id': appId, 'x-client-secret': secretKey, 'x-api-version': '2023-08-01', 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            order_amount: amount,
-            order_currency: 'INR',
-            order_id: orderId,
-            customer_details: {
-              customer_id: customerId,
-              customer_email: body.email || 'guest@example.com',
-              customer_phone: '9999999999'
-            },
-            order_meta: {
-              return_url: "https://www.tgtenders.in/payment-status?order_id={order_id}"
-            }
+            order_amount: amount, order_currency: 'INR', order_id: orderId,
+            customer_details: { customer_id: customerId, customer_email: body.email || 'guest@example.com', customer_phone: '9999999999' },
+            order_meta: { return_url: "https://www.tgtenders.in/payment-status?order_id={order_id}" }
           })
         });
 
         const data = await cashfreeResponse.json();
-        
         if (data.payment_session_id) {
           await db.collection('payments').insertOne({
-             order_id: orderId,
-             email: body.email,
-             amount: amount,
-             plan: plan,
-             tenderId: body.tenderId || null, 
-             status: 'PENDING',
-             created_at: new Date()
+             order_id: orderId, email: body.email, amount: amount, plan: plan,
+             tenderId: body.tenderId || null, status: 'PENDING', created_at: new Date()
           });
           return json({ payment_session_id: data.payment_session_id });
         } else {
-          return json({ error: data.message || 'Cashfree rejected order' }, 400);
+          return json({ error: data.message || 'Rejected' }, 400);
         }
       } catch (err) {
-        return json({ error: 'Failed to connect to Cashfree' }, 500);
+        return json({ error: 'Cashfree Error' }, 500);
       }
     }
 
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       const orderId = body.order_id;
-      if (!orderId) return json({ error: 'Order ID missing' }, 400);
-
+      if (!orderId) return json({ error: 'Missing ID' }, 400);
       const appId = process.env.CASHFREE_APP_ID;
       const secretKey = process.env.CASHFREE_SECRET_KEY;
 
@@ -246,35 +232,30 @@ export async function POST(request, { params }) {
 
         if (cfData.order_status === 'PAID') {
           const paymentRecord = await db.collection('payments').findOne({ order_id: orderId });
-          
           if (paymentRecord && paymentRecord.status !== 'SUCCESS') {
             await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'SUCCESS', paid_at: new Date() } });
-
             const email = paymentRecord.email.toLowerCase();
             
             if (paymentRecord.plan === 'single' && paymentRecord.tenderId) {
               await db.collection('users').updateOne({ email }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
             } else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
-              // SUBSCRIPTION EXACT EXPIRY DATE SETTING (30 Days / 365 Days)
               const days = paymentRecord.plan === 'year' ? 365 : 30;
               const expireDate = new Date();
               expireDate.setDate(expireDate.getDate() + days);
-              
               await db.collection('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true });
             }
           }
-          // Returns tenderId to trigger auto-open
-          return json({ success: true, message: 'Payment verified', tenderId: paymentRecord?.tenderId });
+          return json({ success: true, message: 'Verified', tenderId: paymentRecord?.tenderId });
         } else {
-          return json({ success: false, error: 'Payment not successful' }, 400);
+          return json({ success: false, error: 'Not paid' }, 400);
         }
       } catch (err) {
-        return json({ error: 'Verification failed' }, 500);
+        return json({ error: 'Verify failed' }, 500);
       }
     }
 
-    return json({ error: 'POST endpoint not found', path }, 404);
+    return json({ error: 'POST not found', path }, 404);
   } catch (error) {
-    return json({ error: 'Internal Server Error' }, 500);
+    return json({ error: 'Server Error' }, 500);
   }
 }
