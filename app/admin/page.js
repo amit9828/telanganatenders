@@ -82,20 +82,23 @@ function AdminPage() {
 
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
-    const [tRes, sRes] = await Promise.all([
-      // Modified to match the correct GET /api/tenders backend route
-      fetch('/api/tenders', { headers }),
-      fetch('/api/admin/stats', { headers }),
-    ]);
-    if (tRes.status === 401) {
-      localStorage.removeItem('tt_admin');
-      setToken('');
-      return;
+    try {
+      const [tRes, sRes] = await Promise.all([
+        fetch('/api/tenders', { headers }),
+        fetch('/api/admin/stats', { headers }),
+      ]);
+      if (tRes.status === 401) {
+        localStorage.removeItem('tt_admin');
+        setToken('');
+        return;
+      }
+      const tJson = await tRes.json();
+      const sJson = await sRes.json();
+      setTenders(tJson.tenders || []);
+      setStats(sJson || {});
+    } catch (err) {
+      console.error('Refresh failed:', err);
     }
-    const tJson = await tRes.json();
-    const sJson = await sRes.json();
-    setTenders(tJson.tenders || []);
-    setStats(sJson || {});
   };
 
   const login = async (e) => {
@@ -132,6 +135,11 @@ function AdminPage() {
       toast.error('Please upload a PDF file');
       return;
     }
+    // Vercel లిమిట్ దాటకుండా 4MB లోపే ఉండేలా చూసుకునే చెక్
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('PDF file is too large! Please upload under 4MB.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result?.toString() || '';
@@ -151,6 +159,7 @@ function AdminPage() {
     }
     setLoading(true);
     try {
+      // POSTing to /api/tenders which is handled by your updated route.js
       const r = await fetch('/api/tenders', {
         method: 'POST',
         headers: {
@@ -163,11 +172,14 @@ function AdminPage() {
           pdf_filename: pdfName || 'tender.pdf',
         }),
       });
-      const d = await r.json();
+      
+      const d = await r.json().catch(() => ({}));
+      
       if (!r.ok) {
-        toast.error(d.error || 'Failed');
+        toast.error(d.error || `Server Error (${r.status}) - Try smaller PDF`);
         return;
       }
+      
       toast.success(
         `Tender published! ${d.notified || ''} user(s) notified by email.`
       );
@@ -181,6 +193,9 @@ function AdminPage() {
       setPdfBase64('');
       setPdfName('');
       refresh();
+    } catch (err) {
+      toast.error('Network Error: File might be too large for server limit.');
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -377,7 +392,7 @@ function AdminPage() {
                   />
                 </div>
                 <div>
-                  <Label>PDF Document</Label>
+                  <Label>PDF Document (Keep under 4 MB)</Label>
                   <div className="border-2 border-dashed rounded-md p-4 text-center bg-slate-50">
                     <input
                       type="file"
@@ -482,9 +497,6 @@ function StatCard({ icon, label, value, accent }) {
   );
 }
 
-// ==========================================
-// MODIFIED BRAND SETTINGS FOR LOGO SAVING
-// ==========================================
 function BrandSettings({ token }) {
   const [logoPreview, setLogoPreview] = useState('');
   const [brandName, setBrandName] = useState('Telangana Tenders');
