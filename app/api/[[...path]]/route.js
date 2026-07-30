@@ -157,7 +157,7 @@ export async function GET(request, { params }) {
         
         const tendersData = await db.collection('tenders')
           .find({ _id: { $in: objectIds } })
-          .project({ title: 1, department: 1, district: 1 }) // No PDF data needed here
+          .project({ title: 1, department: 1, district: 1 })
           .toArray();
         
         unlocked_tenders = tendersData.map(t => ({
@@ -198,7 +198,8 @@ export async function POST(request, { params }) {
   const path = pathArray.join('/');
 
   try {
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => null);
+    if (!body) return json({ error: 'Invalid JSON body or file too large' }, 400);
 
     if (path === 'admin/login' || path === 'api/admin/login') {
       if (!body.email || !body.password) return json({ error: 'Credentials required' }, 400);
@@ -208,10 +209,14 @@ export async function POST(request, { params }) {
       return json({ error: 'Invalid credentials' }, 401);
     }
 
+    // PDF & TENDER UPLOAD FIX
     if (path === 'admin/tenders' || path === 'api/admin/tenders' || path === 'tenders') {
-      const newTender = { ...body, created_at: new Date() };
-      await db.collection('tenders').insertOne(newTender);
-      return json({ success: true, message: 'Tender published' });
+      const newTender = { 
+        ...body, 
+        created_at: new Date() 
+      };
+      const result = await db.collection('tenders').insertOne(newTender);
+      return json({ success: true, message: 'Tender published successfully', id: result.insertedId });
     }
 
     if (path === 'settings' || path === 'api/settings') {
@@ -239,7 +244,8 @@ export async function POST(request, { params }) {
 
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
       const plan = body.plan;
-      let amount = 10; 
+      // CHARGES FIX: Changed 10 to 12 so gateway charges don't cut your profit
+      let amount = 12; 
       if (plan === 'month') amount = 149;
       if (plan === 'year') amount = 1499;
 
@@ -315,6 +321,7 @@ export async function POST(request, { params }) {
 
     return json({ error: 'POST not found', path }, 404);
   } catch (error) {
+    console.error('Server POST Error:', error);
     return json({ error: 'Server Error' }, 500);
   }
 }
