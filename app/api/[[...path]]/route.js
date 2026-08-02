@@ -210,7 +210,7 @@ export async function POST(request, { params }) {
     }
 
     // PDF & TENDER UPLOAD FIX
-    if (path === 'admin/tenders' || path === 'api/admin/tenders' || path === 'tenders') {
+    if (path === 'tenders' || path === 'api/tenders' || path === 'admin/tenders' || path === 'api/admin/tenders') {
       const newTender = { 
         ...body, 
         created_at: new Date() 
