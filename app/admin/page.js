@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 
 const DISTRICTS = [
+  // Telangana Districts
   'Hyderabad',
   'Adilabad',
   'Nizamabad',
@@ -45,6 +46,24 @@ const DISTRICTS = [
   'Nalgonda',
   'Warangal',
   'Khammam',
+  'Sangareddy',
+  'Medchal-Malkajgiri',
+  'Siddipet',
+  'Vikarabad',
+  // Andhra Pradesh Districts
+  'Visakhapatnam',
+  'Vijayawada (NTR)',
+  'Guntur',
+  'Tirupati',
+  'Nellore',
+  'Kurnool',
+  'Anantapur',
+  'Kadapa (YSR)',
+  'Kakinada',
+  'Eluru',
+  'Srikakulam',
+  'Vizianagaram',
+  'Prakasam'
 ];
 
 function AdminPage() {
@@ -62,6 +81,7 @@ function AdminPage() {
     department: '',
     last_date: '',
     district: '',
+    category: 'Product', // కొత్తగా యాడ్ చేసిన కేటగిరీ (Product లేదా Service)
     supply_details: '',
   });
   const [pdfBase64, setPdfBase64] = useState('');
@@ -135,7 +155,10 @@ function AdminPage() {
       toast.error('Please upload a PDF file');
       return;
     }
-    
+    // Vercel లిమిట్ దాటకుండా 4MB లోపే ఉండేలా చూసుకునే చెక్
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('PDF file is too large! Please upload under 4MB.');
+      return;
     }
     const reader = new FileReader();
     reader.onload = () => {
@@ -156,7 +179,6 @@ function AdminPage() {
     }
     setLoading(true);
     try {
-      // POSTing to /api/tenders which is handled by your updated route.js
       const r = await fetch('/api/tenders', {
         method: 'POST',
         headers: {
@@ -185,6 +207,7 @@ function AdminPage() {
         department: '',
         last_date: '',
         district: '',
+        category: 'Product',
         supply_details: '',
       });
       setPdfBase64('');
@@ -357,25 +380,42 @@ function AdminPage() {
                     />
                   </div>
                   <div>
-                    <Label>District *</Label>
+                    <Label>Category (Product/Service) *</Label>
                     <Select
-                      value={form.district}
+                      value={form.category}
                       onValueChange={(v) =>
-                        setForm({ ...form, district: v })
+                        setForm({ ...form, category: v })
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select" />
+                        <SelectValue placeholder="Select Type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {DISTRICTS.map((d) => (
-                          <SelectItem key={d} value={d}>
-                            {d}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="Product">Product</SelectItem>
+                        <SelectItem value="Service">Service</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div>
+                  <Label>District (TS & AP) *</Label>
+                  <Select
+                    value={form.district}
+                    onValueChange={(v) =>
+                      setForm({ ...form, district: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select District" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DISTRICTS.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Supply / Tender Details</Label>
@@ -443,15 +483,14 @@ function AdminPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <Badge
-                        className={
-                          t.district === 'Hyderabad'
-                            ? 'bg-[#16a34a]'
-                            : 'bg-[#0A2647]'
-                        }
-                      >
+                      <Badge className="bg-[#0A2647]">
                         {t.district}
                       </Badge>
+                      {t.category && (
+                        <Badge variant="outline" className="text-xs">
+                          {t.category}
+                        </Badge>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         Last:{' '}
                         {new Date(t.last_date).toLocaleDateString()}
@@ -496,7 +535,7 @@ function StatCard({ icon, label, value, accent }) {
 
 function BrandSettings({ token }) {
   const [logoPreview, setLogoPreview] = useState('');
-  const [brandName, setBrandName] = useState('Telangana Tenders');
+  const [brandName, setBrandName] = useState('Telangana & AP Tenders');
   const [tagline, setTagline] = useState('Official Government Tender Portal');
   const [saving, setSaving] = useState(false);
 
