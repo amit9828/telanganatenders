@@ -135,10 +135,7 @@ function AdminPage() {
       toast.error('Please upload a PDF file');
       return;
     }
-    // Vercel లిమిట్ దాటకుండా 4MB లోపే ఉండేలా చూసుకునే చెక్
-    if (file.size > 4 * 1024 * 1024) {
-      toast.error('PDF file is too large! Please upload under 4MB.');
-      return;
+    
     }
     const reader = new FileReader();
     reader.onload = () => {
