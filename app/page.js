@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
-// import BrandLogo from '@/components/BrandLogo'; // Replaced by dynamic logo
 import {
   Card,
   CardContent,
@@ -40,10 +39,11 @@ import {
   ShieldCheck,
   Sparkles,
   X,
-  Loader2, // Added Loader for instant loading UI
+  Loader2,
 } from 'lucide-react';
 
-const DISTRICTS = [
+const TS_DISTRICTS = [
+  'Hyderabad',
   'Adilabad',
   'Nizamabad',
   'Karimnagar',
@@ -53,8 +53,27 @@ const DISTRICTS = [
   'Nalgonda',
   'Warangal',
   'Khammam',
+  'Sangareddy',
+  'Medchal-Malkajgiri',
+  'Siddipet',
+  'Vikarabad',
 ];
-const HYDERABAD = 'Hyderabad';
+
+const AP_DISTRICTS = [
+  'Visakhapatnam',
+  'Vijayawada (NTR)',
+  'Guntur',
+  'Tirupati',
+  'Nellore',
+  'Kurnool',
+  'Anantapur',
+  'Kadapa (YSR)',
+  'Kakinada',
+  'Eluru',
+  'Srikakulam',
+  'Vizianagaram',
+  'Prakasam',
+];
 
 const PLANS = [
   {
@@ -123,7 +142,12 @@ function App() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
   const [selectedDay, setSelectedDay] = useState(null);
-  const [district, setDistrict] = useState('all');
+  
+  // Advanced Filter States
+  const [category, setCategory] = useState('all');       // 'all', 'Product', 'Service'
+  const [stateFilter, setStateFilter] = useState('all'); // 'all', 'TS', 'AP'
+  const [district, setDistrict] = useState('all');       // Specific district or 'all'
+
   const [tenders, setTenders] = useState([]);
   const [calDays, setCalDays] = useState({});
   const [loading, setLoading] = useState(false);
@@ -139,26 +163,22 @@ function App() {
   const [subscription, setSubscription] = useState(null);
   const [buying, setBuying] = useState(false);
 
-  // Added state for dynamic logo and brand name
-  const [brandSettings, setBrandSettings] = useState({ name: 'Telangana Tenders', logo: null });
+  const [brandSettings, setBrandSettings] = useState({ name: 'Telangana & AP Tenders', logo: null });
 
-  // Fetch Brand Identity from DB
   useEffect(() => {
     fetch('/api/settings')
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
          if(d.settings) setBrandSettings(d.settings);
       })
       .catch(()=>{});
   }, []);
 
-  // Sync Google session email -> local email
   useEffect(() => {
     if (session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
-      // Also create user record (idempotent)
       fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,14 +187,12 @@ function App() {
     }
   }, [session]);
 
-  // Load email from localStorage (for users who used email-only flow earlier)
   useEffect(() => {
-    if (session?.user?.email) return; // session takes priority
+    if (session?.user?.email) return;
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
     if (e) setEmail(e);
   }, [session]);
 
-  // Refresh access info when email changes
   useEffect(() => {
     if (!email) return;
     fetch(`/api/access?email=${encodeURIComponent(email)}`)
@@ -183,17 +201,17 @@ function App() {
       .catch(() => {});
   }, [email]);
 
-  // Fetch tenders
   const fetchTenders = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (district !== 'all') params.set('district', district);
+      if (category !== 'all') params.set('category', category);
       params.set('month', String(month));
       params.set('year', String(year));
       if (searchQ.trim()) {
         params.set('q', searchQ.trim());
-        params.set('scope', 'all'); // search across all months when query given
+        params.set('scope', 'all');
       }
       const r = await fetch(`/api/tenders?${params.toString()}`);
       const d = await r.json();
@@ -213,18 +231,17 @@ function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, searchQ]);
+  }, [month, year, district, category, searchQ]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
     return tenders.filter((t) => new Date(t.last_date).getDate() === selectedDay);
   }, [tenders, selectedDay]);
 
-  // ----- Calendar grid -----
   const calendarCells = useMemo(() => {
     const first = new Date(year, month - 1, 1);
     const daysInMonth = new Date(year, month, 0).getDate();
-    const startDow = first.getDay(); // 0 Sun
+    const startDow = first.getDay();
     const cells = [];
     for (let i = 0; i < startDow; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
@@ -247,7 +264,6 @@ function App() {
     } else setMonth(month + 1);
   };
 
-  // ----- Actions -----
   const handleViewPDF = async (t) => {
     setPendingTender(t);
     if (!email) {
@@ -278,7 +294,6 @@ function App() {
   };
 
   const tryUnlockPDF = async (t, mail) => {
-    // Show modal and loading state instantly
     setPdfModal(true);
     setPdfData(null);
 
@@ -308,13 +323,11 @@ function App() {
     setBuying(true);
     setPaywallModal(false);
     
-    // Smooth UI delay
     await new Promise((r) => setTimeout(r, 250));
 
     const isSubscription = plan === 'month' || plan === 'year';
 
     try {
-      // 1. Get Payment Session ID
       const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
       const r1 = await fetch(endpoint, {
         method: 'POST',
@@ -329,10 +342,7 @@ function App() {
         return;
       }
 
-      // 2. Load Cashfree SDK
       const cashfree = await load({ mode: "production" });
-
-      // 3. Open Checkout
       const checkoutOptions = {
         paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
         returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}",
@@ -348,30 +358,28 @@ function App() {
     }
   };
 
-  // ----- FAST AUTO-OPEN PDF AFTER SUCCESSFUL PAYMENT -----
   useEffect(() => {
     if (email) {
       const urlParams = new URLSearchParams(window.location.search);
       const openId = urlParams.get('open_tender');
-      
       if (openId) {
-        // Automatically attempt to fetch the PDF and show the loading spinner immediately
         tryUnlockPDF({ id: openId }, email);
-        // Remove the parameter from the URL to avoid reopening on manual refresh
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
   }, [email]);
 
-  // ---------------- RENDER ----------------
+  let currentDistricts = [];
+  if (stateFilter === 'TS') currentDistricts = TS_DISTRICTS;
+  else if (stateFilter === 'AP') currentDistricts = AP_DISTRICTS;
+  else currentDistricts = [...TS_DISTRICTS, ...AP_DISTRICTS];
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
 
       {/* Top bar */}
       <header className="border-b bg-white sticky top-0 z-30">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
-          
-          {/* Dynamic Logo Replacement */}
           <div className="flex items-center gap-2">
             {brandSettings.logo ? (
                // eslint-disable-next-line @next/next/no-img-element
@@ -452,14 +460,14 @@ function App() {
           <div className="max-w-3xl">
             <Badge className="bg-[#16a34a] hover:bg-[#15803d] mb-3 text-[10px] sm:text-xs">
               <Sparkles className="w-3 h-3 mr-1" />
-              Updated daily — all 10 districts + Hyderabad
+              Updated daily — Telangana & Andhra Pradesh
             </Badge>
             <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold leading-tight">
-              Every Government Tender in Telangana — one calendar away.
+              Every Government Tender in Telangana & AP — one calendar away.
             </h2>
             <p className="text-slate-200 mt-3 max-w-2xl text-sm sm:text-base">
-              Browse, filter, and instantly unlock official tender PDFs. Pay
-              ₹9 for a single doc or go Pro for unlimited access.
+              Browse, filter by category and state, and instantly unlock official tender PDFs. Pay
+              ₹10 for a single doc or go Pro for unlimited access.
             </p>
             {/* Search bar */}
             <div className="mt-5 sm:mt-6 flex gap-2 max-w-2xl bg-white rounded-lg p-1 tender-shadow-lg">
@@ -492,62 +500,110 @@ function App() {
       </section>
 
       <main className="container mx-auto px-3 sm:px-4 py-6 sm:py-8 space-y-6 sm:space-y-8">
-        {/* District filter */}
+        
+        {/* --- ADVANCED FILTER SECTION (Product/Service & State & Districts) --- */}
         <Card className="tender-shadow">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-[#0A2647]" />
-              <CardTitle className="text-base">Filter by District</CardTitle>
+              <CardTitle className="text-base">Advanced Tender Filters</CardTitle>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-2 px-2 sm:flex-wrap sm:overflow-visible">
+          <CardContent className="space-y-4">
+            
+            {/* 1. Category Filter (Product / Service) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs sm:text-sm font-semibold text-slate-700 min-w-[70px]">Category:</span>
               <button
-                onClick={() => {
-                  setDistrict('all');
-                  setSelectedDay(null);
-                }}
-                className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium border transition ${
-                  district === 'all'
-                    ? 'bg-[#0A2647] text-white border-[#0A2647]'
-                    : 'bg-white text-[#0A2647] border-slate-200 hover:border-[#0A2647]'
+                onClick={() => setCategory('all')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                  category === 'all' ? 'bg-[#0A2647] text-white border-[#0A2647]' : 'bg-white text-slate-700 hover:border-[#0A2647]'
                 }`}
               >
-                All Districts
+                All Categories
               </button>
               <button
-                onClick={() => {
-                  setDistrict(HYDERABAD);
-                  setSelectedDay(null);
-                }}
-                className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold border-2 transition ${
-                  district === HYDERABAD
-                    ? 'bg-[#16a34a] text-white border-[#16a34a]'
-                    : 'bg-emerald-50 text-[#15803d] border-[#16a34a]'
+                onClick={() => setCategory('Product')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                  category === 'Product' ? 'bg-[#0A2647] text-white border-[#0A2647]' : 'bg-white text-slate-700 hover:border-[#0A2647]'
                 }`}
               >
-                ★ Hyderabad
+                Product
               </button>
-              <div className="w-px bg-slate-200 mx-1 shrink-0" />
-              {DISTRICTS.map((d) => (
+              <button
+                onClick={() => setCategory('Service')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                  category === 'Service' ? 'bg-[#0A2647] text-white border-[#0A2647]' : 'bg-white text-slate-700 hover:border-[#0A2647]'
+                }`}
+              >
+                Service
+              </button>
+            </div>
+
+            {/* 2. State Filter (Telangana / Andhra Pradesh) */}
+            <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+              <span className="text-xs sm:text-sm font-semibold text-slate-700 min-w-[70px]">State:</span>
+              <button
+                onClick={() => { setStateFilter('all'); setDistrict('all'); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition ${
+                  stateFilter === 'all' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700'
+                }`}
+              >
+                All States
+              </button>
+              <button
+                onClick={() => { setStateFilter('TS'); setDistrict('all'); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition ${
+                  stateFilter === 'TS' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700'
+                }`}
+              >
+                Telangana (TS)
+              </button>
+              <button
+                onClick={() => { setStateFilter('AP'); setDistrict('all'); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition ${
+                  stateFilter === 'AP' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700'
+                }`}
+              >
+                Andhra Pradesh (AP)
+              </button>
+            </div>
+
+            {/* 3. District Filter (Dynamic based on State) */}
+            <div className="border-t pt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs sm:text-sm font-semibold text-slate-700">Filter by District:</span>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-2 px-2 sm:flex-wrap sm:overflow-visible">
                 <button
-                  key={d}
-                  onClick={() => {
-                    setDistrict(d);
-                    setSelectedDay(null);
-                  }}
-                  className={`shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium border transition ${
-                    district === d
+                  onClick={() => { setDistrict('all'); setSelectedDay(null); }}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                    district === 'all'
                       ? 'bg-[#0A2647] text-white border-[#0A2647]'
                       : 'bg-white text-slate-700 border-slate-200 hover:border-[#0A2647]'
                   }`}
                 >
-                  {d}
+                  All Districts
                 </button>
-              ))}
+                {currentDistricts.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => { setDistrict(d); setSelectedDay(null); }}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                      district === d
+                        ? 'bg-[#0A2647] text-white border-[#0A2647]'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0A2647]'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
             </div>
+
           </CardContent>
         </Card>
+        {/* --- END FILTER SECTION --- */}
 
         {/* Calendar + Tender List two-column */}
         <div className="grid lg:grid-cols-5 gap-6">
@@ -662,7 +718,7 @@ function App() {
               <Card className="p-10 text-center">
                 <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                 <p className="text-muted-foreground">
-                  No tenders found for this period / district.
+                  No tenders found for this period / filter.
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
                   Try changing month, district, or check back soon.
@@ -679,16 +735,15 @@ function App() {
                   <div className="flex flex-col sm:flex-row items-start sm:items-start gap-3 sm:gap-4">
                     <div className="flex-1 min-w-0 w-full">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <Badge
-                          className={
-                            t.district === HYDERABAD
-                              ? 'bg-[#16a34a] hover:bg-[#15803d]'
-                              : 'bg-[#0A2647] hover:bg-[#0A2647]'
-                          }
-                        >
+                        <Badge className="bg-[#0A2647] hover:bg-[#0A2647]">
                           <MapPin className="w-3 h-3 mr-1" />
                           {t.district}
                         </Badge>
+                        {t.category && (
+                          <Badge variant="outline" className="text-xs">
+                            {t.category}
+                          </Badge>
+                        )}
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           <strong className="text-[#0A2647]">
@@ -724,6 +779,7 @@ function App() {
             ))}
           </div>
         </div>
+
         {/* Pricing section — public, sits above footer */}
         <section id="pricing" className="pt-6 scroll-mt-24">
           <div className="text-center max-w-2xl mx-auto mb-6">
@@ -754,7 +810,8 @@ function App() {
           />
         </section>
       </main>
-{/* --- NEW FOOTER SECTION WITH ORIGINAL LINKS & LEGAL --- */}
+
+      {/* --- NEW FOOTER SECTION WITH ORIGINAL LINKS & LEGAL --- */}
       <footer className="border-t mt-14 bg-[#0A2647] text-white py-10 rounded-t-2xl">
         <div className="container mx-auto px-4 text-center">
           <h3 className="text-2xl font-bold mb-2">{brandSettings.name}</h3>
@@ -812,7 +869,6 @@ function App() {
               }}
               className="w-full bg-white hover:bg-slate-50 border text-[#0A2647] gap-2 h-11"
             >
-              {/* Google G logo */}
               <svg className="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                 <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.5-5.9 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
                 <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8c1.8-4.4 6-7.5 11.1-7.5 3 0 5.8 1.1 7.9 3l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/>
