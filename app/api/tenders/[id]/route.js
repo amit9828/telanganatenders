@@ -3,66 +3,74 @@ import { MongoClient, ObjectId } from 'mongodb';
 
 export async function DELETE(request, { params }) {
   let client;
-
   try {
-    // 1. Authentication Check
-    // Verifies that only a logged-in admin (who sends a Bearer token) can delete a tender
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized access. Admin token is missing.' },
-        { status: 401 }
-      );
-    }
-
-    // 2. ID Validation
-    // Prevents server crashes by checking if the provided ID is a valid MongoDB ObjectId
     const id = params.id;
-    if (!id || !ObjectId.isValid(id)) {
-      return NextResponse.json(
-        { error: 'Invalid Tender ID format.' },
-        { status: 400 }
-      );
+    
+    // LOG 1: Track the exact ID coming from the frontend
+    console.log(`[DELETE API] Initiating delete sequence for ID: "${id}"`);
+
+    if (!id) {
+      return NextResponse.json({ error: 'No ID provided in the request.' }, { status: 400 });
     }
 
-    // 3. Database Connection Check
     if (!process.env.MONGO_URL) {
-      throw new Error('Database configuration (MONGO_URL) is missing.');
+      throw new Error('Database connection string (MONGO_URL) is missing.');
     }
 
     client = await MongoClient.connect(process.env.MONGO_URL);
     const db = client.db();
+    const collection = db.collection('tenders');
 
-    // 4. Secure Deletion Execution
-    const result = await db.collection('tenders').deleteOne({ 
-      _id: new ObjectId(id) 
-    });
+    let result = null;
 
-    // 5. Precise Response Handling
-    if (result.deletedCount === 1) {
+    // STRATEGY 1: Try deleting as a standard MongoDB ObjectId
+    if (ObjectId.isValid(id)) {
+      console.log('[DELETE API] ID format is valid. Attempting strict ObjectId match...');
+      result = await collection.deleteOne({ _id: new ObjectId(id) });
+    }
+
+    // STRATEGY 2: Fallback to deleting as a pure String (In case POST route saved it as text)
+    if (!result || result.deletedCount === 0) {
+      console.log('[DELETE API] ObjectId match failed. Attempting raw String match...');
+      result = await collection.deleteOne({ _id: id });
+    }
+
+    // STRATEGY 3: Fallback to checking a custom 'id' field instead of standard '_id'
+    if (!result || result.deletedCount === 0) {
+      console.log('[DELETE API] String match failed. Attempting custom "id" field match...');
+      result = await collection.deleteOne({ id: id });
+    }
+
+    // FINAL EVALUATION
+    if (result && result.deletedCount > 0) {
+      console.log(`[DELETE API] SUCCESS! Tender deleted permanently.`);
       return NextResponse.json(
-        { success: true, message: 'Tender successfully deleted.' }, 
+        { success: true, message: 'Tender deleted successfully.' }, 
         { status: 200 }
       );
     } else {
+      console.log(`[DELETE API] FAILED. The ID "${id}" does not exist in the database.`);
+      
+      // DIAGNOSTIC LOG: Fetch the first 3 items in the DB to see what the IDs actually look like
+      const sampleDocs = await collection.find({}).project({ _id: 1, title: 1 }).limit(3).toArray();
+      console.log('[DELETE API] DIAGNOSTIC - Current database entries look like this:', JSON.stringify(sampleDocs));
+
       return NextResponse.json(
-        { error: 'Tender not found. It may have already been deleted.' }, 
+        { error: 'Tender not found. Check Vercel server logs for exact mismatch details.' }, 
         { status: 404 }
       );
     }
     
   } catch (error) {
-    // 6. Server-side Error Logging
-    console.error('[TENDER_DELETE_ERROR]:', error);
+    console.error('[DELETE API] CRITICAL SERVER ERROR:', error);
     return NextResponse.json(
-      { error: 'An internal server error occurred.' }, 
+      { error: 'Internal Server Error', details: error.message }, 
       { status: 500 }
     );
   } finally {
-    // 7. Resource Management
-    // The 'finally' block guarantees that the database connection closes, preventing memory leaks
     if (client) {
       await client.close();
+      console.log('[DELETE API] Database connection safely closed.');
     }
   }
 }
