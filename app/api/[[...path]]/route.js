@@ -1,27 +1,54 @@
 import { NextResponse } from 'next/server';
-import { MongoClient, ObjectId } from 'mongodb';
+import { MongoClient } from 'mongodb';
 
+// Forces dynamic rendering to prevent stale cache data
 export const dynamic = 'force-dynamic';
 
-let cachedClient = null;
-let cachedDb = null;
+export async function GET(request) {
+  let client;
+  try {
+    const { searchParams } = new URL(request.url);
+    const month = parseInt(searchParams.get('month'));
+    const year = parseInt(searchParams.get('year'));
 
-async function getDb() {
-  if (cachedDb) return cachedDb;
-  if (!process.env.MONGO_URL) throw new Error('MONGO_URL environment variable is missing.');
+    // Database connection check
+    if (!process.env.MONGO_URL) {
+      throw new Error('MONGO_URL environment variable is missing.');
+    }
 
-  const client = await MongoClient.connect(process.env.MONGO_URL, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
-  
-  cachedClient = client;
-  cachedDb = client.db(process.env.DB_NAME || 'tender_portal');
-  return cachedDb;
-}
-
-function json(data, status = 200) {
-  return NextResponse.json(data, { status });
+    client = await MongoClient.connect(process.env.MONGO_URL);
+    const db = client.db(process.env.DB_NAME || 'tender_portal');
+    
+    // Fetch tenders without the heavy PDF base64 data for performance
+    const tenders = await db.collection('tenders')
+      .find({})
+      .project({ pdf_base64: 0 }) 
+      .toArray();
+    
+    const days = {};
+    tenders.forEach(t => {
+      if (t.last_date) {
+        const d = new Date(t.last_date);
+        // Filter by the requested month and year
+        if (d.getMonth() + 1 === month && d.getFullYear() === year) {
+          const day = d.getDate();
+          if (!days[day]) days[day] = [];
+          days[day].push(t);
+        }
+      }
+    });
+    
+    // Successfully return structured JSON data to the frontend
+    return NextResponse.json({ days }, { status: 200 });
+    
+  } catch (error) {
+    console.error('Calendar API Error:', error);
+    return NextResponse.json({ error: 'Server Error' }, { status: 500 });
+  } finally {
+    if (client) {
+      await client.close();
+    }
+  }
 }
 
 // =====================================================================
