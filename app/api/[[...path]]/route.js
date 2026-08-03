@@ -323,7 +323,7 @@ export async function POST(request, { params }) {
 }
 
 // =====================================================================
-// DELETE REQUESTS (Advanced Diagnostic Version)
+// DELETE REQUESTS (Ultra-Robust Fix)
 // =====================================================================
 export async function DELETE(request, { params }) {
   const db = await getDb();
@@ -331,47 +331,42 @@ export async function DELETE(request, { params }) {
 
   try {
     let tenderId = null;
+    
+    // Accurately locate and extract the ID without path errors
     const tendersIndex = pathArray.indexOf('tenders');
     if (tendersIndex !== -1 && pathArray.length > tendersIndex + 1) {
       tenderId = pathArray[tendersIndex + 1];
+    } else if (pathArray.length > 0) {
+      tenderId = pathArray[pathArray.length - 1];
     }
 
-    console.log(`[DELETE API] Requested Tender ID to delete: "${tenderId}"`);
-
     if (!tenderId) {
-      return json({ error: 'Tender ID not found in URL' }, 400);
+      return json({ error: 'Tender ID is missing in URL' }, 400);
     }
 
     let result = null;
 
-    // Strategy 1: Try deleting as a strict MongoDB ObjectId
+    // 1. Try deleting if it's in ObjectId format
     if (ObjectId.isValid(tenderId)) {
       result = await db.collection('tenders').deleteOne({ _id: new ObjectId(tenderId) });
-      console.log(`[DELETE API] ObjectId delete result: deletedCount = ${result.deletedCount}`);
     }
 
-    // Strategy 2: Try deleting as a raw String _id
+    // 2. Try deleting if it's in String format
     if (!result || result.deletedCount === 0) {
       result = await db.collection('tenders').deleteOne({ _id: tenderId });
-      console.log(`[DELETE API] String _id delete result: deletedCount = ${result.deletedCount}`);
     }
 
-    // Strategy 3: Try deleting using a custom 'id' field
+    // 3. Try deleting if there is a custom 'id' field
     if (!result || result.deletedCount === 0) {
       result = await db.collection('tenders').deleteOne({ id: tenderId });
-      console.log(`[DELETE API] Custom 'id' field delete result: deletedCount = ${result.deletedCount}`);
     }
 
     if (result && result.deletedCount > 0) {
-      console.log(`[DELETE API] Success! Tender deleted.`);
       return json({ success: true, message: 'Tender deleted successfully' });
     } else {
-      // Diagnostic X-Ray: Print actual IDs present in MongoDB to Vercel logs
-      const sample = await db.collection('tenders').find({}).project({ _id: 1 }).limit(5).toArray();
-      console.log('[DELETE API] 404 Diagnostic - Sample IDs currently in DB:', sample.map(s => s._id.toString()));
-
-      return json({ error: 'Tender not found in database. Check Vercel logs.' }, 404);
+      return json({ error: 'Tender not found in database' }, 404);
     }
+
   } catch (error) {
     console.error('Server DELETE Error:', error);
     return json({ error: 'Server Error', details: error.message }, 500);
