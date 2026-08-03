@@ -1,54 +1,28 @@
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 
 // Forces dynamic rendering to prevent stale cache data
 export const dynamic = 'force-dynamic';
 
-export async function GET(request) {
-  let client;
-  try {
-    const { searchParams } = new URL(request.url);
-    const month = parseInt(searchParams.get('month'));
-    const year = parseInt(searchParams.get('year'));
+let cachedClient = null;
+let cachedDb = null;
 
-    // Database connection check
-    if (!process.env.MONGO_URL) {
-      throw new Error('MONGO_URL environment variable is missing.');
-    }
+async function getDb() {
+  if (cachedDb) return cachedDb;
+  if (!process.env.MONGO_URL) throw new Error('MONGO_URL environment variable is missing.');
 
-    client = await MongoClient.connect(process.env.MONGO_URL);
-    const db = client.db(process.env.DB_NAME || 'tender_portal');
-    
-    // Fetch tenders without the heavy PDF base64 data for performance
-    const tenders = await db.collection('tenders')
-      .find({})
-      .project({ pdf_base64: 0 }) 
-      .toArray();
-    
-    const days = {};
-    tenders.forEach(t => {
-      if (t.last_date) {
-        const d = new Date(t.last_date);
-        // Filter by the requested month and year
-        if (d.getMonth() + 1 === month && d.getFullYear() === year) {
-          const day = d.getDate();
-          if (!days[day]) days[day] = [];
-          days[day].push(t);
-        }
-      }
-    });
-    
-    // Successfully return structured JSON data to the frontend
-    return NextResponse.json({ days }, { status: 200 });
-    
-  } catch (error) {
-    console.error('Calendar API Error:', error);
-    return NextResponse.json({ error: 'Server Error' }, { status: 500 });
-  } finally {
-    if (client) {
-      await client.close();
-    }
-  }
+  const client = await MongoClient.connect(process.env.MONGO_URL, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  });
+  
+  cachedClient = client;
+  cachedDb = client.db(process.env.DB_NAME || 'tender_portal');
+  return cachedDb;
+}
+
+function json(data, status = 200) {
+  return NextResponse.json(data, { status });
 }
 
 // =====================================================================
@@ -89,7 +63,6 @@ export async function GET(request, { params }) {
       if (district && district !== 'all') query.district = district;
       if (q) query.title = { $regex: q, $options: 'i' };
 
-      // PERFORMANCE FIX: Added .project({ pdf_base64: 0 }) to exclude massive PDF strings from the list
       let tenders = await db.collection('tenders')
         .find(query)
         .project({ pdf_base64: 0 }) 
@@ -110,7 +83,6 @@ export async function GET(request, { params }) {
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
-      // Performance Fix: Exclude PDF data here too
       const tenders = await db.collection('tenders').find({}).project({ pdf_base64: 0 }).toArray();
       const days = {};
       tenders.forEach(t => {
@@ -177,7 +149,6 @@ export async function GET(request, { params }) {
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
       if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [] });
 
-      // Fetch user's purchased single tenders
       let unlocked_tenders = [];
       if (user.purchases && user.purchases.length > 0) {
         const objectIds = user.purchases.map(id => {
@@ -197,7 +168,6 @@ export async function GET(request, { params }) {
         }));
       }
 
-      // Fetch user's payment history
       const payments = await db.collection('payments')
         .find({ email: email.toLowerCase(), status: 'SUCCESS' })
         .sort({ paid_at: -1 })
@@ -238,7 +208,6 @@ export async function POST(request, { params }) {
       return json({ error: 'Invalid credentials' }, 401);
     }
 
-    // PDF & TENDER UPLOAD FIX
     if (path === 'tenders' || path === 'api/tenders' || path === 'admin/tenders' || path === 'api/admin/tenders') {
       const newTender = { 
         ...body, 
@@ -261,7 +230,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // CANCEL SUBSCRIPTION (Triggered from My Account Page)
     if (path === 'subscription/cancel' || path === 'api/subscription/cancel') {
       if (!body.email) return json({ error: 'Email required' }, 400);
       await db.collection('users').updateOne(
@@ -273,7 +241,6 @@ export async function POST(request, { params }) {
 
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
       const plan = body.plan;
-      // CHARGES FIX: Changed 10 to 12 so gateway charges don't cut your profit
       let amount = 12; 
       if (plan === 'month') amount = 149;
       if (plan === 'year') amount = 1499;
@@ -351,6 +318,47 @@ export async function POST(request, { params }) {
     return json({ error: 'POST not found', path }, 404);
   } catch (error) {
     console.error('Server POST Error:', error);
+    return json({ error: 'Server Error' }, 500);
+  }
+}
+
+// =====================================================================
+// DELETE REQUESTS (Fixed to handle tender deletion properly)
+// =====================================================================
+export async function DELETE(request, { params }) {
+  const db = await getDb();
+  const pathArray = params?.path || [];
+
+  try {
+    let tenderId = null;
+    if (pathArray.length === 2 && pathArray[0] === 'tenders') {
+      tenderId = pathArray[1];
+    } else if (pathArray.length === 3 && pathArray[0] === 'api' && pathArray[1] === 'tenders') {
+      tenderId = pathArray[2];
+    }
+
+    if (tenderId) {
+      let result = null;
+      if (ObjectId.isValid(tenderId)) {
+        result = await db.collection('tenders').deleteOne({ _id: new ObjectId(tenderId) });
+      }
+      if (!result || result.deletedCount === 0) {
+        result = await db.collection('tenders').deleteOne({ _id: tenderId });
+      }
+      if (!result || result.deletedCount === 0) {
+        result = await db.collection('tenders').deleteOne({ id: tenderId });
+      }
+
+      if (result && result.deletedCount > 0) {
+        return json({ success: true, message: 'Tender deleted successfully' });
+      } else {
+        return json({ error: 'Tender not found' }, 404);
+      }
+    }
+
+    return json({ error: 'DELETE endpoint not found' }, 404);
+  } catch (error) {
+    console.error('Server DELETE Error:', error);
     return json({ error: 'Server Error' }, 500);
   }
 }
