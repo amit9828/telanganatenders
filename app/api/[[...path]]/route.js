@@ -323,7 +323,7 @@ export async function POST(request, { params }) {
 }
 
 // =====================================================================
-// DELETE REQUESTS (Fixed to handle tender deletion properly)
+// DELETE REQUESTS (Updated with robust path matching)
 // =====================================================================
 export async function DELETE(request, { params }) {
   const db = await getDb();
@@ -331,10 +331,9 @@ export async function DELETE(request, { params }) {
 
   try {
     let tenderId = null;
-    if (pathArray.length === 2 && pathArray[0] === 'tenders') {
-      tenderId = pathArray[1];
-    } else if (pathArray.length === 3 && pathArray[0] === 'api' && pathArray[1] === 'tenders') {
-      tenderId = pathArray[2];
+    const tendersIndex = pathArray.indexOf('tenders');
+    if (tendersIndex !== -1 && pathArray.length > tendersIndex + 1) {
+      tenderId = pathArray[tendersIndex + 1];
     }
 
     if (tenderId) {
@@ -352,7 +351,7 @@ export async function DELETE(request, { params }) {
       if (result && result.deletedCount > 0) {
         return json({ success: true, message: 'Tender deleted successfully' });
       } else {
-        return json({ error: 'Tender not found' }, 404);
+        return json({ error: 'Tender not found in database' }, 404);
       }
     }
 
