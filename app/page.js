@@ -211,7 +211,7 @@ function App() {
   }, [session, status]);
 
   const fetchTenders = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return; 
 
     setLoading(true);
     try {
@@ -233,7 +233,7 @@ function App() {
   };
 
   const fetchCalendar = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
     const d = await r.json();
     setCalDays(d.days || {});
@@ -243,7 +243,7 @@ function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, category, searchQ, userData?.is_approved, isGuest, intent]);
+  }, [month, year, district, category, searchQ, userData?.onboarding_complete, isGuest, intent]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -370,6 +370,7 @@ function App() {
     }
   };
 
+  // 🟢 MODIFIED: ONBOARDING SUBMISSION (INSTANT ACCESS LOGIC)
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
@@ -383,13 +384,11 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           email, 
-          // New required fields
           client_name: onboardForm.client_name,
           company_name: onboardForm.company_name,
           phone: onboardForm.phone,
           company_type: onboardForm.company_type,
           service_category: onboardForm.service,
-          // Full Documents Payload
           documents: {
             has_gst: onboardForm.has_gst,
             has_esi: onboardForm.has_esi,
@@ -405,12 +404,23 @@ function App() {
             has_turnover: onboardForm.has_turnover,
             has_annual_returns: onboardForm.has_annual_returns
           },
-          status: 'pending'
+          // CHANGED: Status is now instantly 'approved' so they skip the waiting screen
+          status: 'approved'
         })
       });
       
-      toast.success('Profile submitted! Waiting for MD Approval.');
-      setUserData(prev => ({ ...prev, onboarding_complete: true, is_approved: false }));
+      toast.success('Profile created successfully! Loading your dashboard...');
+      
+      // Update local state to instantly unlock the portal
+      setUserData(prev => ({ 
+        ...prev, 
+        onboarding_complete: true, 
+        is_approved: true // INSTANT ACCESS GRANTED
+      }));
+      
+      // Optional: Force a hard reload if you want to ensure a clean state
+      // window.location.reload();
+
     } catch (err) {
       toast.error('Error submitting profile');
     }
@@ -454,7 +464,6 @@ function App() {
         <Card className="w-full max-w-md tender-shadow-lg overflow-hidden border-0">
           <div className="bg-[#0A2647] p-8 text-center text-white relative flex flex-col items-center justify-center">
             
-            {/* BRAND LOGO DISPLAYED INSTEAD OF GREEN TICK */}
             {brandSettings.logo ? (
                // eslint-disable-next-line @next/next/no-img-element
                <img src={brandSettings.logo} alt="Logo" className="w-16 h-16 rounded-full object-contain mb-3 bg-white p-1 shadow-md" />
@@ -470,7 +479,6 @@ function App() {
               <div className="space-y-4">
                 <h2 className="text-center font-semibold text-slate-700 mb-2">Select your Portal Access</h2>
                 
-                {/* Client / Contractor Login Button (Green) */}
                 <Button onClick={() => { 
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
                   signIn('google');
@@ -478,7 +486,6 @@ function App() {
                   <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
                 </Button>
 
-                {/* Browse as Guest Button (Green as requested) */}
                 <Button onClick={() => {
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
                   setIsGuest(true);
@@ -492,7 +499,6 @@ function App() {
                   <div className="flex-grow border-t border-slate-200"></div>
                 </div>
                 
-                {/* Employee Login Button (Outline) */}
                 <Button onClick={() => setGatewayMode('employee_login')} variant="outline" className="w-full h-12 text-[#0A2647] border-slate-300">
                   <UserCog className="w-5 h-5 mr-2" /> Employee Login
                 </Button>
@@ -524,7 +530,7 @@ function App() {
   }
 
   // SCREEN 2: CLIENT ONBOARDING (ONLY IF INTENT === 'CLIENT')
-  if (intent === 'client' && userData && !userData.onboarding_complete && !userData.profile?.service_category) {
+  if (intent === 'client' && userData && !userData.onboarding_complete) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
         <Card className="max-w-3xl mx-auto tender-shadow">
@@ -623,7 +629,7 @@ function App() {
                 </div>
               </div>
               <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-4 shadow-sm">
-                {submittingOnboard ? 'Submitting...' : 'Submit for MD Approval'}
+                {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Portal'}
               </Button>
             </form>
           </CardContent>
@@ -632,18 +638,7 @@ function App() {
     );
   }
 
-  // SCREEN 3: PENDING MD APPROVAL (ONLY IF INTENT === 'CLIENT')
-  if (intent === 'client' && userData && !userData.is_approved && userData.onboarding_complete) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
-         <Clock className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
-         <h1 className="text-3xl font-bold text-[#0A2647] mb-2">Profile Under Review</h1>
-         <p className="text-slate-600 max-w-md mx-auto mb-6">Our MD is currently reviewing your business profile. Once verified, your personalized tender dashboard will be unlocked.</p>
-         <Button onClick={() => window.location.reload()} variant="outline" className="border-[#0A2647] text-[#0A2647] bg-white">Refresh Status</Button>
-         <Button onClick={() => signOut()} variant="ghost" className="mt-4 text-xs text-slate-400">Sign out</Button>
-      </div>
-    );
-  }
+  // NOTE: REMOVED "SCREEN 3: PENDING MD APPROVAL" ENTIRELY AS REQUESTED
 
   // ==============================================================================
   // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact)
