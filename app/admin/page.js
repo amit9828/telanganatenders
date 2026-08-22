@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // NEW IMPORT
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
 import {
   ShieldCheck,
@@ -37,8 +37,8 @@ import {
   Send,         
   TrendingDown, 
   Clock,
-  UserCheck, // NEW IMPORT
-  CheckCircle2 // NEW IMPORT
+  UserCheck,
+  CheckCircle2
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -53,8 +53,6 @@ const DISTRICTS = [
 function AdminPage() {
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPwd, setLoginPwd] = useState('');
   const [loading, setLoading] = useState(false);
 
   const [tenders, setTenders] = useState([]);
@@ -76,7 +74,9 @@ function AdminPage() {
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
-    if (t) setToken(t);
+    if (t) {
+       setToken(t);
+    }
     setAuthChecking(false);
   }, []);
 
@@ -91,17 +91,19 @@ function AdminPage() {
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
+      // CACHE FIX: Added timestamps to prevent stale data
       const [tRes, sRes, tkRes, uRes] = await Promise.all([
-        fetch('/api/tenders', { headers }),
-        fetch('/api/admin/stats', { headers }),
-        fetch('/api/tickets?role=admin', { headers }),
-        fetch('/api/users/pending', { headers }) // NEW FETCH
+        fetch(`/api/tenders?t=${Date.now()}`, { headers }),
+        fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
+        fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
+        fetch(`/api/users/pending?t=${Date.now()}`, { headers })
       ]);
+      
       if (tRes.status === 401) {
-        localStorage.removeItem('tt_admin');
-        setToken('');
+        logout();
         return;
       }
+      
       const tJson = await tRes.json();
       const sJson = await sRes.json();
       const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
@@ -110,37 +112,17 @@ function AdminPage() {
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
-      setPendingUsers(uJson.users || []); // SET PENDING USERS
+      setPendingUsers(uJson.users || []);
     } catch (err) {
       console.error('Refresh failed:', err);
     }
   };
 
-  const login = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const r = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPwd }),
-      });
-      const d = await r.json();
-      if (!r.ok) {
-        toast.error(d.error || 'Login failed');
-        return;
-      }
-      localStorage.setItem('tt_admin', d.token);
-      setToken(d.token);
-      toast.success('Welcome back, Admin.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const logout = () => {
-    localStorage.removeItem('tt_admin');
-    setToken('');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tt_admin');
+      window.location.replace('/');
+    }
   };
 
   const onPdfChange = (e) => {
@@ -255,7 +237,6 @@ function AdminPage() {
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
 
-  // --- NEW HANDLERS FOR APPROVALS & PAYMENTS ---
   const approveClient = async (email) => {
     try {
       const r = await fetch('/api/users/approve', {
@@ -284,59 +265,23 @@ function AdminPage() {
     } catch(e) { toast.error('Error sending request'); }
   };
 
-
-  if (authChecking) return <div className="p-10 text-center">Loading...</div>;
-
-  if (!token) {
+  if (authChecking) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-4">
-        <Card className="w-full max-w-md tender-shadow-lg">
-          <CardHeader>
-            <div className="w-12 h-12 navy-gradient rounded-lg flex items-center justify-center mb-2">
-              <ShieldCheck className="w-6 h-6 text-white" />
-            </div>
-            <CardTitle className="text-2xl text-[#0A2647]">
-              Admin Login
-            </CardTitle>
-            <CardDescription>
-              Secure access for the portal administrator only.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={login} className="space-y-3">
-              <div>
-                <Label>Admin email</Label>
-                <Input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  value={loginPwd}
-                  onChange={(e) => setLoginPwd(e.target.value)}
-                  required
-                />
-              </div>
-              <Button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-[#0A2647] hover:bg-[#144272]"
-              >
-                {loading ? 'Signing in...' : 'Sign in'}
-              </Button>
-              <p className="text-xs text-muted-foreground text-center pt-1">
-                Default: admin@telanganatenders.in / Admin@123
-              </p>
-            </form>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+         <div className="flex flex-col items-center gap-3">
+            <ShieldCheck className="w-10 h-10 text-[#0A2647] animate-pulse" />
+            <p className="text-[#0A2647] font-semibold">Verifying Secure Access...</p>
+         </div>
       </div>
     );
+  }
+
+  // 🔴 STRICT SECURITY REDIRECT: No token = No access. Boot them to home immediately.
+  if (!token) {
+    if (typeof window !== 'undefined') {
+       window.location.replace('/');
+    }
+    return null;
   }
 
   return (
@@ -350,7 +295,7 @@ function AdminPage() {
                 View Site
               </Button>
             </a>
-            <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm">
+            <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-600 hover:text-red-700 hover:bg-red-50">
               <LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
