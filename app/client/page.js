@@ -18,11 +18,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+// FIXED: Added missing 'Search' and 'Download' icons here
 import {
   Briefcase, CheckCircle2, AlertTriangle, FileText, 
   Clock, ShieldAlert, Send, MessageSquare, Target, UserCheck, 
   Upload, Banknote, BellRing, Loader2, LogOut, FileUp, 
-  Scale, Handshake, BrainCircuit, IndianRupee
+  Scale, Handshake, BrainCircuit, IndianRupee, Search, Download
 } from 'lucide-react';
 
 export default function ClientDashboard() {
@@ -264,7 +265,7 @@ export default function ClientDashboard() {
   }
 
   // ==========================================
-  // STATE 3: ULTRA PRO CLIENT DASHBOARD (REAL DATA ONLY)
+  // STATE 2: ULTRA PRO CLIENT DASHBOARD (REAL DATA ONLY)
   // ==========================================
   
   // Dynamic Arrays mapped from Database (No fake data)
@@ -305,15 +306,17 @@ export default function ClientDashboard() {
                    <DropdownMenuLabel>Pending Actions</DropdownMenuLabel>
                    <DropdownMenuSeparator />
                    
-                   {/* Properly rendered items without React Fragments to prevent Radix UI crashes */}
-                   {alerts.length === 0 && pendingPayments.length === 0 && (
+                   {/* Safe conditional rendering without React Fragments to prevent Radix UI crashes */}
+                   {alerts.length === 0 && pendingPayments.length === 0 ? (
                       <DropdownMenuItem className="text-muted-foreground text-xs justify-center py-4">All clear! No new notifications.</DropdownMenuItem>
-                   )}
+                   ) : null}
+
                    {alerts.map((a, i) => (
                       <DropdownMenuItem key={`alert-${i}`} className="text-xs text-red-600 font-medium whitespace-normal">
                          ⚠️ {a.message}
                       </DropdownMenuItem>
                    ))}
+
                    {pendingPayments.map((p, i) => (
                       <DropdownMenuItem key={`pay-${i}`} className="text-xs text-amber-600 font-medium whitespace-normal">
                          💰 Fee Req: {p.reason}
@@ -443,6 +446,13 @@ export default function ClientDashboard() {
                                 <p className="font-bold text-[#0A2647]">{bid.title}</p>
                               </div>
                               <Badge className="shrink-0 bg-blue-100 text-blue-800 hover:bg-blue-200 border-0">{bid.status}</Badge>
+                            </div>
+                            
+                            {/* Download Action for Active Bids */}
+                            <div className="mt-3">
+                               <Button variant="outline" size="sm" className="border-slate-300 text-[#0A2647]">
+                                  <Download className="w-4 h-4 mr-2"/> Download Draft Format
+                               </Button>
                             </div>
                         </div>
                      ))}
