@@ -116,7 +116,6 @@ export default function App() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  // --- GATEKEEPER & ONBOARDING STATES ---
   const [userData, setUserData] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [gatewayMode, setGatewayMode] = useState('select'); 
@@ -125,7 +124,6 @@ export default function App() {
   const [empLoading, setEmpLoading] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
   
-  // 🟢 FIX 1: Synchronous intent initialization to stop guest flash
   const [intent, setIntent] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('tt_intent') || '';
     return '';
@@ -218,7 +216,6 @@ export default function App() {
     }
   }, [session, status]);
 
-  // 🟢 FIX 2: Removed is_approved condition. Client goes straight to dashboard.
   useEffect(() => {
     if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete) {
       router.push('/client');
@@ -227,9 +224,7 @@ export default function App() {
 
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('tt_email');
-      localStorage.removeItem('tt_intent');
-      localStorage.removeItem('tt_role');
+      localStorage.clear();
     }
     setEmail('');
     setUserData(null);
@@ -451,14 +446,12 @@ export default function App() {
     setSubmittingOnboard(false);
   };
 
-  // 🟢 FIX 3: EMPLOYEE & MD SMART LOGIN ROUTING
   const handleEmployeeLogin = async (e) => {
     e.preventDefault();
     setEmpLoading(true);
     toast.info('Verifying credentials...');
     
     try {
-      // 1. Check if it is MD / Admin
       const r = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -468,12 +461,11 @@ export default function App() {
       
       if (r.ok) {
         localStorage.setItem('tt_admin', d.token);
-        toast.success('Admin verified. Redirecting to Command Center...');
+        toast.success('Admin verified. Redirecting...');
         router.push('/admin');
         return;
       } 
       
-      // 2. If not admin, check if normal Employee
       if (empPwd === 'emp123') { 
          localStorage.setItem('tt_emp_email', empEmail.toLowerCase());
          localStorage.setItem('tt_role', 'employee');
@@ -484,7 +476,7 @@ export default function App() {
       
       toast.error('Invalid Credentials');
     } catch (err) {
-      toast.error('Login failed due to network issue');
+      toast.error('Login failed');
     } finally {
       setEmpLoading(false);
     }
@@ -516,14 +508,12 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md tender-shadow-lg overflow-hidden border-0">
           <div className="bg-[#0A2647] p-8 text-center text-white relative flex flex-col items-center justify-center">
-            
             {brandSettings.logo ? (
                // eslint-disable-next-line @next/next/no-img-element
                <img src={brandSettings.logo} alt="Logo" className="w-16 h-16 rounded-full object-contain mb-3 bg-white p-1 shadow-md" />
             ) : (
                <div className="w-12 h-12 bg-[#16a34a] rounded-full flex items-center justify-center text-white font-bold mb-3 shadow">TT</div>
             )}
-
             <h1 className="text-2xl font-bold">{brandSettings.name}</h1>
             <p className="text-sm text-slate-300 opacity-90 mt-1">Enterprise B2B Tender Portal</p>
           </div>
@@ -1350,7 +1340,7 @@ function PlanGrid({ plans, buying, onBuy }) {
                 : 'bg-[#0A2647] hover:bg-[#144272] w-full h-11'
             }
           >
-            {buying ? 'Processing...' : p.cta || `Pay ₹${p.price}`}
+            {buying ? 'Processing...' : p.cta || `Pay ₹{p.price}`}
           </Button>
         </div>
       ))}
