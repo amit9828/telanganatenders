@@ -141,7 +141,7 @@ export async function GET(request, { params }) {
       });
     }
 
-    // 7. GET TICKETS (SLA System) --> NEWLY ADDED
+    // --- 🟢 NEW: GET TICKETS (SLA System) ---
     if (path === 'tickets' || path === 'api/tickets') {
       const email = searchParams.get('email');
       const role = searchParams.get('role'); // admin can see all
@@ -152,13 +152,22 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
-    // 8. MY ACCOUNT DATA FIX (/api/me) --> UPDATED WITH PROFILE FIELDS
+    // --- 🟢 NEW: GET PENDING USERS (For Admin Approvals) ---
+    if (path === 'users/pending' || path === 'api/users/pending') {
+      const users = await db.collection('users')
+         .find({ status: 'pending', is_approved: { $ne: true } })
+         .sort({ created_at: -1 })
+         .toArray();
+      return json({ users });
+    }
+
+    // 7. MY ACCOUNT DATA FIX (/api/me) --- 🟢 UPDATED: WITH PROFILE FIELDS ---
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
 
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
-      if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [], profile: null });
+      if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [], profile: null, is_approved: false });
 
       let unlocked_tenders = [];
       if (user.purchases && user.purchases.length > 0) {
@@ -189,9 +198,12 @@ export async function GET(request, { params }) {
         unlocked_tenders: unlocked_tenders,
         payments: payments,
         auto_renew: user.auto_renew !== false,
+        onboarding_complete: user.onboarding_complete || false,
+        is_approved: user.is_approved || false,
         profile: {
           service_category: user.service_category || '',
-          documents: user.documents || [],
+          company_name: user.company_name || '',
+          company_type: user.company_type || '',
           profile_score: user.profile_score || 0
         }
       });
@@ -201,6 +213,31 @@ export async function GET(request, { params }) {
   } catch (error) {
     console.error(error);
     return json({ error: 'Server Error' }, 500);
+  }
+}
+
+// =====================================================================
+// 🟢 NEW: PUT REQUESTS (For L1 Price Market Intelligence)
+// =====================================================================
+export async function PUT(request, { params }) {
+  const db = await getDb();
+  const pathArray = params?.path || [];
+  
+  try {
+     const body = await request.json().catch(() => null);
+     if (!body) return json({ error: 'Invalid JSON body' }, 400);
+
+     if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
+        const tenderId = pathArray[1];
+        await db.collection('tenders').updateOne(
+           { _id: new ObjectId(tenderId) },
+           { $set: { l1_price: body.l1_price, l1_winner: body.l1_winner } }
+        );
+        return json({ success: true, message: 'L1 Price Updated' });
+     }
+     return json({ error: 'PUT endpoint not found' }, 404);
+  } catch(e) {
+     return json({ error: 'Server Error' }, 500);
   }
 }
 
@@ -255,7 +292,7 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Auto-renewal cancelled successfully.' });
     }
 
-    // NEWLY ADDED --> CREATE TICKET (SLA Ticketing System)
+    // --- 🟢 NEW: CREATE TICKET (SLA Ticketing System) ---
     if (path === 'tickets' || path === 'api/tickets') {
       const { email, department, subject, message } = body;
       const createdAt = new Date();
@@ -278,7 +315,7 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket raised successfully. Our team will reply within 24 hours.', id: result.insertedId });
     }
 
-    // NEWLY ADDED --> REPLY TO TICKET (Admin action)
+    // --- 🟢 NEW: REPLY TO TICKET (Admin action) ---
     if (path === 'tickets/reply' || path === 'api/tickets/reply') {
       const { ticket_id, reply, admin_email } = body;
       await db.collection('tickets').updateOne(
@@ -288,34 +325,44 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket Resolved.' });
     }
 
-    // NEWLY ADDED --> UPDATE CLIENT PROFILE (Onboarding)
+    // --- 🟢 NEW: ONBOARDING SUBMIT (Profile Creation) ---
     if (path === 'users/profile' || path === 'api/users/profile') {
-      const { email, service_category, document_name, expiry_date, file_url } = body;
-      
-      let score = 20; // Base score
-      if (service_category) score += 30;
-      
-      let updateData = { service_category: service_category };
-      
-      if (document_name) {
-        score += 50; 
-        await db.collection('users').updateOne(
-          { email: email.toLowerCase() },
-          { 
-            $push: { documents: { name: document_name, url: file_url, expiry: new Date(expiry_date) } },
-            $set: { profile_score: score }
-          }
-        );
-      } else {
-        await db.collection('users').updateOne(
-          { email: email.toLowerCase() },
-          { $set: { ...updateData, profile_score: score } }
-        );
-      }
-      return json({ success: true, message: 'Profile updated' });
+      const { email, service_category, company_name, company_type, has_gst, has_msme, has_iso } = body;
+      await db.collection('users').updateOne(
+        { email: email.toLowerCase() },
+        { $set: { 
+            service_category, company_name, company_type, has_gst, has_msme, has_iso, 
+            status: 'pending', onboarding_complete: true, profile_score: 50 
+          } 
+        }, 
+        { upsert: true }
+      );
+      return json({ success: true });
     }
 
-    // CASHFREE PAYMENT LOGIC (KEPT EXACTLY AS IT WAS)
+    // --- 🟢 NEW: APPROVE USER ---
+    if (path === 'users/approve' || path === 'api/users/approve') {
+      const { email } = body;
+      await db.collection('users').updateOne(
+        { email: email.toLowerCase() },
+        { $set: { is_approved: true, status: 'approved' } }
+      );
+      return json({ success: true });
+    }
+
+    // --- 🟢 NEW: REQUEST PAYMENT FOR MISSING DOCUMENTS ---
+    if (path === 'users/request-payment' || path === 'api/users/request-payment') {
+       const { email, amount, reason } = body;
+       await db.collection('users').updateOne(
+         { email: email.toLowerCase() },
+         { $push: { pending_payments: { amount, reason, date: new Date(), status: 'UNPAID' } } }
+       );
+       return json({ success: true });
+    }
+
+    // =====================================================================
+    // CASHFREE PAYMENT LOGIC (KEPT EXACTLY AS YOU PROVIDED)
+    // =====================================================================
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
       const plan = body.plan;
       let amount = 12; 
@@ -355,7 +402,9 @@ export async function POST(request, { params }) {
       }
     }
 
-    // CASHFREE VERIFY LOGIC (KEPT EXACTLY AS IT WAS)
+    // =====================================================================
+    // CASHFREE VERIFY LOGIC (KEPT EXACTLY AS YOU PROVIDED)
+    // =====================================================================
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       const orderId = body.order_id;
       if (!orderId) return json({ error: 'Missing ID' }, 400);
