@@ -40,9 +40,10 @@ import {
   Sparkles,
   X,
   Loader2,
-  User,
-  Briefcase,
-  UserCog
+  User,          // NEW
+  Briefcase,     // NEW
+  UserCog,       // NEW
+  Eye            // NEW
 } from 'lucide-react';
 
 const TS_DISTRICTS = [
@@ -112,10 +113,11 @@ function App() {
   const today = new Date();
   const { data: session, status } = useSession();
 
-  // --- GATEKEEPER & ONBOARDING STATES ---
+  // --- 🟢 NEW: GATEKEEPER & ONBOARDING STATES ---
+  const [isGuest, setIsGuest] = useState(false);
   const [userData, setUserData] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
-  const [gatewayMode, setGatewayMode] = useState('select'); // 'select', 'employee_login'
+  const [gatewayMode, setGatewayMode] = useState('select'); 
   const [empEmail, setEmpEmail] = useState('');
   const [empPwd, setEmpPwd] = useState('');
   
@@ -145,7 +147,6 @@ function App() {
   const [buying, setBuying] = useState(false);
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana & AP Tenders', logo: null });
 
-  // 1. Fetch Brand Settings
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
@@ -155,14 +156,14 @@ function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Profile Fetching (Gatekeeper Logic)
+  // --- 🟢 UPDATED: AUTH & USER FETCHING ---
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      // Fetch full user data to check Onboarding & Approval status
+      // Fetch user profile and check approval status
       fetch(`/api/me?email=${encodeURIComponent(e)}`)
         .then((r) => r.json())
         .then((d) => {
@@ -171,20 +172,26 @@ function App() {
            setLoadingUser(false);
         })
         .catch(() => setLoadingUser(false));
-        
+
+      // Existing user insertion
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: e, name: session.user.name || '' }),
+      }).catch(() => {});
+
     } else if (status === 'unauthenticated') {
-      // Clear localStorage if no session to ensure gatekeeper shows
       if (typeof window !== 'undefined') localStorage.removeItem('tt_email');
       setEmail('');
       setLoadingUser(false);
     }
   }, [session, status]);
 
-  // 3. Fetch Tenders & Calendar (Only if Approved or Public preview if you want, currently checking approval)
-  const fetchTenders = async () => {
-    // Only fetch if user is approved (or if you want to show it anyway, remove this check)
-    if(status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
+  // Prevent fetches if user is logged in but NOT approved/onboarded
+  const canFetchData = isGuest || (userData && (userData.is_approved || !userData.onboarding_complete === false));
 
+  const fetchTenders = async () => {
+    if (!canFetchData && status === 'authenticated') return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -205,7 +212,7 @@ function App() {
   };
 
   const fetchCalendar = async () => {
-    if(status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
+    if (!canFetchData && status === 'authenticated') return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
     const d = await r.json();
     setCalDays(d.days || {});
@@ -215,7 +222,7 @@ function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, category, searchQ, userData?.is_approved]);
+  }, [month, year, district, category, searchQ, canFetchData]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -250,7 +257,8 @@ function App() {
 
   const handleViewPDF = async (t) => {
     setPendingTender(t);
-    if (!email) {
+    // If guest or no email, ask to sign in
+    if (!email || isGuest) {
       setEmailModal(true);
       return;
     }
@@ -273,6 +281,7 @@ function App() {
     localStorage.setItem('tt_email', val);
     setEmail(val);
     setEmailModal(false);
+    setIsGuest(false); // Reset guest mode
     toast.success('Email captured. Unlocking...');
     if (pendingTender) await tryUnlockPDF(pendingTender, val);
   };
@@ -342,7 +351,7 @@ function App() {
     }
   };
 
-  // ONBOARDING SUBMISSION HANDLER
+  // --- 🟢 NEW: ONBOARDING SUBMISSION HANDLER ---
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.company_name || !onboardForm.service) return toast.error('Please fill required fields');
@@ -365,7 +374,6 @@ function App() {
       });
       
       toast.success('Profile submitted! Waiting for MD Approval.');
-      // Update local state to show pending screen
       setUserData(prev => ({ ...prev, onboarding_complete: true, is_approved: false }));
     } catch (err) {
       toast.error('Error submitting profile');
@@ -376,7 +384,6 @@ function App() {
   const handleEmployeeLogin = (e) => {
     e.preventDefault();
     toast.info('Employee Backend Auth is active. Verifying credentials...');
-    // Add real logic later if needed, for now prevent default behavior.
   };
 
   useEffect(() => {
@@ -397,15 +404,15 @@ function App() {
 
 
   // ==============================================================================
-  // VIEW RENDERING (THE GATEKEEPER LOGIC)
+  // VIEW RENDERING LOGIC
   // ==============================================================================
 
   if (status === 'loading' || loadingUser) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   }
 
-  // SCREEN 1: GATEKEEPER (Not Logged In)
-  if (status === 'unauthenticated') {
+  // --- 🟢 SCREEN 1: GATEKEEPER (Not Logged In & Not Guest) ---
+  if (status === 'unauthenticated' && !isGuest) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md tender-shadow-lg overflow-hidden border-0">
@@ -418,17 +425,29 @@ function App() {
             {gatewayMode === 'select' ? (
               <div className="space-y-4">
                 <h2 className="text-center font-semibold text-slate-700 mb-4">Select your Portal Access</h2>
+                
                 <Button onClick={() => signIn('google')} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
-                  <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
+                  <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Login
                 </Button>
+                
                 <div className="relative flex items-center py-2">
                   <div className="flex-grow border-t border-slate-200"></div>
                   <span className="flex-shrink-0 mx-4 text-slate-400 text-xs font-medium">Internal Access</span>
                   <div className="flex-grow border-t border-slate-200"></div>
                 </div>
+                
                 <Button onClick={() => setGatewayMode('employee_login')} variant="outline" className="w-full h-12 text-[#0A2647] border-slate-300">
                   <UserCog className="w-5 h-5 mr-2" /> Employee Login
                 </Button>
+
+                <div className="pt-4 mt-2 border-t text-center">
+                  <button 
+                    onClick={() => setIsGuest(true)} 
+                    className="text-sm font-medium text-slate-500 hover:text-[#0A2647] flex items-center justify-center w-full gap-2 transition-colors"
+                  >
+                    <Eye className="w-4 h-4" /> Browse Public Tenders as Guest
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -455,7 +474,7 @@ function App() {
     );
   }
 
-  // SCREEN 2: CLIENT ONBOARDING (Logged in, but profile missing/empty)
+  // --- 🟢 SCREEN 2: CLIENT ONBOARDING (Logged in, missing profile) ---
   if (userData && !userData.onboarding_complete && !userData.profile?.service_category) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
@@ -510,7 +529,7 @@ function App() {
     );
   }
 
-  // SCREEN 3: PENDING MD APPROVAL
+  // --- 🟢 SCREEN 3: PENDING MD APPROVAL ---
   if (userData && !userData.is_approved && userData.onboarding_complete) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
@@ -523,7 +542,7 @@ function App() {
     );
   }
 
-  // SCREEN 4: THE MAIN DASHBOARD (If Approved and Active)
+  // --- 🟢 SCREEN 4: THE MAIN DASHBOARD (Your exact old code + Top Bar Guest button handling) ---
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
 
@@ -563,33 +582,12 @@ function App() {
                 {email}
               </span>
             ) : null}
-            <a href="/admin">
-              <Button variant="outline" size="sm" className="text-xs sm:text-sm h-8 sm:h-9">
-                Admin
-              </Button>
-            </a>
+            
+            {/* If logged in show Sign out, if Guest show Sign In */}
             {session ? (
-              <Button
-                onClick={() => signOut()}
-                variant="ghost"
-                size="sm"
-                className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex"
-                title={session.user.email}
-              >
-                {session.user.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={session.user.image} alt="" className="w-5 h-5 rounded-full mr-1" />
-                ) : null}
-                Sign out
-              </Button>
+               <Button onClick={() => signOut()} variant="ghost" size="sm" className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex">Sign out</Button>
             ) : (
-              <Button
-                onClick={() => signIn('google')}
-                size="sm"
-                className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d]"
-              >
-                Sign in
-              </Button>
+               <Button onClick={() => { setIsGuest(false); signIn('google'); }} className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d] text-white">Sign In / Register</Button>
             )}
           </div>
         </div>
@@ -598,9 +596,7 @@ function App() {
           <a href="/archive" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
             Archive
           </a>
-          <a href="/account" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
-            My Account
-          </a>
+          {email ? <a href="/account" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">My Account</a> : null}
         </div>
       </header>
 
@@ -608,10 +604,11 @@ function App() {
       <section className="navy-gradient text-white">
         <div className="container mx-auto px-3 sm:px-4 py-8 md:py-14">
           <div className="max-w-3xl">
-            <Badge className="bg-[#16a34a] hover:bg-[#15803d] mb-3 text-[10px] sm:text-xs">
-              <Sparkles className="w-3 h-3 mr-1" />
-              Updated daily — Telangana & Andhra Pradesh
-            </Badge>
+            {isGuest ? (
+               <Badge className="bg-amber-500 hover:bg-amber-600 mb-3 text-[10px] sm:text-xs"><Eye className="w-3 h-3 mr-1" /> Public Guest View</Badge>
+            ) : (
+               <Badge className="bg-[#16a34a] hover:bg-[#15803d] mb-3 text-[10px] sm:text-xs"><Sparkles className="w-3 h-3 mr-1" /> Approved Profile Access</Badge>
+            )}
             <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold leading-tight">
               Every Government Tender in Telangana & AP — one calendar away.
             </h2>
@@ -951,7 +948,7 @@ function App() {
                 return;
               }
               setPendingTender(null);
-              if (!email) {
+              if (!email || isGuest) { // GUEST CHECK ADDED
                 setEmailModal(true);
                 return;
               }
@@ -1015,6 +1012,7 @@ function App() {
             <Button
               onClick={() => {
                 setEmailModal(false);
+                setIsGuest(false); // 🟢 CLEAR GUEST STATE ON LOGIN
                 signIn('google', { callbackUrl: typeof window !== 'undefined' ? window.location.href : '/' });
               }}
               className="w-full bg-white hover:bg-slate-50 border text-[#0A2647] gap-2 h-11"
