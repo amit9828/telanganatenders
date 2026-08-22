@@ -198,7 +198,7 @@ export default function App() {
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
       // Prevent browser from caching old user data by adding timestamp
-      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, {
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${new Date().getTime()}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -221,14 +221,14 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Auto-redirect to Client Dashboard if fully registered and intent is client
+  // 🔴 FIX: Added `status === 'authenticated'` to completely stop the flashing redirect loop on logout
   useEffect(() => {
-    if (intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
+    if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
       router.push('/client');
     }
-  }, [intent, userData, router]);
+  }, [status, intent, userData, router]);
 
-  // 🔴 THE ULTIMATE GHOST-LOGIN & FLASHING FIX (Hard Sign Out)
+  // 🔴 THE ULTIMATE GHOST-LOGIN FIX (Hard Sign Out)
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('tt_email');
@@ -237,8 +237,8 @@ export default function App() {
     }
     setEmail('');
     setUserData(null);
-    setIntent('guest'); 
-    await signOut({ callbackUrl: '/' }); 
+    setIntent('guest'); // 🔴 FIX: Blocks the auto-redirect immediately
+    await signOut({ callbackUrl: '/' }); // 🔴 FIX: Properly kills NextAuth session
   };
 
   const fetchTenders = async () => {
