@@ -189,15 +189,21 @@ function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Data Fetching (GHOST LOGIN FIX APPLIED HERE)
+  // 2. Auth & User Data Fetching (GHOST LOGIN CACHE FIX APPLIED HERE)
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      // Prevent browser from caching old user data by adding timestamp
-      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${new Date().getTime()}`)
+      // FIX: Added cache: 'no-store' and a timestamp to force fresh data load
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
         .then((r) => r.json())
         .then((d) => {
            setUserData(d);
@@ -221,7 +227,7 @@ function App() {
     }
   }, [intent, userData, router]);
 
-  // THE ULTIMATE GHOST-LOGIN FIX (Hard Sign Out)
+  // 🔴 THE ULTIMATE GHOST-LOGIN & FLASHING FIX (Hard Sign Out)
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('tt_email');
@@ -230,8 +236,8 @@ function App() {
     }
     setEmail('');
     setUserData(null);
-    await signOut({ redirect: false });
-    window.location.href = '/';
+    setIntent('guest'); // STOPS THE FLASHING LOOP (Stops auto-redirect to /client)
+    await signOut({ callbackUrl: '/' }); 
   };
 
   const fetchTenders = async () => {
@@ -248,7 +254,9 @@ function App() {
         params.set('q', searchQ.trim());
         params.set('scope', 'all');
       }
-      const r = await fetch(`/api/tenders?${params.toString()}`);
+      
+      // FIX: Prevent caching of tenders
+      const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
       const d = await r.json();
       setTenders(d.tenders || []);
     } finally {
@@ -258,7 +266,7 @@ function App() {
 
   const fetchCalendar = async () => {
     if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
-    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
+    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json();
     setCalDays(d.days || {});
   };
@@ -598,7 +606,6 @@ function App() {
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   
-                  {/* Tax & Legal */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card
                   </label>
@@ -614,16 +621,12 @@ function App() {
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar
                   </label>
-                  
-                  {/* Statutory Compliance */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration
                   </label>
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration
                   </label>
-
-                  {/* Certificates & Licenses */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate
                   </label>
@@ -639,8 +642,6 @@ function App() {
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER
                   </label>
-
-                  {/* Financial Proofs */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.
                   </label>
