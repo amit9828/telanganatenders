@@ -272,8 +272,10 @@ export default function ClientDashboard() {
   const pendingPayments = userData?.pending_payments?.filter(p => p.status === 'UNPAID') || [];
   const activeBids = userData?.active_bids || [];
   const aiRecommendations = userData?.recommended_tenders || [];
-  const totalEmd = userData?.emd_ledger?.reduce((acc, curr) => acc + curr.amount, 0) || 0;
-  const refundedEmd = userData?.emd_ledger?.filter(e => e.status === 'refunded').reduce((acc, curr) => acc + curr.amount, 0) || 0;
+  
+  // Safe EMD Calculations to prevent errors
+  const totalEmd = userData?.emd_ledger?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0;
+  const refundedEmd = userData?.emd_ledger?.filter(e => e.status === 'refunded').reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -286,7 +288,7 @@ export default function ClientDashboard() {
           <div className="flex items-center gap-3">
              <span className="text-sm font-semibold text-slate-600 hidden md:inline">{email}</span>
              
-             {/* REAL NOTIFICATION DROPDOWN */}
+             {/* REAL NOTIFICATION DROPDOWN - FIXED CLIENT-SIDE EXCEPTION */}
              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                    <Button variant="outline" size="sm" className="relative text-slate-700">
@@ -302,14 +304,21 @@ export default function ClientDashboard() {
                 <DropdownMenuContent align="end" className="w-72">
                    <DropdownMenuLabel>Pending Actions</DropdownMenuLabel>
                    <DropdownMenuSeparator />
-                   {(alerts.length === 0 && pendingPayments.length === 0) ? (
+                   
+                   {/* Properly rendered items without React Fragments to prevent Radix UI crashes */}
+                   {alerts.length === 0 && pendingPayments.length === 0 && (
                       <DropdownMenuItem className="text-muted-foreground text-xs justify-center py-4">All clear! No new notifications.</DropdownMenuItem>
-                   ) : (
-                      <>
-                        {alerts.map((a, i) => <DropdownMenuItem key={i} className="text-xs text-red-600 font-medium whitespace-normal">⚠️ {a.message}</DropdownMenuItem>)}
-                        {pendingPayments.map((p, i) => <DropdownMenuItem key={i} className="text-xs text-amber-600 font-medium whitespace-normal">💰 Fee Req: {p.reason}</DropdownMenuItem>)}
-                      </>
                    )}
+                   {alerts.map((a, i) => (
+                      <DropdownMenuItem key={`alert-${i}`} className="text-xs text-red-600 font-medium whitespace-normal">
+                         ⚠️ {a.message}
+                      </DropdownMenuItem>
+                   ))}
+                   {pendingPayments.map((p, i) => (
+                      <DropdownMenuItem key={`pay-${i}`} className="text-xs text-amber-600 font-medium whitespace-normal">
+                         💰 Fee Req: {p.reason}
+                      </DropdownMenuItem>
+                   ))}
                 </DropdownMenuContent>
              </DropdownMenu>
 
