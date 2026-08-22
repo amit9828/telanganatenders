@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Briefcase, CheckCircle2, AlertTriangle, FileText, 
   Clock, ShieldAlert, Sparkles, Send, MessageSquare, Target, UserCheck, 
-  Upload, Download, Banknote, IndianRupee, BellRing, Loader2, CheckCircle, ShieldCheck
+  Upload, Download, Banknote, IndianRupee, BellRing, Loader2
 } from 'lucide-react';
 
 export default function ClientDashboard() {
@@ -34,6 +34,7 @@ export default function ClientDashboard() {
   useEffect(() => {
     setIsMounted(true);
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
+    if (e) {
       setEmail(e);
       fetchClientData(e);
     } else {
@@ -109,7 +110,6 @@ export default function ClientDashboard() {
     }
   };
 
-  // --- DYNAMIC CUSTOM PAYMENT HANDLER (Cashfree integration for missing document fees) ---
   const payCustomFee = async (feeAmount, reason) => {
     if (buying) return;
     setBuying(true);
@@ -155,9 +155,7 @@ export default function ClientDashboard() {
     );
   }
 
-  // ==========================================
   // STATE 1: ONBOARDING FORM
-  // ==========================================
   if (!userData?.onboarding_complete || !userData?.profile?.company_name) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-8">
@@ -230,9 +228,7 @@ export default function ClientDashboard() {
     );
   }
 
-  // ==========================================
   // STATE 2: PENDING APPROVAL
-  // ==========================================
   if (userData?.onboarding_complete && !userData?.is_approved) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
@@ -244,10 +240,7 @@ export default function ClientDashboard() {
     );
   }
 
-  // ==========================================
   // STATE 3: ULTRA PRO CLIENT DASHBOARD
-  // ==========================================
-  
   const dummyAlerts = userData?.action_alerts?.length > 0 ? userData.action_alerts : [
     { id: 1, employee: "Admin", message: "We need the updated CA Turnover Certificate for GEM/2026/B/45879. Please upload it ASAP.", type: "urgent" }
   ];
@@ -266,7 +259,6 @@ export default function ClientDashboard() {
 
       <main className="container mx-auto px-4 py-8 space-y-6">
         
-        {/* --- DYNAMIC PENDING PAYMENT REQUESTS FROM MD/EMPLOYEE --- */}
         {userData?.pending_payments?.filter(p => p.status === 'UNPAID').map((payReq, idx) => (
           <div key={idx} className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
              <div className="flex items-start gap-3">
@@ -282,7 +274,6 @@ export default function ClientDashboard() {
           </div>
         ))}
 
-        {/* SMART ACTION CENTER (Employee Alerts) */}
         {dummyAlerts.map(alert => (
           <div key={alert.id} className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
              <div className="flex items-start gap-3">
@@ -296,7 +287,6 @@ export default function ClientDashboard() {
           </div>
         ))}
 
-        {/* HEADER WIDGET */}
         <div className="bg-[#0A2647] rounded-xl p-6 text-white flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-lg relative overflow-hidden">
           <div className="absolute -right-10 -top-10 opacity-10 pointer-events-none"><Briefcase className="w-64 h-64" /></div>
           <div className="relative z-10">
@@ -319,11 +309,7 @@ export default function ClientDashboard() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          
-          {/* MAIN COLUMN */}
           <div className="lg:col-span-2 space-y-6">
-            
-            {/* TENDER WORKSPACE (Documents & Undertakings) */}
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="border-b pb-4 bg-slate-50/50">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Target className="w-5 h-5 text-[#16a34a]"/> Tender Workspace & Actions</CardTitle>
@@ -361,7 +347,6 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* LIVE L1 ANALYTICS */}
             <Card className="tender-shadow">
               <CardHeader className="bg-slate-50/50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Sparkles className="w-5 h-5 text-purple-500"/> Market Intelligence & L1 Analytics</CardTitle>
@@ -390,13 +375,9 @@ export default function ClientDashboard() {
                  </div>
               </CardContent>
             </Card>
-
           </div>
 
-          {/* SIDE COLUMN */}
           <div className="space-y-6">
-            
-            {/* EMD & FINANCIAL LEDGER */}
             <Card className="tender-shadow border-t-4 border-t-amber-500">
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg flex items-center gap-2"><Banknote className="w-5 h-5 text-amber-600"/> EMD & Financial Ledger</CardTitle>
@@ -416,7 +397,6 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* SLA Tech Support */}
             <Card className="tender-shadow">
               <CardHeader className="pb-4 bg-slate-50 border-b">
                 <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-[#0A2647]"/> 24/7 SLA Support Desk</CardTitle>
@@ -443,7 +423,6 @@ export default function ClientDashboard() {
                 </form>
               </CardContent>
             </Card>
-
           </div>
         </div>
       </main>
