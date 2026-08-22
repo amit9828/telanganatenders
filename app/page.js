@@ -119,7 +119,7 @@ function App() {
   // --- GATEKEEPER & ONBOARDING STATES ---
   const [userData, setUserData] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
-  const [gatewayMode, setGatewayMode] = useState('select'); // 'select', 'employee_login'
+  const [gatewayMode, setGatewayMode] = useState('select'); 
   const [empEmail, setEmpEmail] = useState('');
   const [empPwd, setEmpPwd] = useState('');
   const [isGuest, setIsGuest] = useState(false);
@@ -189,21 +189,14 @@ function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Data Fetching (GHOST LOGIN CACHE FIX APPLIED HERE)
+  // 2. Auth & User Data Fetching
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      // FIX: Added cache: 'no-store' and a timestamp to force fresh data load
-      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      })
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`)
         .then((r) => r.json())
         .then((d) => {
            setUserData(d);
@@ -220,23 +213,23 @@ function App() {
     }
   }, [session, status]);
 
-  // Auto-redirect to Client Dashboard if fully registered and intent is client
+  // 🟢 FIX 1: Prevent Auto-Redirect Loop (Check for status === 'authenticated')
   useEffect(() => {
-    if (intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
+    if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
       router.push('/client');
     }
-  }, [intent, userData, router]);
+  }, [status, intent, userData, router]);
 
-  // 🔴 THE ULTIMATE GHOST-LOGIN & FLASHING FIX (Hard Sign Out)
+  // 🟢 FIX 2: THE ULTIMATE GHOST-LOGIN & FLASHING FIX
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('tt_email');
-      localStorage.removeItem('tt_intent');
-      localStorage.removeItem('tt_role');
+      localStorage.clear(); // Clears tt_email, tt_intent, tt_role instantly
     }
     setEmail('');
     setUserData(null);
-    setIntent('guest'); // STOPS THE FLASHING LOOP (Stops auto-redirect to /client)
+    setIntent('guest'); // Force state change to stop useEffect from redirecting to /client
+    
+    // signOut with callbackUrl safely kills the session and drops you on the home page
     await signOut({ callbackUrl: '/' }); 
   };
 
@@ -254,9 +247,7 @@ function App() {
         params.set('q', searchQ.trim());
         params.set('scope', 'all');
       }
-      
-      // FIX: Prevent caching of tenders
-      const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
+      const r = await fetch(`/api/tenders?${params.toString()}`);
       const d = await r.json();
       setTenders(d.tenders || []);
     } finally {
@@ -266,7 +257,7 @@ function App() {
 
   const fetchCalendar = async () => {
     if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
-    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
+    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
     const d = await r.json();
     setCalDays(d.days || {});
   };
@@ -402,7 +393,6 @@ function App() {
     }
   };
 
-  // ONBOARDING SUBMISSION (INSTANT ACCESS LOGIC)
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
@@ -661,7 +651,7 @@ function App() {
   }
 
   // ==============================================================================
-  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact)
+  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact with FIXED LOGOUT)
   // ==============================================================================
 
   return (
@@ -707,7 +697,7 @@ function App() {
 
             {session ? (
               <Button
-                onClick={performHardSignOut} // FIXED LOGOUT
+                onClick={performHardSignOut} // 🔴 THE FIXED LOGOUT FUNCTION
                 variant="ghost"
                 size="sm"
                 className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex text-red-600 hover:text-red-700 hover:bg-red-50"
