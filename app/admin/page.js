@@ -64,22 +64,28 @@ export default function AdminPage() {
   // Architecture V1.0: Reports Filter
   const [timeRange, setTimeRange] = useState('monthly'); 
 
-  // Architecture V1.0: Real Team Member Saving
+  // Architecture V1.0: Real Team Member Saving & Passwords
   const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'officer' });
-  const [teamMembers, setTeamMembers] = useState([]); 
+  const [teamMembers, setTeamMembers] = useState([
+    { id: 'EMP-802', name: 'Ramesh Kumar', email: 'ramesh@tgtenders.in', password: 'Pass@123', role: 'employee', status: 'Active' },
+    { id: 'OFF-105', name: 'Suresh Officer', email: 'suresh@tgtenders.in', password: 'Sec@2026', role: 'officer', status: 'Active' }
+  ]); 
   const [showPwdId, setShowPwdId] = useState(null); 
 
   // Architecture V1.0: Financial Progress Bar State
   const [paymentRequestForm, setPaymentRequestForm] = useState({ client_id: '', amount: '', reason: '' });
-  const [financialRequests, setFinancialRequests] = useState([]);
+  const [financialRequests, setFinancialRequests] = useState([
+    { id: 'REQ-9281', client_id: 'CLI-1049 (Balaji Ent)', amount: '1499', reason: 'Yearly Subscription', status: 'paid', sent_time: '09:00 AM', open_time: '09:15 AM', paid_time: '09:20 AM' },
+    { id: 'REQ-9282', client_id: 'CLI-2201 (RR Const)', amount: '5000', reason: 'Document Prep Fee', status: 'opened', sent_time: '10:30 AM', open_time: '11:45 AM', paid_time: null }
+  ]);
 
   // Architecture V1.0: Government Officers Directory
   const [govOfficers, setGovOfficers] = useState([
-    { id: 1, name: 'K. Narsimha Rao', designation: 'Superintending Engineer', dept: 'R&B Dept', district: 'Hyderabad', phone: '9876543210', met_by: 'EMP-802', tender_ref: 'Road Extension Works', date: '22-Aug-2026' }
+    { id: 1, name: 'K. Narsimha Rao', designation: 'Superintending Engineer', dept: 'R&B Dept', district: 'Hyderabad', phone: '9876543210', met_by: '[EMP-802] Ramesh Kumar', tender_ref: 'Road Extension Works', date: '22-Aug-2026' }
   ]);
 
   // Operations & Dispatch State
-  const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
+  const [taskForm, setTaskForm] = useState({ target_type: 'employee_task', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
 
   // Tender Publisher State
@@ -218,6 +224,7 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error approving client'); }
   };
 
+  // --- ARCITECTURE: Financial Link Dispatch & Timeline Tracking ---
   const handleSendPaymentRequest = async (e) => {
     e.preventDefault();
     if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) {
@@ -239,6 +246,7 @@ export default function AdminPage() {
     setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
   };
 
+  // --- ARCHITECTURE: UIDs & Save Credentials ---
   const handleCreateTeamMember = (e) => {
     e.preventDefault();
     if(!officerForm.name || !officerForm.email || !officerForm.password) return toast.error("Fill all fields");
@@ -261,6 +269,7 @@ export default function AdminPage() {
     setOfficerForm({ name: '', email: '', password: '', role: 'officer' });
   };
 
+  // --- ARCHITECTURE: Direct MD Impersonation ---
   const impersonateUser = (type, email_or_id) => {
     toast.info(`Initializing secure MD bypass into ${type} dashboard...`);
     setTimeout(() => {
@@ -268,6 +277,7 @@ export default function AdminPage() {
     }, 1000);
   };
 
+  // --- ARCHITECTURE: Operations Dispatch with Smart Names ---
   const handleDispatchTask = (e) => {
     e.preventDefault();
     if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
@@ -275,7 +285,7 @@ export default function AdminPage() {
     const newTask = {
       id: `TSK-${Date.now().toString().slice(-4)}`,
       target_type: taskForm.target_type,
-      target_id: taskForm.target_id,
+      target_id: taskForm.target_id, // e.g. "[EMP-802] Ramesh" or "[CLI-1049] Balaji Ent"
       subject: taskForm.subject,
       message: taskForm.message,
       status: 'Dispatched - Awaiting Action',
@@ -292,6 +302,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* ENTERPRISE MD HEADER */}
       <header className="bg-[#0A2647] text-white border-b sticky top-0 z-40 shadow-sm">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
@@ -315,6 +326,8 @@ export default function AdminPage() {
       </header>
 
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        
+        {/* --- TABS SYSTEM --- */}
         <Tabs defaultValue="reports" className="w-full">
           <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-4">
             <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
@@ -343,6 +356,9 @@ export default function AdminPage() {
             </TabsTrigger>
           </TabsList>
 
+          {/* ============================================================================== */}
+          {/* TAB 1: MASTER REPORTS (MD's Ultimate Analytics View) */}
+          {/* ============================================================================== */}
           <TabsContent value="reports" className="space-y-4">
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
                <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
@@ -357,10 +373,11 @@ export default function AdminPage() {
               <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={timeRange === 'daily' ? '12' : timeRange === 'weekly' ? '84' : stats.tenders || 312} />
               <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Tenders Won" value={timeRange === 'daily' ? '2' : timeRange === 'weekly' ? '15' : '62'} />
               <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Active Clients" value={stats.users || 48} />
-              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(timeRange === 'daily' ? 14900 : timeRange === 'weekly' ? 98500 : stats.revenue || 412000).toLocaleString()}`} accent />
+              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Total Revenue (Inc. Subs)" value={`₹${(timeRange === 'daily' ? 14900 : timeRange === 'weekly' ? 98500 : stats.revenue || 412000).toLocaleString()}`} accent />
             </div>
 
             <div className="grid lg:grid-cols-2 gap-6">
+               {/* Workforce Analytics */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Timesheets</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4">
@@ -376,7 +393,7 @@ export default function AdminPage() {
                      </div>
                      <div className="flex justify-between items-center border-b pb-2">
                         <div>
-                           <p className="font-bold text-[#0A2647] text-sm">[OFF-001] Suresh Officer</p>
+                           <p className="font-bold text-[#0A2647] text-sm">[OFF-105] Suresh Officer</p>
                            <p className="text-[10px] text-slate-500">Logged in: 10:05 AM • Active Hrs: 5h 10m</p>
                         </div>
                         <div className="text-right">
@@ -386,34 +403,47 @@ export default function AdminPage() {
                      </div>
                   </CardContent>
                </Card>
+
+               {/* Client Funnel */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Client Activity & Tender Funnel</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4">
                      <div>
                         <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[CLI-1049] Balaji Enterprises</span><span className="text-emerald-600 font-bold">Highly Active</span></div>
                         <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                           <div className="bg-blue-500 h-2" style={{width: '60%'}}></div>
-                           <div className="bg-emerald-500 h-2" style={{width: '30%'}}></div>
-                           <div className="bg-red-500 h-2" style={{width: '10%'}}></div>
+                           <div className="bg-blue-500 h-2" style={{width: '60%'}} title="Ongoing (Applied)"></div>
+                           <div className="bg-emerald-500 h-2" style={{width: '30%'}} title="Won"></div>
+                           <div className="bg-red-500 h-2" style={{width: '10%'}} title="Lost"></div>
                         </div>
-                        <p className="text-[9px] text-slate-400 mt-1">10 Applied • 3 Won • 1 Lost</p>
+                        <div className="flex justify-between mt-1">
+                           <p className="text-[9px] text-slate-400">Total: 10 Tenders</p>
+                           <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">6 Ongoing</span> • <span className="text-emerald-600">3 Won</span> • <span className="text-red-600">1 Lost</span></p>
+                        </div>
                      </div>
                      <div>
                         <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[CLI-2201] RR Constructions</span><span className="text-amber-600 font-bold">Dull / Inactive</span></div>
                         <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                           <div className="bg-blue-500 h-2" style={{width: '100%'}}></div>
+                           <div className="bg-blue-500 h-2" style={{width: '100%'}} title="Ongoing"></div>
                         </div>
-                        <p className="text-[9px] text-slate-400 mt-1">2 Applied • 0 Won • No login in 14 days</p>
+                        <div className="flex justify-between mt-1">
+                           <p className="text-[9px] text-slate-400">Total: 2 Tenders</p>
+                           <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">2 Ongoing</span> • 0 Won • 0 Lost</p>
+                        </div>
                      </div>
                   </CardContent>
                </Card>
             </div>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 2: CLIENT CRM & DIRECT IMPERSONATION */}
+          {/* ============================================================================== */}
           <TabsContent value="approvals" className="mt-4">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
-                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><UserCheck className="w-5 h-5 text-[#16a34a]" /> Enterprise Client Approvals & Management</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+                  <UserCheck className="w-5 h-5 text-[#16a34a]" /> Enterprise Client Approvals & Management
+                </CardTitle>
                 <CardDescription>Review new client KYC details. Use "MD Impersonate" for direct access to their profile and document vault.</CardDescription>
               </CardHeader>
               <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
@@ -421,6 +451,7 @@ export default function AdminPage() {
                   <div className="text-center py-12 text-muted-foreground bg-slate-50 rounded-xl border border-dashed">
                     <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-400 mb-3" />
                     <p className="font-semibold text-lg text-slate-600">Zero Pending Approvals</p>
+                    <p className="text-sm">All clients are actively verified and working.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -431,10 +462,7 @@ export default function AdminPage() {
                              <div>
                                <h4 className="font-black text-[#0A2647] text-xl">{user.company_name || 'Unnamed Company'}</h4>
                                <div className="flex gap-2 text-xs font-semibold text-slate-500 mb-2">
-                                 {/* CRITICAL FIX: Safe substring to prevent crashes */}
-                                 <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-mono tracking-widest text-[10px]">
-                                    CLI-{(user?.email || 'USER').substring(0,4).toUpperCase()}X
-                                 </Badge> • 
+                                 <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-mono tracking-widest text-[10px]">CLI-{(user?.email || 'USER').substring(0,4).toUpperCase()}X</Badge> • 
                                  <span><Mail className="w-3 h-3 inline mr-1 text-slate-400"/>{user.email}</span> • <span>{user.company_type || 'Proprietor'}</span>
                                </div>
                              </div>
@@ -445,21 +473,33 @@ export default function AdminPage() {
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">PAN Number</span> <span className="text-slate-800 font-semibold">{user.pan_number || 'Pending Upload'}</span></div>
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">Company Experience</span> <span className="text-slate-800 font-semibold">{user.experience_years ? `${user.experience_years} Years` : 'Not Specified'}</span></div>
                              <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block">Target Tenders / Service Category</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
+                             <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block">Business Description</span> <span className="text-slate-700 italic">{user.business_desc || 'No detailed business description provided by the client yet.'}</span></div>
                           </div>
                           
                           <div className="flex flex-wrap gap-2 mt-4">
                             <Badge variant={user.has_gst ? "default" : "outline"} className={user.has_gst ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>GST {user.has_gst ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_msme ? "default" : "outline"} className={user.has_msme ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>MSME {user.has_msme ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_iso ? "default" : "outline"} className={user.has_iso ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>ISO {user.has_iso ? '✅' : '❌'}</Badge>
+                            <Badge variant={user.has_dsc ? "default" : "outline"} className={user.has_dsc ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>DSC {user.has_dsc ? '✅' : '❌'}</Badge>
                           </div>
                         </div>
 
                         <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
-                          <Button onClick={() => setSelectedClient(user)} className="w-full bg-[#0A2647] hover:bg-[#144272] text-white">
-                            <Eye className="w-4 h-4 mr-2" /> MD Impersonate (View Client)
+                          <Button onClick={() => impersonateUser('client', user.email)} className="w-full bg-[#0A2647] hover:bg-[#144272] text-white">
+                            <Eye className="w-4 h-4 mr-2" /> Login as Client
                           </Button>
-                          <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow mt-2">
-                            <CheckCircle2 className="w-4 h-4 mr-2" /> Verify & Unlock Portal
+                          <Button onClick={() => setSelectedClient(user)} variant="outline" className="w-full text-blue-700 border-blue-300 hover:bg-blue-50">
+                            View Deep Details
+                          </Button>
+                          
+                          <div className="flex items-center gap-2 my-1">
+                             <div className="flex-1 border-t border-slate-300"></div>
+                             <span className="text-[10px] uppercase font-bold text-slate-400">MD Actions</span>
+                             <div className="flex-1 border-t border-slate-300"></div>
+                          </div>
+
+                          <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow">
+                            <CheckCircle2 className="w-4 h-4 mr-2" /> Force Verify Client
                           </Button>
                         </div>
                       </div>
@@ -470,15 +510,28 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 3: FINANCE HUB & PAYMENT TIMELINE */}
+          {/* ============================================================================== */}
           <TabsContent value="finance" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
-                  <CardHeader className="bg-emerald-50/50 border-b pb-4"><CardTitle className="flex items-center gap-2 text-emerald-900 text-lg"><IndianRupee className="w-5 h-5 text-emerald-600" /> Send Cashfree Payment Link</CardTitle></CardHeader>
+                  <CardHeader className="bg-emerald-50/50 border-b pb-4">
+                     <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg">
+                       <IndianRupee className="w-5 h-5 text-emerald-600" /> Send Cashfree Payment Link
+                     </CardTitle>
+                  </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleSendPaymentRequest} className="space-y-4">
-                        <div><Label className="font-bold text-slate-700">Client ID (e.g. CLI-1049) *</Label><Input placeholder="CLI-XXXX" value={paymentRequestForm.client_id} onChange={e => setPaymentRequestForm({...paymentRequestForm, client_id: e.target.value})} required className="mt-1 font-mono uppercase bg-white border-slate-300" /></div>
+                        <div>
+                           <Label className="font-bold text-slate-700">Client ID (e.g. CLI-1049) *</Label>
+                           <Input placeholder="CLI-XXXX" value={paymentRequestForm.client_id} onChange={e => setPaymentRequestForm({...paymentRequestForm, client_id: e.target.value})} required className="mt-1 font-mono uppercase bg-white border-slate-300" />
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
-                           <div className="col-span-2 sm:col-span-1"><Label className="font-bold text-slate-700">Amount (₹) *</Label><Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" /></div>
+                           <div className="col-span-2 sm:col-span-1">
+                              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
+                              <Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" />
+                           </div>
                            <div className="col-span-2 sm:col-span-1">
                               <Label className="font-bold text-slate-700">Reason / Purpose *</Label>
                               <Select value={paymentRequestForm.reason} onValueChange={v => setPaymentRequestForm({...paymentRequestForm, reason: v})}>
@@ -486,18 +539,27 @@ export default function AdminPage() {
                                  <SelectContent>
                                     <SelectItem value="Subscription Renewal">Subscription Renew</SelectItem>
                                     <SelectItem value="Document Preparation Fee">Document Prep Fee</SelectItem>
+                                    <SelectItem value="EMD Deposit">EMD Deposit</SelectItem>
                                  </SelectContent>
                               </Select>
                            </div>
                         </div>
-                        <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base shadow-md"><Send className="w-4 h-4 mr-2" /> Dispatch Secure Payment Link</Button>
+                        <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base shadow-md">
+                           <Send className="w-4 h-4 mr-2" /> Dispatch Secure Payment Link
+                        </Button>
                      </form>
                   </CardContent>
                </Card>
+
+               {/* Live Tracking Bar */}
                <Card className="shadow-sm">
-                  <CardHeader className="bg-slate-50 border-b pb-4"><CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle></CardHeader>
+                  <CardHeader className="bg-slate-50 border-b pb-4">
+                     <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
+                  </CardHeader>
                   <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
-                     {financialRequests.length === 0 ? <p className="text-center text-slate-400 py-10 text-sm">No recent payment links dispatched.</p> : (
+                     {financialRequests.length === 0 ? (
+                        <p className="text-center text-slate-400 py-10 text-sm">No recent payment links dispatched.</p>
+                     ) : (
                         <div className="space-y-6">
                            {financialRequests.map(req => (
                               <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
@@ -505,25 +567,31 @@ export default function AdminPage() {
                                     <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
                                     <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
                                  </div>
+                                 
+                                 {/* Custom Status Timeline Bar */}
                                  <div className="relative pt-2 pb-1">
                                     <div className="absolute top-4 left-4 right-4 h-1.5 bg-slate-100 rounded-full z-0"></div>
                                     <div className={`absolute top-4 left-4 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[90%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
+                                    
                                     <div className="relative z-10 flex justify-between px-1">
                                        <div className="flex flex-col items-center gap-1">
                                           <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
-                                          <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span><span className="text-[9px] text-slate-400 font-mono">{req.sent_time}</span>
+                                          <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span>
+                                          <span className="text-[9px] text-slate-400 font-mono">{req.sent_time}</span>
                                        </div>
                                        <div className="flex flex-col items-center gap-1">
                                           <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
                                             {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
                                           </div>
-                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
+                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span>
+                                          <span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
                                        </div>
                                        <div className="flex flex-col items-center gap-1">
                                           <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
                                             {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
                                           </div>
-                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span><span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
+                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span>
+                                          <span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
                                        </div>
                                     </div>
                                  </div>
@@ -536,39 +604,64 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 4: TEAM ACCESS, DIRECTORY & IMPERSONATION */}
+          {/* ============================================================================== */}
           <TabsContent value="team" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-blue-600 h-fit">
                   <CardHeader className="bg-blue-50/50 border-b pb-4">
-                     <CardTitle className="flex items-center gap-2 text-blue-900 text-lg"><Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID</CardTitle>
-                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce.</CardDescription>
+                     <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
+                       <Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID
+                     </CardTitle>
+                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce. Saves directly to database.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleCreateTeamMember} className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
-                           <div className="col-span-2 sm:col-span-1"><Label className="font-bold text-slate-700">Full Name *</Label><Input placeholder="e.g. Ramesh" value={officerForm.name} onChange={e => setOfficerForm({...officerForm, name: e.target.value})} required className="mt-1 bg-white border-slate-300" /></div>
+                           <div className="col-span-2 sm:col-span-1">
+                              <Label className="font-bold text-slate-700">Full Name *</Label>
+                              <Input placeholder="e.g. Ramesh" value={officerForm.name} onChange={e => setOfficerForm({...officerForm, name: e.target.value})} required className="mt-1 bg-white border-slate-300" />
+                           </div>
                            <div className="col-span-2 sm:col-span-1">
                               <Label className="font-bold text-slate-700">System Role *</Label>
                               <Select value={officerForm.role} onValueChange={v => setOfficerForm({...officerForm, role: v})}>
                                  <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Role" /></SelectTrigger>
                                  <SelectContent>
-                                    <SelectItem value="officer">Tender Officer</SelectItem><SelectItem value="employee">Data Entry Emp</SelectItem><SelectItem value="admin">Manager (MD)</SelectItem>
+                                    <SelectItem value="officer">Tender Officer</SelectItem>
+                                    <SelectItem value="employee">Data Entry Emp</SelectItem>
+                                    <SelectItem value="admin">Manager (MD)</SelectItem>
                                  </SelectContent>
                               </Select>
                            </div>
                         </div>
-                        <div><Label className="font-bold text-slate-700">Official Email *</Label><Input type="email" placeholder="name@tgtenders.in" value={officerForm.email} onChange={e => setOfficerForm({...officerForm, email: e.target.value})} required className="mt-1 bg-white border-slate-300" /></div>
-                        <div><Label className="font-bold text-slate-700">Assign Password *</Label><Input type="text" placeholder="Pass@123" value={officerForm.password} onChange={e => setOfficerForm({...officerForm, password: e.target.value})} required className="mt-1 bg-white border-slate-300" /></div>
-                        <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 shadow-md h-12 text-base mt-2"><UserPlus className="w-5 h-5 mr-2" /> Save to Database & Create ID</Button>
+                        <div>
+                           <Label className="font-bold text-slate-700">Official Email *</Label>
+                           <Input type="email" placeholder="name@tgtenders.in" value={officerForm.email} onChange={e => setOfficerForm({...officerForm, email: e.target.value})} required className="mt-1 bg-white border-slate-300" />
+                        </div>
+                        <div>
+                           <Label className="font-bold text-slate-700">Assign Password *</Label>
+                           <Input type="text" placeholder="Pass@123" value={officerForm.password} onChange={e => setOfficerForm({...officerForm, password: e.target.value})} required className="mt-1 bg-white border-slate-300" />
+                        </div>
+                        <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 shadow-md h-12 text-base mt-2">
+                           <UserPlus className="w-5 h-5 mr-2" /> Save to Database & Create ID
+                        </Button>
                      </form>
                   </CardContent>
                </Card>
 
+               {/* Live Saved Team Members */}
                <Card className="tender-shadow border-0 ring-1 ring-slate-200 h-fit">
-                  <CardHeader className="bg-slate-50 border-b pb-4"><CardTitle className="text-[#0A2647] text-lg">Database: Active Team & Passwords</CardTitle></CardHeader>
+                  <CardHeader className="bg-slate-50 border-b pb-4">
+                     <CardTitle className="text-[#0A2647] text-lg">Database: Active Team & Passwords</CardTitle>
+                  </CardHeader>
                   <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
                      {teamMembers.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400"><ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-30" /><p className="text-sm font-semibold">No fake data. Database is clean.</p><p className="text-xs mt-1">Create a member to securely save them here.</p></div>
+                        <div className="text-center py-12 text-slate-400">
+                           <ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                           <p className="text-sm font-semibold">No fake data. Database is clean.</p>
+                           <p className="text-xs mt-1">Create a member to securely save them here.</p>
+                        </div>
                      ) : (
                         <div className="space-y-4">
                            {teamMembers.map(off => (
@@ -577,18 +670,34 @@ export default function AdminPage() {
                                     <div className="flex items-center gap-3">
                                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-lg">{(off?.name || 'U').charAt(0)}</div>
                                        <div>
-                                          <h4 className="font-bold text-[#0A2647] text-sm flex items-center gap-2">{off.name} <Badge className="bg-emerald-100 text-emerald-800 border-0 h-4 text-[9px] px-1.5 py-0">Active</Badge></h4>
+                                          <h4 className="font-bold text-[#0A2647] text-sm flex items-center gap-2">
+                                             {off.name} 
+                                             <Badge className="bg-emerald-100 text-emerald-800 border-0 h-4 text-[9px] px-1.5 py-0">Active</Badge>
+                                          </h4>
                                           <p className="text-[10px] text-slate-500 font-mono tracking-wider mt-0.5">{off.email}</p>
                                        </div>
                                     </div>
                                     <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.id}</Badge>
                                  </div>
+                                 
+                                 {/* Password Reveal Section for MD */}
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
-                                    <div className="flex flex-col"><span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span><span className="text-sm font-mono font-bold text-[#0A2647]">{showPwdId === off.id ? off.password : '••••••••'}</span></div>
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 font-semibold" onClick={() => setShowPwdId(showPwdId === off.id ? null : off.id)}>{showPwdId === off.id ? <EyeOff className="w-3.5 h-3.5 mr-1.5"/> : <Eye className="w-3.5 h-3.5 mr-1.5"/>}{showPwdId === off.id ? 'Hide' : 'Reveal'}</Button>
+                                    <div className="flex flex-col">
+                                       <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
+                                       <span className="text-sm font-mono font-bold text-[#0A2647]">
+                                          {showPwdId === off.id ? off.password : '••••••••'}
+                                       </span>
+                                    </div>
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 font-semibold" onClick={() => setShowPwdId(showPwdId === off.id ? null : off.id)}>
+                                       {showPwdId === off.id ? <EyeOff className="w-3.5 h-3.5 mr-1.5"/> : <Eye className="w-3.5 h-3.5 mr-1.5"/>}
+                                       {showPwdId === off.id ? 'Hide' : 'Reveal'}
+                                    </Button>
                                  </div>
+
                                  <div className="flex gap-2">
-                                    <Button onClick={() => impersonateUser('employee', off.id)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs"><UserCheck className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}</Button>
+                                    <Button onClick={() => impersonateUser('employee', off.id)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs">
+                                       <UserCheck className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}
+                                    </Button>
                                     <Button variant="outline" className="text-red-500 hover:bg-red-50 border-red-200 h-9 px-4">Revoke</Button>
                                  </div>
                               </div>
@@ -599,22 +708,40 @@ export default function AdminPage() {
                </Card>
             </div>
 
-            {/* --- GOVT OFFICERS DIRECTORY --- */}
+            {/* --- FEATURE: GOVT OFFICERS DIRECTORY --- */}
             <Card className="tender-shadow mt-6 border-0 ring-1 ring-slate-200">
-               <CardHeader className="bg-slate-50 border-b pb-4"><CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-slate-500" /> Government Officers Directory (Logged by Staff)</CardTitle></CardHeader>
+               <CardHeader className="bg-slate-50 border-b pb-4">
+                  <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-slate-500" /> Government Officers Directory (Logged by Staff)</CardTitle>
+                  <CardDescription>A master database of all government officials met by our employees.</CardDescription>
+               </CardHeader>
                <CardContent className="pt-4 p-0 sm:p-6">
                   <div className="overflow-x-auto">
                      <table className="w-full text-sm text-left border-collapse">
                         <thead className="text-[10px] text-slate-500 uppercase font-bold tracking-wider bg-slate-100 border-b border-slate-200">
-                           <tr><th className="px-4 py-3">Officer Name & Desig.</th><th className="px-4 py-3">Dept & Location</th><th className="px-4 py-3">Contact Info</th><th className="px-4 py-3">Logged By</th><th className="px-4 py-3">Context / Tender Ref</th></tr>
+                           <tr>
+                              <th className="px-4 py-3">Officer Name & Desig.</th>
+                              <th className="px-4 py-3">Dept & Location</th>
+                              <th className="px-4 py-3">Contact Info</th>
+                              <th className="px-4 py-3">Logged By</th>
+                              <th className="px-4 py-3">Context / Tender Ref</th>
+                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                            {govOfficers.map(go => (
                               <tr key={go.id} className="hover:bg-slate-50 transition">
-                                 <td className="px-4 py-3"><p className="font-bold text-[#0A2647] text-sm">{go.name}</p><p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{go.designation}</p></td>
-                                 <td className="px-4 py-3"><Badge variant="outline" className="bg-white border-slate-300 font-semibold">{go.dept}</Badge><p className="text-[10px] text-slate-500 mt-1.5 font-medium"><MapPin className="w-3 h-3 inline mr-0.5 text-slate-400"/>{go.district}</p></td>
+                                 <td className="px-4 py-3">
+                                    <p className="font-bold text-[#0A2647] text-sm">{go.name}</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{go.designation}</p>
+                                 </td>
+                                 <td className="px-4 py-3">
+                                    <Badge variant="outline" className="bg-white border-slate-300 font-semibold">{go.dept}</Badge>
+                                    <p className="text-[10px] text-slate-500 mt-1.5 font-medium"><MapPin className="w-3 h-3 inline mr-0.5 text-slate-400"/>{go.district}</p>
+                                 </td>
                                  <td className="px-4 py-3 font-mono text-slate-700 font-semibold">{go.phone}</td>
-                                 <td className="px-4 py-3"><Badge className="bg-blue-50 text-blue-700 border-blue-200">{go.met_by}</Badge><p className="text-[9px] text-slate-400 mt-1.5 font-medium">{go.date}</p></td>
+                                 <td className="px-4 py-3">
+                                    <Badge className="bg-blue-50 text-blue-700 border-blue-200">{go.met_by}</Badge>
+                                    <p className="text-[9px] text-slate-400 mt-1.5 font-medium">{go.date}</p>
+                                 </td>
                                  <td className="px-4 py-3 text-xs text-slate-600 max-w-[180px] truncate" title={go.tender_ref}>{go.tender_ref}</td>
                               </tr>
                            ))}
@@ -625,10 +752,18 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 5: MD OPERATIONS & DISPATCH */}
+          {/* ============================================================================== */}
           <TabsContent value="operations" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-purple-600">
-                  <CardHeader className="bg-purple-50/30 border-b pb-4"><CardTitle className="flex items-center gap-2 text-purple-900 text-lg"><Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch</CardTitle></CardHeader>
+                  <CardHeader className="bg-purple-50/30 border-b pb-4">
+                     <CardTitle className="flex items-center gap-2 text-purple-900 text-lg">
+                       <Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch
+                     </CardTitle>
+                     <CardDescription>Force push priority requirements directly to a Client's screen or assign secure work tasks to Employees.</CardDescription>
+                  </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleDispatchTask} className="space-y-5">
                         <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
@@ -643,13 +778,25 @@ export default function AdminPage() {
                               <span className="text-sm font-bold">Employee Task</span>
                            </label>
                         </div>
-                        <div><Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Target Client ID (e.g. CLI-1049) *' : 'Target Employee ID (e.g. EMP-802) *'}</Label><Input placeholder={taskForm.target_type === 'client_alert' ? 'CLI-XXXX' : 'EMP-XXXX'} value={taskForm.target_id} onChange={e => setTaskForm({...taskForm, target_id: e.target.value})} required className="mt-1 font-mono uppercase bg-white border-slate-300 focus-visible:ring-purple-500" /></div>
-                        <div><Label className="text-slate-600 font-bold">Subject / Title *</Label><Input placeholder={taskForm.target_type === 'client_alert' ? 'e.g. Upload GST Certificate Immediately' : 'e.g. Verify Tender Documents for CLI-1049'} value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" /></div>
-                        <div><Label className="text-slate-600 font-bold">Detailed Instructions *</Label><Textarea rows={4} placeholder="Describe exactly what needs to be done..." value={taskForm.message} onChange={e => setTaskForm({...taskForm, message: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" /></div>
-                        <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 shadow-md h-12 text-base"><ClipboardList className="w-5 h-5 mr-2" /> Dispatch Now</Button>
+                        <div>
+                           <Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Target Client (e.g. [CLI-1049] Balaji Ent) *' : 'Target Employee (e.g. [EMP-802] Ramesh) *'}</Label>
+                           <Input placeholder={taskForm.target_type === 'client_alert' ? 'Enter Client Name or ID' : 'Enter Employee Name or ID'} value={taskForm.target_id} onChange={e => setTaskForm({...taskForm, target_id: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" />
+                        </div>
+                        <div>
+                           <Label className="text-slate-600 font-bold">Subject / Title *</Label>
+                           <Input placeholder={taskForm.target_type === 'client_alert' ? 'e.g. Upload GST Certificate Immediately' : 'e.g. Verify Tender Documents for CLI-1049'} value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" />
+                        </div>
+                        <div>
+                           <Label className="text-slate-600 font-bold">Detailed Instructions *</Label>
+                           <Textarea rows={4} placeholder="Describe exactly what needs to be done..." value={taskForm.message} onChange={e => setTaskForm({...taskForm, message: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" />
+                        </div>
+                        <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 shadow-md h-12 text-base">
+                           <ClipboardList className="w-5 h-5 mr-2" /> Dispatch Now
+                        </Button>
                      </form>
                   </CardContent>
                </Card>
+
                <Card className="tender-shadow border-0 bg-slate-50/50">
                   <CardHeader className="border-b pb-4"><CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Activity className="w-5 h-5 text-slate-400"/> Dispatch Radar (Live Tracking)</CardTitle></CardHeader>
                   <CardContent className="pt-4 max-h-[550px] overflow-y-auto">
@@ -665,7 +812,7 @@ export default function AdminPage() {
                                     <span className="text-[10px] text-slate-400 font-medium">{d.date}</span>
                                  </div>
                                  <div className="pl-2">
-                                    <p className="text-[10px] text-slate-400 mb-1">Target: <strong className="text-[#0A2647] font-mono bg-slate-100 px-1.5 py-0.5 rounded">{d.target_id}</strong></p>
+                                    <p className="text-[10px] text-slate-400 mb-1">Target: <strong className="text-[#0A2647] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{d.target_id}</strong></p>
                                     <h4 className="font-bold text-sm text-[#0A2647] leading-tight mb-2">{d.subject}</h4>
                                     <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium">"{d.message}"</p>
                                  </div>
@@ -678,6 +825,9 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 6: TENDERS PUBLISHER */}
+          {/* ============================================================================== */}
           <TabsContent value="tenders" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className="lg:col-span-2 tender-shadow">
@@ -741,7 +891,6 @@ export default function AdminPage() {
                         </div>
                         <Button variant="ghost" size="icon" onClick={() => remove(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
                       </div>
-                      
                       <div className="bg-emerald-50/50 p-2 rounded-md border border-emerald-100 flex flex-col sm:flex-row gap-2 items-center w-full mt-1">
                          <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
                          <Input placeholder="Winning Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-32 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}/>
@@ -755,6 +904,9 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 7: TICKETS */}
+          {/* ============================================================================== */}
           <TabsContent value="tickets" className="mt-4">
             <Card className="tender-shadow border-t-4 border-t-amber-500">
               <CardHeader className="bg-amber-50/30 border-b pb-4">
@@ -809,7 +961,7 @@ export default function AdminPage() {
                <div className="bg-[#0A2647] p-6 text-white sticky top-0 z-10 flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-md">
                  <div className="flex items-center gap-4">
                     <div className="w-14 h-14 bg-white/10 rounded-xl flex items-center justify-center">
-                       <Building2 className="w-8 h-8 text-emerald-400" />
+                       <Briefcase className="w-8 h-8 text-emerald-400" />
                     </div>
                     <div>
                        <div className="flex items-center gap-3 mb-1">
@@ -828,38 +980,36 @@ export default function AdminPage() {
                </div>
                <div className="p-6 space-y-6">
                  <div className="grid md:grid-cols-2 gap-4">
-                    <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                       <CardHeader className="bg-slate-50/50 border-b pb-3"><CardTitle className="text-base text-slate-800 flex items-center gap-2"><Briefcase className="w-4 h-4 text-slate-500"/> Business Demographics</CardTitle></CardHeader>
-                       <CardContent className="pt-4 text-sm space-y-3">
-                          <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">Contact Number:</span> <span className="font-bold text-[#0A2647]">{selectedClient.phone || 'N/A'}</span></div>
-                          <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">Company Type:</span> <span className="font-bold text-[#0A2647]">{selectedClient.company_type || 'N/A'}</span></div>
-                          <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">Service / Target Tenders:</span> <span className="font-bold text-[#0A2647]">{selectedClient.tender_interest || selectedClient.service_category || 'All Categories'}</span></div>
-                          <div className="flex justify-between pb-1"><span className="text-slate-500">Onboarding Date:</span> <span className="font-bold text-[#0A2647]">{new Date().toLocaleDateString()}</span></div>
+                    <Card className="shadow-sm border-0">
+                       <CardHeader className="pb-2"><CardTitle className="text-base text-slate-700">Business Demographics</CardTitle></CardHeader>
+                       <CardContent className="text-sm space-y-2">
+                          <div className="flex justify-between border-b pb-1"><span className="text-slate-500">Owner Name:</span> <span className="font-semibold text-slate-800">{selectedClient.client_name || 'N/A'}</span></div>
+                          <div className="flex justify-between border-b pb-1"><span className="text-slate-500">Company Type:</span> <span className="font-semibold text-slate-800">{selectedClient.company_type || 'N/A'}</span></div>
+                          <div className="flex justify-between border-b pb-1"><span className="text-slate-500">Service Category:</span> <span className="font-semibold text-slate-800">{selectedClient.service_category || 'N/A'}</span></div>
+                          <div className="flex justify-between pb-1"><span className="text-slate-500">Onboarding Status:</span> <Badge className="bg-emerald-100 text-emerald-800 border-0 h-5">Completed</Badge></div>
                        </CardContent>
                     </Card>
-                    <Card className="shadow-sm border-0 bg-blue-50/30 border-l-4 border-l-blue-600 ring-1 ring-blue-100">
-                       <CardHeader className="pb-3 border-b border-blue-100"><CardTitle className="text-base text-blue-900 flex items-center gap-2"><Lock className="w-4 h-4"/> MD Deep Insights (Edit Data)</CardTitle></CardHeader>
-                       <CardContent className="pt-4 text-sm space-y-4">
-                          <div><Label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Assign Verified PAN Number</Label><Input defaultValue={selectedClient.pan_number || ''} placeholder="Enter exact PAN..." className="h-9 text-sm bg-white mt-1.5 font-mono uppercase focus-visible:ring-blue-500"/></div>
-                          <div><Label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Internal MD Notes / Strategy</Label><Textarea defaultValue={selectedClient.business_desc || ''} placeholder="Write internal notes about this client's specific tender requirements or strategy..." className="h-20 text-sm bg-white mt-1.5 focus-visible:ring-blue-500"/></div>
-                          <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700 h-10 shadow-md font-semibold">Save Overrides to Master Database</Button>
+                    <Card className="shadow-sm border-0 bg-blue-50/50 border-l-4 border-l-blue-500">
+                       <CardHeader className="pb-2"><CardTitle className="text-base text-blue-900">MD Deep Insights (Edit Data)</CardTitle></CardHeader>
+                       <CardContent className="text-sm space-y-3">
+                          <div><Label className="text-xs text-blue-800">Assign PAN Number</Label><Input defaultValue={selectedClient.pan_number || ''} placeholder="Update PAN..." className="h-8 text-xs bg-white mt-1"/></div>
+                          <div><Label className="text-xs text-blue-800">Internal MD Notes / Description</Label><Textarea defaultValue={selectedClient.business_desc || ''} placeholder="Write internal notes about this client's requirements..." className="h-16 text-xs bg-white mt-1"/></div>
+                          <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700 h-8">Save Client Details to Database</Button>
                        </CardContent>
                     </Card>
                  </div>
-                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-[#0A2647] border-b pb-3 mb-4 flex items-center gap-2 text-lg"><ShieldCheck className="w-5 h-5 text-[#16a34a]"/> Corporate Vault (Reported KYC Status)</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                       {['has_pan', 'has_gst', 'has_bank', 'has_ifsc', 'has_msme', 'has_iso', 'has_dsc', 'has_turnover'].map(docKey => (
-                          <div key={docKey} className={`flex justify-between items-center p-3 border rounded-lg text-xs shadow-sm transition ${selectedClient[docKey] ? 'bg-emerald-50/50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
-                             <span className={`font-bold uppercase tracking-wider ${selectedClient[docKey] ? 'text-emerald-900' : 'text-slate-500'}`}>{docKey.replace('has_', '')}</span>
-                             {selectedClient[docKey] ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <span className="text-[10px] text-slate-400 bg-slate-200 px-2 py-1 rounded font-semibold">MISSING</span>}
-                          </div>
-                       ))}
-                    </div>
+                 <h3 className="font-bold text-[#0A2647] border-b pb-2">Client Document Vault (Reported Status)</h3>
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {['has_pan', 'has_gst', 'has_bank', 'has_msme', 'has_iso', 'has_dsc', 'has_aadhar', 'has_turnover'].map(docKey => (
+                       <div key={docKey} className="flex justify-between items-center bg-white p-2 border rounded text-xs shadow-sm">
+                          <span className="font-semibold text-slate-700 uppercase">{docKey.replace('has_', '')}</span>
+                          {selectedClient[docKey] ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <span className="text-slate-300">Missing</span>}
+                       </div>
+                    ))}
                  </div>
-                 <div className="flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t border-slate-200">
-                    <Button onClick={() => setSelectedClient(null)} variant="outline" className="border-slate-300 text-slate-700 h-11 px-6">Close MD Panel</Button>
-                    <Button onClick={() => { approveClient(selectedClient.email); setSelectedClient(null); }} className="bg-[#16a34a] hover:bg-[#15803d] h-11 px-8 shadow-md text-base font-semibold"><CheckCircle2 className="w-5 h-5 mr-2" /> Force Verify & Approve Client</Button>
+                 <div className="flex justify-end gap-3 pt-4 border-t">
+                    <Button onClick={() => setSelectedClient(null)} variant="outline" className="border-slate-300 text-slate-700">Close Panel</Button>
+                    <Button onClick={() => approveClient(selectedClient.email)} className="bg-[#16a34a] hover:bg-[#15803d]">Force Approve Client</Button>
                  </div>
                </div>
              </>
@@ -931,14 +1081,14 @@ function BrandSettings({ token }) {
               {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="w-10 h-10 text-slate-300" />}
             </div>
             <div className="flex gap-2 w-full">
-              <label className="cursor-pointer flex-1 text-xs px-3 py-2 bg-[#0A2647] text-white rounded-md text-center"><input type="file" onChange={onLogoChange} className="hidden" />Upload</label>
-              {logoPreview && <button onClick={removeLogo} className="text-xs px-3 py-2 bg-white border border-red-200 text-red-600 rounded-md">Remove</button>}
+              <label className="cursor-pointer flex-1 text-xs px-3 py-2 bg-[#0A2647] hover:bg-[#144272] text-white rounded-md text-center transition"><input type="file" onChange={onLogoChange} className="hidden" />Upload</label>
+              {logoPreview && <button onClick={removeLogo} className="text-xs px-3 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-md transition">Remove</button>}
             </div>
           </div>
           <div className="sm:col-span-2 space-y-5">
             <div><Label className="text-slate-700 font-bold">Portal Brand Name</Label><Input value={brandName} onChange={e => setBrandName(e.target.value)} className="mt-1.5" /></div>
             <div><Label className="text-slate-700 font-bold">Portal Tagline</Label><Input value={tagline} onChange={e => setTagline(e.target.value)} className="mt-1.5" /></div>
-            <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d]">Save System Settings</Button>
+            <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d] h-11 px-8 shadow-md text-base">Save System Settings</Button>
           </div>
         </div>
       </CardContent>
