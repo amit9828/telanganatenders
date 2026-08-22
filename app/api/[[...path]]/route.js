@@ -141,7 +141,7 @@ export async function GET(request, { params }) {
       });
     }
 
-    // --- 🟢 NEW: GET TICKETS (SLA System) ---
+    // 7. GET TICKETS (SLA System)
     if (path === 'tickets' || path === 'api/tickets') {
       const email = searchParams.get('email');
       const role = searchParams.get('role'); // admin can see all
@@ -152,7 +152,7 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
-    // --- 🟢 NEW: GET PENDING USERS (For Admin Approvals) ---
+    // 8. GET PENDING USERS (For Admin Approvals)
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
          .find({ status: 'pending', is_approved: { $ne: true } })
@@ -161,7 +161,7 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
-    // 7. MY ACCOUNT DATA FIX (/api/me) --- 🟢 UPDATED: WITH PROFILE FIELDS ---
+    // 9. MY ACCOUNT DATA (/api/me) --- (పాత ఫీల్డ్స్ + కొత్త ప్రో ఫీల్డ్స్)
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
@@ -201,11 +201,24 @@ export async function GET(request, { params }) {
         onboarding_complete: user.onboarding_complete || false,
         is_approved: user.is_approved || false,
         profile: {
-          service_category: user.service_category || '',
-          company_name: user.company_name || '',
+          // పాత ఫీల్డ్స్ (Admin కోసం)
           company_type: user.company_type || '',
+          has_gst: user.has_gst || false,
+          has_msme: user.has_msme || false,
+          has_iso: user.has_iso || false,
+          // కొత్త ఫీల్డ్స్ (Pro Dashboard కోసం)
+          client_name: user.client_name || '',
+          company_name: user.company_name || '',
+          phone: user.phone || '',
+          address: user.address || '',
+          service_category: user.service_category || '',
+          documents: user.documents || {},
           profile_score: user.profile_score || 0
-        }
+        },
+        // ERP Modules for the Client Dashboard
+        action_alerts: user.action_alerts || [],
+        emd_ledger: user.emd_ledger || [],
+        tender_workspaces: user.tender_workspaces || []
       });
     }
 
@@ -217,7 +230,7 @@ export async function GET(request, { params }) {
 }
 
 // =====================================================================
-// 🟢 NEW: PUT REQUESTS (For L1 Price Market Intelligence)
+// PUT REQUESTS (For L1 Price Market Intelligence)
 // =====================================================================
 export async function PUT(request, { params }) {
   const db = await getDb();
@@ -292,7 +305,7 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Auto-renewal cancelled successfully.' });
     }
 
-    // --- 🟢 NEW: CREATE TICKET (SLA Ticketing System) ---
+    // SLA Ticketing System
     if (path === 'tickets' || path === 'api/tickets') {
       const { email, department, subject, message } = body;
       const createdAt = new Date();
@@ -303,7 +316,7 @@ export async function POST(request, { params }) {
         department: department,
         subject: subject,
         message: message,
-        status: 'OPEN', // OPEN, RESOLVED, ESCALATED
+        status: 'OPEN', 
         created_at: createdAt,
         sla_deadline: deadline,
         reply: null,
@@ -315,7 +328,6 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket raised successfully. Our team will reply within 24 hours.', id: result.insertedId });
     }
 
-    // --- 🟢 NEW: REPLY TO TICKET (Admin action) ---
     if (path === 'tickets/reply' || path === 'api/tickets/reply') {
       const { ticket_id, reply, admin_email } = body;
       await db.collection('tickets').updateOne(
@@ -325,14 +337,31 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket Resolved.' });
     }
 
-    // --- 🟢 NEW: ONBOARDING SUBMIT (Profile Creation) ---
+    // --- 🟢 UPDATED: ONBOARDING SUBMIT (పాతవి + కొత్తవి కలిపి) ---
     if (path === 'users/profile' || path === 'api/users/profile') {
-      const { email, service_category, company_name, company_type, has_gst, has_msme, has_iso } = body;
+      const { 
+        email, client_name, company_name, company_type, phone, address, 
+        service_category, has_gst, has_msme, has_iso, documents, status 
+      } = body;
+      
       await db.collection('users').updateOne(
         { email: email.toLowerCase() },
         { $set: { 
-            service_category, company_name, company_type, has_gst, has_msme, has_iso, 
-            status: 'pending', onboarding_complete: true, profile_score: 50 
+            // పాత ఫీల్డ్స్ (For Admin Dashboard)
+            company_type,
+            has_gst,
+            has_msme,
+            has_iso,
+            // కొత్త ఫీల్డ్స్
+            client_name, 
+            company_name, 
+            phone, 
+            address, 
+            service_category, 
+            documents: documents || {},
+            status: status || 'pending', 
+            onboarding_complete: true, 
+            profile_score: 80 
           } 
         }, 
         { upsert: true }
@@ -340,7 +369,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // --- 🟢 NEW: APPROVE USER ---
     if (path === 'users/approve' || path === 'api/users/approve') {
       const { email } = body;
       await db.collection('users').updateOne(
@@ -350,7 +378,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // --- 🟢 NEW: REQUEST PAYMENT FOR MISSING DOCUMENTS ---
     if (path === 'users/request-payment' || path === 'api/users/request-payment') {
        const { email, amount, reason } = body;
        await db.collection('users').updateOne(
@@ -361,7 +388,7 @@ export async function POST(request, { params }) {
     }
 
     // =====================================================================
-    // CASHFREE PAYMENT LOGIC (KEPT EXACTLY AS YOU PROVIDED)
+    // CASHFREE PAYMENT LOGIC
     // =====================================================================
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
       const plan = body.plan;
@@ -402,9 +429,6 @@ export async function POST(request, { params }) {
       }
     }
 
-    // =====================================================================
-    // CASHFREE VERIFY LOGIC (KEPT EXACTLY AS YOU PROVIDED)
-    // =====================================================================
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       const orderId = body.order_id;
       if (!orderId) return json({ error: 'Missing ID' }, 400);
