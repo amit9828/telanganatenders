@@ -172,10 +172,21 @@ export default function App() {
   const [buying, setBuying] = useState(false);
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana & AP Tenders', logo: null });
 
-  // 1. DONT DEFAULT TO 'guest' -> ALWAYS ENFORCE LOGIN
+  // URL Intent Tracking (Guarantees data won't be lost after Google redirect)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIntent(localStorage.getItem('tt_intent') || '');
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlIntent = urlParams.get('intent');
+      if (urlIntent) {
+        localStorage.setItem('tt_intent', urlIntent);
+        setIntent(urlIntent);
+        // Clean up URL safely
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('intent');
+        window.history.replaceState({}, document.title, newUrl.pathname + newUrl.search);
+      } else {
+        setIntent(localStorage.getItem('tt_intent') || '');
+      }
     }
   }, []);
 
@@ -217,6 +228,7 @@ export default function App() {
     }
   }, [session, status]);
 
+  // Client Redirect Hook
   useEffect(() => {
     if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete) {
       router.push('/client');
@@ -229,12 +241,12 @@ export default function App() {
     }
     setEmail('');
     setUserData(null);
-    setIntent(''); // Clear intent to reset Gateway
+    setIntent(''); 
     await signOut({ callbackUrl: '/' }); 
   };
 
   const fetchTenders = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return; 
+    if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return; 
 
     setLoading(true);
     try {
@@ -257,7 +269,7 @@ export default function App() {
   };
 
   const fetchCalendar = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return;
+    if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json();
     setCalDays(d.days || {});
@@ -504,7 +516,7 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 1: GATEKEEPER (Always triggers if user is not logged in)
+  // SCREEN 1: GATEKEEPER (Forces Login for Everyone)
   // ==============================================================================
   if (status === 'unauthenticated') {
     return (
@@ -528,7 +540,8 @@ export default function App() {
                 <Button onClick={() => { 
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
                   setIntent('client');
-                  signIn('google');
+                  const cb = typeof window !== 'undefined' ? `${window.location.origin}/?intent=client` : '/?intent=client';
+                  signIn('google', { callbackUrl: cb });
                 }} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
                 </Button>
@@ -536,7 +549,9 @@ export default function App() {
                 <Button onClick={() => {
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
                   setIntent('guest');
-                  signIn('google'); // FORCES GUEST TO LOGIN 
+                  setIsGuest(true);
+                  const cb = typeof window !== 'undefined' ? `${window.location.origin}/?intent=guest` : '/?intent=guest';
+                  signIn('google', { callbackUrl: cb }); 
                 }} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Eye className="w-5 h-5 mr-2" /> Browse as Guest
                 </Button>
@@ -582,7 +597,7 @@ export default function App() {
   // ==============================================================================
   // SCREEN 2: CLIENT ONBOARDING (For Client intent that has not completed registration)
   // ==============================================================================
-  if (status === 'authenticated' && intent === 'client' && userData && !userData.onboarding_complete) {
+  if (status === 'authenticated' && intent === 'client' && (!userData || !userData.onboarding_complete)) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
         <Card className="max-w-3xl mx-auto tender-shadow">
@@ -683,14 +698,14 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 3: REDIRECTING CLIENT (Prevents flash of the main dashboard)
+  // SCREEN 3: REDIRECTING CLIENT
   // ==============================================================================
   if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   }
 
   // ==============================================================================
-  // SCREEN 4: GUEST MAIN DASHBOARD (GUESTS ONLY REACH HERE AFTER LOGIN)
+  // SCREEN 4: GUEST MAIN DASHBOARD (Only Guests reach here)
   // ==============================================================================
 
   return (
@@ -752,7 +767,8 @@ export default function App() {
                 onClick={() => { 
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
                   setIsGuest(false); 
-                  signIn('google'); 
+                  const cb = typeof window !== 'undefined' ? `${window.location.origin}/?intent=guest` : '/?intent=guest';
+                  signIn('google', { callbackUrl: cb }); 
                 }}
                 size="sm"
                 className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d]"
@@ -1179,7 +1195,9 @@ export default function App() {
               onClick={() => {
                 setEmailModal(false);
                 if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
-                signIn('google', { callbackUrl: typeof window !== 'undefined' ? window.location.href : '/' });
+                setIntent('guest');
+                const cb = typeof window !== 'undefined' ? `${window.location.origin}/?intent=guest&open_tender=${pendingTender?._id || pendingTender?.id || ''}` : '/';
+                signIn('google', { callbackUrl: cb });
               }}
               className="w-full bg-white hover:bg-slate-50 border text-[#0A2647] gap-2 h-11"
             >
