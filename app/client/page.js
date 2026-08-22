@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useSession, signOut } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ import {
   Briefcase, CheckCircle2, AlertTriangle, FileText, 
   Clock, ShieldAlert, Send, MessageSquare, Target, UserCheck, 
   Upload, Banknote, BellRing, Loader2, LogOut, FileUp, 
-  Scale, Download, Activity, Package, Building2, 
+  Download, Activity, Package, Building2, 
   ChevronDown, UserCircle, UploadCloud, Globe, Database
 } from 'lucide-react';
 
@@ -109,7 +110,7 @@ export default function ClientDashboard() {
       link_or_id: customTenderForm.link_or_id,
       description: customTenderForm.description,
       status: 'Pending Officer Review',
-      officer_reply: 'Awaiting officer response...'
+      officer_reply: 'Awaiting officer response...' // ఆఫీసర్ రిప్లై ఖాళీగా ఉంటుంది
     };
     
     setUserData(prev => ({
@@ -145,37 +146,9 @@ export default function ClientDashboard() {
     }
   };
 
-  // ఫైనల్ సిస్టమ్ సైన్ అవుట్ ఫిక్స్
   const handleSignOut = () => {
     localStorage.removeItem('tt_email');
     window.location.href = '/';
-  };
-
-  const payCustomFee = async (feeAmount, reason) => {
-    if (buying) return;
-    setBuying(true);
-    try {
-      const r1 = await fetch('/api/payment/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, plan: 'custom', amount: feeAmount, description: reason }),
-      });
-      const d1 = await r1.json();
-      if (!r1.ok || !d1.payment_session_id) {
-        toast.error(d1.error || 'Failed to initialize payment');
-        setBuying(false);
-        return;
-      }
-      const cashfree = await load({ mode: "production" });
-      await cashfree.checkout({
-        paymentSessionId: d1.payment_session_id,
-        returnUrl: window.location.origin + "/payment-status?order_id={order_id}",
-      });
-    } catch (e) {
-      toast.error('Could not start payment');
-    } finally {
-      setBuying(false);
-    }
   };
 
   if (!isMounted) return null;
@@ -249,8 +222,8 @@ export default function ClientDashboard() {
                    ) : (
                       <>
                         {queries.map((q, i) => (
-                          <DropdownMenuItem key={`q-${i}`} className="text-xs text-red-600 font-medium whitespace-normal cursor-pointer flex flex-col items-start gap-1">
-                             <span>⚠️ {q.subject}</span>
+                          <DropdownMenuItem key={`q-${i}`} className="text-xs text-red-600 font-medium whitespace-normal cursor-pointer">
+                             ⚠️ {q.subject}
                           </DropdownMenuItem>
                         ))}
                         {pendingPayments.map((p, i) => (
@@ -263,31 +236,7 @@ export default function ClientDashboard() {
                 </DropdownMenuContent>
              </DropdownMenu>
 
-             {/* CLIENT PROFILE DROPDOWN WITH FIXED SIGN OUT */}
-             <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                   <Button variant="outline" className="flex items-center gap-2 border-slate-200 bg-slate-50">
-                     <UserCircle className="w-5 h-5 text-[#0A2647]" />
-                     <div className="hidden md:flex flex-col items-start text-left">
-                       <span className="text-xs font-bold text-[#0A2647] leading-none">{clientName}</span>
-                       <span className="text-[9px] text-slate-500 font-semibold">{companyName}</span>
-                     </div>
-                     <ChevronDown className="w-3 h-3 text-slate-400" />
-                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64 p-2">
-                   <div className="p-2 border-b mb-2 bg-slate-50 rounded-md">
-                     <p className="font-bold text-[#0A2647]">{clientName}</p>
-                     <p className="text-xs text-slate-500">{email}</p>
-                     <Badge className="mt-2 bg-blue-100 text-blue-800 hover:bg-blue-200 border-0">{userData.profile?.category || 'Vendor'}</Badge>
-                   </div>
-                   <DropdownMenuItem className="text-red-600 cursor-pointer font-medium" onClick={handleSignOut}>
-                     <LogOut className="w-4 h-4 mr-2" /> Sign Out
-                   </DropdownMenuItem>
-                </DropdownMenuContent>
-             </DropdownMenu>
-
-             {/* MAIN SIGN OUT BUTTON */}
+             {/* SIGN OUT */}
              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-red-600 hover:text-red-700 hover:bg-red-50 font-bold border border-red-100">
                 <LogOut className="w-4 h-4 md:mr-2"/> <span className="hidden md:inline">Sign Out</span>
              </Button>
@@ -341,7 +290,7 @@ export default function ClientDashboard() {
 
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* 1. OFFICER QUERY & UNDERTAKING BLOCK */}
+            {/* 1. OFFICER QUERY & UNDERTAKING BLOCK (ఖాళీగా ఉంటుంది / ఆఫీసర్ రిక్వెస్ట్ చేస్తేనే కనిపిస్తుంది) */}
             <Card className={`border-t-4 shadow-sm bg-white ${queries.length > 0 ? 'border-t-red-500' : 'border-t-slate-300'}`}>
               <CardHeader className="pb-3 border-b">
                 <CardTitle className="flex items-center gap-2 text-base text-[#0A2647]">
@@ -380,7 +329,7 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* 2. CUSTOM TENDER REQUEST BLOCK */}
+            {/* 2. CUSTOM TENDER REQUEST BLOCK (ఆఫీసర్ రిప్లై ట్రాకింగ్‌తో సహా) */}
             <Card className="tender-shadow border-t-4 border-t-emerald-500">
               <CardHeader className="bg-emerald-50/40 pb-4 border-b">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
@@ -588,15 +537,18 @@ export default function ClientDashboard() {
              </Card>
           </TabsContent>
 
-          {/* TAB 4: CORPORATE VAULT */}
+          {/* TAB 4: CORPORATE VAULT (Document Uploads with your full list) */}
           <TabsContent value="vault" className="space-y-6">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-slate-50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><Database className="w-5 h-5 text-[#16a34a]"/> Corporate Drive Vault</CardTitle>
+                <CardDescription>Upload corporate documents here. They will securely sync to your designated Google Drive folder.</CardDescription>
               </CardHeader>
               <CardContent className="pt-6">
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {['PAN_Card', 'GST_Certificate', 'MSME_Udyam', 'Bank_Mandate', 'DSC_Class_3', 'ISO_Certificate'].map((doc) => (
+                 
+                 <h4 className="font-bold text-slate-700 mb-3 border-b pb-1">Mandatory Documents</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    {['PAN_Card', 'GST_Certificate', 'MSME_Udyam', 'Bank_Account_IFSC', 'DSC_Class_3'].map((doc) => (
                       <div key={doc} className="bg-white p-3 border rounded-md shadow-sm">
                          <div className="flex justify-between items-center mb-2">
                            <Label className="font-bold text-slate-700 text-xs">{doc.replace(/_/g, ' ')}</Label>
@@ -613,6 +565,47 @@ export default function ClientDashboard() {
                       </div>
                     ))}
                  </div>
+
+                 <h4 className="font-bold text-slate-700 mb-3 border-b pb-1">Business & Compliance Documents</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    {['Aadhaar_Card', 'ISO_Certificate', 'CA_Turnover', 'Annual_Returns', 'FSSAI_License', 'ESI_Registration', 'EPF_Registration', 'CER_Certificate'].map((doc) => (
+                      <div key={doc} className="bg-white p-3 border rounded-md shadow-sm">
+                         <div className="flex justify-between items-center mb-2">
+                           <Label className="font-bold text-slate-700 text-xs truncate" title={doc.replace(/_/g, ' ')}>{doc.replace(/_/g, ' ')}</Label>
+                           {uploadedFiles[doc] ? (
+                             <Badge className="bg-emerald-100 text-emerald-800 text-[9px] border-0 px-1 py-0">{uploadedFiles[doc]}</Badge>
+                           ) : (
+                             <Badge variant="outline" className="text-[9px] px-1 py-0 border-slate-200 text-slate-500">Not Synced</Badge>
+                           )}
+                         </div>
+                         <div className="flex items-center gap-2 mt-3">
+                            <UploadCloud className="w-4 h-4 text-blue-500 shrink-0" />
+                            <Input type="file" accept=".pdf, image/*" onChange={(e) => handleFileUpload(doc, e)} className="text-xs h-8 cursor-pointer file:text-xs file:bg-slate-100 file:border-0 file:rounded file:px-2"/>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+
+                 <h4 className="font-bold text-slate-700 mb-3 border-b pb-1">Experience & Formats</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {['Experience_Certificates', 'Work_Orders', 'Letterhead_Word_Format'].map((doc) => (
+                      <div key={doc} className="bg-white p-3 border rounded-md shadow-sm">
+                         <div className="flex justify-between items-center mb-2">
+                           <Label className="font-bold text-slate-700 text-xs truncate" title={doc.replace(/_/g, ' ')}>{doc.replace(/_/g, ' ')}</Label>
+                           {uploadedFiles[doc] ? (
+                             <Badge className="bg-emerald-100 text-emerald-800 text-[9px] border-0 px-1 py-0">{uploadedFiles[doc]}</Badge>
+                           ) : (
+                             <Badge variant="outline" className="text-[9px] px-1 py-0 border-slate-200 text-slate-500">Not Synced</Badge>
+                           )}
+                         </div>
+                         <div className="flex items-center gap-2 mt-3">
+                            <UploadCloud className="w-4 h-4 text-blue-500 shrink-0" />
+                            <Input type="file" accept=".pdf, .doc, .docx" onChange={(e) => handleFileUpload(doc, e)} className="text-xs h-8 cursor-pointer file:text-xs file:bg-slate-100 file:border-0 file:rounded file:px-2"/>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+
               </CardContent>
             </Card>
           </TabsContent>
