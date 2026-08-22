@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { load } from '@cashfreepayments/cashfree-js';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Briefcase, CheckCircle2, AlertTriangle, FileText, 
   Clock, ShieldAlert, Sparkles, Send, MessageSquare, Target, UserCheck, 
-  Upload, Download, Banknote, IndianRupee, BellRing
+  Upload, Download, Banknote, IndianRupee, BellRing, Loader2, CheckCircle, ShieldCheck
 } from 'lucide-react';
 
 export default function ClientDashboard() {
@@ -18,6 +19,7 @@ export default function ClientDashboard() {
   const [email, setEmail] = useState('');
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [buying, setBuying] = useState(false);
 
   // Onboarding Form State
   const [form, setForm] = useState({
@@ -31,7 +33,7 @@ export default function ClientDashboard() {
 
   useEffect(() => {
     setIsMounted(true);
-    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
+    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email'] : '';
     if (e) {
       setEmail(e);
       fetchClientData(e);
@@ -88,10 +90,53 @@ export default function ClientDashboard() {
     setSubmitting(false);
   };
 
-  const handleTicket = (e) => {
+  const handleTicket = async (e) => {
     e.preventDefault();
-    toast.success('Ticket submitted successfully! Our team will resolve this within 24 hours.');
-    setTicketForm({ subject: '', message: '' });
+    if(!ticketForm.subject || !ticketForm.message) return toast.error('Fill subject and message');
+    try {
+      const r = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, department: 'Support', subject: ticketForm.subject, message: ticketForm.message })
+      });
+      if(r.ok) {
+        toast.success('Ticket submitted successfully! SLA 24-hour timer started.');
+        setTicketForm({ subject: '', message: '' });
+      } else {
+        toast.error('Failed to submit ticket');
+      }
+    } catch(err) {
+      toast.error('Network error');
+    }
+  };
+
+  // --- DYNAMIC CUSTOM PAYMENT HANDLER (Cashfree integration for missing document fees) ---
+  const payCustomFee = async (feeAmount, reason) => {
+    if (buying) return;
+    setBuying(true);
+    try {
+      const r1 = await fetch('/api/payment/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, plan: 'custom', amount: feeAmount, description: reason }),
+      });
+      const d1 = await r1.json();
+      if (!r1.ok || !d1.payment_session_id) {
+        toast.error(d1.error || 'Failed to initialize payment');
+        setBuying(false);
+        return;
+      }
+
+      const cashfree = await load({ mode: "production" });
+      await cashfree.checkout({
+        paymentSessionId: d1.payment_session_id,
+        returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}",
+      });
+    } catch (e) {
+      toast.error('Could not start payment');
+    } finally {
+      setBuying(false);
+    }
   };
 
   if (!isMounted) return null;
@@ -157,7 +202,7 @@ export default function ClientDashboard() {
 
               <div className="border-t pt-5">
                 <Label className="text-[#0A2647] font-bold text-base mb-3 block">Document Availability Checklist</Label>
-                <p className="text-xs text-slate-500 mb-4">Tick the documents you currently hold. (Not all are mandatory, but more documents increase your profile strength).</p>
+                <p className="text-xs text-slate-500 mb-4">Tick the documents you currently hold.</p>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {Object.keys(docs).map((docKey) => (
@@ -204,7 +249,6 @@ export default function ClientDashboard() {
   // STATE 3: ULTRA PRO CLIENT DASHBOARD
   // ==========================================
   
-  // Dummy Action Alerts (Employee Complaints/Requests)
   const dummyAlerts = userData?.action_alerts?.length > 0 ? userData.action_alerts : [
     { id: 1, employee: "Admin", message: "We need the updated CA Turnover Certificate for GEM/2026/B/45879. Please upload it ASAP.", type: "urgent" }
   ];
@@ -223,9 +267,25 @@ export default function ClientDashboard() {
 
       <main className="container mx-auto px-4 py-8 space-y-6">
         
+        {/* --- DYNAMIC PENDING PAYMENT REQUESTS FROM MD/EMPLOYEE --- */}
+        {userData?.pending_payments?.filter(p => p.status === 'UNPAID').map((payReq, idx) => (
+          <div key={idx} className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+             <div className="flex items-start gap-3">
+                <Banknote className="w-6 h-6 text-amber-700 mt-1 shrink-0" />
+                <div>
+                   <h3 className="font-bold text-amber-900">Custom Document Fee Requested</h3>
+                   <p className="text-sm text-amber-800 mt-0.5">{payReq.reason} — <strong className="text-amber-950">₹{payReq.amount}</strong></p>
+                </div>
+             </div>
+             <Button onClick={() => payCustomFee(payReq.amount, payReq.reason)} disabled={buying} size="sm" className="bg-[#16a34a] hover:bg-[#15803d] shrink-0">
+               {buying ? 'Processing...' : `Pay ₹${payReq.amount} Now`}
+             </Button>
+          </div>
+        ))}
+
         {/* SMART ACTION CENTER (Employee Alerts) */}
         {dummyAlerts.map(alert => (
-          <div key={alert.id} className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm animate-in fade-in slide-in-from-top-4">
+          <div key={alert.id} className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
              <div className="flex items-start gap-3">
                 <AlertTriangle className="w-6 h-6 text-red-600 mt-1 shrink-0" />
                 <div>
@@ -272,7 +332,6 @@ export default function ClientDashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y">
-                  {/* Mock Active Tender Item */}
                   <div className="p-5 hover:bg-slate-50 transition">
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
                         <div>
@@ -354,18 +413,6 @@ export default function ClientDashboard() {
                       <span className="text-sm font-semibold text-emerald-900">EMD Refunded</span>
                       <span className="text-lg font-black text-emerald-700">₹45,000</span>
                    </div>
-                   
-                   {/* Pending Consultancy Fee Alert */}
-                   <div className="mt-4 pt-4 border-t">
-                      <p className="text-xs font-bold text-slate-500 uppercase mb-2">Pending Invoices</p>
-                      <div className="border border-red-200 bg-red-50 p-3 rounded-lg flex flex-col gap-2">
-                        <div className="flex justify-between items-center text-sm">
-                           <span className="font-semibold text-red-900">GeM Registration Fee</span>
-                           <span className="font-bold text-red-700">₹2,500</span>
-                        </div>
-                        <Button size="sm" className="w-full bg-red-600 hover:bg-red-700 h-8">Pay Now</Button>
-                      </div>
-                   </div>
                 </div>
               </CardContent>
             </Card>
@@ -382,10 +429,10 @@ export default function ClientDashboard() {
                     value={ticketForm.subject}
                     onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})}
                     required 
-                    className="text-sm"
+                    className="text-sm bg-white"
                   />
                   <textarea 
-                    className="w-full border rounded-md p-2 text-sm h-24 focus:ring-1 focus:ring-[#0A2647] outline-none"
+                    className="w-full border rounded-md p-2 text-sm h-24 focus:ring-1 focus:ring-[#0A2647] outline-none bg-white"
                     placeholder="Describe your requirement..."
                     value={ticketForm.message}
                     onChange={e=>setTicketForm({...ticketForm, message: e.target.value})}
