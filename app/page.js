@@ -40,7 +40,6 @@ import {
   Sparkles,
   X,
   Loader2,
-  // --- NEW ICONS ---
   User,
   Briefcase,
   UserCog,
@@ -114,7 +113,7 @@ function App() {
   const today = new Date();
   const { data: session, status } = useSession();
 
-  // --- NEW: GATEKEEPER & ONBOARDING STATES ---
+  // --- GATEKEEPER & ONBOARDING STATES ---
   const [userData, setUserData] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [gatewayMode, setGatewayMode] = useState('select'); // 'select', 'employee_login'
@@ -127,7 +126,7 @@ function App() {
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
-  // --- YOUR EXISTING STATES ---
+  // --- EXISTING DASHBOARD STATES ---
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
   const [selectedDay, setSelectedDay] = useState(null);
@@ -346,7 +345,7 @@ function App() {
     }
   };
 
-  // --- NEW: ONBOARDING SUBMISSION HANDLER ---
+  // --- ONBOARDING SUBMISSION HANDLER ---
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.company_name || !onboardForm.service) return toast.error('Please fill required fields');
@@ -377,7 +376,7 @@ function App() {
     setSubmittingOnboard(false);
   };
 
-  // --- NEW: EMPLOYEE LOGIN HANDLER ---
+  // --- EMPLOYEE LOGIN HANDLER ---
   const handleEmployeeLogin = (e) => {
     e.preventDefault();
     toast.info('Employee Backend Auth is active. Verifying credentials...');
@@ -422,12 +421,17 @@ function App() {
           </div>
           <CardContent className="p-8 bg-white">
             {gatewayMode === 'select' ? (
-              <div className="space-y-5">
+              <div className="space-y-4">
                 <h2 className="text-center font-semibold text-slate-700 mb-2">Select your Portal Access</h2>
                 
                 {/* Client / Contractor Login Button (Green) */}
                 <Button onClick={() => signIn('google')} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
+                </Button>
+
+                {/* Guest / Public Visitor Access Button (Green) */}
+                <Button onClick={() => setIsGuest(true)} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
+                  <Eye className="w-5 h-5 mr-2" /> Browse as Guest
                 </Button>
                 
                 <div className="relative flex items-center py-2">
@@ -440,16 +444,6 @@ function App() {
                 <Button onClick={() => setGatewayMode('employee_login')} variant="outline" className="w-full h-12 text-[#0A2647] border-slate-300">
                   <UserCog className="w-5 h-5 mr-2" /> Employee Login
                 </Button>
-
-                {/* Guest / Public Visitor Access */}
-                <div className="pt-4 mt-2 border-t text-center">
-                  <button 
-                    onClick={() => setIsGuest(true)} 
-                    className="text-sm font-medium text-slate-500 hover:text-[#0A2647] flex items-center justify-center w-full gap-2 transition-colors"
-                  >
-                    <Eye className="w-4 h-4" /> Browse Public Tenders as Guest
-                  </button>
-                </div>
 
               </div>
             ) : (
@@ -545,7 +539,6 @@ function App() {
     );
   }
 
-
   // ==============================================================================
   // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (Kept 100% Intact)
   // ==============================================================================
@@ -608,9 +601,9 @@ function App() {
               <Button
                 onClick={() => { setIsGuest(false); signIn('google'); }}
                 size="sm"
-                className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d]"
+                className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d] text-white"
               >
-                Sign in
+                Sign In / Register
               </Button>
             )}
           </div>
