@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation'; // NEW: Imported useRouter for redirection
 import {
   Card,
   CardContent,
@@ -112,6 +113,7 @@ const monthName = (m) =>
 function App() {
   const today = new Date();
   const { data: session, status } = useSession();
+  const router = useRouter(); // NEW: Initialize router
 
   // --- GATEKEEPER & ONBOARDING STATES ---
   const [userData, setUserData] = useState(null);
@@ -139,7 +141,7 @@ function App() {
     has_pan: false,
     has_aadhar: false,
     has_dsc: false,
-    has_ifsc: false, // Keeping it separate if needed, though Bank usually implies this
+    has_ifsc: false, 
     has_fssai: false,
     has_cer: false,
     has_turnover: false,
@@ -210,8 +212,15 @@ function App() {
     }
   }, [session, status]);
 
+  // NEW: Auto-redirect to Client Dashboard if fully registered and intent is client
+  useEffect(() => {
+    if (intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
+      router.push('/client');
+    }
+  }, [intent, userData, router]);
+
   const fetchTenders = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return; 
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
 
     setLoading(true);
     try {
@@ -233,7 +242,7 @@ function App() {
   };
 
   const fetchCalendar = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return;
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
     const d = await r.json();
     setCalDays(d.days || {});
@@ -243,7 +252,7 @@ function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, category, searchQ, userData?.onboarding_complete, isGuest, intent]);
+  }, [month, year, district, category, searchQ, userData?.is_approved, isGuest, intent]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -404,22 +413,20 @@ function App() {
             has_turnover: onboardForm.has_turnover,
             has_annual_returns: onboardForm.has_annual_returns
           },
-          // CHANGED: Status is now instantly 'approved' so they skip the waiting screen
-          status: 'approved'
+          status: 'approved' // Skipping waiting screen directly
         })
       });
       
       toast.success('Profile created successfully! Loading your dashboard...');
       
-      // Update local state to instantly unlock the portal
       setUserData(prev => ({ 
         ...prev, 
         onboarding_complete: true, 
-        is_approved: true // INSTANT ACCESS GRANTED
+        is_approved: true 
       }));
       
-      // Optional: Force a hard reload if you want to ensure a clean state
-      // window.location.reload();
+      // REDIRECT INSTANTLY TO CLIENT DASHBOARD
+      router.push('/client');
 
     } catch (err) {
       toast.error('Error submitting profile');
@@ -529,7 +536,7 @@ function App() {
     );
   }
 
-  // SCREEN 2: CLIENT ONBOARDING (ONLY IF INTENT === 'CLIENT')
+  // SCREEN 2: CLIENT ONBOARDING
   if (intent === 'client' && userData && !userData.onboarding_complete) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
@@ -638,8 +645,6 @@ function App() {
     );
   }
 
-  // NOTE: REMOVED "SCREEN 3: PENDING MD APPROVAL" ENTIRELY AS REQUESTED
-
   // ==============================================================================
   // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact)
   // ==============================================================================
@@ -672,11 +677,14 @@ function App() {
             <a href="#pricing" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
               Pricing
             </a>
+            
+            {/* NEW: Replaces "My Account" with "Client Dashboard" if applicable */}
             {email ? (
-              <a href="/account" className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
-                My Account
+              <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
+                {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
               </a>
             ) : null}
+            
             {email ? (
               <span className="text-xs text-muted-foreground hidden lg:inline">
                 {email}
@@ -717,8 +725,8 @@ function App() {
           <a href="/archive" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
             Archive
           </a>
-          <a href="/account" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
-            My Account
+          <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
+            {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
           </a>
         </div>
       </header>
