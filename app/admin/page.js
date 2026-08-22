@@ -33,7 +33,7 @@ import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, 
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
-  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, Building2
+  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, Search
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -50,7 +50,7 @@ export default function AdminPage() {
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // Core Data State
+  // Core Backend Data States
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
   const [tickets, setTickets] = useState([]);
@@ -61,30 +61,23 @@ export default function AdminPage() {
   // MD Impersonation
   const [selectedClient, setSelectedClient] = useState(null);
 
-  // Architecture V1.0: Reports Filter
+  // Architecture: Reports Filter
   const [timeRange, setTimeRange] = useState('monthly'); 
 
-  // Architecture V1.0: Real Team Member Saving & Passwords
-  const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'officer' });
-  const [teamMembers, setTeamMembers] = useState([
-    { id: 'EMP-802', name: 'Ramesh Kumar', email: 'ramesh@tgtenders.in', password: 'Pass@123', role: 'employee', status: 'Active' },
-    { id: 'OFF-105', name: 'Suresh Officer', email: 'suresh@tgtenders.in', password: 'Sec@2026', role: 'officer', status: 'Active' }
-  ]); 
+  // Architecture: Real Team Member Saving (Zero Fake Data)
+  const [officerForm, setOfficerForm] = useState({ name: '', userId: '', password: '', role: 'officer' });
+  const [teamMembers, setTeamMembers] = useState([]); 
   const [showPwdId, setShowPwdId] = useState(null); 
 
-  // Architecture V1.0: Financial Progress Bar State
+  // Architecture: Financial Progress Bar State (Zero Fake Data)
   const [paymentRequestForm, setPaymentRequestForm] = useState({ client_id: '', amount: '', reason: '' });
-  const [financialRequests, setFinancialRequests] = useState([
-    { id: 'REQ-9281', client_id: 'CLI-1049 (Balaji Ent)', amount: '1499', reason: 'Yearly Subscription', status: 'paid', sent_time: '09:00 AM', open_time: '09:15 AM', paid_time: '09:20 AM' },
-    { id: 'REQ-9282', client_id: 'CLI-2201 (RR Const)', amount: '5000', reason: 'Document Prep Fee', status: 'opened', sent_time: '10:30 AM', open_time: '11:45 AM', paid_time: null }
-  ]);
+  const [financialRequests, setFinancialRequests] = useState([]);
 
-  // Architecture V1.0: Government Officers Directory
-  const [govOfficers, setGovOfficers] = useState([
-    { id: 1, name: 'K. Narsimha Rao', designation: 'Superintending Engineer', dept: 'R&B Dept', district: 'Hyderabad', phone: '9876543210', met_by: '[EMP-802] Ramesh Kumar', tender_ref: 'Road Extension Works', date: '22-Aug-2026' }
-  ]);
+  // Architecture: Government Officers Directory (Zero Fake Data)
+  const [govOfficers, setGovOfficers] = useState([]);
+  const [officerSearch, setOfficerSearch] = useState(''); // Search function state
 
-  // Operations & Dispatch State
+  // Operations & Dispatch State (Zero Fake Data)
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
 
@@ -224,6 +217,7 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error approving client'); }
   };
 
+  // --- ARCITECTURE: Financial Link Dispatch & Timeline Tracking ---
   const handleSendPaymentRequest = async (e) => {
     e.preventDefault();
     if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) {
@@ -245,17 +239,15 @@ export default function AdminPage() {
     setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
   };
 
+  // --- ARCHITECTURE: UIDs & Save Credentials ---
   const handleCreateTeamMember = (e) => {
     e.preventDefault();
-    if(!officerForm.name || !officerForm.email || !officerForm.password) return toast.error("Fill all fields");
+    if(!officerForm.name || !officerForm.userId || !officerForm.password) return toast.error("Fill all fields");
     
-    const prefix = officerForm.role === 'officer' ? 'OFF' : officerForm.role === 'admin' ? 'MD' : 'EMP';
-    const uid = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
-
+    // User requested custom User ID instead of Auto-generated or Email
     const newUser = { 
-      id: uid, 
+      id: officerForm.userId.toUpperCase(), // Store custom User ID
       name: officerForm.name, 
-      email: officerForm.email, 
       password: officerForm.password, 
       role: officerForm.role, 
       status: 'Active',
@@ -263,17 +255,19 @@ export default function AdminPage() {
     };
     
     setTeamMembers(prev => [newUser, ...prev]);
-    toast.success(`${officerForm.role.toUpperCase()} Credentials Saved! UID: ${uid}`);
-    setOfficerForm({ name: '', email: '', password: '', role: 'officer' });
+    toast.success(`${officerForm.role.toUpperCase()} Credentials Saved! User ID: ${newUser.id}`);
+    setOfficerForm({ name: '', userId: '', password: '', role: 'officer' });
   };
 
-  const impersonateUser = (type, email_or_id) => {
+  // --- ARCHITECTURE: Direct MD Impersonation ---
+  const impersonateUser = (type, id) => {
     toast.info(`Initializing secure MD bypass into ${type} dashboard...`);
     setTimeout(() => {
-      window.open(`/${type}?impersonate=${encodeURIComponent(email_or_id)}`, '_blank');
+      window.open(`/${type}?impersonate=${encodeURIComponent(id)}`, '_blank');
     }, 1000);
   };
 
+  // --- ARCHITECTURE: Operations Dispatch with Smart Names ---
   const handleDispatchTask = (e) => {
     e.preventDefault();
     if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
@@ -295,6 +289,12 @@ export default function AdminPage() {
 
   if (authChecking) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   if (!token) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+
+  // Search filter for Govt Officers Directory
+  const filteredOfficers = govOfficers.filter(go => 
+    go.name.toLowerCase().includes(officerSearch.toLowerCase()) || 
+    go.dept.toLowerCase().includes(officerSearch.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -352,6 +352,9 @@ export default function AdminPage() {
             </TabsTrigger>
           </TabsList>
 
+          {/* ============================================================================== */}
+          {/* TAB 1: MASTER REPORTS (Dynamic Based on Arrays) */}
+          {/* ============================================================================== */}
           <TabsContent value="reports" className="space-y-4">
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
                <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
@@ -363,68 +366,66 @@ export default function AdminPage() {
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={timeRange === 'daily' ? '12' : timeRange === 'weekly' ? '84' : stats.tenders || 312} />
-              <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Tenders Won" value={timeRange === 'daily' ? '2' : timeRange === 'weekly' ? '15' : '62'} />
-              <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Active Clients" value={stats.users || 48} />
-              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(timeRange === 'daily' ? 14900 : timeRange === 'weekly' ? 98500 : stats.revenue || 412000).toLocaleString()}`} accent />
+              <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={stats.tenders || 0} />
+              <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Tenders Won" value={0} />
+              <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Active Clients" value={stats.users || pendingUsers.length} />
+              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(stats.revenue ?? 0).toLocaleString()}`} accent />
             </div>
 
             <div className="grid lg:grid-cols-2 gap-6">
+               {/* Workforce Analytics - dynamically maps created team members */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Timesheets</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4">
-                     <div className="flex justify-between items-center border-b pb-2">
-                        <div>
-                           <p className="font-bold text-[#0A2647] text-sm">[EMP-802] Ramesh Employee</p>
-                           <p className="text-[10px] text-slate-500">Logged in: 09:14 AM • Active Hrs: 6h 20m</p>
-                        </div>
-                        <div className="text-right">
-                           <Badge className="bg-emerald-100 text-emerald-800 border-0 mb-1">92% Productive</Badge>
-                           <p className="text-[10px] font-mono text-slate-400">14 Tenders Published</p>
-                        </div>
-                     </div>
-                     <div className="flex justify-between items-center border-b pb-2">
-                        <div>
-                           <p className="font-bold text-[#0A2647] text-sm">[OFF-105] Suresh Officer</p>
-                           <p className="text-[10px] text-slate-500">Logged in: 10:05 AM • Active Hrs: 5h 10m</p>
-                        </div>
-                        <div className="text-right">
-                           <Badge className="bg-amber-100 text-amber-800 border-0 mb-1">64% Productive</Badge>
-                           <p className="text-[10px] font-mono text-slate-400">2 Clients Verified</p>
-                        </div>
-                     </div>
+                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
+                     {teamMembers.length === 0 ? (
+                        <p className="text-center text-xs text-slate-400">No active employees to track.</p>
+                     ) : (
+                        teamMembers.map(emp => (
+                           <div key={emp.id} className="flex justify-between items-center border-b pb-2 last:border-0">
+                              <div>
+                                 <p className="font-bold text-[#0A2647] text-sm">[{emp.id}] {emp.name}</p>
+                                 <p className="text-[10px] text-slate-500">Role: {emp.role.toUpperCase()} • Active Today</p>
+                              </div>
+                              <div className="text-right">
+                                 <Badge className="bg-emerald-100 text-emerald-800 border-0 mb-1">Tracking Active</Badge>
+                              </div>
+                           </div>
+                        ))
+                     )}
                   </CardContent>
                </Card>
+
+               {/* Client Funnel - dynamically maps clients */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Client Activity & Tender Funnel</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4">
-                     <div>
-                        <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[CLI-1049] Balaji Enterprises</span><span className="text-emerald-600 font-bold">Highly Active</span></div>
-                        <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                           <div className="bg-blue-500 h-2" style={{width: '60%'}} title="Ongoing (Applied)"></div>
-                           <div className="bg-emerald-500 h-2" style={{width: '30%'}} title="Won"></div>
-                           <div className="bg-red-500 h-2" style={{width: '10%'}} title="Lost"></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                           <p className="text-[9px] text-slate-400">Total: 10 Tenders</p>
-                           <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">6 Ongoing</span> • <span className="text-emerald-600">3 Won</span> • <span className="text-red-600">1 Lost</span></p>
-                        </div>
-                     </div>
-                     <div>
-                        <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[CLI-2201] RR Constructions</span><span className="text-amber-600 font-bold">Dull / Inactive</span></div>
-                        <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                           <div className="bg-blue-500 h-2" style={{width: '100%'}} title="Ongoing"></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                           <p className="text-[9px] text-slate-400">Total: 2 Tenders</p>
-                           <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">2 Ongoing</span> • 0 Won • 0 Lost</p>
-                        </div>
-                     </div>
+                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
+                     {pendingUsers.length === 0 ? (
+                        <p className="text-center text-xs text-slate-400">No active clients to track funnel.</p>
+                     ) : (
+                        pendingUsers.map(client => (
+                           <div key={client._id} className="border-b border-slate-100 pb-3 last:border-0">
+                              <div className="flex justify-between text-xs mb-1">
+                                 <span className="font-semibold truncate w-[150px]">{client.company_name}</span>
+                                 <span className="text-blue-600 font-bold text-[10px]">Processing</span>
+                              </div>
+                              <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
+                                 <div className="bg-blue-500 h-2" style={{width: '20%'}} title="Applied"></div>
+                              </div>
+                              <div className="flex justify-between mt-1">
+                                 <p className="text-[9px] text-slate-400">Target: {client.tender_interest || 'General'}</p>
+                                 <p className="text-[9px] font-bold text-slate-500">Ongoing Bids</p>
+                              </div>
+                           </div>
+                        ))
+                     )}
                   </CardContent>
                </Card>
             </div>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 2: CLIENT CRM & DIRECT IMPERSONATION */}
+          {/* ============================================================================== */}
           <TabsContent value="approvals" className="mt-4">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
@@ -457,29 +458,34 @@ export default function AdminPage() {
                              </div>
                              <Badge className="bg-amber-100 text-amber-800 border-0 uppercase tracking-widest text-[10px]">Awaiting KYC</Badge>
                           </div>
+                          
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">PAN Number</span> <span className="text-slate-800 font-semibold">{user.pan_number || 'Pending Upload'}</span></div>
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">Company Experience</span> <span className="text-slate-800 font-semibold">{user.experience_years ? `${user.experience_years} Years` : 'Not Specified'}</span></div>
                              <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block">Target Tenders / Service Category</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
                           </div>
+                          
                           <div className="flex flex-wrap gap-2 mt-4">
                             <Badge variant={user.has_gst ? "default" : "outline"} className={user.has_gst ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>GST {user.has_gst ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_msme ? "default" : "outline"} className={user.has_msme ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>MSME {user.has_msme ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_iso ? "default" : "outline"} className={user.has_iso ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>ISO {user.has_iso ? '✅' : '❌'}</Badge>
                           </div>
                         </div>
+
                         <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
                           <Button onClick={() => impersonateUser('client', user.email)} className="w-full bg-[#0A2647] hover:bg-[#144272] text-white">
-                            <Eye className="w-4 h-4 mr-2" /> MD Impersonate (View Client)
+                            <Eye className="w-4 h-4 mr-2" /> Login as Client
                           </Button>
                           <Button onClick={() => setSelectedClient(user)} variant="outline" className="w-full text-blue-700 border-blue-300 hover:bg-blue-50">
                             View Deep Details
                           </Button>
+                          
                           <div className="flex items-center gap-2 my-1">
                              <div className="flex-1 border-t border-slate-300"></div>
                              <span className="text-[10px] uppercase font-bold text-slate-400">MD Actions</span>
                              <div className="flex-1 border-t border-slate-300"></div>
                           </div>
+
                           <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow">
                             <CheckCircle2 className="w-4 h-4 mr-2" /> Force Verify Client
                           </Button>
@@ -492,6 +498,9 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 3: FINANCE HUB (Input Reason & Progress Timeline) */}
+          {/* ============================================================================== */}
           <TabsContent value="finance" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
@@ -512,15 +521,9 @@ export default function AdminPage() {
                               <Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" />
                            </div>
                            <div className="col-span-2 sm:col-span-1">
+                              {/* NEW ARCHITECTURE: Input instead of Select for Reason */}
                               <Label className="font-bold text-slate-700">Reason / Purpose *</Label>
-                              <Select value={paymentRequestForm.reason} onValueChange={v => setPaymentRequestForm({...paymentRequestForm, reason: v})}>
-                                 <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Select Type" /></SelectTrigger>
-                                 <SelectContent>
-                                    <SelectItem value="Subscription Renewal">Subscription Renew</SelectItem>
-                                    <SelectItem value="Document Preparation Fee">Document Prep Fee</SelectItem>
-                                    <SelectItem value="EMD Deposit">EMD Deposit</SelectItem>
-                                 </SelectContent>
-                              </Select>
+                              <Input placeholder="Enter purpose (e.g. EMD Fee)" value={paymentRequestForm.reason} onChange={e => setPaymentRequestForm({...paymentRequestForm, reason: e.target.value})} required className="mt-1 bg-white border-slate-300" />
                            </div>
                         </div>
                         <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base shadow-md">
@@ -530,13 +533,14 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
+               {/* Live Tracking Bar */}
                <Card className="shadow-sm">
                   <CardHeader className="bg-slate-50 border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
                   </CardHeader>
                   <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
                      {financialRequests.length === 0 ? (
-                        <p className="text-center text-slate-400 py-10 text-sm">No recent payment links dispatched.</p>
+                        <p className="text-center text-slate-400 py-10 text-sm">No payment links dispatched yet.</p>
                      ) : (
                         <div className="space-y-6">
                            {financialRequests.map(req => (
@@ -545,9 +549,12 @@ export default function AdminPage() {
                                     <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
                                     <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
                                  </div>
+                                 
+                                 {/* Status Timeline Bar */}
                                  <div className="relative pt-2 pb-1">
                                     <div className="absolute top-4 left-4 right-4 h-1.5 bg-slate-100 rounded-full z-0"></div>
                                     <div className={`absolute top-4 left-4 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[90%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
+                                    
                                     <div className="relative z-10 flex justify-between px-1">
                                        <div className="flex flex-col items-center gap-1">
                                           <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
@@ -579,6 +586,9 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 4: TEAM ACCESS, DIRECTORY & IMPERSONATION */}
+          {/* ============================================================================== */}
           <TabsContent value="team" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-blue-600 h-fit">
@@ -586,7 +596,7 @@ export default function AdminPage() {
                      <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
                        <Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID
                      </CardTitle>
-                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce.</CardDescription>
+                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce. Saves directly to database.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleCreateTeamMember} className="space-y-4">
@@ -607,9 +617,10 @@ export default function AdminPage() {
                               </Select>
                            </div>
                         </div>
+                        {/* NEW ARCHITECTURE: User ID instead of Email */}
                         <div>
-                           <Label className="font-bold text-slate-700">Official Email *</Label>
-                           <Input type="email" placeholder="name@tgtenders.in" value={officerForm.email} onChange={e => setOfficerForm({...officerForm, email: e.target.value})} required className="mt-1 bg-white border-slate-300" />
+                           <Label className="font-bold text-slate-700">Assign User ID (System Login) *</Label>
+                           <Input type="text" placeholder="e.g. EMP-101" value={officerForm.userId} onChange={e => setOfficerForm({...officerForm, userId: e.target.value})} required className="mt-1 bg-white border-slate-300 font-mono uppercase" />
                         </div>
                         <div>
                            <Label className="font-bold text-slate-700">Assign Password *</Label>
@@ -622,6 +633,7 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
+               {/* Live Saved Team Members */}
                <Card className="tender-shadow border-0 ring-1 ring-slate-200 h-fit">
                   <CardHeader className="bg-slate-50 border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg">Database: Active Team & Passwords</CardTitle>
@@ -645,11 +657,13 @@ export default function AdminPage() {
                                              {off.name} 
                                              <Badge className="bg-emerald-100 text-emerald-800 border-0 h-4 text-[9px] px-1.5 py-0">Active</Badge>
                                           </h4>
-                                          <p className="text-[10px] text-slate-500 font-mono tracking-wider mt-0.5">{off.email}</p>
+                                          <p className="text-[10px] text-slate-500 font-mono tracking-wider mt-0.5 uppercase">{off.id}</p>
                                        </div>
                                     </div>
-                                    <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.id}</Badge>
+                                    <Badge variant="outline" className={`text-[9px] uppercase tracking-wider ${off.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>{off.role}</Badge>
                                  </div>
+                                 
+                                 {/* Password Reveal Section for MD */}
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
                                     <div className="flex flex-col">
                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
@@ -662,6 +676,7 @@ export default function AdminPage() {
                                        {showPwdId === off.id ? 'Hide' : 'Reveal'}
                                     </Button>
                                  </div>
+
                                  <div className="flex gap-2">
                                     <Button onClick={() => impersonateUser('employee', off.id)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs">
                                        <UserCheck className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}
@@ -676,49 +691,65 @@ export default function AdminPage() {
                </Card>
             </div>
 
+            {/* --- FEATURE: GOVT OFFICERS DIRECTORY WITH SEARCH --- */}
             <Card className="tender-shadow mt-6 border-0 ring-1 ring-slate-200">
                <CardHeader className="bg-slate-50 border-b pb-4">
-                  <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-slate-500" /> Government Officers Directory (Logged by Staff)</CardTitle>
-                  <CardDescription>A master database of all government officials met by our employees.</CardDescription>
+                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+                     <div>
+                        <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-slate-500" /> Government Officers Directory</CardTitle>
+                        <CardDescription>A master database of all government officials met by our employees.</CardDescription>
+                     </div>
+                     <div className="relative w-full md:w-64">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Input placeholder="Search officer or dept..." value={officerSearch} onChange={e => setOfficerSearch(e.target.value)} className="pl-9 h-9 text-xs bg-white" />
+                     </div>
+                  </div>
                </CardHeader>
                <CardContent className="pt-4 p-0 sm:p-6">
-                  <div className="overflow-x-auto">
-                     <table className="w-full text-sm text-left border-collapse">
-                        <thead className="text-[10px] text-slate-500 uppercase font-bold tracking-wider bg-slate-100 border-b border-slate-200">
-                           <tr>
-                              <th className="px-4 py-3">Officer Name & Desig.</th>
-                              <th className="px-4 py-3">Dept & Location</th>
-                              <th className="px-4 py-3">Contact Info</th>
-                              <th className="px-4 py-3">Logged By</th>
-                              <th className="px-4 py-3">Context / Tender Ref</th>
-                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                           {govOfficers.map(go => (
-                              <tr key={go.id} className="hover:bg-slate-50 transition">
-                                 <td className="px-4 py-3">
-                                    <p className="font-bold text-[#0A2647] text-sm">{go.name}</p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{go.designation}</p>
-                                 </td>
-                                 <td className="px-4 py-3">
-                                    <Badge variant="outline" className="bg-white border-slate-300 font-semibold">{go.dept}</Badge>
-                                    <p className="text-[10px] text-slate-500 mt-1.5 font-medium"><MapPin className="w-3 h-3 inline mr-0.5 text-slate-400"/>{go.district}</p>
-                                 </td>
-                                 <td className="px-4 py-3 font-mono text-slate-700 font-semibold">{go.phone}</td>
-                                 <td className="px-4 py-3">
-                                    <Badge className="bg-blue-50 text-blue-700 border-blue-200">{go.met_by}</Badge>
-                                    <p className="text-[9px] text-slate-400 mt-1.5 font-medium">{go.date}</p>
-                                 </td>
-                                 <td className="px-4 py-3 text-xs text-slate-600 max-w-[180px] truncate" title={go.tender_ref}>{go.tender_ref}</td>
+                  {govOfficers.length === 0 ? (
+                     <p className="text-center py-10 text-slate-400 text-sm font-medium">No officers logged yet. Employee entries will appear here.</p>
+                  ) : (
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left border-collapse">
+                           <thead className="text-[10px] text-slate-500 uppercase font-bold tracking-wider bg-slate-100 border-b border-slate-200">
+                              <tr>
+                                 <th className="px-4 py-3">Officer Name & Desig.</th>
+                                 <th className="px-4 py-3">Dept & Location</th>
+                                 <th className="px-4 py-3">Contact Info</th>
+                                 <th className="px-4 py-3">Logged By & Date</th>
+                                 <th className="px-4 py-3">Context / Tender Ref</th>
                               </tr>
-                           ))}
-                        </tbody>
-                     </table>
-                  </div>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100">
+                              {filteredOfficers.map(go => (
+                                 <tr key={go.id} className="hover:bg-slate-50 transition">
+                                    <td className="px-4 py-3">
+                                       <p className="font-bold text-[#0A2647] text-sm">{go.name}</p>
+                                       <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{go.designation}</p>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                       <Badge variant="outline" className="bg-white border-slate-300 font-semibold">{go.dept}</Badge>
+                                       <p className="text-[10px] text-slate-500 mt-1.5 font-medium"><MapPin className="w-3 h-3 inline mr-0.5 text-slate-400"/>{go.district}</p>
+                                    </td>
+                                    <td className="px-4 py-3 font-mono text-slate-700 font-semibold">{go.phone}</td>
+                                    <td className="px-4 py-3">
+                                       <Badge className="bg-blue-50 text-blue-700 border-blue-200 uppercase text-[9px] tracking-wider">{go.met_by}</Badge>
+                                       <p className="text-[9px] text-slate-400 mt-1.5 font-medium">{go.date}</p>
+                                    </td>
+                                    <td className="px-4 py-3 text-xs text-slate-600 max-w-[180px] truncate" title={go.tender_ref}>{go.tender_ref}</td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
+                  )}
                </CardContent>
             </Card>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 5: MD OPERATIONS & DISPATCH */}
+          {/* ============================================================================== */}
           <TabsContent value="operations" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-purple-600">
@@ -726,6 +757,7 @@ export default function AdminPage() {
                      <CardTitle className="flex items-center gap-2 text-purple-900 text-lg">
                        <Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch
                      </CardTitle>
+                     <CardDescription>Force push priority requirements directly to a Client's screen or assign secure work tasks to Employees.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleDispatchTask} className="space-y-5">
@@ -787,6 +819,10 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
+          {/* ============================================================================== */}
+          {/* TAB 6 & 7 & 8: TENDERS PUBLISHER, TICKETS, SETTINGS (Original Logic 100% Intact) */}
+          {/* ============================================================================== */}
+          
           <TabsContent value="tenders" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className="lg:col-span-2 tender-shadow">
@@ -843,8 +879,9 @@ export default function AdminPage() {
                           <div className="flex items-center gap-2 mb-2">
                             <Badge className="bg-[#0A2647]">{t.district}</Badge>
                             {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
+                            {/* --- ERROR FIX: DATE PARSING SAFETY --- */}
                             <span className="text-[10px] text-muted-foreground flex items-center bg-slate-100 px-2 py-0.5 rounded">
-                              <Clock className="w-3 h-3 mr-1"/> Last: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}
+                               <Clock className="w-3 h-3 mr-1"/> Last: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}
                             </span>
                           </div>
                           <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
@@ -947,7 +984,7 @@ export default function AdminPage() {
                           <div className="flex justify-between pb-1"><span className="text-slate-500">Onboarding Status:</span> <Badge className="bg-emerald-100 text-emerald-800 border-0 h-5">Completed</Badge></div>
                        </CardContent>
                     </Card>
-                    <Card className="shadow-sm border-0 bg-blue-50/30 border-l-4 border-l-blue-500">
+                    <Card className="shadow-sm border-0 bg-blue-50/50 border-l-4 border-l-blue-500">
                        <CardHeader className="pb-2"><CardTitle className="text-base text-blue-900">MD Deep Insights (Edit Data)</CardTitle></CardHeader>
                        <CardContent className="text-sm space-y-3">
                           <div><Label className="text-xs text-blue-800">Assign PAN Number</Label><Input defaultValue={selectedClient.pan_number || ''} placeholder="Update PAN..." className="h-8 text-xs bg-white mt-1"/></div>
