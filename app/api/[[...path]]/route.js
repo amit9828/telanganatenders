@@ -141,13 +141,24 @@ export async function GET(request, { params }) {
       });
     }
 
-    // 7. MY ACCOUNT DATA FIX (/api/me)
+    // 7. GET TICKETS (SLA System) --> NEWLY ADDED
+    if (path === 'tickets' || path === 'api/tickets') {
+      const email = searchParams.get('email');
+      const role = searchParams.get('role'); // admin can see all
+      let query = {};
+      if (email && role !== 'admin') query.client_email = email.toLowerCase();
+      
+      const tickets = await db.collection('tickets').find(query).sort({ created_at: -1 }).toArray();
+      return json({ tickets });
+    }
+
+    // 8. MY ACCOUNT DATA FIX (/api/me) --> UPDATED WITH PROFILE FIELDS
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
 
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
-      if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [] });
+      if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [], profile: null });
 
       let unlocked_tenders = [];
       if (user.purchases && user.purchases.length > 0) {
@@ -177,7 +188,12 @@ export async function GET(request, { params }) {
         subscription: user.subscription || null,
         unlocked_tenders: unlocked_tenders,
         payments: payments,
-        auto_renew: user.auto_renew !== false
+        auto_renew: user.auto_renew !== false,
+        profile: {
+          service_category: user.service_category || '',
+          documents: user.documents || [],
+          profile_score: user.profile_score || 0
+        }
       });
     }
 
@@ -239,6 +255,67 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Auto-renewal cancelled successfully.' });
     }
 
+    // NEWLY ADDED --> CREATE TICKET (SLA Ticketing System)
+    if (path === 'tickets' || path === 'api/tickets') {
+      const { email, department, subject, message } = body;
+      const createdAt = new Date();
+      const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); // 24 Hours SLA Timer
+      
+      const newTicket = {
+        client_email: email.toLowerCase(),
+        department: department,
+        subject: subject,
+        message: message,
+        status: 'OPEN', // OPEN, RESOLVED, ESCALATED
+        created_at: createdAt,
+        sla_deadline: deadline,
+        reply: null,
+        replied_by: null,
+        replied_at: null
+      };
+      
+      const result = await db.collection('tickets').insertOne(newTicket);
+      return json({ success: true, message: 'Ticket raised successfully. Our team will reply within 24 hours.', id: result.insertedId });
+    }
+
+    // NEWLY ADDED --> REPLY TO TICKET (Admin action)
+    if (path === 'tickets/reply' || path === 'api/tickets/reply') {
+      const { ticket_id, reply, admin_email } = body;
+      await db.collection('tickets').updateOne(
+        { _id: new ObjectId(ticket_id) },
+        { $set: { status: 'RESOLVED', reply: reply, replied_by: admin_email, replied_at: new Date() } }
+      );
+      return json({ success: true, message: 'Ticket Resolved.' });
+    }
+
+    // NEWLY ADDED --> UPDATE CLIENT PROFILE (Onboarding)
+    if (path === 'users/profile' || path === 'api/users/profile') {
+      const { email, service_category, document_name, expiry_date, file_url } = body;
+      
+      let score = 20; // Base score
+      if (service_category) score += 30;
+      
+      let updateData = { service_category: service_category };
+      
+      if (document_name) {
+        score += 50; 
+        await db.collection('users').updateOne(
+          { email: email.toLowerCase() },
+          { 
+            $push: { documents: { name: document_name, url: file_url, expiry: new Date(expiry_date) } },
+            $set: { profile_score: score }
+          }
+        );
+      } else {
+        await db.collection('users').updateOne(
+          { email: email.toLowerCase() },
+          { $set: { ...updateData, profile_score: score } }
+        );
+      }
+      return json({ success: true, message: 'Profile updated' });
+    }
+
+    // CASHFREE PAYMENT LOGIC (KEPT EXACTLY AS IT WAS)
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
       const plan = body.plan;
       let amount = 12; 
@@ -278,6 +355,7 @@ export async function POST(request, { params }) {
       }
     }
 
+    // CASHFREE VERIFY LOGIC (KEPT EXACTLY AS IT WAS)
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       const orderId = body.order_id;
       if (!orderId) return json({ error: 'Missing ID' }, 400);
