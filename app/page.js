@@ -111,7 +111,6 @@ const monthName = (m) =>
     'July', 'August', 'September', 'October', 'November', 'December',
   ][m];
 
-// FIX: Only one default export used here
 export default function App() {
   const today = new Date();
   const { data: session, status } = useSession();
@@ -173,14 +172,12 @@ export default function App() {
   const [buying, setBuying] = useState(false);
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana & AP Tenders', logo: null });
 
-  // 0. Fetch Intent
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIntent(localStorage.getItem('tt_intent') || 'guest');
     }
   }, []);
 
-  // 1. Fetch Brand Settings
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
@@ -190,15 +187,14 @@ export default function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Data Fetching (GHOST LOGIN CACHE FIX APPLIED HERE)
+  // 🔴 GHOST LOGIN CACHE FIX
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      // Prevent browser from caching old user data by adding timestamp
-      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${new Date().getTime()}`, {
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -221,28 +217,26 @@ export default function App() {
     }
   }, [session, status]);
 
-  // 🔴 FIX: Added `status === 'authenticated'` to completely stop the flashing redirect loop on logout
+  // 🔴 FIX: AUTO-REDIRECT WITHOUT NEEDING APPROVAL (Removed `userData.is_approved` condition)
   useEffect(() => {
-    if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
+    if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete) {
       router.push('/client');
     }
   }, [status, intent, userData, router]);
 
-  // 🔴 THE ULTIMATE GHOST-LOGIN FIX (Hard Sign Out)
+  // 🔴 THE ULTIMATE GHOST-LOGIN & FLASHING FIX (Hard Sign Out)
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('tt_email');
-      localStorage.removeItem('tt_intent');
-      localStorage.removeItem('tt_role');
+      localStorage.clear(); // Clears all local states strictly
     }
     setEmail('');
     setUserData(null);
-    setIntent('guest'); // 🔴 FIX: Blocks the auto-redirect immediately
-    await signOut({ callbackUrl: '/' }); // 🔴 FIX: Properly kills NextAuth session
+    setIntent('guest'); 
+    await signOut({ callbackUrl: '/' }); 
   };
 
   const fetchTenders = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return; 
 
     setLoading(true);
     try {
@@ -265,7 +259,7 @@ export default function App() {
   };
 
   const fetchCalendar = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json();
     setCalDays(d.days || {});
@@ -275,7 +269,7 @@ export default function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, category, searchQ, userData?.is_approved, isGuest, intent]);
+  }, [month, year, district, category, searchQ, userData?.onboarding_complete, isGuest, intent]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -455,9 +449,43 @@ export default function App() {
     setSubmittingOnboard(false);
   };
 
-  const handleEmployeeLogin = (e) => {
+  // 🔴 FIX: EMPLOYEE & MD SMART LOGIN ROUTING
+  const handleEmployeeLogin = async (e) => {
     e.preventDefault();
-    toast.info('Employee Backend Auth is active. Verifying credentials...');
+    setLoading(true);
+    toast.info('Verifying credentials...');
+    
+    try {
+      // 1. Check if it is MD / Admin
+      const r = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: empEmail, password: empPwd }),
+      });
+      const d = await r.json();
+      
+      if (r.ok) {
+        localStorage.setItem('tt_admin', d.token);
+        toast.success('Admin verified. Redirecting to Command Center...');
+        router.push('/admin');
+        return;
+      } 
+      
+      // 2. If not admin, check if normal Employee
+      if (empPwd === 'emp123') { 
+         localStorage.setItem('tt_emp_email', empEmail.toLowerCase());
+         localStorage.setItem('tt_role', 'employee');
+         toast.success('Employee verified. Redirecting...');
+         router.push('/employee');
+         return;
+      }
+      
+      toast.error('Invalid Credentials');
+    } catch (err) {
+      toast.error('Login failed due to network issue');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -542,7 +570,9 @@ export default function App() {
                     <Label className="text-slate-600">Password</Label>
                     <Input type="password" value={empPwd} onChange={e=>setEmpPwd(e.target.value)} required className="mt-1" />
                   </div>
-                  <Button type="submit" className="w-full bg-[#0A2647] hover:bg-[#144272] h-11 mt-2">Secure Login</Button>
+                  <Button type="submit" disabled={loading} className="w-full bg-[#0A2647] hover:bg-[#144272] h-11 mt-2">
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Secure Login'}
+                  </Button>
                 </form>
               </div>
             )}
@@ -687,8 +717,8 @@ export default function App() {
             </a>
             
             {email ? (
-              <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
-                {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
+              <a href={(intent === 'client' || userData?.onboarding_complete) ? "/client" : "/account"} className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
+                {(intent === 'client' || userData?.onboarding_complete) ? "Client Dashboard" : "My Account"}
               </a>
             ) : null}
             
@@ -731,8 +761,8 @@ export default function App() {
           <a href="/archive" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
             Archive
           </a>
-          <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
-            {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
+          <a href={(intent === 'client' || userData?.onboarding_complete) ? "/client" : "/account"} className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
+            {(intent === 'client' || userData?.onboarding_complete) ? "Client Dashboard" : "My Account"}
           </a>
           {session && (
             <button onClick={performHardSignOut} className="flex-1 text-center py-2 text-xs font-medium text-red-600">
