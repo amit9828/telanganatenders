@@ -13,7 +13,12 @@ import {
   FileText,
   IndianRupee,
   Calendar,
-  Loader2
+  Loader2,
+  Percent,
+  Upload,
+  MessageSquare,
+  Send,
+  Clock
 } from 'lucide-react';
 
 function AccountPage() {
@@ -22,6 +27,14 @@ function AccountPage() {
   const [tempEmail, setTempEmail] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // --- NEW PHASE 2 STATES ---
+  const [tickets, setTickets] = useState([]);
+  const [ticketLoading, setTicketLoading] = useState(false);
+  const [ticketForm, setTicketForm] = useState({ department: 'Operations', subject: '', message: '' });
+  
+  const [profileForm, setProfileForm] = useState({ service_category: '', document_name: '', expiry_date: '', file_url: '' });
+  const [profileLoading, setProfileLoading] = useState(false);
 
   // FIX 1: Safely load localStorage only after component mounts in the browser
   useEffect(() => {
@@ -33,12 +46,30 @@ function AccountPage() {
   useEffect(() => {
     if (!email) return;
     setLoading(true);
+    
+    // Fetch User Data
     fetch(`/api/me?email=${encodeURIComponent(email)}`)
       .then((r) => r.json())
-      .then((d) => setData(d))
+      .then((d) => {
+         setData(d);
+         if(d.profile?.service_category) {
+            setProfileForm(prev => ({ ...prev, service_category: d.profile.service_category }));
+         }
+      })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
+      
+    // Fetch Tickets
+    fetchTickets();
   }, [email]);
+
+  const fetchTickets = async () => {
+    try {
+       const r = await fetch(`/api/tickets?email=${encodeURIComponent(email)}`);
+       const d = await r.json();
+       setTickets(d.tickets || []);
+    } catch(e) { console.error(e); }
+  };
 
   const setMyEmail = (e) => {
     e.preventDefault();
@@ -51,6 +82,50 @@ function AccountPage() {
     localStorage.removeItem('tt_email');
     setEmail('');
     setData(null);
+  };
+
+  // --- NEW PHASE 2 HANDLERS ---
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+    setProfileLoading(true);
+    try {
+      const r = await fetch('/api/users/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, ...profileForm })
+      });
+      if(r.ok) {
+        toast.success('Profile updated successfully!');
+        const res = await fetch(`/api/me?email=${encodeURIComponent(email)}`);
+        const d = await res.json();
+        setData(d);
+        setProfileForm({ service_category: d.profile?.service_category || '', document_name: '', expiry_date: '', file_url: '' });
+      } else {
+        toast.error('Failed to update profile');
+      }
+    } catch(e) { toast.error('Error updating profile'); }
+    setProfileLoading(false);
+  };
+
+  const handleRaiseTicket = async (e) => {
+    e.preventDefault();
+    if(!ticketForm.subject || !ticketForm.message) return toast.error('Please fill all fields');
+    setTicketLoading(true);
+    try {
+      const r = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, ...ticketForm })
+      });
+      if(r.ok) {
+        toast.success('Ticket raised successfully! We will reply within 24 hours.');
+        setTicketForm({ department: 'Operations', subject: '', message: '' });
+        fetchTickets();
+      } else {
+        toast.error('Failed to raise ticket');
+      }
+    } catch(e) { toast.error('Error raising ticket'); }
+    setTicketLoading(false);
   };
 
   // FIX 1: Do not render HTML until the client is fully mounted to prevent mismatch errors
@@ -172,6 +247,140 @@ function AccountPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* --- PHASE 2: PROFILE STRENGTH CARD --- */}
+            <Card className="tender-shadow border-[#0A2647]/20">
+              <CardHeader className="bg-slate-50 border-b pb-4">
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
+                    <Percent className="w-5 h-5 text-[#16a34a]" /> Profile Strength
+                  </CardTitle>
+                  <Badge className={data?.profile?.profile_score === 100 ? "bg-[#16a34a]" : "bg-amber-500"}>
+                    {data?.profile?.profile_score || 20}% Complete
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <form onSubmit={handleProfileUpdate} className="space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-semibold mb-1 block">Your Core Service/Product</label>
+                      <select 
+                        className="w-full border rounded-md p-2 text-sm bg-white"
+                        value={profileForm.service_category}
+                        onChange={(e) => setProfileForm({...profileForm, service_category: e.target.value})}
+                        required
+                      >
+                        <option value="">Select Category</option>
+                        <option value="IT & Electronics">IT & Electronics</option>
+                        <option value="Medical & Healthcare">Medical & Healthcare</option>
+                        <option value="Civil & Construction">Civil & Construction</option>
+                        <option value="Manpower & Security">Manpower & Security</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold mb-1 block">Upload Document (GST/MSME/ISO)</label>
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="Doc Name (e.g. GST)" 
+                          className="w-1/2"
+                          value={profileForm.document_name}
+                          onChange={(e) => setProfileForm({...profileForm, document_name: e.target.value})}
+                        />
+                        <Input 
+                          type="date" 
+                          className="w-1/2" title="Expiry Date"
+                          value={profileForm.expiry_date}
+                          onChange={(e) => setProfileForm({...profileForm, expiry_date: e.target.value})}
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">Upload to Drive & paste link here</p>
+                      <Input 
+                         placeholder="Google Drive Link" 
+                         className="mt-1"
+                         value={profileForm.file_url}
+                         onChange={(e) => setProfileForm({...profileForm, file_url: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <Button type="submit" disabled={profileLoading} className="w-full bg-[#0A2647] hover:bg-[#144272]">
+                     {profileLoading ? 'Saving...' : 'Update Profile & Documents'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            {/* --- PHASE 2: 24-HOUR SLA TICKETING CARD --- */}
+            <Card className="tender-shadow">
+              <CardHeader className="bg-slate-50 border-b pb-4">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
+                  <MessageSquare className="w-5 h-5 text-[#16a34a]" /> Support & Tickets (24-Hour SLA)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 grid md:grid-cols-2 gap-6">
+                {/* Raise Ticket Form */}
+                <div>
+                  <h4 className="font-semibold text-sm mb-3">Raise a New Ticket</h4>
+                  <form onSubmit={handleRaiseTicket} className="space-y-3">
+                    <select 
+                      className="w-full border rounded-md p-2 text-sm bg-white"
+                      value={ticketForm.department}
+                      onChange={(e) => setTicketForm({...ticketForm, department: e.target.value})}
+                    >
+                      <option value="Operations">Operations (Tender Queries)</option>
+                      <option value="Accounts">Accounts (Billing/EMD)</option>
+                      <option value="Technical">Technical Support</option>
+                    </select>
+                    <Input 
+                      placeholder="Subject" 
+                      value={ticketForm.subject}
+                      onChange={(e) => setTicketForm({...ticketForm, subject: e.target.value})}
+                      required
+                    />
+                    <textarea 
+                      className="w-full border rounded-md p-2 text-sm h-24"
+                      placeholder="Describe your issue..."
+                      value={ticketForm.message}
+                      onChange={(e) => setTicketForm({...ticketForm, message: e.target.value})}
+                      required
+                    ></textarea>
+                    <Button type="submit" disabled={ticketLoading} className="w-full bg-[#16a34a] hover:bg-[#15803d]">
+                      <Send className="w-4 h-4 mr-2"/> {ticketLoading ? 'Sending...' : 'Submit Ticket'}
+                    </Button>
+                  </form>
+                </div>
+
+                {/* Tickets List */}
+                <div className="border-l pl-0 md:pl-6 max-h-[300px] overflow-y-auto">
+                  <h4 className="font-semibold text-sm mb-3">Your Recent Tickets</h4>
+                  {tickets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No tickets raised yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {tickets.map(t => (
+                        <div key={t._id} className="border rounded-md p-3 text-sm">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="font-semibold text-[#0A2647]">{t.subject}</span>
+                            <Badge className={t.status === 'RESOLVED' ? 'bg-emerald-500' : 'bg-amber-500'}>{t.status}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                            <Clock className="w-3 h-3"/> 
+                            {t.status === 'OPEN' ? `SLA: ${new Date(t.sla_deadline).toLocaleString()}` : `Resolved: ${new Date(t.replied_at).toLocaleDateString()}`}
+                          </p>
+                          {t.reply && (
+                            <div className="bg-emerald-50 border border-emerald-100 p-2 rounded text-xs mt-2">
+                              <span className="font-semibold text-emerald-800">Reply: </span>
+                              {t.reply}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
             <Card className="tender-shadow">
               <CardHeader>
