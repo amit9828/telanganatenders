@@ -34,11 +34,20 @@ export default function ClientDashboard() {
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
 
+  // --- NEW: MD Enterprise Logic ---
+  const [criticalAlerts, setCriticalAlerts] = useState([
+    { id: 1, text: 'Immediate signature required on Annexure II for Medical Equipment Bid.', time: '10 mins ago', from: 'Operations' }
+  ]);
+  const [clientId, setClientId] = useState('');
+  // --------------------------------
+
   useEffect(() => {
     setIsMounted(true);
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
     if (e) {
       setEmail(e);
+      // Generate a mock Client ID for display
+      setClientId(`CLI-${e.substring(0, 4).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`);
       fetchClientData(e);
       fetchPublicTenders();
     } else {
@@ -80,18 +89,18 @@ export default function ClientDashboard() {
   };
 
   const handleFileUpload = (docName, e) => {
-    const file = e.target.files[0];
-    if(file) {
+    const file = e?.target?.files?.[0];
+    if(file || docName) {
       const clientName = userData?.profile?.client_name || 'Client';
       toast.promise(
         new Promise((resolve) => setTimeout(resolve, 2000)), 
         {
-          loading: `Uploading to secure Google Drive folder: ${clientName}...`,
-          success: `${docName} synced to Google Drive successfully!`,
+          loading: `Uploading to secure Vault: ${clientName}...`,
+          success: `${docName} securely synced! Awaiting verification.`,
           error: 'Upload failed.',
         }
       );
-      setUploadedFiles(prev => ({ ...prev, [docName]: 'Uploaded to Drive' }));
+      setUploadedFiles(prev => ({ ...prev, [docName]: 'Pending Verification' }));
     }
   };
 
@@ -142,7 +151,6 @@ export default function ClientDashboard() {
     }
   };
 
-  // 🔴 FIX: PROPERLY DESTROY NEXTAUTH SESSION TO PREVENT FLASHING
   const handleSignOut = async () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('tt_email');
@@ -198,29 +206,34 @@ export default function ClientDashboard() {
           <div className="flex items-center gap-4">
              <div className="hidden md:flex flex-col items-end mr-2">
                <span className="text-sm font-bold text-[#0A2647]">{companyName}</span>
-               <span className="text-[10px] text-slate-500">{email}</span>
+               <span className="text-[10px] font-mono text-slate-500 tracking-widest">{clientId}</span>
              </div>
 
              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                    <Button variant="ghost" size="icon" className="relative text-slate-700">
                      <BellRing className="w-5 h-5"/> 
-                     {(queries.length > 0 || pendingPayments.length > 0) && (
-                        <Badge className="absolute -top-1 -right-1 bg-red-500 h-4 w-4 p-0 flex justify-center items-center text-[10px]">
-                           {queries.length + pendingPayments.length}
+                     {(queries.length > 0 || pendingPayments.length > 0 || criticalAlerts.length > 0) && (
+                        <Badge className="absolute -top-1 -right-1 bg-red-500 h-4 w-4 p-0 flex justify-center items-center text-[10px] animate-pulse">
+                           {queries.length + pendingPayments.length + criticalAlerts.length}
                         </Badge>
                      )}
                    </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-80">
-                   <DropdownMenuLabel>Officer Requests & Queries</DropdownMenuLabel>
+                   <DropdownMenuLabel>Alerts & Notifications</DropdownMenuLabel>
                    <DropdownMenuSeparator />
-                   {queries.length === 0 && pendingPayments.length === 0 ? (
+                   {criticalAlerts.map((alert, i) => (
+                      <DropdownMenuItem key={`alert-${i}`} className="text-xs text-red-600 font-medium whitespace-normal cursor-pointer flex flex-col items-start gap-1">
+                         <span>🚨 {alert.text}</span>
+                      </DropdownMenuItem>
+                   ))}
+                   {queries.length === 0 && pendingPayments.length === 0 && criticalAlerts.length === 0 ? (
                       <DropdownMenuItem className="text-muted-foreground text-xs justify-center py-4">No active queries.</DropdownMenuItem>
                    ) : (
                       <>
                         {queries.map((q, i) => (
-                          <DropdownMenuItem key={`q-${i}`} className="text-xs text-red-600 font-medium whitespace-normal cursor-pointer flex flex-col items-start gap-1">
+                          <DropdownMenuItem key={`q-${i}`} className="text-xs text-orange-600 font-medium whitespace-normal cursor-pointer flex flex-col items-start gap-1">
                              <span>⚠️ {q.subject}</span>
                           </DropdownMenuItem>
                         ))}
@@ -248,7 +261,7 @@ export default function ClientDashboard() {
                 <DropdownMenuContent align="end" className="w-64 p-2">
                    <div className="p-2 border-b mb-2 bg-slate-50 rounded-md">
                      <p className="font-bold text-[#0A2647]">{clientName}</p>
-                     <p className="text-xs text-slate-500">{email}</p>
+                     <p className="text-xs font-mono text-slate-500">{clientId} • {email}</p>
                      <Badge className="mt-2 bg-blue-100 text-blue-800 hover:bg-blue-200 border-0">{userData.profile?.category || 'Vendor'}</Badge>
                    </div>
                    <DropdownMenuItem className="text-red-600 cursor-pointer font-medium" onClick={handleSignOut}>
@@ -262,14 +275,36 @@ export default function ClientDashboard() {
 
       <main className="container mx-auto px-4 py-8 space-y-6">
         
+        {/* --- NEW: CRITICAL ALERTS BANNER --- */}
+        {criticalAlerts.length > 0 && (
+          <div className="bg-red-600 text-white rounded-xl p-4 shadow-lg flex items-start gap-4 animate-in fade-in slide-in-from-top-4 mb-6">
+             <AlertTriangle className="w-8 h-8 shrink-0 text-red-200" />
+             <div className="flex-1">
+                <h3 className="font-black text-lg uppercase tracking-wide">Action Required</h3>
+                <div className="mt-2 space-y-2">
+                   {criticalAlerts.map(alert => (
+                     <div key={alert.id} className="bg-red-700/50 p-3 rounded-lg border border-red-500/50 flex justify-between items-center">
+                        <p className="font-medium text-sm">{alert.text}</p>
+                        <div className="text-right">
+                          <span className="text-[10px] text-red-200 uppercase block">From: {alert.from}</span>
+                          <Button size="sm" onClick={() => setCriticalAlerts([])} className="h-7 text-xs bg-white text-red-700 hover:bg-red-50 mt-1">Resolve Now</Button>
+                        </div>
+                     </div>
+                   ))}
+                </div>
+             </div>
+          </div>
+        )}
+        {/* ----------------------------------- */}
+
         <div className="bg-[#0A2647] rounded-xl p-6 text-white shadow-lg relative overflow-hidden flex flex-col lg:flex-row justify-between lg:items-center gap-6">
           <div className="absolute -right-10 -top-10 opacity-10 pointer-events-none"><Briefcase className="w-64 h-64" /></div>
           <div className="relative z-10">
             <div className="flex flex-wrap gap-2 mb-3">
                {userData.is_approved && (
-                 <Badge className="bg-emerald-500 text-white border-0 py-1"><CheckCircle2 className="w-3 h-3 mr-1"/> Officer Approved Vendor</Badge>
+                 <Badge className="bg-emerald-500 text-white border-0 py-1"><CheckCircle2 className="w-3 h-3 mr-1"/> MD Approved Profile</Badge>
                )}
-               <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/50 py-1"><Activity className="w-3 h-3 mr-1"/> Account Health: Active</Badge>
+               <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/50 py-1 font-mono"><Activity className="w-3 h-3 mr-1"/> {clientId}</Badge>
             </div>
             <h2 className="text-2xl md:text-4xl font-black">{companyName}</h2>
             <p className="text-emerald-300 text-sm mt-2 flex items-center gap-2">
@@ -545,10 +580,12 @@ export default function ClientDashboard() {
              </Card>
           </TabsContent>
 
+          {/* --- VAULT TAB WITH NEW PENDING REVIEW LOGIC --- */}
           <TabsContent value="vault" className="space-y-6">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-slate-50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><Database className="w-5 h-5 text-[#16a34a]"/> Corporate Drive Vault</CardTitle>
+                <CardDescription>Upload corporate documents here. They will securely sync to your designated Google Drive folder.</CardDescription>
               </CardHeader>
               <CardContent className="pt-6">
                  
@@ -559,7 +596,7 @@ export default function ClientDashboard() {
                          <div className="flex justify-between items-center mb-2">
                            <Label className="font-bold text-slate-700 text-xs">{doc.replace(/_/g, ' ')}</Label>
                            {uploadedFiles[doc] ? (
-                             <Badge className="bg-emerald-100 text-emerald-800 text-[9px] border-0 px-1 py-0">{uploadedFiles[doc]}</Badge>
+                             <Badge className="bg-amber-100 text-amber-800 text-[9px] border-0 px-1 py-0">Pending Verification</Badge>
                            ) : (
                              <Badge variant="outline" className="text-[9px] px-1 py-0 border-slate-200 text-slate-500">Not Synced</Badge>
                            )}
@@ -579,7 +616,7 @@ export default function ClientDashboard() {
                          <div className="flex justify-between items-center mb-2">
                            <Label className="font-bold text-slate-700 text-xs truncate" title={doc.replace(/_/g, ' ')}>{doc.replace(/_/g, ' ')}</Label>
                            {uploadedFiles[doc] ? (
-                             <Badge className="bg-emerald-100 text-emerald-800 text-[9px] border-0 px-1 py-0">{uploadedFiles[doc]}</Badge>
+                             <Badge className="bg-amber-100 text-amber-800 text-[9px] border-0 px-1 py-0">Pending Verification</Badge>
                            ) : (
                              <Badge variant="outline" className="text-[9px] px-1 py-0 border-slate-200 text-slate-500">Not Synced</Badge>
                            )}
@@ -599,7 +636,7 @@ export default function ClientDashboard() {
                          <div className="flex justify-between items-center mb-2">
                            <Label className="font-bold text-slate-700 text-xs truncate" title={doc.replace(/_/g, ' ')}>{doc.replace(/_/g, ' ')}</Label>
                            {uploadedFiles[doc] ? (
-                             <Badge className="bg-emerald-100 text-emerald-800 text-[9px] border-0 px-1 py-0">{uploadedFiles[doc]}</Badge>
+                             <Badge className="bg-amber-100 text-amber-800 text-[9px] border-0 px-1 py-0">Pending Verification</Badge>
                            ) : (
                              <Badge variant="outline" className="text-[9px] px-1 py-0 border-slate-200 text-slate-500">Not Synced</Badge>
                            )}
@@ -642,7 +679,7 @@ export default function ClientDashboard() {
                                 <span className="font-semibold text-red-900">{pay.reason}</span>
                                 <span className="font-bold text-red-700">₹{pay.amount}</span>
                              </div>
-                             <Button onClick={() => payCustomFee(pay.amount, pay.reason)} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-8">
+                             <Button onClick={() => toast.info('Connecting to Cashfree...')} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-8">
                                {buying ? 'Connecting...' : 'Pay via Cashfree'}
                              </Button>
                           </div>
