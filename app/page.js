@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
-import { useRouter } from 'next/navigation'; // NEW: Imported useRouter for redirection
+import { useRouter } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -44,7 +44,8 @@ import {
   User,
   Briefcase,
   UserCog,
-  Eye
+  Eye,
+  LogOut
 } from 'lucide-react';
 
 const TS_DISTRICTS = [
@@ -113,7 +114,7 @@ const monthName = (m) =>
 function App() {
   const today = new Date();
   const { data: session, status } = useSession();
-  const router = useRouter(); // NEW: Initialize router
+  const router = useRouter();
 
   // --- GATEKEEPER & ONBOARDING STATES ---
   const [userData, setUserData] = useState(null);
@@ -121,18 +122,17 @@ function App() {
   const [gatewayMode, setGatewayMode] = useState('select'); // 'select', 'employee_login'
   const [empEmail, setEmpEmail] = useState('');
   const [empPwd, setEmpPwd] = useState('');
-  const [isGuest, setIsGuest] = useState(false); // Guest View Toggle
+  const [isGuest, setIsGuest] = useState(false);
   
-  const [intent, setIntent] = useState(''); // Tracks if user is Client or Guest
+  const [intent, setIntent] = useState('');
 
-  // NEW: Comprehensive Onboarding Form State
+  // Comprehensive Onboarding Form State
   const [onboardForm, setOnboardForm] = useState({
     client_name: '',
     company_name: '', 
     phone: '',
     company_type: 'Proprietor (Individual)', 
     service: '', 
-    // Document Checklist
     has_gst: false, 
     has_esi: false,
     has_epf: false,
@@ -151,7 +151,7 @@ function App() {
 
   // --- EXISTING STATES ---
   const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
+  const [month, setMonth] = useState(today.getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState(null);
   
   const [category, setCategory] = useState('all');       
@@ -189,14 +189,15 @@ function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Data Fetching
+  // 2. Auth & User Data Fetching (GHOST LOGIN FIX APPLIED HERE)
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      fetch(`/api/me?email=${encodeURIComponent(e)}`)
+      // Prevent browser from caching old user data by adding timestamp
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${new Date().getTime()}`)
         .then((r) => r.json())
         .then((d) => {
            setUserData(d);
@@ -208,16 +209,30 @@ function App() {
     } else if (status === 'unauthenticated') {
       if (typeof window !== 'undefined') localStorage.removeItem('tt_email');
       setEmail('');
+      setUserData(null);
       setLoadingUser(false);
     }
   }, [session, status]);
 
-  // NEW: Auto-redirect to Client Dashboard if fully registered and intent is client
+  // Auto-redirect to Client Dashboard if fully registered and intent is client
   useEffect(() => {
     if (intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
       router.push('/client');
     }
   }, [intent, userData, router]);
+
+  // THE ULTIMATE GHOST-LOGIN FIX (Hard Sign Out)
+  const performHardSignOut = async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tt_email');
+      localStorage.removeItem('tt_intent');
+      localStorage.removeItem('tt_role');
+    }
+    setEmail('');
+    setUserData(null);
+    await signOut({ redirect: false });
+    window.location.href = '/';
+  };
 
   const fetchTenders = async () => {
     if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
@@ -379,7 +394,7 @@ function App() {
     }
   };
 
-  // 🟢 MODIFIED: ONBOARDING SUBMISSION (INSTANT ACCESS LOGIC)
+  // ONBOARDING SUBMISSION (INSTANT ACCESS LOGIC)
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
@@ -413,7 +428,7 @@ function App() {
             has_turnover: onboardForm.has_turnover,
             has_annual_returns: onboardForm.has_annual_returns
           },
-          status: 'approved' // Skipping waiting screen directly
+          status: 'approved' 
         })
       });
       
@@ -425,7 +440,6 @@ function App() {
         is_approved: true 
       }));
       
-      // REDIRECT INSTANTLY TO CLIENT DASHBOARD
       router.push('/client');
 
     } catch (err) {
@@ -678,7 +692,6 @@ function App() {
               Pricing
             </a>
             
-            {/* NEW: Replaces "My Account" with "Client Dashboard" if applicable */}
             {email ? (
               <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
                 {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
@@ -693,16 +706,16 @@ function App() {
 
             {session ? (
               <Button
-                onClick={() => signOut()}
+                onClick={performHardSignOut} // FIXED LOGOUT
                 variant="ghost"
                 size="sm"
-                className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex"
+                className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex text-red-600 hover:text-red-700 hover:bg-red-50"
                 title={session.user.email}
               >
                 {session.user.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={session.user.image} alt="" className="w-5 h-5 rounded-full mr-1" />
-                ) : null}
+                ) : <LogOut className="w-4 h-4 mr-1"/>}
                 Sign out
               </Button>
             ) : (
@@ -728,6 +741,11 @@ function App() {
           <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
             {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
           </a>
+          {session && (
+            <button onClick={performHardSignOut} className="flex-1 text-center py-2 text-xs font-medium text-red-600">
+               Sign Out
+            </button>
+          )}
         </div>
       </header>
 
