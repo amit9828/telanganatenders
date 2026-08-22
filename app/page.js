@@ -111,7 +111,7 @@ const monthName = (m) =>
     'July', 'August', 'September', 'October', 'November', 'December',
   ][m];
 
-function App() {
+export default function App() {
   const today = new Date();
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -213,24 +213,26 @@ function App() {
     }
   }, [session, status]);
 
-  // 🟢 FIX 1: Prevent Auto-Redirect Loop (Check for status === 'authenticated')
+  // Auto-redirect to Client Dashboard if fully registered and intent is client
   useEffect(() => {
-    if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
+    if (intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
       router.push('/client');
     }
-  }, [status, intent, userData, router]);
+  }, [intent, userData, router]);
 
-  // 🟢 FIX 2: THE ULTIMATE GHOST-LOGIN & FLASHING FIX
+  // 🔴 THE ULTIMATE GHOST-LOGIN FIX (Hard Sign Out to stop flashing)
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
-      localStorage.clear(); // Clears tt_email, tt_intent, tt_role instantly
+      localStorage.removeItem('tt_email');
+      localStorage.removeItem('tt_intent');
+      localStorage.removeItem('tt_role');
     }
+    // Block the auto-redirect by hardcoding intent to guest immediately
+    setIntent('guest');
     setEmail('');
     setUserData(null);
-    setIntent('guest'); // Force state change to stop useEffect from redirecting to /client
-    
-    // signOut with callbackUrl safely kills the session and drops you on the home page
-    await signOut({ callbackUrl: '/' }); 
+    await signOut({ redirect: false });
+    window.location.href = '/';
   };
 
   const fetchTenders = async () => {
@@ -596,6 +598,7 @@ function App() {
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   
+                  {/* Tax & Legal */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card
                   </label>
@@ -611,12 +614,16 @@ function App() {
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar
                   </label>
+                  
+                  {/* Statutory Compliance */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration
                   </label>
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration
                   </label>
+
+                  {/* Certificates & Licenses */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate
                   </label>
@@ -632,6 +639,8 @@ function App() {
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER
                   </label>
+
+                  {/* Financial Proofs */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.
                   </label>
@@ -651,7 +660,7 @@ function App() {
   }
 
   // ==============================================================================
-  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact with FIXED LOGOUT)
+  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact)
   // ==============================================================================
 
   return (
@@ -697,7 +706,7 @@ function App() {
 
             {session ? (
               <Button
-                onClick={performHardSignOut} // 🔴 THE FIXED LOGOUT FUNCTION
+                onClick={performHardSignOut} // 🔴 FIXED LOGOUT HERE
                 variant="ghost"
                 size="sm"
                 className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex text-red-600 hover:text-red-700 hover:bg-red-50"
