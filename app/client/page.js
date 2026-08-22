@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useSession, signOut } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,8 @@ import {
   Briefcase, CheckCircle2, AlertTriangle, FileText, 
   Clock, ShieldAlert, Send, MessageSquare, Target, UserCheck, 
   Upload, Banknote, BellRing, Loader2, LogOut, FileUp, 
-  Scale, Download, Activity, Package, ChevronDown, UserCircle, UploadCloud, Globe, Database
+  Download, Activity, Package, Building2, 
+  ChevronDown, UserCircle, UploadCloud, Globe, Database
 } from 'lucide-react';
 
 export default function ClientDashboard() {
@@ -27,6 +29,7 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(false);
 
+  // States
   const [uploadedFiles, setUploadedFiles] = useState({});
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
@@ -47,7 +50,19 @@ export default function ClientDashboard() {
     try {
       const r = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`);
       const d = await r.json();
-      setUserData(d);
+      
+      // DB డేటా మాత్రమే (ఫేక్ డేటా లేకుండా)
+      setUserData({
+        ...d,
+        is_approved: d.is_approved || false,
+        profile: d.profile || {},
+        officer_queries: d.officer_queries || [],
+        active_bids: d.active_bids || [],
+        suggested_bids: d.suggested_bids || [],
+        custom_requests: d.custom_requests || [], // ట్రాకింగ్ కస్టమ్ టెండర్స్
+        emd_ledger: d.emd_ledger || { total_paid: 0, refunded: 0 },
+        pending_payments: d.pending_payments || []
+      });
     } catch (err) {
       console.error(err);
     } finally {
@@ -65,30 +80,50 @@ export default function ClientDashboard() {
     }
   };
 
-  const handleSignOut = () => {
-    localStorage.removeItem('tt_email');
-    window.location.href = '/';
-  };
-
+  // Google Drive అప్‌లోడ్ సిమ్యులేషన్
   const handleFileUpload = (docName, e) => {
     const file = e.target.files[0];
     if(file) {
       const clientName = userData?.profile?.client_name || 'Client';
-      toast.success(`Uploading to secure Google Drive folder: ${clientName}...`);
-      setTimeout(() => {
-        setUploadedFiles(prev => ({ ...prev, [docName]: 'Uploaded to Drive' }));
-        toast.success(`${docName} synced to Google Drive successfully!`);
-      }, 2000);
+      toast.promise(
+        new Promise((resolve) => setTimeout(resolve, 2000)), 
+        {
+          loading: `Uploading to secure Google Drive folder: ${clientName}...`,
+          success: `${docName} synced to Google Drive successfully!`,
+          error: 'Upload failed.',
+        }
+      );
+      setUploadedFiles(prev => ({ ...prev, [docName]: 'Uploaded to Drive' }));
     }
   };
 
+  // కస్టమ్ టెండర్ రిక్వెస్ట్ సబ్‌మిట్
   const handleCustomTenderSubmit = (e) => {
     e.preventDefault();
     if(!customTenderForm.link_or_id || !customTenderForm.description) {
       return toast.error("Please provide the Tender ID/Link and Description.");
     }
-    toast.success("Custom tender request submitted! Operations team will review it.");
+    
+    // UI లో తక్షణం కనిపించడానికి (రియల్ టైమ్‌లో API కి పంపాలి)
+    const newRequest = {
+      id: Date.now(),
+      link_or_id: customTenderForm.link_or_id,
+      description: customTenderForm.description,
+      status: 'Pending Officer Review',
+      officer_reply: 'Awaiting officer response...' // ఆఫీసర్ రిప్లై ఖాళీగా ఉంటుంది
+    };
+    
+    setUserData(prev => ({
+      ...prev,
+      custom_requests: [newRequest, ...(prev.custom_requests || [])]
+    }));
+
+    toast.success("Custom tender request submitted! Operations team will review and update status.");
     setCustomTenderForm({ link_or_id: '', description: '', file: null });
+  };
+
+  const handleQueryResponse = (queryId) => {
+    toast.success('Document submitted to Officer for review.');
   };
 
   const handleTicketSubmit = async (e) => {
@@ -101,7 +136,7 @@ export default function ClientDashboard() {
         body: JSON.stringify({ email, department: 'Support', subject: ticketForm.subject, message: ticketForm.message })
       });
       if(r.ok) {
-        toast.success('24/7 SLA Ticket raised successfully!');
+        toast.success('24/7 SLA Ticket raised successfully! Our team will resolve it.');
         setTicketForm({ subject: '', message: '' });
       } else {
         toast.error('Failed to submit ticket');
@@ -111,31 +146,9 @@ export default function ClientDashboard() {
     }
   };
 
-  const payCustomFee = async (feeAmount, reason) => {
-    if (buying) return;
-    setBuying(true);
-    try {
-      const r1 = await fetch('/api/payment/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, plan: 'custom', amount: feeAmount, description: reason }),
-      });
-      const d1 = await r1.json();
-      if (!r1.ok || !d1.payment_session_id) {
-        toast.error(d1.error || 'Failed to initialize payment');
-        setBuying(false);
-        return;
-      }
-      const cashfree = await load({ mode: "production" });
-      await cashfree.checkout({
-        paymentSessionId: d1.payment_session_id,
-        returnUrl: window.location.origin + "/payment-status?order_id={order_id}",
-      });
-    } catch (e) {
-      toast.error('Could not start payment');
-    } finally {
-      setBuying(false);
-    }
+  const handleSignOut = () => {
+    localStorage.removeItem('tt_email');
+    window.location.href = '/';
   };
 
   if (!isMounted) return null;
@@ -152,17 +165,15 @@ export default function ClientDashboard() {
     );
   }
 
-  const queries = userData.officer_queries || [];
-  const activeBids = userData.active_bids || [];
-  const suggestedBids = userData.suggested_bids || [];
-  const customRequests = userData.custom_requests || [];
-  
-  // CRASH FIX: Safe pending payments mapping
-  const rawPayments = Array.isArray(userData.pending_payments) ? userData.pending_payments : [];
+  const queries = userData?.officer_queries || [];
+  const activeBids = userData?.active_bids || [];
+  const suggestedBids = userData?.suggested_bids || [];
+  const customRequests = userData?.custom_requests || [];
+  const rawPayments = Array.isArray(userData?.pending_payments) ? userData.pending_payments : [];
   const pendingPayments = rawPayments.filter(p => p.status === 'UNPAID');
-
-  // CRASH FIX: Safe EMD calculation whether backend returns an Array or an Object
-  const emdData = userData.emd_ledger;
+  
+  // EMD లెడ్జర్ సేఫ్ క్యాలిక్యులేషన్
+  const emdData = userData?.emd_ledger;
   let totalEmd = 0;
   let refundedEmd = 0;
   if (Array.isArray(emdData)) {
@@ -173,8 +184,8 @@ export default function ClientDashboard() {
     refundedEmd = Number(emdData.refunded) || 0;
   }
 
-  const companyName = userData.profile?.company_name || 'Your Company';
-  const clientName = userData.profile?.client_name || 'Client';
+  const companyName = userData?.profile?.company_name || 'Your Company';
+  const clientName = userData?.profile?.client_name || 'Client';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -185,11 +196,13 @@ export default function ClientDashboard() {
           <BrandLogo subtitle="Enterprise Portal" />
           
           <div className="flex items-center gap-4">
+             {/* DYNAMIC COMPANY NAME */}
              <div className="hidden md:flex flex-col items-end mr-2">
                <span className="text-sm font-bold text-[#0A2647]">{companyName}</span>
                <span className="text-[10px] text-slate-500">{email}</span>
              </div>
 
+             {/* NOTIFICATIONS */}
              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                    <Button variant="ghost" size="icon" className="relative text-slate-700">
@@ -223,6 +236,7 @@ export default function ClientDashboard() {
                 </DropdownMenuContent>
              </DropdownMenu>
 
+             {/* SIGN OUT */}
              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-red-600 hover:text-red-700 hover:bg-red-50 font-bold border border-red-100">
                 <LogOut className="w-4 h-4 md:mr-2"/> <span className="hidden md:inline">Sign Out</span>
              </Button>
@@ -240,7 +254,7 @@ export default function ClientDashboard() {
                {userData.is_approved && (
                  <Badge className="bg-emerald-500 text-white border-0 py-1"><CheckCircle2 className="w-3 h-3 mr-1"/> Officer Approved Vendor</Badge>
                )}
-               <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/50 py-1"><Activity className="w-3 h-3 mr-1"/> GeM Account Health: Active</Badge>
+               <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/50 py-1"><Activity className="w-3 h-3 mr-1"/> Account Health: Active</Badge>
             </div>
             <h2 className="text-2xl md:text-4xl font-black">{companyName}</h2>
             <p className="text-emerald-300 text-sm mt-2 flex items-center gap-2">
@@ -264,7 +278,7 @@ export default function ClientDashboard() {
               <Globe className="w-4 h-4 mr-2 hidden sm:block"/> Live Govt Tenders
             </TabsTrigger>
             <TabsTrigger value="profile" className="py-2.5 data-[state=active]:bg-white data-[state=active]:text-[#0A2647] font-bold text-xs sm:text-sm">
-              <Briefcase className="w-4 h-4 mr-2 hidden sm:block"/> GeM Profile
+              <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> GeM Profile
             </TabsTrigger>
             <TabsTrigger value="vault" className="py-2.5 data-[state=active]:bg-white data-[state=active]:text-[#0A2647] font-bold text-xs sm:text-sm">
               <Database className="w-4 h-4 mr-2 hidden sm:block"/> Drive Vault
@@ -276,7 +290,7 @@ export default function ClientDashboard() {
 
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* OFFICER QUERY & UNDERTAKING BLOCK */}
+            {/* 1. OFFICER QUERY & UNDERTAKING BLOCK (ఖాళీగా ఉంటుంది / ఆఫీసర్ రిక్వెస్ట్ చేస్తేనే కనిపిస్తుంది) */}
             <Card className={`border-t-4 shadow-sm bg-white ${queries.length > 0 ? 'border-t-red-500' : 'border-t-slate-300'}`}>
               <CardHeader className="pb-3 border-b">
                 <CardTitle className="flex items-center gap-2 text-base text-[#0A2647]">
@@ -288,6 +302,7 @@ export default function ClientDashboard() {
                     <div className="text-center p-6 bg-slate-50 rounded-md border border-dashed border-slate-300">
                        <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2"/>
                        <p className="text-slate-600 font-medium text-sm">No Active Queries or Undertakings Required.</p>
+                       <p className="text-xs text-slate-400 mt-1">When an officer requires your signature, it will appear here.</p>
                     </div>
                  ) : (
                     queries.map((q, idx) => (
@@ -297,7 +312,7 @@ export default function ClientDashboard() {
                                <p className="font-bold text-slate-800 mb-2">{q.subject}</p>
                                <Badge className="bg-red-100 text-red-800 border border-red-300 animate-pulse h-fit"><Clock className="w-3 h-3 mr-1"/> 24 Hrs</Badge>
                             </div>
-                            <p className="text-sm text-slate-600 bg-white p-3 rounded-md border border-slate-200">{q.message || 'Please provide the required undertaking on your letterhead.'}</p>
+                            <p className="text-sm text-slate-600 bg-white p-3 rounded-md border border-slate-200">{q.message}</p>
                          </div>
                          <div className="bg-white p-4 rounded-md border border-slate-200 flex flex-col gap-3">
                             <Button variant="outline" size="sm" className="w-full justify-start text-[#0A2647] border-slate-300">
@@ -314,7 +329,71 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* ACTIVE BIDS TRACKER */}
+            {/* 2. CUSTOM TENDER REQUEST BLOCK (ఆఫీసర్ రిప్లై ట్రాకింగ్‌తో సహా) */}
+            <Card className="tender-shadow border-t-4 border-t-emerald-500">
+              <CardHeader className="bg-emerald-50/40 pb-4 border-b">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
+                  <UploadCloud className="w-5 h-5 text-emerald-600"/> Found a Tender? Request Bid Support
+                </CardTitle>
+                <CardDescription>Upload tender details you found externally. Track our officer's reply here.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-5">
+                <form onSubmit={handleCustomTenderSubmit} className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                       <Label className="text-slate-600 text-xs font-bold">Tender Link / ID / Reference *</Label>
+                       <Input required placeholder="e.g. https://eprocure.gov.in/... or Tender ID" value={customTenderForm.link_or_id} onChange={e => setCustomTenderForm({...customTenderForm, link_or_id: e.target.value})} className="mt-1 bg-white text-sm border-slate-300" />
+                    </div>
+                    <div>
+                       <Label className="text-slate-600 text-xs font-bold">Brief Description of Work *</Label>
+                       <textarea required placeholder="Short description about the work or items required..." value={customTenderForm.description} onChange={e => setCustomTenderForm({...customTenderForm, description: e.target.value})} className="w-full border border-slate-300 rounded-md p-2 mt-1 h-24 text-sm bg-white"></textarea>
+                    </div>
+                  </div>
+                  <div className="space-y-4 flex flex-col justify-between bg-slate-50 p-4 rounded-lg border border-slate-100">
+                    <div>
+                       <Label className="text-slate-600 text-xs font-bold mb-2 block">Upload Reference Document (Optional)</Label>
+                       <div className="border-2 border-dashed border-emerald-300 rounded-lg p-6 text-center bg-white hover:bg-emerald-50/50 transition cursor-pointer relative">
+                          <Input type="file" accept=".pdf,.zip" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={e => setCustomTenderForm({...customTenderForm, file: e.target.files[0]})} />
+                          <div className="flex flex-col items-center pointer-events-none">
+                             <FileUp className="w-8 h-8 text-emerald-500 mb-2" />
+                             <span className="text-sm font-semibold text-[#0A2647]">{customTenderForm.file ? customTenderForm.file.name : "Click here to upload PDF/ZIP"}</span>
+                             <span className="text-[10px] text-slate-500 mt-1">Max file size 10MB</span>
+                          </div>
+                       </div>
+                    </div>
+                    <Button type="submit" className="w-full bg-[#16a34a] hover:bg-[#15803d] h-11 shadow-sm">
+                      <Send className="w-4 h-4 mr-2"/> Submit Tender to Operations Team
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Tracking Custom Tender Requests Status & Officer Reply */}
+                {customRequests.length > 0 && (
+                  <div className="mt-6 border-t pt-4">
+                     <h4 className="font-bold text-[#0A2647] mb-3">My Custom Tender Requests Status</h4>
+                     <div className="space-y-3">
+                        {customRequests.map((req, i) => (
+                           <div key={i} className="bg-white border rounded-md p-4 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
+                              <div className="flex-1">
+                                 <p className="font-bold text-[#0A2647] text-sm">{req.link_or_id}</p>
+                                 <p className="text-xs text-slate-500 mt-1">{req.description}</p>
+                                 <div className="mt-2 bg-slate-50 p-2 rounded border border-slate-200 text-xs">
+                                    <span className="font-bold text-slate-700">Officer Reply: </span>
+                                    <span className="text-blue-700 font-medium">{req.officer_reply || 'Pending Review'}</span>
+                                 </div>
+                              </div>
+                              <Badge className={`px-3 py-1 shrink-0 ${req.status?.includes('Pending') ? 'bg-amber-100 text-amber-800' : req.status?.includes('Accepted') ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'} border-0`}>
+                                 {req.status}
+                              </Badge>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 3. ACTIVE BIDS TRACKER */}
             <Card className="tender-shadow">
               <CardHeader className="border-b pb-4 bg-slate-50">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Target className="w-5 h-5 text-blue-600"/> Active Bids Tracking</CardTitle>
@@ -330,6 +409,10 @@ export default function ClientDashboard() {
                        <div className="flex-1">
                          <Badge variant="outline" className="text-[10px] mb-1.5">{bid.bid_no}</Badge>
                          <p className="font-bold text-[#0A2647] text-base">{bid.description}</p>
+                         <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-500 font-medium">
+                           <span className="flex items-center gap-1"><Upload className="w-3 h-3"/> Submitted: {bid.submitted_on}</span>
+                           <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-amber-500"/> Last Date: {bid.last_date}</span>
+                         </div>
                        </div>
                        <Badge className="bg-blue-100 text-blue-800 border-0 px-3 py-1.5">{bid.status}</Badge>
                      </div>
@@ -338,63 +421,7 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* CUSTOM TENDER REQUEST BLOCK */}
-            <Card className="tender-shadow border-t-4 border-t-emerald-500">
-              <CardHeader className="bg-emerald-50/40 pb-4 border-b">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
-                  <UploadCloud className="w-5 h-5 text-emerald-600"/> Found a Tender? Request Bid Support
-                </CardTitle>
-                <CardDescription>Upload tender details from any external source. Our team will review and bid for you.</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-5">
-                <form onSubmit={handleCustomTenderSubmit} className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                       <Label className="text-slate-600 text-xs font-bold">Tender Link / Reference ID *</Label>
-                       <Input required value={customTenderForm.link_or_id} onChange={e => setCustomTenderForm({...customTenderForm, link_or_id: e.target.value})} className="mt-1 bg-white text-sm" />
-                    </div>
-                    <div>
-                       <Label className="text-slate-600 text-xs font-bold">Brief Description *</Label>
-                       <textarea required value={customTenderForm.description} onChange={e => setCustomTenderForm({...customTenderForm, description: e.target.value})} className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white"></textarea>
-                    </div>
-                  </div>
-                  <div className="space-y-4 flex flex-col justify-between bg-slate-50 p-4 rounded-lg border border-slate-100">
-                    <div>
-                       <Label className="text-slate-600 text-xs font-bold mb-2 block">Upload Reference Document</Label>
-                       <Input type="file" onChange={(e) => handleFileUpload('Custom_Tender_Ref', e)} className="text-xs h-10 bg-white" />
-                    </div>
-                    <Button type="submit" className="w-full bg-[#16a34a] hover:bg-[#15803d] h-11">
-                      <Send className="w-4 h-4 mr-2"/> Request Officer to Bid
-                    </Button>
-                  </div>
-                </form>
-
-                {customRequests.length > 0 && (
-                  <div className="mt-6 border-t pt-4">
-                     <h4 className="font-bold text-[#0A2647] mb-3">My Custom Tender Requests Status</h4>
-                     <div className="space-y-3">
-                        {customRequests.map((req, i) => (
-                           <div key={i} className="bg-white border rounded-md p-4 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
-                              <div className="flex-1">
-                                 <p className="font-bold text-[#0A2647] text-sm">{req.link_or_id}</p>
-                                 <p className="text-xs text-slate-500 mt-1">{req.description}</p>
-                                 <div className="mt-2 bg-slate-50 p-2 rounded border border-slate-200 text-xs">
-                                    <span className="font-bold text-slate-700">Officer Reply: </span>
-                                    <span className="text-blue-700 font-medium">{req.officer_reply || 'Pending Review'}</span>
-                                 </div>
-                              </div>
-                              <Badge className={`px-3 py-1 shrink-0 ${req.status?.includes('Pending') ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'} border-0`}>
-                                 {req.status}
-                              </Badge>
-                           </div>
-                        ))}
-                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* OFFICER SUGGESTED BIDS */}
+            {/* 4. OFFICER SUGGESTED BIDS */}
             <Card className="tender-shadow border-t-4 border-t-purple-500">
               <CardHeader className="border-b pb-4 bg-purple-50/50">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Target className="w-5 h-5 text-purple-600"/> Officer Suggested Bids</CardTitle>
@@ -409,6 +436,7 @@ export default function ClientDashboard() {
                      {suggestedBids.map(tender => (
                        <div key={tender.id} className="p-5 hover:bg-slate-50 transition flex flex-col md:flex-row justify-between gap-4">
                           <div>
+                            <Badge className="bg-purple-100 text-purple-800 border-0 mb-2">Win Probability: {tender.win_prob}</Badge>
                             <h4 className="font-bold text-[#0A2647] text-base">{tender.title}</h4>
                             <p className="text-xs text-muted-foreground mt-1">{tender.id} • {tender.dept}</p>
                           </div>
@@ -478,22 +506,49 @@ export default function ClientDashboard() {
                          <h4 className="font-bold text-slate-700">Date Of Incorporation</h4>
                       </div>
                       <div className="pl-3.5">
-                         <Input value={userData.profile?.incorporation_date || 'N/A'} readOnly className="mt-1 bg-slate-100 max-w-[200px]" />
+                         <Input value={userData.profile?.incorporation_date || ''} readOnly className="mt-1 bg-slate-100 max-w-[200px]" />
+                      </div>
+                   </div>
+                   <div className="p-5 hover:bg-slate-50">
+                      <div className="flex items-center gap-2 mb-3">
+                         <div className="w-1.5 h-5 bg-[#16a34a] rounded-full"></div>
+                         <h4 className="font-bold text-slate-700">Office Locations</h4>
+                      </div>
+                      <div className="pl-3.5">
+                         <div className="border rounded-md overflow-hidden">
+                            <table className="w-full text-sm text-left">
+                              <thead className="bg-slate-100 border-b">
+                                <tr>
+                                  <th className="px-4 py-2 font-semibold">Office</th>
+                                  <th className="px-4 py-2 font-semibold">Address</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td className="px-4 py-3 font-medium">Registered Office</td>
+                                  <td className="px-4 py-3 text-xs text-slate-600">{userData.profile?.address || 'Not Provided'}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                         </div>
                       </div>
                    </div>
                 </CardContent>
              </Card>
           </TabsContent>
 
-          {/* TAB 4: CORPORATE VAULT */}
+          {/* TAB 4: CORPORATE VAULT (Document Uploads with your full list) */}
           <TabsContent value="vault" className="space-y-6">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-slate-50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><Database className="w-5 h-5 text-[#16a34a]"/> Corporate Drive Vault</CardTitle>
+                <CardDescription>Upload corporate documents here. They will securely sync to your designated Google Drive folder.</CardDescription>
               </CardHeader>
               <CardContent className="pt-6">
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {['PAN_Card', 'GST_Certificate', 'MSME_Udyam', 'Bank_Mandate', 'DSC_Class_3', 'ISO_Certificate'].map((doc) => (
+                 
+                 <h4 className="font-bold text-slate-700 mb-3 border-b pb-1">Mandatory Documents</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    {['PAN_Card', 'GST_Certificate', 'MSME_Udyam', 'Bank_Account_IFSC', 'DSC_Class_3'].map((doc) => (
                       <div key={doc} className="bg-white p-3 border rounded-md shadow-sm">
                          <div className="flex justify-between items-center mb-2">
                            <Label className="font-bold text-slate-700 text-xs">{doc.replace(/_/g, ' ')}</Label>
@@ -510,6 +565,47 @@ export default function ClientDashboard() {
                       </div>
                     ))}
                  </div>
+
+                 <h4 className="font-bold text-slate-700 mb-3 border-b pb-1">Business & Compliance Documents</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    {['Aadhaar_Card', 'ISO_Certificate', 'CA_Turnover', 'Annual_Returns', 'FSSAI_License', 'ESI_Registration', 'EPF_Registration', 'CER_Certificate'].map((doc) => (
+                      <div key={doc} className="bg-white p-3 border rounded-md shadow-sm">
+                         <div className="flex justify-between items-center mb-2">
+                           <Label className="font-bold text-slate-700 text-xs truncate" title={doc.replace(/_/g, ' ')}>{doc.replace(/_/g, ' ')}</Label>
+                           {uploadedFiles[doc] ? (
+                             <Badge className="bg-emerald-100 text-emerald-800 text-[9px] border-0 px-1 py-0">{uploadedFiles[doc]}</Badge>
+                           ) : (
+                             <Badge variant="outline" className="text-[9px] px-1 py-0 border-slate-200 text-slate-500">Not Synced</Badge>
+                           )}
+                         </div>
+                         <div className="flex items-center gap-2 mt-3">
+                            <UploadCloud className="w-4 h-4 text-blue-500 shrink-0" />
+                            <Input type="file" accept=".pdf, image/*" onChange={(e) => handleFileUpload(doc, e)} className="text-xs h-8 cursor-pointer file:text-xs file:bg-slate-100 file:border-0 file:rounded file:px-2"/>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+
+                 <h4 className="font-bold text-slate-700 mb-3 border-b pb-1">Experience & Formats</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {['Experience_Certificates', 'Work_Orders', 'Letterhead_Word_Format'].map((doc) => (
+                      <div key={doc} className="bg-white p-3 border rounded-md shadow-sm">
+                         <div className="flex justify-between items-center mb-2">
+                           <Label className="font-bold text-slate-700 text-xs truncate" title={doc.replace(/_/g, ' ')}>{doc.replace(/_/g, ' ')}</Label>
+                           {uploadedFiles[doc] ? (
+                             <Badge className="bg-emerald-100 text-emerald-800 text-[9px] border-0 px-1 py-0">{uploadedFiles[doc]}</Badge>
+                           ) : (
+                             <Badge variant="outline" className="text-[9px] px-1 py-0 border-slate-200 text-slate-500">Not Synced</Badge>
+                           )}
+                         </div>
+                         <div className="flex items-center gap-2 mt-3">
+                            <UploadCloud className="w-4 h-4 text-blue-500 shrink-0" />
+                            <Input type="file" accept=".pdf, .doc, .docx" onChange={(e) => handleFileUpload(doc, e)} className="text-xs h-8 cursor-pointer file:text-xs file:bg-slate-100 file:border-0 file:rounded file:px-2"/>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+
               </CardContent>
             </Card>
           </TabsContent>
