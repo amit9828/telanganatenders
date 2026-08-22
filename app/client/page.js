@@ -33,8 +33,7 @@ export default function ClientDashboard() {
 
   useEffect(() => {
     setIsMounted(true);
-    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email'] : '';
-    if (e) {
+    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
       setEmail(e);
       fetchClientData(e);
     } else {
