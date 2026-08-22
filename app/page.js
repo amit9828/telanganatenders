@@ -172,9 +172,10 @@ export default function App() {
   const [buying, setBuying] = useState(false);
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana & AP Tenders', logo: null });
 
+  // 1. DONT DEFAULT TO 'guest' -> ALWAYS ENFORCE LOGIN
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIntent(localStorage.getItem('tt_intent') || 'guest');
+      setIntent(localStorage.getItem('tt_intent') || '');
     }
   }, []);
 
@@ -228,7 +229,7 @@ export default function App() {
     }
     setEmail('');
     setUserData(null);
-    setIntent('guest'); 
+    setIntent(''); // Clear intent to reset Gateway
     await signOut({ callbackUrl: '/' }); 
   };
 
@@ -502,8 +503,10 @@ export default function App() {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   }
 
-  // SCREEN 1: GATEKEEPER
-  if (status === 'unauthenticated' && intent !== 'guest') {
+  // ==============================================================================
+  // SCREEN 1: GATEKEEPER (Always triggers if user is not logged in)
+  // ==============================================================================
+  if (status === 'unauthenticated') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md tender-shadow-lg overflow-hidden border-0">
@@ -524,6 +527,7 @@ export default function App() {
                 
                 <Button onClick={() => { 
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
+                  setIntent('client');
                   signIn('google');
                 }} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
@@ -532,7 +536,7 @@ export default function App() {
                 <Button onClick={() => {
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
                   setIntent('guest');
-                  setIsGuest(true);
+                  signIn('google'); // FORCES GUEST TO LOGIN 
                 }} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Eye className="w-5 h-5 mr-2" /> Browse as Guest
                 </Button>
@@ -575,8 +579,10 @@ export default function App() {
     );
   }
 
-  // SCREEN 2: CLIENT ONBOARDING
-  if (intent === 'client' && userData && !userData.onboarding_complete) {
+  // ==============================================================================
+  // SCREEN 2: CLIENT ONBOARDING (For Client intent that has not completed registration)
+  // ==============================================================================
+  if (status === 'authenticated' && intent === 'client' && userData && !userData.onboarding_complete) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
         <Card className="max-w-3xl mx-auto tender-shadow">
@@ -677,7 +683,14 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD 
+  // SCREEN 3: REDIRECTING CLIENT (Prevents flash of the main dashboard)
+  // ==============================================================================
+  if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+  }
+
+  // ==============================================================================
+  // SCREEN 4: GUEST MAIN DASHBOARD (GUESTS ONLY REACH HERE AFTER LOGIN)
   // ==============================================================================
 
   return (
@@ -1340,7 +1353,7 @@ function PlanGrid({ plans, buying, onBuy }) {
                 : 'bg-[#0A2647] hover:bg-[#144272] w-full h-11'
             }
           >
-            {buying ? 'Processing...' : p.cta || `Pay ₹{p.price}`}
+            {buying ? 'Processing...' : p.cta || `Pay ₹${p.price}`}
           </Button>
         </div>
       ))}
