@@ -38,7 +38,8 @@ import {
   TrendingDown, 
   Clock,
   UserCheck,
-  CheckCircle2
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -62,7 +63,6 @@ function AdminPage() {
   const [ticketReply, setTicketReply] = useState({}); 
   const [l1Data, setL1Data] = useState({}); 
 
-  // --- NEW STATES FOR APPROVALS & PAYMENTS ---
   const [pendingUsers, setPendingUsers] = useState([]);
   const [paymentRequest, setPaymentRequest] = useState({});
 
@@ -87,23 +87,19 @@ function AdminPage() {
     // eslint-disable-next-line
   }, [token]);
 
-  // UPDATED REFRESH TO FETCH PENDING USERS
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      // CACHE FIX: Added timestamps to prevent stale data
       const [tRes, sRes, tkRes, uRes] = await Promise.all([
         fetch(`/api/tenders?t=${Date.now()}`, { headers }),
         fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
         fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
-        fetch(`/api/users/pending?t=${Date.now()}`, { headers })
+        fetch(`/api/users/pending?t=${Date.now()}`, { headers }) 
       ]);
-      
       if (tRes.status === 401) {
         logout();
         return;
       }
-      
       const tJson = await tRes.json();
       const sJson = await sRes.json();
       const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
@@ -112,7 +108,7 @@ function AdminPage() {
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
-      setPendingUsers(uJson.users || []);
+      setPendingUsers(uJson.users || []); 
     } catch (err) {
       console.error('Refresh failed:', err);
     }
@@ -268,15 +264,13 @@ function AdminPage() {
   if (authChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-         <div className="flex flex-col items-center gap-3">
-            <ShieldCheck className="w-10 h-10 text-[#0A2647] animate-pulse" />
-            <p className="text-[#0A2647] font-semibold">Verifying Secure Access...</p>
-         </div>
+        <Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/>
       </div>
     );
   }
 
-  // 🔴 STRICT SECURITY REDIRECT: No token = No access. Boot them to home immediately.
+  // 🔴 FIX: STRICT SECURITY REDIRECT
+  // Removes the old login form and strictly bounces unauthenticated users back to home
   if (!token) {
     if (typeof window !== 'undefined') {
        window.location.replace('/');
