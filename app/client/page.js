@@ -25,9 +25,14 @@ export default function ClientDashboard() {
   const [form, setForm] = useState({
     client_name: '', company_name: '', phone: '', address: '', category: 'Civil & Construction'
   });
+  
+  // MODIFIED: Complete Professional Document Checklist
   const [docs, setDocs] = useState({
-    pan: false, bank: false, gst: false, msme: false, iso: false, ca_turnover: false, dsc_class3: false, fssai: false
+    gst: false, esi: false, epf: false, iso: false, bank_account: false, 
+    pan: false, aadhaar: false, dsc_class3: false, ifsc: false, 
+    fssai: false, cer: false, turnover_cert: false, annual_returns: false
   });
+  
   const [submitting, setSubmitting] = useState(false);
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
 
@@ -54,6 +59,7 @@ export default function ClientDashboard() {
     }
   };
 
+  // MODIFIED: Instant Access Logic - No waiting for MD Approval
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!form.client_name || !form.company_name || !form.phone) return toast.error('Please fill required fields');
@@ -69,7 +75,7 @@ export default function ClientDashboard() {
         address: form.address,
         service_category: form.category,
         documents: docs,
-        status: 'pending'
+        status: 'approved' // Automatically approved for instant dashboard access
       };
 
       const r = await fetch('/api/users/profile', {
@@ -79,8 +85,9 @@ export default function ClientDashboard() {
       });
       
       if(r.ok) {
-        toast.success('Registration Completed! Sent to MD for Approval.');
-        fetchClientData(email);
+        toast.success('Registration Completed! Welcome to your Enterprise Dashboard.');
+        // Optimistically update UI to grant instant access
+        setUserData(prev => ({ ...prev, onboarding_complete: true, is_approved: true, profile: payload }));
       } else {
         toast.error('Failed to submit profile');
       }
@@ -155,11 +162,13 @@ export default function ClientDashboard() {
     );
   }
 
+  // ==========================================
   // STATE 1: ONBOARDING FORM
-  if (!userData?.onboarding_complete || !userData?.profile?.company_name) {
+  // ==========================================
+  if (!userData?.onboarding_complete) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-8">
-        <Card className="max-w-3xl mx-auto tender-shadow-lg border-t-4 border-t-[#16a34a]">
+        <Card className="max-w-4xl mx-auto tender-shadow-lg border-t-4 border-t-[#16a34a]">
           <CardHeader className="text-center bg-white border-b pb-6">
             <Briefcase className="w-12 h-12 mx-auto text-[#16a34a] mb-2" />
             <CardTitle className="text-2xl text-[#0A2647]">Client & Contractor Registration</CardTitle>
@@ -198,20 +207,20 @@ export default function ClientDashboard() {
               </div>
 
               <div className="border-t pt-5">
-                <Label className="text-[#0A2647] font-bold text-base mb-3 block">Document Availability Checklist</Label>
-                <p className="text-xs text-slate-500 mb-4">Tick the documents you currently hold.</p>
+                <Label className="text-[#0A2647] font-bold text-base mb-1 block">Vendor Master Document Checklist</Label>
+                <p className="text-xs text-slate-500 mb-4">Please select the documents you currently hold. This data helps our General Manager prepare your profile.</p>
                 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {Object.keys(docs).map((docKey) => (
-                    <label key={docKey} className={`flex items-center gap-2 text-sm p-3 border rounded-md cursor-pointer transition ${docs[docKey] ? 'bg-emerald-50 border-[#16a34a]' : 'bg-white hover:border-[#16a34a]/50'}`}>
+                    <label key={docKey} className={`flex items-center gap-2 text-xs sm:text-sm p-3 border rounded-md cursor-pointer transition ${docs[docKey] ? 'bg-emerald-50 border-[#16a34a] shadow-sm' : 'bg-white hover:border-[#16a34a]/50'}`}>
                       <input 
                         type="checkbox" 
-                        className="accent-[#16a34a] w-4 h-4" 
+                        className="accent-[#16a34a] w-4 h-4 shrink-0" 
                         checked={docs[docKey]} 
                         onChange={(e) => setDocs({...docs, [docKey]: e.target.checked})} 
                       /> 
-                      <span className="capitalize font-medium text-slate-700">
-                        {docKey.replace('_', ' ').toUpperCase()}
+                      <span className="capitalize font-semibold text-slate-700 leading-tight">
+                        {docKey.replace(/_/g, ' ').toUpperCase()}
                       </span>
                     </label>
                   ))}
@@ -219,7 +228,7 @@ export default function ClientDashboard() {
               </div>
 
               <Button type="submit" disabled={submitting} className="w-full bg-[#0A2647] hover:bg-[#144272] h-12 text-base shadow-md">
-                {submitting ? 'Submitting to MD...' : 'Complete Registration'}
+                {submitting ? 'Creating Profile...' : 'Save Profile & Open Dashboard'}
               </Button>
             </form>
           </CardContent>
@@ -228,19 +237,14 @@ export default function ClientDashboard() {
     );
   }
 
-  // STATE 2: PENDING APPROVAL
-  if (userData?.onboarding_complete && !userData?.is_approved) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
-         <UserCheck className="w-20 h-20 text-amber-500 mb-4 animate-pulse" />
-         <h1 className="text-3xl font-bold text-[#0A2647] mb-2">Registration Completed!</h1>
-         <p className="text-slate-600 max-w-md mx-auto mb-6">Your profile is currently under review by our Managing Director. Your dedicated Client Dashboard will be unlocked once approved.</p>
-         <Button onClick={() => window.location.reload()} variant="outline" className="border-[#0A2647] text-[#0A2647] bg-white">Check Approval Status</Button>
-      </div>
-    );
-  }
+  // ==========================================
+  // STATE 2 (REMOVED): "PENDING APPROVAL" SCREEN IS COMPLETELY BYPASSED
+  // ==========================================
 
-  // STATE 3: ULTRA PRO CLIENT DASHBOARD
+  // ==========================================
+  // STATE 3: ULTRA PRO CLIENT DASHBOARD (INSTANT ACCESS)
+  // ==========================================
+  
   const dummyAlerts = userData?.action_alerts?.length > 0 ? userData.action_alerts : [
     { id: 1, employee: "Admin", message: "We need the updated CA Turnover Certificate for GEM/2026/B/45879. Please upload it ASAP.", type: "urgent" }
   ];
