@@ -111,6 +111,7 @@ const monthName = (m) =>
     'July', 'August', 'September', 'October', 'November', 'December',
   ][m];
 
+// FIX: Only one default export used here
 export default function App() {
   const today = new Date();
   const { data: session, status } = useSession();
@@ -189,14 +190,21 @@ export default function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Data Fetching
+  // 2. Auth & User Data Fetching (GHOST LOGIN CACHE FIX APPLIED HERE)
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`)
+      // Prevent browser from caching old user data by adding timestamp
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
         .then((r) => r.json())
         .then((d) => {
            setUserData(d);
@@ -220,19 +228,17 @@ export default function App() {
     }
   }, [intent, userData, router]);
 
-  // 🔴 THE ULTIMATE GHOST-LOGIN FIX (Hard Sign Out to stop flashing)
+  // 🔴 THE ULTIMATE GHOST-LOGIN & FLASHING FIX (Hard Sign Out)
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('tt_email');
       localStorage.removeItem('tt_intent');
       localStorage.removeItem('tt_role');
     }
-    // Block the auto-redirect by hardcoding intent to guest immediately
-    setIntent('guest');
     setEmail('');
     setUserData(null);
-    await signOut({ redirect: false });
-    window.location.href = '/';
+    setIntent('guest'); 
+    await signOut({ callbackUrl: '/' }); 
   };
 
   const fetchTenders = async () => {
@@ -249,7 +255,8 @@ export default function App() {
         params.set('q', searchQ.trim());
         params.set('scope', 'all');
       }
-      const r = await fetch(`/api/tenders?${params.toString()}`);
+      
+      const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
       const d = await r.json();
       setTenders(d.tenders || []);
     } finally {
@@ -259,7 +266,7 @@ export default function App() {
 
   const fetchCalendar = async () => {
     if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
-    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
+    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json();
     setCalDays(d.days || {});
   };
@@ -469,16 +476,11 @@ export default function App() {
   else if (stateFilter === 'AP') currentDistricts = AP_DISTRICTS;
   else currentDistricts = [...TS_DISTRICTS, ...AP_DISTRICTS];
 
-
-  // ==============================================================================
-  // CONDITIONAL VIEW RENDERING
-  // ==============================================================================
-
   if (status === 'loading' || loadingUser) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   }
 
-  // SCREEN 1: GATEKEEPER (Not Logged In & Not Browsing as Guest)
+  // SCREEN 1: GATEKEEPER
   if (status === 'unauthenticated' && !isGuest) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -598,7 +600,6 @@ export default function App() {
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   
-                  {/* Tax & Legal */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card
                   </label>
@@ -614,16 +615,12 @@ export default function App() {
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar
                   </label>
-                  
-                  {/* Statutory Compliance */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration
                   </label>
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration
                   </label>
-
-                  {/* Certificates & Licenses */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate
                   </label>
@@ -639,8 +636,6 @@ export default function App() {
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER
                   </label>
-
-                  {/* Financial Proofs */}
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.
                   </label>
@@ -660,12 +655,11 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact)
+  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD 
   // ==============================================================================
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      {/* Top bar */}
       <header className="border-b bg-white sticky top-0 z-30">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -706,7 +700,7 @@ export default function App() {
 
             {session ? (
               <Button
-                onClick={performHardSignOut} // 🔴 FIXED LOGOUT HERE
+                onClick={performHardSignOut} 
                 variant="ghost"
                 size="sm"
                 className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -733,7 +727,6 @@ export default function App() {
             )}
           </div>
         </div>
-        {/* mobile sub-nav */}
         <div className="md:hidden border-t bg-slate-50/60 flex divide-x">
           <a href="/archive" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
             Archive
@@ -749,12 +742,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="navy-gradient text-white">
         <div className="container mx-auto px-3 sm:px-4 py-8 md:py-14">
           <div className="max-w-3xl">
             {isGuest ? (
-               <Badge className="bg-amber-500 hover:bg-amber-600 mb-3 text-[10px] sm:text-xs">
+               <Badge className="bg-amber-500 hover:bg-amber-600 mb-3 text-[10px] sm:text-xs text-white">
                  <Eye className="w-3 h-3 mr-1" /> Public Guest View
                </Badge>
             ) : (
@@ -770,7 +762,6 @@ export default function App() {
               Browse, filter by category and state, and instantly unlock official tender PDFs. Pay
               ₹10 for a single doc or go Pro for unlimited access.
             </p>
-            {/* Search bar */}
             <div className="mt-5 sm:mt-6 flex gap-2 max-w-2xl bg-white rounded-lg p-1 tender-shadow-lg">
               <div className="flex-1 flex items-center px-2 sm:px-3 gap-2 min-w-0">
                 <Search className="w-4 h-4 text-[#0A2647] shrink-0" />
@@ -802,7 +793,6 @@ export default function App() {
 
       <main className="container mx-auto px-3 sm:px-4 py-6 sm:py-8 space-y-6 sm:space-y-8">
         
-        {/* --- ADVANCED FILTER SECTION (Product/Service & State & Districts) --- */}
         <Card className="tender-shadow">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -812,7 +802,6 @@ export default function App() {
           </CardHeader>
           <CardContent className="space-y-4">
             
-            {/* 1. Category Filter (Product / Service) */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs sm:text-sm font-semibold text-slate-700 min-w-[70px]">Category:</span>
               <button
@@ -841,7 +830,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* 2. State Filter (Telangana / Andhra Pradesh) */}
             <div className="flex flex-wrap items-center gap-2 border-t pt-3">
               <span className="text-xs sm:text-sm font-semibold text-slate-700 min-w-[70px]">State:</span>
               <button
@@ -870,7 +858,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* 3. District Filter (Dynamic based on State) */}
             <div className="border-t pt-3">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs sm:text-sm font-semibold text-slate-700">Filter by District:</span>
@@ -904,11 +891,8 @@ export default function App() {
 
           </CardContent>
         </Card>
-        {/* --- END FILTER SECTION --- */}
 
-        {/* Calendar + Tender List two-column */}
         <div className="grid lg:grid-cols-5 gap-6">
-          {/* Calendar */}
           <Card className="lg:col-span-2 tender-shadow">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -995,7 +979,6 @@ export default function App() {
             </CardContent>
           </Card>
 
-          {/* Tender list */}
           <div className="lg:col-span-3 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-[#0A2647]">
@@ -1081,7 +1064,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Pricing section — public, sits above footer */}
         <section id="pricing" className="pt-6 scroll-mt-24">
           <div className="text-center max-w-2xl mx-auto mb-6">
             <Badge className="bg-[#16a34a] hover:bg-[#15803d] mb-2">PRICING</Badge>
@@ -1112,13 +1094,11 @@ export default function App() {
         </section>
       </main>
 
-      {/* --- NEW FOOTER SECTION WITH ORIGINAL LINKS & LEGAL --- */}
       <footer className="border-t mt-14 bg-[#0A2647] text-white py-10 rounded-t-2xl">
         <div className="container mx-auto px-4 text-center">
           <h3 className="text-2xl font-bold mb-2">{brandSettings.name}</h3>
           <p className="text-slate-300 mb-6 text-sm">Government Tender Service Portal | Upto 10 Lakhs</p>
           
-          {/* Social Links */}
           <div className="flex justify-center space-x-6 mb-8">
             <a href="https://whatsapp.com/channel/0029VbD5F2h2975IQSMPVK2x" target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-semibold text-sm sm:text-base">
               📱 WhatsApp Channel
@@ -1137,7 +1117,6 @@ export default function App() {
             </p>
             <p className="text-xs text-slate-500 mb-4">Contact: support@tgtenders.co.in</p>
 
-            {/* Legal Links */}
             <div className="flex justify-center space-x-3 sm:space-x-6 text-[10px] sm:text-xs text-slate-400">
               <a href="/legal#terms" className="hover:text-emerald-400 transition">Terms & Conditions</a>
               <span>|</span>
@@ -1148,9 +1127,7 @@ export default function App() {
           </div>
         </div>
       </footer>
-      {/* --- END FOOTER SECTION --- */}
 
-      {/* Email modal */}
       <Dialog open={emailModal} onOpenChange={setEmailModal}>
         <DialogContent>
           <DialogHeader>
@@ -1200,7 +1177,6 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Paywall modal */}
       <Dialog open={paywallModal} onOpenChange={setPaywallModal}>
         <DialogContent className="max-w-3xl w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1233,7 +1209,6 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* PDF Modal with Dynamic Watermark & Loading State */}
       <Dialog open={pdfModal} onOpenChange={setPdfModal}>
         <DialogContent className="max-w-4xl w-[95vw] h-[90vh] sm:h-[85vh] flex flex-col p-4 sm:p-6">
           <DialogHeader>
@@ -1242,7 +1217,6 @@ export default function App() {
               <span className="truncate">{pdfData ? pdfData.title : 'Loading Document...'}</span>
             </DialogTitle>
             
-            {/* OFFICIAL WATERMARK BANNER */}
             {pdfData?.watermarked && (
               <div className="flex flex-col sm:flex-row items-center gap-2 p-3 bg-emerald-50 rounded border border-emerald-100 mt-2 shadow-sm">
                 <div className="flex items-center gap-2 border-b sm:border-b-0 sm:border-r border-emerald-200 pb-2 sm:pb-0 sm:pr-3">
@@ -1295,8 +1269,6 @@ export default function App() {
     </div>
   );
 }
-
-export default App;
 
 function PlanGrid({ plans, buying, onBuy }) {
   return (
