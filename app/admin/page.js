@@ -32,6 +32,10 @@ import {
   Plus,
   Image as ImageIcon,
   Lock,
+  MessageSquare, // NEW
+  Send,         // NEW
+  TrendingDown, // NEW
+  Clock         // NEW
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -76,12 +80,17 @@ function AdminPage() {
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
 
+  // --- NEW STATES FOR PHASE 3 ---
+  const [tickets, setTickets] = useState([]);
+  const [ticketReply, setTicketReply] = useState({}); // Stores replies typed by Admin
+  const [l1Data, setL1Data] = useState({}); // Stores L1 Price Data for Tenders
+
   const [form, setForm] = useState({
     title: '',
     department: '',
     last_date: '',
     district: '',
-    category: 'Product', // కొత్తగా యాడ్ చేసిన కేటగిరీ (Product లేదా Service)
+    category: 'Product', // కొత్తగా యాడ్ చేసిన కేటగిరీ
     supply_details: '',
   });
   const [pdfBase64, setPdfBase64] = useState('');
@@ -100,12 +109,14 @@ function AdminPage() {
     // eslint-disable-next-line
   }, [token]);
 
+  // UPDATED REFRESH TO FETCH TICKETS
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [tRes, sRes] = await Promise.all([
+      const [tRes, sRes, tkRes] = await Promise.all([
         fetch('/api/tenders', { headers }),
         fetch('/api/admin/stats', { headers }),
+        fetch('/api/tickets?role=admin', { headers }) // Fetch SLA Tickets
       ]);
       if (tRes.status === 401) {
         localStorage.removeItem('tt_admin');
@@ -114,8 +125,11 @@ function AdminPage() {
       }
       const tJson = await tRes.json();
       const sJson = await sRes.json();
+      const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
+
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
+      setTickets(tkJson.tickets || []);
     } catch (err) {
       console.error('Refresh failed:', err);
     }
@@ -155,7 +169,6 @@ function AdminPage() {
       toast.error('Please upload a PDF file');
       return;
     }
-    // Vercel లిమిట్ దాటకుండా 4MB లోపే ఉండేలా చూసుకునే చెక్
     if (file.size > 4 * 1024 * 1024) {
       toast.error('PDF file is too large! Please upload under 4MB.');
       return;
@@ -231,6 +244,44 @@ function AdminPage() {
     refresh();
   };
 
+  // --- NEW HANDLERS FOR TICKETS & L1 PRICE ---
+  const submitTicketReply = async (ticket_id) => {
+    const replyText = ticketReply[ticket_id];
+    if(!replyText) return toast.error('Please write a reply first.');
+    
+    try {
+      const r = await fetch('/api/tickets/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ticket_id, reply: replyText, admin_email: 'Admin' })
+      });
+      if(r.ok) {
+        toast.success('Reply Sent & Ticket Resolved!');
+        setTicketReply(prev => ({...prev, [ticket_id]: ''}));
+        refresh();
+      } else {
+        toast.error('Failed to send reply');
+      }
+    } catch(e) { toast.error('Error resolving ticket'); }
+  };
+
+  const submitL1Price = async (tender_id) => {
+    const data = l1Data[tender_id];
+    if (!data?.price) return toast.error('Please enter the L1 Price');
+    
+    try {
+      // NOTE: Ensure your backend has a PUT route in /api/tenders/[id]/route.js to accept this data
+      const r = await fetch(`/api/tenders/${tender_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ l1_price: data.price, l1_winner: data.winner })
+      });
+      toast.success('L1 Price saved for Market Intelligence!');
+      refresh();
+    } catch(e) { toast.error('Error saving L1 Price'); }
+  };
+
+
   if (authChecking) return <div className="p-10 text-center">Loading...</div>;
 
   if (!token) {
@@ -304,6 +355,7 @@ function AdminPage() {
       </header>
 
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           <StatCard
@@ -328,6 +380,56 @@ function AdminPage() {
             accent
           />
         </div>
+
+        {/* --- PHASE 3: SLA TICKETING DASHBOARD --- */}
+        <Card className="tender-shadow border-amber-200">
+          <CardHeader className="bg-amber-50 border-b pb-4">
+            <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+              <MessageSquare className="w-5 h-5 text-amber-600" /> Client Tickets (24-Hour SLA Monitor)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
+            {tickets.length === 0 ? (
+               <p className="text-sm text-muted-foreground text-center py-4">No active support tickets from clients.</p> 
+            ) : (
+               <div className="grid md:grid-cols-2 gap-4">
+                  {tickets.map(ticket => (
+                     <div key={ticket._id} className="border rounded-md p-4 bg-white shadow-sm relative">
+                        <div className="flex justify-between items-start mb-2">
+                           <div>
+                             <Badge variant="outline" className="mb-1">{ticket.department}</Badge>
+                             <h4 className="font-bold text-[#0A2647] text-sm">{ticket.subject}</h4>
+                             <p className="text-xs text-muted-foreground">{ticket.client_email}</p>
+                           </div>
+                           <Badge className={ticket.status === 'RESOLVED' ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}>
+                             {ticket.status === 'OPEN' ? 'ACTION REQUIRED' : 'RESOLVED'}
+                           </Badge>
+                        </div>
+                        <p className="text-sm text-slate-700 bg-slate-50 p-2 rounded border mb-3">"{ticket.message}"</p>
+                        
+                        {ticket.status === 'OPEN' ? (
+                           <div className="flex gap-2">
+                             <Textarea 
+                                placeholder="Type your reply to the client..." 
+                                className="text-sm min-h-[40px] bg-slate-50"
+                                value={ticketReply[ticket._id] || ''}
+                                onChange={(e) => setTicketReply(prev => ({...prev, [ticket._id]: e.target.value}))}
+                             />
+                             <Button onClick={() => submitTicketReply(ticket._id)} className="bg-emerald-600 hover:bg-emerald-700 h-auto">
+                                <Send className="w-4 h-4" />
+                             </Button>
+                           </div>
+                        ) : (
+                           <div className="bg-emerald-50 text-emerald-800 p-2 rounded text-xs border border-emerald-200">
+                              <span className="font-semibold">Resolved Reply:</span> {ticket.reply}
+                           </div>
+                        )}
+                     </div>
+                  ))}
+               </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Brand & Security Settings */}
         <BrandSettings token={token} />
@@ -470,7 +572,7 @@ function AdminPage() {
                 Published Tenders ({tenders.length})
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 max-h-[70vh] overflow-y-auto">
+            <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto">
               {tenders.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   No tenders yet. Publish your first one!
@@ -479,37 +581,63 @@ function AdminPage() {
               {tenders.map((t) => (
                 <div
                   key={t._id || t.id}
-                  className="border rounded-md p-3 flex items-start justify-between gap-3 hover:bg-slate-50"
+                  className="border rounded-md p-3 flex flex-col gap-3 hover:bg-slate-50 transition"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge className="bg-[#0A2647]">
-                        {t.district}
-                      </Badge>
-                      {t.category && (
-                        <Badge variant="outline" className="text-xs">
-                          {t.category}
+                  {/* Top Row: Details */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge className="bg-[#0A2647]">
+                          {t.district}
                         </Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        Last:{' '}
-                        {new Date(t.last_date).toLocaleDateString()}
-                      </span>
+                        {t.category && (
+                          <Badge variant="outline" className="text-xs">
+                            {t.category}
+                          </Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                          Last:{' '}
+                          {new Date(t.last_date).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="font-semibold text-[#0A2647] truncate">
+                        {t.title}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t.department}
+                      </p>
                     </div>
-                    <p className="font-semibold text-[#0A2647] truncate">
-                      {t.title}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t.department}
-                    </p>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => remove(t._id || t.id)}
+                    >
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => remove(t._id || t.id)}
-                  >
-                    <Trash2 className="w-4 h-4 text-red-500" />
-                  </Button>
+                  
+                  {/* --- PHASE 3: L1 PRICE MARKET INTELLIGENCE INPUT --- */}
+                  <div className="bg-emerald-50/50 p-2 rounded-md border flex flex-col sm:flex-row gap-2 items-center w-full">
+                     <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-700 text-xs font-semibold whitespace-nowrap px-1">
+                       <TrendingDown className="w-4 h-4" /> Market Intel:
+                     </div>
+                     <Input 
+                        placeholder="L1 Price (₹)" type="number" 
+                        className="h-8 text-xs bg-white w-full sm:w-32"
+                        value={l1Data[t._id || t.id]?.price || t.l1_price || ''}
+                        onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}
+                     />
+                     <Input 
+                        placeholder="Winner Name (Optional)" 
+                        className="h-8 text-xs bg-white w-full sm:flex-1"
+                        value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''}
+                        onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], winner: e.target.value}}))}
+                     />
+                     <Button size="sm" className="h-8 text-xs w-full sm:w-auto bg-[#0A2647] hover:bg-[#144272]" onClick={() => submitL1Price(t._id || t.id)}>
+                        Save L1
+                     </Button>
+                  </div>
+
                 </div>
               ))}
             </CardContent>
