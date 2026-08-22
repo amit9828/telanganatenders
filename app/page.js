@@ -111,7 +111,6 @@ const monthName = (m) =>
     'July', 'August', 'September', 'October', 'November', 'December',
   ][m];
 
-// FIX: Only one default export used here
 export default function App() {
   const today = new Date();
   const { data: session, status } = useSession();
@@ -190,19 +189,19 @@ export default function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Data Fetching (GHOST LOGIN CACHE FIX APPLIED HERE)
+  // 2. Auth & User Data Fetching - 🔴 CACHE ISSUE FIXED HERE
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      // Prevent browser from caching old user data by adding timestamp
+      // By adding cache: 'no-store' and a timestamp, we strictly prevent the browser from serving old user data.
       fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
       })
         .then((r) => r.json())
@@ -221,32 +220,40 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Auto-redirect to Client Dashboard if fully registered and intent is client
+  // 3. Routing Logic - 🔴 SAFE REDIRECT FIXED HERE
   useEffect(() => {
-    if (intent === 'client' && userData && userData.onboarding_complete && userData.is_approved) {
+    // Only redirect if the user is genuinely authenticated and has completed onboarding
+    if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete) {
       router.push('/client');
     }
-  }, [intent, userData, router]);
+  }, [status, intent, userData, router]);
 
-  // 🔴 THE ULTIMATE GHOST-LOGIN & FLASHING FIX (Hard Sign Out)
+  // 🔴 THE LOGOUT & FLASHING FIX
   const performHardSignOut = async () => {
+    // 1. Wipe local memory immediately
     if (typeof window !== 'undefined') {
       localStorage.removeItem('tt_email');
       localStorage.removeItem('tt_intent');
       localStorage.removeItem('tt_role');
     }
+    // 2. Clear react state
     setEmail('');
     setUserData(null);
+    
+    // 3. Force intent to 'guest' to immediately KILL the useEffect redirect loop
     setIntent('guest'); 
-    await signOut({ callbackUrl: '/' }); 
+    
+    // 4. Safely close NextAuth session and hard reload to the home page
+    await signOut({ redirect: false });
+    window.location.href = '/';
   };
 
   const fetchTenders = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return; 
 
     setLoading(true);
     try {
-      const params = new URLSearchParams();
+      const params = newSearchParams();
       if (district !== 'all') params.set('district', district);
       if (category !== 'all') params.set('category', category);
       params.set('month', String(month));
@@ -255,8 +262,7 @@ export default function App() {
         params.set('q', searchQ.trim());
         params.set('scope', 'all');
       }
-      
-      const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
+      const r = await fetch(`/api/tenders?${params.toString()}`);
       const d = await r.json();
       setTenders(d.tenders || []);
     } finally {
@@ -265,8 +271,8 @@ export default function App() {
   };
 
   const fetchCalendar = async () => {
-    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
-    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.onboarding_complete) return;
+    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
     const d = await r.json();
     setCalDays(d.days || {});
   };
@@ -275,7 +281,7 @@ export default function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, category, searchQ, userData?.is_approved, isGuest, intent]);
+  }, [month, year, district, category, searchQ, userData?.onboarding_complete, isGuest, intent]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -553,7 +559,7 @@ export default function App() {
   }
 
   // SCREEN 2: CLIENT ONBOARDING
-  if (intent === 'client' && userData && !userData.onboarding_complete) {
+  if (status === 'authenticated' && intent === 'client' && userData && !userData.onboarding_complete) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
         <Card className="max-w-3xl mx-auto tender-shadow">
@@ -655,7 +661,7 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD 
+  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD
   // ==============================================================================
 
   return (
@@ -687,8 +693,8 @@ export default function App() {
             </a>
             
             {email ? (
-              <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
-                {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
+              <a href={(intent === 'client' || userData?.onboarding_complete) ? "/client" : "/account"} className="text-sm font-medium text-[#0A2647] hover:text-[#16a34a] hidden md:inline">
+                {(intent === 'client' || userData?.onboarding_complete) ? "Client Dashboard" : "My Account"}
               </a>
             ) : null}
             
@@ -700,7 +706,7 @@ export default function App() {
 
             {session ? (
               <Button
-                onClick={performHardSignOut} 
+                onClick={performHardSignOut}
                 variant="ghost"
                 size="sm"
                 className="text-xs sm:text-sm h-8 sm:h-9 hidden sm:inline-flex text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -731,8 +737,8 @@ export default function App() {
           <a href="/archive" className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
             Archive
           </a>
-          <a href={(intent === 'client' || userData?.is_approved) ? "/client" : "/account"} className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
-            {(intent === 'client' || userData?.is_approved) ? "Client Dashboard" : "My Account"}
+          <a href={(intent === 'client' || userData?.onboarding_complete) ? "/client" : "/account"} className="flex-1 text-center py-2 text-xs font-medium text-[#0A2647]">
+            {(intent === 'client' || userData?.onboarding_complete) ? "Client Dashboard" : "My Account"}
           </a>
           {session && (
             <button onClick={performHardSignOut} className="flex-1 text-center py-2 text-xs font-medium text-red-600">
