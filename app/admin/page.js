@@ -33,7 +33,7 @@ import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, 
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
-  Activity, BarChart3, EyeOff, UserCog, MapPin, Target
+  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, Building2
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -81,7 +81,7 @@ export default function AdminPage() {
 
   // Architecture V1.0: Government Officers Directory
   const [govOfficers, setGovOfficers] = useState([
-    { id: 1, name: 'K. Narsimha Rao', designation: 'Superintending Engineer', dept: 'R&B Dept', district: 'Hyderabad', phone: '9876543210', met_by: 'EMP-802', tender_ref: 'Road Extension Works', date: '22-Aug-2026' }
+    { id: 1, name: 'K. Narsimha Rao', designation: 'Superintending Engineer', dept: 'R&B Dept', district: 'Hyderabad', phone: '9876543210', met_by: '[EMP-802] Ramesh Kumar', tender_ref: 'Road Extension Works', date: '22-Aug-2026' }
   ]);
 
   // Operations & Dispatch State
@@ -224,7 +224,6 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error approving client'); }
   };
 
-  // --- ARCITECTURE: Financial Link Dispatch & Timeline Tracking ---
   const handleSendPaymentRequest = async (e) => {
     e.preventDefault();
     if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) {
@@ -246,7 +245,6 @@ export default function AdminPage() {
     setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
   };
 
-  // --- ARCHITECTURE: UIDs & Save Credentials ---
   const handleCreateTeamMember = (e) => {
     e.preventDefault();
     if(!officerForm.name || !officerForm.email || !officerForm.password) return toast.error("Fill all fields");
@@ -269,7 +267,6 @@ export default function AdminPage() {
     setOfficerForm({ name: '', email: '', password: '', role: 'officer' });
   };
 
-  // --- ARCHITECTURE: Direct MD Impersonation ---
   const impersonateUser = (type, email_or_id) => {
     toast.info(`Initializing secure MD bypass into ${type} dashboard...`);
     setTimeout(() => {
@@ -277,7 +274,6 @@ export default function AdminPage() {
     }, 1000);
   };
 
-  // --- ARCHITECTURE: Operations Dispatch with Smart Names ---
   const handleDispatchTask = (e) => {
     e.preventDefault();
     if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
@@ -356,9 +352,6 @@ export default function AdminPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* ============================================================================== */}
-          {/* TAB 1: MASTER REPORTS (MD's Ultimate Analytics View) */}
-          {/* ============================================================================== */}
           <TabsContent value="reports" className="space-y-4">
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
                <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
@@ -373,11 +366,10 @@ export default function AdminPage() {
               <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={timeRange === 'daily' ? '12' : timeRange === 'weekly' ? '84' : stats.tenders || 312} />
               <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Tenders Won" value={timeRange === 'daily' ? '2' : timeRange === 'weekly' ? '15' : '62'} />
               <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Active Clients" value={stats.users || 48} />
-              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(timeRange === 'daily' ? 14900 : timeRange === 'weekly' ? 98500 : (stats.revenue ?? 0)).toLocaleString()}`} accent />
+              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(timeRange === 'daily' ? 14900 : timeRange === 'weekly' ? 98500 : stats.revenue || 412000).toLocaleString()}`} accent />
             </div>
 
             <div className="grid lg:grid-cols-2 gap-6">
-               {/* Workforce Analytics */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Timesheets</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4">
@@ -403,8 +395,6 @@ export default function AdminPage() {
                      </div>
                   </CardContent>
                </Card>
-
-               {/* Client Funnel */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Client Activity & Tender Funnel</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4">
@@ -435,9 +425,6 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ============================================================================== */}
-          {/* TAB 2: CLIENT CRM & DIRECT IMPERSONATION */}
-          {/* ============================================================================== */}
           <TabsContent value="approvals" className="mt-4">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
@@ -462,7 +449,6 @@ export default function AdminPage() {
                              <div>
                                <h4 className="font-black text-[#0A2647] text-xl">{user.company_name || 'Unnamed Company'}</h4>
                                <div className="flex gap-2 text-xs font-semibold text-slate-500 mb-2">
-                                 {/* CRITICAL FIX: Safe substring to prevent crashes */}
                                  <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-mono tracking-widest text-[10px]">
                                     CLI-{(user?.email || 'USER').substring(0,4).toUpperCase()}X
                                  </Badge> • 
@@ -471,34 +457,29 @@ export default function AdminPage() {
                              </div>
                              <Badge className="bg-amber-100 text-amber-800 border-0 uppercase tracking-widest text-[10px]">Awaiting KYC</Badge>
                           </div>
-                          
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">PAN Number</span> <span className="text-slate-800 font-semibold">{user.pan_number || 'Pending Upload'}</span></div>
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">Company Experience</span> <span className="text-slate-800 font-semibold">{user.experience_years ? `${user.experience_years} Years` : 'Not Specified'}</span></div>
                              <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block">Target Tenders / Service Category</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
                           </div>
-                          
                           <div className="flex flex-wrap gap-2 mt-4">
                             <Badge variant={user.has_gst ? "default" : "outline"} className={user.has_gst ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>GST {user.has_gst ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_msme ? "default" : "outline"} className={user.has_msme ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>MSME {user.has_msme ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_iso ? "default" : "outline"} className={user.has_iso ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>ISO {user.has_iso ? '✅' : '❌'}</Badge>
                           </div>
                         </div>
-
                         <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
                           <Button onClick={() => impersonateUser('client', user.email)} className="w-full bg-[#0A2647] hover:bg-[#144272] text-white">
-                            <Eye className="w-4 h-4 mr-2" /> Login as Client
+                            <Eye className="w-4 h-4 mr-2" /> MD Impersonate (View Client)
                           </Button>
                           <Button onClick={() => setSelectedClient(user)} variant="outline" className="w-full text-blue-700 border-blue-300 hover:bg-blue-50">
                             View Deep Details
                           </Button>
-                          
                           <div className="flex items-center gap-2 my-1">
                              <div className="flex-1 border-t border-slate-300"></div>
                              <span className="text-[10px] uppercase font-bold text-slate-400">MD Actions</span>
                              <div className="flex-1 border-t border-slate-300"></div>
                           </div>
-
                           <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow">
                             <CheckCircle2 className="w-4 h-4 mr-2" /> Force Verify Client
                           </Button>
@@ -511,12 +492,8 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
-          {/* ============================================================================== */}
-          {/* TAB 3: FINANCE HUB & PAYMENT TIMELINE */}
-          {/* ============================================================================== */}
           <TabsContent value="finance" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
-               {/* Create Payment Request */}
                <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
                   <CardHeader className="bg-emerald-50/50 border-b pb-4">
                      <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg">
@@ -553,14 +530,13 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
-               {/* Live Tracking Bar */}
                <Card className="shadow-sm">
                   <CardHeader className="bg-slate-50 border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
                   </CardHeader>
                   <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
                      {financialRequests.length === 0 ? (
-                        <p className="text-center text-slate-400 py-10 text-sm">No recent payment links generated.</p>
+                        <p className="text-center text-slate-400 py-10 text-sm">No recent payment links dispatched.</p>
                      ) : (
                         <div className="space-y-6">
                            {financialRequests.map(req => (
@@ -569,12 +545,9 @@ export default function AdminPage() {
                                     <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
                                     <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
                                  </div>
-                                 
-                                 {/* Custom Status Timeline Bar */}
                                  <div className="relative pt-2 pb-1">
                                     <div className="absolute top-4 left-4 right-4 h-1.5 bg-slate-100 rounded-full z-0"></div>
                                     <div className={`absolute top-4 left-4 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[90%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
-                                    
                                     <div className="relative z-10 flex justify-between px-1">
                                        <div className="flex flex-col items-center gap-1">
                                           <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
@@ -606,9 +579,6 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ============================================================================== */}
-          {/* TAB 4: TEAM ACCESS, DIRECTORY & IMPERSONATION */}
-          {/* ============================================================================== */}
           <TabsContent value="team" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-blue-600 h-fit">
@@ -616,7 +586,7 @@ export default function AdminPage() {
                      <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
                        <Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID
                      </CardTitle>
-                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce. Saves directly to database.</CardDescription>
+                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleCreateTeamMember} className="space-y-4">
@@ -652,7 +622,6 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
-               {/* Live Saved Team Members */}
                <Card className="tender-shadow border-0 ring-1 ring-slate-200 h-fit">
                   <CardHeader className="bg-slate-50 border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg">Database: Active Team & Passwords</CardTitle>
@@ -681,8 +650,6 @@ export default function AdminPage() {
                                     </div>
                                     <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.id}</Badge>
                                  </div>
-                                 
-                                 {/* Password Reveal Section for MD */}
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
                                     <div className="flex flex-col">
                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
@@ -695,7 +662,6 @@ export default function AdminPage() {
                                        {showPwdId === off.id ? 'Hide' : 'Reveal'}
                                     </Button>
                                  </div>
-
                                  <div className="flex gap-2">
                                     <Button onClick={() => impersonateUser('employee', off.id)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs">
                                        <UserCheck className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}
@@ -710,7 +676,6 @@ export default function AdminPage() {
                </Card>
             </div>
 
-            {/* --- FEATURE: GOVT OFFICERS DIRECTORY --- */}
             <Card className="tender-shadow mt-6 border-0 ring-1 ring-slate-200">
                <CardHeader className="bg-slate-50 border-b pb-4">
                   <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-slate-500" /> Government Officers Directory (Logged by Staff)</CardTitle>
@@ -754,9 +719,6 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
-          {/* ============================================================================== */}
-          {/* TAB 5: MD OPERATIONS & DISPATCH */}
-          {/* ============================================================================== */}
           <TabsContent value="operations" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-purple-600">
@@ -764,7 +726,6 @@ export default function AdminPage() {
                      <CardTitle className="flex items-center gap-2 text-purple-900 text-lg">
                        <Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch
                      </CardTitle>
-                     <CardDescription>Force push priority requirements directly to a Client's screen or assign secure work tasks to Employees.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleDispatchTask} className="space-y-5">
@@ -813,7 +774,7 @@ export default function AdminPage() {
                                     <span className="text-[10px] text-slate-400 font-medium">{d.date}</span>
                                  </div>
                                  <div className="pl-2">
-                                    <p className="text-[10px] text-slate-400 mb-1">Target: <strong className="text-[#0A2647] font-mono bg-slate-100 px-1.5 py-0.5 rounded">{d.target_id}</strong></p>
+                                    <p className="text-[10px] text-slate-400 mb-1">Target: <strong className="text-[#0A2647] font-bold bg-slate-100 px-1.5 py-0.5 rounded">{d.target_id}</strong></p>
                                     <h4 className="font-bold text-sm text-[#0A2647] leading-tight mb-2">{d.subject}</h4>
                                     <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium">"{d.message}"</p>
                                  </div>
@@ -826,16 +787,11 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ============================================================================== */}
-          {/* TAB 6 & 7 & 8: TENDERS PUBLISHER, TICKETS, SETTINGS (Original Logic 100% Intact) */}
-          {/* ============================================================================== */}
-          
           <TabsContent value="tenders" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className="lg:col-span-2 tender-shadow">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-[#0A2647]"><Plus className="w-4 h-4" /> Publish New Tender</CardTitle>
-                  <CardDescription>Uploaded PDF is unlocked only for paid users — auto-watermarked with buyer's email.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={publish} className="space-y-3">
@@ -866,7 +822,6 @@ export default function AdminPage() {
                         <label htmlFor="pdf-input" className="cursor-pointer flex flex-col items-center">
                           <Upload className="w-6 h-6 text-[#16a34a] mb-1" />
                           <span className="text-sm font-medium text-[#0A2647]">{pdfName || 'Click to upload PDF'}</span>
-                          <span className="text-[10px] text-muted-foreground mt-1">AES-256 Secured. Locked behind paywall.</span>
                         </label>
                       </div>
                     </div>
@@ -888,8 +843,9 @@ export default function AdminPage() {
                           <div className="flex items-center gap-2 mb-2">
                             <Badge className="bg-[#0A2647]">{t.district}</Badge>
                             {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
-                            {/* CRITICAL FIX: SAFETY CHECK FOR INVALID DATES PREVENTS DASHBOARD CRASH */}
-                            <span className="text-[10px] text-muted-foreground flex items-center bg-slate-100 px-2 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Last: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
+                            <span className="text-[10px] text-muted-foreground flex items-center bg-slate-100 px-2 py-0.5 rounded">
+                              <Clock className="w-3 h-3 mr-1"/> Last: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}
+                            </span>
                           </div>
                           <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
                           <p className="text-xs text-slate-500 mt-1">{t.department}</p>
@@ -968,7 +924,6 @@ export default function AdminPage() {
                     <div>
                        <div className="flex items-center gap-3 mb-1">
                           <h2 className="text-2xl font-black tracking-wide">{selectedClient.company_name}</h2>
-                          {/* CRITICAL FIX: Safe substring to prevent crashes */}
                           <Badge className="bg-blue-500/20 text-blue-200 border border-blue-500/50 font-mono text-[10px]">CLI-{(selectedClient?.email || 'USER').substring(0,4).toUpperCase()}X</Badge>
                        </div>
                        <p className="text-emerald-300 text-sm flex items-center gap-2">
@@ -992,7 +947,7 @@ export default function AdminPage() {
                           <div className="flex justify-between pb-1"><span className="text-slate-500">Onboarding Status:</span> <Badge className="bg-emerald-100 text-emerald-800 border-0 h-5">Completed</Badge></div>
                        </CardContent>
                     </Card>
-                    <Card className="shadow-sm border-0 bg-blue-50/50 border-l-4 border-l-blue-500">
+                    <Card className="shadow-sm border-0 bg-blue-50/30 border-l-4 border-l-blue-500">
                        <CardHeader className="pb-2"><CardTitle className="text-base text-blue-900">MD Deep Insights (Edit Data)</CardTitle></CardHeader>
                        <CardContent className="text-sm space-y-3">
                           <div><Label className="text-xs text-blue-800">Assign PAN Number</Label><Input defaultValue={selectedClient.pan_number || ''} placeholder="Update PAN..." className="h-8 text-xs bg-white mt-1"/></div>
