@@ -121,6 +121,8 @@ function App() {
   const [empPwd, setEmpPwd] = useState('');
   const [isGuest, setIsGuest] = useState(false); // Guest View Toggle
   
+  const [intent, setIntent] = useState(''); // NEW: Tracks if user is Client or Guest
+
   const [onboardForm, setOnboardForm] = useState({
     company_name: '', company_type: 'Proprietor', service: '', has_gst: false, has_msme: false, has_iso: false
   });
@@ -148,6 +150,13 @@ function App() {
   const [subscription, setSubscription] = useState(null);
   const [buying, setBuying] = useState(false);
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana & AP Tenders', logo: null });
+
+  // 0. Fetch Intent
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIntent(localStorage.getItem('tt_intent') || 'guest');
+    }
+  }, []);
 
   // 1. Fetch Brand Settings
   useEffect(() => {
@@ -183,7 +192,7 @@ function App() {
   }, [session, status]);
 
   const fetchTenders = async () => {
-    if (status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
 
     setLoading(true);
     try {
@@ -205,7 +214,7 @@ function App() {
   };
 
   const fetchCalendar = async () => {
-    if (status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
+    if (intent === 'client' && status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
     const d = await r.json();
     setCalDays(d.days || {});
@@ -215,7 +224,7 @@ function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, category, searchQ, userData?.is_approved, isGuest]);
+  }, [month, year, district, category, searchQ, userData?.is_approved, isGuest, intent]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -425,12 +434,18 @@ function App() {
                 <h2 className="text-center font-semibold text-slate-700 mb-2">Select your Portal Access</h2>
                 
                 {/* Client / Contractor Login Button (Green) */}
-                <Button onClick={() => signIn('google')} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
+                <Button onClick={() => { 
+                  if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
+                  signIn('google');
+                }} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
                 </Button>
 
                 {/* Browse as Guest Button (Green as requested) */}
-                <Button onClick={() => setIsGuest(true)} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
+                <Button onClick={() => {
+                  if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
+                  setIsGuest(true);
+                }} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Eye className="w-5 h-5 mr-2" /> Browse as Guest
                 </Button>
                 
@@ -471,8 +486,8 @@ function App() {
     );
   }
 
-  // SCREEN 2: CLIENT ONBOARDING
-  if (userData && !userData.onboarding_complete && !userData.profile?.service_category) {
+  // SCREEN 2: CLIENT ONBOARDING (ONLY IF INTENT === 'CLIENT')
+  if (intent === 'client' && userData && !userData.onboarding_complete && !userData.profile?.service_category) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
         <Card className="max-w-2xl mx-auto tender-shadow">
@@ -525,8 +540,8 @@ function App() {
     );
   }
 
-  // SCREEN 3: PENDING MD APPROVAL
-  if (userData && !userData.is_approved && userData.onboarding_complete) {
+  // SCREEN 3: PENDING MD APPROVAL (ONLY IF INTENT === 'CLIENT')
+  if (intent === 'client' && userData && !userData.is_approved && userData.onboarding_complete) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
          <Clock className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
@@ -597,7 +612,11 @@ function App() {
               </Button>
             ) : (
               <Button
-                onClick={() => { setIsGuest(false); signIn('google'); }}
+                onClick={() => { 
+                  if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
+                  setIsGuest(false); 
+                  signIn('google'); 
+                }}
                 size="sm"
                 className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d]"
               >
@@ -1034,6 +1053,7 @@ function App() {
             <Button
               onClick={() => {
                 setEmailModal(false);
+                if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
                 signIn('google', { callbackUrl: typeof window !== 'undefined' ? window.location.href : '/' });
               }}
               className="w-full bg-white hover:bg-slate-50 border text-[#0A2647] gap-2 h-11"
