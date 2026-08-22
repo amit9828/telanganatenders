@@ -121,14 +121,33 @@ function App() {
   const [empPwd, setEmpPwd] = useState('');
   const [isGuest, setIsGuest] = useState(false); // Guest View Toggle
   
-  const [intent, setIntent] = useState(''); // NEW: Tracks if user is Client or Guest
+  const [intent, setIntent] = useState(''); // Tracks if user is Client or Guest
 
+  // NEW: Comprehensive Onboarding Form State
   const [onboardForm, setOnboardForm] = useState({
-    company_name: '', company_type: 'Proprietor', service: '', has_gst: false, has_msme: false, has_iso: false
+    client_name: '',
+    company_name: '', 
+    phone: '',
+    company_type: 'Proprietor (Individual)', 
+    service: '', 
+    // Document Checklist
+    has_gst: false, 
+    has_esi: false,
+    has_epf: false,
+    has_iso: false,
+    has_bank: false,
+    has_pan: false,
+    has_aadhar: false,
+    has_dsc: false,
+    has_ifsc: false, // Keeping it separate if needed, though Bank usually implies this
+    has_fssai: false,
+    has_cer: false,
+    has_turnover: false,
+    has_annual_returns: false
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
-  // --- YOUR EXISTING STATES ---
+  // --- EXISTING STATES ---
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
   const [selectedDay, setSelectedDay] = useState(null);
@@ -353,7 +372,9 @@ function App() {
 
   const submitOnboarding = async (e) => {
     e.preventDefault();
-    if(!onboardForm.company_name || !onboardForm.service) return toast.error('Please fill required fields');
+    if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
+      return toast.error('Please fill required fields (Name, Company, Phone, Service)');
+    }
     setSubmittingOnboard(true);
     
     try {
@@ -362,12 +383,28 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           email, 
-          service_category: onboardForm.service,
+          // New required fields
+          client_name: onboardForm.client_name,
           company_name: onboardForm.company_name,
+          phone: onboardForm.phone,
           company_type: onboardForm.company_type,
-          has_gst: onboardForm.has_gst,
-          has_msme: onboardForm.has_msme,
-          has_iso: onboardForm.has_iso,
+          service_category: onboardForm.service,
+          // Full Documents Payload
+          documents: {
+            has_gst: onboardForm.has_gst,
+            has_esi: onboardForm.has_esi,
+            has_epf: onboardForm.has_epf,
+            has_iso: onboardForm.has_iso,
+            has_bank: onboardForm.has_bank,
+            has_pan: onboardForm.has_pan,
+            has_aadhar: onboardForm.has_aadhar,
+            has_dsc: onboardForm.has_dsc,
+            has_ifsc: onboardForm.has_ifsc,
+            has_fssai: onboardForm.has_fssai,
+            has_cer: onboardForm.has_cer,
+            has_turnover: onboardForm.has_turnover,
+            has_annual_returns: onboardForm.has_annual_returns
+          },
           status: 'pending'
         })
       });
@@ -490,47 +527,102 @@ function App() {
   if (intent === 'client' && userData && !userData.onboarding_complete && !userData.profile?.service_category) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
-        <Card className="max-w-2xl mx-auto tender-shadow">
+        <Card className="max-w-3xl mx-auto tender-shadow">
           <CardHeader className="border-b bg-white text-center pb-6">
              <User className="w-10 h-10 mx-auto text-[#16a34a] mb-2" />
              <CardTitle className="text-2xl text-[#0A2647]">Complete Your Business Profile</CardTitle>
              <CardDescription>To match you with the right tenders, we need a few details about your business.</CardDescription>
           </CardHeader>
           <CardContent className="p-6 bg-slate-50/50">
-            <form onSubmit={submitOnboarding} className="space-y-5">
-              <div>
-                <Label className="text-[#0A2647] font-semibold">Company / Firm Name *</Label>
-                <Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} placeholder="e.g. Balaji Enterprises" className="mt-1 bg-white"/>
-              </div>
+            <form onSubmit={submitOnboarding} className="space-y-6">
+              
               <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-[#0A2647] font-semibold">Company Type *</Label>
-                  <select required className="w-full border rounded-md p-2 mt-1 bg-white text-sm" value={onboardForm.company_type} onChange={e => setOnboardForm({...onboardForm, company_type: e.target.value})}>
-                    <option value="Proprietor">Proprietor (Individual)</option>
-                    <option value="Partnership">Partnership</option>
-                    <option value="Private Limited">Private Limited</option>
-                  </select>
-                </div>
-                <div>
-                  <Label className="text-[#0A2647] font-semibold">Core Service / Product *</Label>
-                  <Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} placeholder="e.g. Civil Works, Computers" className="mt-1 bg-white"/>
-                </div>
+                 <div>
+                    <Label className="text-[#0A2647] font-semibold">Client Name *</Label>
+                    <Input required value={onboardForm.client_name} onChange={e => setOnboardForm({...onboardForm, client_name: e.target.value})} placeholder="e.g. John Doe" className="mt-1 bg-white"/>
+                 </div>
+                 <div>
+                    <Label className="text-[#0A2647] font-semibold">Contact Number *</Label>
+                    <Input required type="tel" value={onboardForm.phone} onChange={e => setOnboardForm({...onboardForm, phone: e.target.value})} placeholder="e.g. 9876543210" className="mt-1 bg-white"/>
+                 </div>
+                 <div className="sm:col-span-2">
+                    <Label className="text-[#0A2647] font-semibold">Company / Firm Name *</Label>
+                    <Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} placeholder="e.g. Balaji Enterprises" className="mt-1 bg-white"/>
+                 </div>
+                 <div>
+                    <Label className="text-[#0A2647] font-semibold">Company Type *</Label>
+                    <select required className="w-full border rounded-md p-2 mt-1 bg-white text-sm" value={onboardForm.company_type} onChange={e => setOnboardForm({...onboardForm, company_type: e.target.value})}>
+                      <option value="Proprietor (Individual)">Proprietor (Individual)</option>
+                      <option value="Partnership">Partnership</option>
+                      <option value="Private Limited">Private Limited</option>
+                      <option value="Public Limited">Public Limited</option>
+                      <option value="LLP">LLP</option>
+                    </select>
+                 </div>
+                 <div>
+                    <Label className="text-[#0A2647] font-semibold">Core Service / Product *</Label>
+                    <Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} placeholder="e.g. Civil Works, Computers" className="mt-1 bg-white"/>
+                 </div>
               </div>
-              <div className="border-t pt-4">
-                <Label className="text-[#0A2647] font-semibold block mb-3">Do you have these basic documents?</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+
+              <div className="border-t pt-5">
+                <Label className="text-[#0A2647] font-semibold block mb-1">Do you have these basic documents?</Label>
+                <p className="text-xs text-muted-foreground mb-4">Please tick the documents you currently hold to build your Vendor Master Profile.</p>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  
+                  {/* Tax & Legal */}
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card
+                  </label>
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_bank} onChange={e => setOnboardForm({...onboardForm, has_bank: e.target.checked})} /> Bank Account
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_ifsc} onChange={e => setOnboardForm({...onboardForm, has_ifsc: e.target.checked})} /> IFSC Details
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar
+                  </label>
+                  
+                  {/* Statutory Compliance */}
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration
+                  </label>
+
+                  {/* Certificates & Licenses */}
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate
                   </label>
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)
                   </label>
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
-                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_dsc} onChange={e => setOnboardForm({...onboardForm, has_dsc: e.target.checked})} /> DSC Class 3
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_fssai} onChange={e => setOnboardForm({...onboardForm, has_fssai: e.target.checked})} /> FSSAI
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER
+                  </label>
+
+                  {/* Financial Proofs */}
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_annual_returns} onChange={e => setOnboardForm({...onboardForm, has_annual_returns: e.target.checked})} /> Annual Returns
                   </label>
                 </div>
               </div>
-              <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-2">
+              <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-4 shadow-sm">
                 {submittingOnboard ? 'Submitting...' : 'Submit for MD Approval'}
               </Button>
             </form>
@@ -1240,3 +1332,5 @@ function PlanGrid({ plans, buying, onBuy }) {
     </div>
   );
 }
+
+Brother and write a code to my account tab also.
