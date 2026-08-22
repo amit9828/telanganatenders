@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // NEW IMPORT
 import { toast } from 'sonner';
 import {
   ShieldCheck,
@@ -32,42 +33,21 @@ import {
   Plus,
   Image as ImageIcon,
   Lock,
-  MessageSquare, // NEW
-  Send,         // NEW
-  TrendingDown, // NEW
-  Clock         // NEW
+  MessageSquare, 
+  Send,         
+  TrendingDown, 
+  Clock,
+  UserCheck, // NEW IMPORT
+  CheckCircle2 // NEW IMPORT
 } from 'lucide-react';
 
 const DISTRICTS = [
-  // Telangana Districts
-  'Hyderabad',
-  'Adilabad',
-  'Nizamabad',
-  'Karimnagar',
-  'Medak',
-  'Ranga Reddy',
-  'Mahabubnagar',
-  'Nalgonda',
-  'Warangal',
-  'Khammam',
-  'Sangareddy',
-  'Medchal-Malkajgiri',
-  'Siddipet',
-  'Vikarabad',
-  // Andhra Pradesh Districts
-  'Visakhapatnam',
-  'Vijayawada (NTR)',
-  'Guntur',
-  'Tirupati',
-  'Nellore',
-  'Kurnool',
-  'Anantapur',
-  'Kadapa (YSR)',
-  'Kakinada',
-  'Eluru',
-  'Srikakulam',
-  'Vizianagaram',
-  'Prakasam'
+  'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
+  'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
+  'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad',
+  'Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore',
+  'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru',
+  'Srikakulam', 'Vizianagaram', 'Prakasam'
 ];
 
 function AdminPage() {
@@ -80,18 +60,16 @@ function AdminPage() {
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
 
-  // --- NEW STATES FOR PHASE 3 ---
   const [tickets, setTickets] = useState([]);
-  const [ticketReply, setTicketReply] = useState({}); // Stores replies typed by Admin
-  const [l1Data, setL1Data] = useState({}); // Stores L1 Price Data for Tenders
+  const [ticketReply, setTicketReply] = useState({}); 
+  const [l1Data, setL1Data] = useState({}); 
+
+  // --- NEW STATES FOR APPROVALS & PAYMENTS ---
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [paymentRequest, setPaymentRequest] = useState({});
 
   const [form, setForm] = useState({
-    title: '',
-    department: '',
-    last_date: '',
-    district: '',
-    category: 'Product', // కొత్తగా యాడ్ చేసిన కేటగిరీ
-    supply_details: '',
+    title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '',
   });
   const [pdfBase64, setPdfBase64] = useState('');
   const [pdfName, setPdfName] = useState('');
@@ -109,14 +87,15 @@ function AdminPage() {
     // eslint-disable-next-line
   }, [token]);
 
-  // UPDATED REFRESH TO FETCH TICKETS
+  // UPDATED REFRESH TO FETCH PENDING USERS
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [tRes, sRes, tkRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes] = await Promise.all([
         fetch('/api/tenders', { headers }),
         fetch('/api/admin/stats', { headers }),
-        fetch('/api/tickets?role=admin', { headers }) // Fetch SLA Tickets
+        fetch('/api/tickets?role=admin', { headers }),
+        fetch('/api/users/pending', { headers }) // NEW FETCH
       ]);
       if (tRes.status === 401) {
         localStorage.removeItem('tt_admin');
@@ -126,10 +105,12 @@ function AdminPage() {
       const tJson = await tRes.json();
       const sJson = await sRes.json();
       const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
+      const uJson = uRes.ok ? await uRes.json() : { users: [] };
 
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
+      setPendingUsers(uJson.users || []); // SET PENDING USERS
     } catch (err) {
       console.error('Refresh failed:', err);
     }
@@ -216,12 +197,7 @@ function AdminPage() {
         `Tender published! ${d.notified || ''} user(s) notified by email.`
       );
       setForm({
-        title: '',
-        department: '',
-        last_date: '',
-        district: '',
-        category: 'Product',
-        supply_details: '',
+        title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '',
       });
       setPdfBase64('');
       setPdfName('');
@@ -244,7 +220,6 @@ function AdminPage() {
     refresh();
   };
 
-  // --- NEW HANDLERS FOR TICKETS & L1 PRICE ---
   const submitTicketReply = async (ticket_id) => {
     const replyText = ticketReply[ticket_id];
     if(!replyText) return toast.error('Please write a reply first.');
@@ -270,7 +245,6 @@ function AdminPage() {
     if (!data?.price) return toast.error('Please enter the L1 Price');
     
     try {
-      // NOTE: Ensure your backend has a PUT route in /api/tenders/[id]/route.js to accept this data
       const r = await fetch(`/api/tenders/${tender_id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -279,6 +253,35 @@ function AdminPage() {
       toast.success('L1 Price saved for Market Intelligence!');
       refresh();
     } catch(e) { toast.error('Error saving L1 Price'); }
+  };
+
+  // --- NEW HANDLERS FOR APPROVALS & PAYMENTS ---
+  const approveClient = async (email) => {
+    try {
+      const r = await fetch('/api/users/approve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email })
+      });
+      if(r.ok) { 
+        toast.success('Client Approved & Portal Unlocked!'); 
+        refresh(); 
+      }
+    } catch(e) { toast.error('Error approving client'); }
+  };
+
+  const sendPaymentRequest = async (email) => {
+    const reqData = paymentRequest[email];
+    if(!reqData?.amount || !reqData?.reason) return toast.error('Enter Amount and Reason for the document.');
+    try {
+      const r = await fetch('/api/users/request-payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email, amount: reqData.amount, reason: reqData.reason })
+      });
+      if(r.ok) { 
+        toast.success(`Payment request sent to ${email} for ₹${reqData.amount}`);
+        setPaymentRequest(prev => ({...prev, [email]: {amount:'', reason:''}}));
+      }
+    } catch(e) { toast.error('Error sending request'); }
   };
 
 
@@ -340,7 +343,7 @@ function AdminPage() {
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
-          <BrandLogo subtitle="Admin Dashboard" />
+          <BrandLogo subtitle="MD Command Center" />
           <div className="flex items-center gap-1.5">
             <a href="/">
               <Button variant="outline" size="sm" className="text-xs sm:text-sm">
@@ -381,268 +384,354 @@ function AdminPage() {
           />
         </div>
 
-        {/* --- PHASE 3: SLA TICKETING DASHBOARD --- */}
-        <Card className="tender-shadow border-amber-200">
-          <CardHeader className="bg-amber-50 border-b pb-4">
-            <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
-              <MessageSquare className="w-5 h-5 text-amber-600" /> Client Tickets (24-Hour SLA Monitor)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
-            {tickets.length === 0 ? (
-               <p className="text-sm text-muted-foreground text-center py-4">No active support tickets from clients.</p> 
-            ) : (
-               <div className="grid md:grid-cols-2 gap-4">
-                  {tickets.map(ticket => (
-                     <div key={ticket._id} className="border rounded-md p-4 bg-white shadow-sm relative">
-                        <div className="flex justify-between items-start mb-2">
-                           <div>
-                             <Badge variant="outline" className="mb-1">{ticket.department}</Badge>
-                             <h4 className="font-bold text-[#0A2647] text-sm">{ticket.subject}</h4>
-                             <p className="text-xs text-muted-foreground">{ticket.client_email}</p>
-                           </div>
-                           <Badge className={ticket.status === 'RESOLVED' ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}>
-                             {ticket.status === 'OPEN' ? 'ACTION REQUIRED' : 'RESOLVED'}
-                           </Badge>
+        {/* --- TABS SYSTEM --- */}
+        <Tabs defaultValue="approvals" className="w-full">
+          <TabsList className="grid w-full grid-cols-4 bg-slate-200 h-auto p-1">
+            <TabsTrigger value="approvals" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white">
+              <UserCheck className="w-4 h-4 mr-2 hidden sm:block"/> Approvals
+            </TabsTrigger>
+            <TabsTrigger value="tenders" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white">
+              <FileText className="w-4 h-4 mr-2 hidden sm:block"/> Tenders & L1
+            </TabsTrigger>
+            <TabsTrigger value="tickets" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white">
+              <MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> SLA Tickets
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white">
+              <ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Brand Setup
+            </TabsTrigger>
+          </TabsList>
+
+          {/* TAB 1: APPROVALS & PAYMENTS */}
+          <TabsContent value="approvals" className="mt-4">
+            <Card className="tender-shadow border-[#16a34a]/30">
+              <CardHeader className="bg-emerald-50/50 border-b pb-4">
+                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+                  <UserCheck className="w-5 h-5 text-[#16a34a]" /> Pending Client Approvals
+                </CardTitle>
+                <CardDescription>Review new registrations. Approve them to unlock their portal, or request a custom payment if documents are missing.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4 max-h-[500px] overflow-y-auto">
+                {pendingUsers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                    <p>All clear! No pending approvals right now.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {pendingUsers.map(user => (
+                      <div key={user._id} className="border rounded-lg p-4 bg-white shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start">
+                        <div className="flex-1">
+                          <h4 className="font-bold text-[#0A2647] text-lg">{user.company_name || 'Unnamed Company'}</h4>
+                          <div className="flex gap-2 text-xs text-slate-500 mb-2">
+                            <span>{user.email}</span> • <span>{user.company_type || 'Proprietor'}</span> • <span>{user.service_category || 'Service'}</span>
+                          </div>
+                          
+                          <div className="flex gap-2 mb-3">
+                            <Badge variant={user.has_gst ? "default" : "destructive"} className={user.has_gst ? "bg-emerald-100 text-emerald-800" : ""}>GST: {user.has_gst ? 'Yes' : 'No'}</Badge>
+                            <Badge variant={user.has_msme ? "default" : "destructive"} className={user.has_msme ? "bg-emerald-100 text-emerald-800" : ""}>MSME: {user.has_msme ? 'Yes' : 'No'}</Badge>
+                            <Badge variant={user.has_iso ? "default" : "destructive"} className={user.has_iso ? "bg-emerald-100 text-emerald-800" : ""}>ISO: {user.has_iso ? 'Yes' : 'No'}</Badge>
+                          </div>
                         </div>
-                        <p className="text-sm text-slate-700 bg-slate-50 p-2 rounded border mb-3">"{ticket.message}"</p>
-                        
-                        {ticket.status === 'OPEN' ? (
-                           <div className="flex gap-2">
-                             <Textarea 
-                                placeholder="Type your reply to the client..." 
-                                className="text-sm min-h-[40px] bg-slate-50"
-                                value={ticketReply[ticket._id] || ''}
-                                onChange={(e) => setTicketReply(prev => ({...prev, [ticket._id]: e.target.value}))}
+
+                        <div className="w-full md:w-auto bg-slate-50 p-3 rounded border flex flex-col gap-2 min-w-[280px]">
+                          <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full">
+                            <CheckCircle2 className="w-4 h-4 mr-2" /> Approve & Unlock Portal
+                          </Button>
+                          <div className="text-xs font-semibold text-center text-slate-500">- OR REQUEST DOCUMENT FEE -</div>
+                          <div className="flex gap-2">
+                             <Input 
+                               placeholder="Reason (e.g. MSME)" className="h-8 text-xs bg-white"
+                               value={paymentRequest[user.email]?.reason || ''}
+                               onChange={e => setPaymentRequest(prev => ({...prev, [user.email]: {...prev[user.email], reason: e.target.value}}))}
                              />
-                             <Button onClick={() => submitTicketReply(ticket._id)} className="bg-emerald-600 hover:bg-emerald-700 h-auto">
-                                <Send className="w-4 h-4" />
-                             </Button>
-                           </div>
-                        ) : (
-                           <div className="bg-emerald-50 text-emerald-800 p-2 rounded text-xs border border-emerald-200">
-                              <span className="font-semibold">Resolved Reply:</span> {ticket.reply}
-                           </div>
-                        )}
-                     </div>
-                  ))}
-               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Brand & Security Settings */}
-        <BrandSettings token={token} />
-
-        <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
-          {/* Publish form */}
-          <Card className="lg:col-span-2 tender-shadow">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-[#0A2647]">
-                <Plus className="w-4 h-4" /> Publish New Tender
-              </CardTitle>
-              <CardDescription>
-                Uploaded PDF is unlocked only for paid users — each PDF is auto-watermarked with the buyer's email. All registered users will receive an email alert on publish.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={publish} className="space-y-3">
-                <div>
-                  <Label>Document Title (Work) *</Label>
-                  <Input
-                    value={form.title}
-                    onChange={(e) =>
-                      setForm({ ...form, title: e.target.value })
-                    }
-                    placeholder="Construction of new road from..."
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Department Name *</Label>
-                  <Input
-                    value={form.department}
-                    onChange={(e) =>
-                      setForm({ ...form, department: e.target.value })
-                    }
-                    placeholder="Roads & Buildings Dept"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Last Date *</Label>
-                    <Input
-                      type="date"
-                      value={form.last_date}
-                      onChange={(e) =>
-                        setForm({ ...form, last_date: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>Category (Product/Service) *</Label>
-                    <Select
-                      value={form.category}
-                      onValueChange={(v) =>
-                        setForm({ ...form, category: v })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Product">Product</SelectItem>
-                        <SelectItem value="Service">Service</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div>
-                  <Label>District (TS & AP) *</Label>
-                  <Select
-                    value={form.district}
-                    onValueChange={(v) =>
-                      setForm({ ...form, district: v })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select District" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DISTRICTS.map((d) => (
-                        <SelectItem key={d} value={d}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Supply / Tender Details</Label>
-                  <Textarea
-                    rows={3}
-                    value={form.supply_details}
-                    onChange={(e) =>
-                      setForm({ ...form, supply_details: e.target.value })
-                    }
-                    placeholder="Brief description of supply items, scope, EMD, etc."
-                  />
-                </div>
-                <div>
-                  <Label>PDF Document (Keep under 4 MB)</Label>
-                  <div className="border-2 border-dashed rounded-md p-4 text-center bg-slate-50">
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      onChange={onPdfChange}
-                      className="hidden"
-                      id="pdf-input"
-                    />
-                    <label
-                      htmlFor="pdf-input"
-                      className="cursor-pointer flex flex-col items-center"
-                    >
-                      <Upload className="w-6 h-6 text-[#16a34a] mb-1" />
-                      <span className="text-sm font-medium text-[#0A2647]">
-                        {pdfName || 'Click to upload PDF'}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Stored securely. Locked behind paywall.
-                      </span>
-                    </label>
-                  </div>
-                </div>
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#16a34a] hover:bg-[#15803d]"
-                >
-                  {loading ? 'Publishing...' : 'Publish Tender & Notify Users'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          {/* Tender list */}
-          <Card className="lg:col-span-3 tender-shadow">
-            <CardHeader>
-              <CardTitle className="text-[#0A2647]">
-                Published Tenders ({tenders.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto">
-              {tenders.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No tenders yet. Publish your first one!
-                </p>
-              )}
-              {tenders.map((t) => (
-                <div
-                  key={t._id || t.id}
-                  className="border rounded-md p-3 flex flex-col gap-3 hover:bg-slate-50 transition"
-                >
-                  {/* Top Row: Details */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge className="bg-[#0A2647]">
-                          {t.district}
-                        </Badge>
-                        {t.category && (
-                          <Badge variant="outline" className="text-xs">
-                            {t.category}
-                          </Badge>
-                        )}
-                        <span className="text-xs text-muted-foreground">
-                          Last:{' '}
-                          {new Date(t.last_date).toLocaleDateString()}
-                        </span>
+                             <Input 
+                               placeholder="₹ Amount" type="number" className="h-8 text-xs bg-white w-24"
+                               value={paymentRequest[user.email]?.amount || ''}
+                               onChange={e => setPaymentRequest(prev => ({...prev, [user.email]: {...prev[user.email], amount: e.target.value}}))}
+                             />
+                          </div>
+                          <Button onClick={() => sendPaymentRequest(user.email)} variant="outline" size="sm" className="border-amber-500 text-amber-700 hover:bg-amber-50">
+                            Send Payment Link
+                          </Button>
+                        </div>
                       </div>
-                      <p className="font-semibold text-[#0A2647] truncate">
-                        {t.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t.department}
-                      </p>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 2: TENDERS & L1 */}
+          <TabsContent value="tenders" className="mt-4">
+            <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
+              {/* Publish form */}
+              <Card className="lg:col-span-2 tender-shadow">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-[#0A2647]">
+                    <Plus className="w-4 h-4" /> Publish New Tender
+                  </CardTitle>
+                  <CardDescription>
+                    Uploaded PDF is unlocked only for paid users — each PDF is auto-watermarked with the buyer's email. All registered users will receive an email alert on publish.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={publish} className="space-y-3">
+                    <div>
+                      <Label>Document Title (Work) *</Label>
+                      <Input
+                        value={form.title}
+                        onChange={(e) =>
+                          setForm({ ...form, title: e.target.value })
+                        }
+                        placeholder="Construction of new road from..."
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Department Name *</Label>
+                      <Input
+                        value={form.department}
+                        onChange={(e) =>
+                          setForm({ ...form, department: e.target.value })
+                        }
+                        placeholder="Roads & Buildings Dept"
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label>Last Date *</Label>
+                        <Input
+                          type="date"
+                          value={form.last_date}
+                          onChange={(e) =>
+                            setForm({ ...form, last_date: e.target.value })
+                          }
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label>Category (Product/Service) *</Label>
+                        <Select
+                          value={form.category}
+                          onValueChange={(v) =>
+                            setForm({ ...form, category: v })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Product">Product</SelectItem>
+                            <SelectItem value="Service">Service</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>District (TS & AP) *</Label>
+                      <Select
+                        value={form.district}
+                        onValueChange={(v) =>
+                          setForm({ ...form, district: v })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select District" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DISTRICTS.map((d) => (
+                            <SelectItem key={d} value={d}>
+                              {d}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Supply / Tender Details</Label>
+                      <Textarea
+                        rows={3}
+                        value={form.supply_details}
+                        onChange={(e) =>
+                          setForm({ ...form, supply_details: e.target.value })
+                        }
+                        placeholder="Brief description of supply items, scope, EMD, etc."
+                      />
+                    </div>
+                    <div>
+                      <Label>PDF Document (Keep under 4 MB)</Label>
+                      <div className="border-2 border-dashed rounded-md p-4 text-center bg-slate-50">
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          onChange={onPdfChange}
+                          className="hidden"
+                          id="pdf-input"
+                        />
+                        <label
+                          htmlFor="pdf-input"
+                          className="cursor-pointer flex flex-col items-center"
+                        >
+                          <Upload className="w-6 h-6 text-[#16a34a] mb-1" />
+                          <span className="text-sm font-medium text-[#0A2647]">
+                            {pdfName || 'Click to upload PDF'}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Stored securely. Locked behind paywall.
+                          </span>
+                        </label>
+                      </div>
                     </div>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => remove(t._id || t.id)}
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-[#16a34a] hover:bg-[#15803d]"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
+                      {loading ? 'Publishing...' : 'Publish Tender & Notify Users'}
                     </Button>
-                  </div>
-                  
-                  {/* --- PHASE 3: L1 PRICE MARKET INTELLIGENCE INPUT --- */}
-                  <div className="bg-emerald-50/50 p-2 rounded-md border flex flex-col sm:flex-row gap-2 items-center w-full">
-                     <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-700 text-xs font-semibold whitespace-nowrap px-1">
-                       <TrendingDown className="w-4 h-4" /> Market Intel:
-                     </div>
-                     <Input 
-                        placeholder="L1 Price (₹)" type="number" 
-                        className="h-8 text-xs bg-white w-full sm:w-32"
-                        value={l1Data[t._id || t.id]?.price || t.l1_price || ''}
-                        onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}
-                     />
-                     <Input 
-                        placeholder="Winner Name (Optional)" 
-                        className="h-8 text-xs bg-white w-full sm:flex-1"
-                        value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''}
-                        onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], winner: e.target.value}}))}
-                     />
-                     <Button size="sm" className="h-8 text-xs w-full sm:w-auto bg-[#0A2647] hover:bg-[#144272]" onClick={() => submitL1Price(t._id || t.id)}>
-                        Save L1
-                     </Button>
-                  </div>
+                  </form>
+                </CardContent>
+              </Card>
 
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
+              {/* Tender list */}
+              <Card className="lg:col-span-3 tender-shadow">
+                <CardHeader>
+                  <CardTitle className="text-[#0A2647]">
+                    Published Tenders ({tenders.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto">
+                  {tenders.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No tenders yet. Publish your first one!
+                    </p>
+                  )}
+                  {tenders.map((t) => (
+                    <div
+                      key={t._id || t.id}
+                      className="border rounded-md p-3 flex flex-col gap-3 hover:bg-slate-50 transition"
+                    >
+                      {/* Top Row: Details */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge className="bg-[#0A2647]">
+                              {t.district}
+                            </Badge>
+                            {t.category && (
+                              <Badge variant="outline" className="text-xs">
+                                {t.category}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              Last:{' '}
+                              {new Date(t.last_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="font-semibold text-[#0A2647] truncate">
+                            {t.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {t.department}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => remove(t._id || t.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
+                      </div>
+                      
+                      {/* --- L1 PRICE MARKET INTELLIGENCE INPUT --- */}
+                      <div className="bg-emerald-50/50 p-2 rounded-md border flex flex-col sm:flex-row gap-2 items-center w-full">
+                         <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-700 text-xs font-semibold whitespace-nowrap px-1">
+                           <TrendingDown className="w-4 h-4" /> Market Intel:
+                         </div>
+                         <Input 
+                            placeholder="L1 Price (₹)" type="number" 
+                            className="h-8 text-xs bg-white w-full sm:w-32"
+                            value={l1Data[t._id || t.id]?.price || t.l1_price || ''}
+                            onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}
+                         />
+                         <Input 
+                            placeholder="Winner Name (Optional)" 
+                            className="h-8 text-xs bg-white w-full sm:flex-1"
+                            value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''}
+                            onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], winner: e.target.value}}))}
+                         />
+                         <Button size="sm" className="h-8 text-xs w-full sm:w-auto bg-[#0A2647] hover:bg-[#144272]" onClick={() => submitL1Price(t._id || t.id)}>
+                            Save L1
+                         </Button>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* TAB 3: TICKETS */}
+          <TabsContent value="tickets" className="mt-4">
+            <Card className="tender-shadow border-amber-200">
+              <CardHeader className="bg-amber-50 border-b pb-4">
+                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+                  <MessageSquare className="w-5 h-5 text-amber-600" /> Client Tickets (24-Hour SLA Monitor)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 max-h-[500px] overflow-y-auto">
+                {tickets.length === 0 ? (
+                   <p className="text-sm text-muted-foreground text-center py-4">No active support tickets from clients.</p> 
+                ) : (
+                   <div className="grid md:grid-cols-2 gap-4">
+                      {tickets.map(ticket => (
+                         <div key={ticket._id} className="border rounded-md p-4 bg-white shadow-sm relative">
+                            <div className="flex justify-between items-start mb-2">
+                               <div>
+                                 <Badge variant="outline" className="mb-1">{ticket.department}</Badge>
+                                 <h4 className="font-bold text-[#0A2647] text-sm">{ticket.subject}</h4>
+                                 <p className="text-xs text-muted-foreground">{ticket.client_email}</p>
+                               </div>
+                               <Badge className={ticket.status === 'RESOLVED' ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}>
+                                 {ticket.status === 'OPEN' ? 'ACTION REQUIRED' : 'RESOLVED'}
+                               </Badge>
+                            </div>
+                            <p className="text-sm text-slate-700 bg-slate-50 p-2 rounded border mb-3">"{ticket.message}"</p>
+                            
+                            {ticket.status === 'OPEN' ? (
+                               <div className="flex gap-2">
+                                 <Textarea 
+                                    placeholder="Type your reply to the client..." 
+                                    className="text-sm min-h-[40px] bg-slate-50"
+                                    value={ticketReply[ticket._id] || ''}
+                                    onChange={(e) => setTicketReply(prev => ({...prev, [ticket._id]: e.target.value}))}
+                                 />
+                                 <Button onClick={() => submitTicketReply(ticket._id)} className="bg-emerald-600 hover:bg-emerald-700 h-auto">
+                                    <Send className="w-4 h-4" />
+                                 </Button>
+                               </div>
+                            ) : (
+                               <div className="bg-emerald-50 text-emerald-800 p-2 rounded text-xs border border-emerald-200">
+                                  <span className="font-semibold">Resolved Reply:</span> {ticket.reply}
+                               </div>
+                            )}
+                         </div>
+                      ))}
+                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 4: BRAND SETTINGS */}
+          <TabsContent value="settings" className="mt-4">
+            <BrandSettings token={token} />
+          </TabsContent>
+        </Tabs>
+
       </main>
     </div>
   );
