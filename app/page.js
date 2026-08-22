@@ -40,39 +40,21 @@ import {
   Sparkles,
   X,
   Loader2,
+  User,
+  Briefcase,
+  UserCog
 } from 'lucide-react';
 
 const TS_DISTRICTS = [
-  'Hyderabad',
-  'Adilabad',
-  'Nizamabad',
-  'Karimnagar',
-  'Medak',
-  'Ranga Reddy',
-  'Mahabubnagar',
-  'Nalgonda',
-  'Warangal',
-  'Khammam',
-  'Sangareddy',
-  'Medchal-Malkajgiri',
-  'Siddipet',
-  'Vikarabad',
+  'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
+  'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
+  'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad',
 ];
 
 const AP_DISTRICTS = [
-  'Visakhapatnam',
-  'Vijayawada (NTR)',
-  'Guntur',
-  'Tirupati',
-  'Nellore',
-  'Kurnool',
-  'Anantapur',
-  'Kadapa (YSR)',
-  'Kakinada',
-  'Eluru',
-  'Srikakulam',
-  'Vizianagaram',
-  'Prakasam',
+  'Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore',
+  'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru',
+  'Srikakulam', 'Vizianagaram', 'Prakasam',
 ];
 
 const PLANS = [
@@ -122,38 +104,37 @@ const PLANS = [
 
 const monthName = (m) =>
   [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
   ][m];
 
 function App() {
   const today = new Date();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+
+  // --- GATEKEEPER & ONBOARDING STATES ---
+  const [userData, setUserData] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [gatewayMode, setGatewayMode] = useState('select'); // 'select', 'employee_login'
+  const [empEmail, setEmpEmail] = useState('');
+  const [empPwd, setEmpPwd] = useState('');
+  
+  const [onboardForm, setOnboardForm] = useState({
+    company_name: '', company_type: 'Proprietor', service: '', has_gst: false, has_msme: false, has_iso: false
+  });
+  const [submittingOnboard, setSubmittingOnboard] = useState(false);
+
+  // --- EXISTING DASHBOARD STATES ---
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
   const [selectedDay, setSelectedDay] = useState(null);
-  
-  // Advanced Filter States
-  const [category, setCategory] = useState('all');       // 'all', 'Product', 'Service'
-  const [stateFilter, setStateFilter] = useState('all'); // 'all', 'TS', 'AP'
-  const [district, setDistrict] = useState('all');       // Specific district or 'all'
-
+  const [category, setCategory] = useState('all');
+  const [stateFilter, setStateFilter] = useState('all');
+  const [district, setDistrict] = useState('all');
   const [tenders, setTenders] = useState([]);
   const [calDays, setCalDays] = useState({});
   const [loading, setLoading] = useState(false);
-
   const [searchQ, setSearchQ] = useState('');
-
   const [email, setEmail] = useState('');
   const [emailModal, setEmailModal] = useState(false);
   const [paywallModal, setPaywallModal] = useState(false);
@@ -162,9 +143,9 @@ function App() {
   const [pdfData, setPdfData] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [buying, setBuying] = useState(false);
-
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana & AP Tenders', logo: null });
 
+  // 1. Fetch Brand Settings
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
@@ -174,34 +155,36 @@ function App() {
       .catch(()=>{});
   }, []);
 
+  // 2. Auth & User Profile Fetching (Gatekeeper Logic)
   useEffect(() => {
-    if (session?.user?.email) {
+    if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
-      fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: e, name: session.user.name || '' }),
-      }).catch(() => {});
+      
+      // Fetch full user data to check Onboarding & Approval status
+      fetch(`/api/me?email=${encodeURIComponent(e)}`)
+        .then((r) => r.json())
+        .then((d) => {
+           setUserData(d);
+           setSubscription(d.subscription || null);
+           setLoadingUser(false);
+        })
+        .catch(() => setLoadingUser(false));
+        
+    } else if (status === 'unauthenticated') {
+      // Clear localStorage if no session to ensure gatekeeper shows
+      if (typeof window !== 'undefined') localStorage.removeItem('tt_email');
+      setEmail('');
+      setLoadingUser(false);
     }
-  }, [session]);
+  }, [session, status]);
 
-  useEffect(() => {
-    if (session?.user?.email) return;
-    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
-    if (e) setEmail(e);
-  }, [session]);
-
-  useEffect(() => {
-    if (!email) return;
-    fetch(`/api/access?email=${encodeURIComponent(email)}`)
-      .then((r) => r.json())
-      .then((d) => setSubscription(d.subscription || null))
-      .catch(() => {});
-  }, [email]);
-
+  // 3. Fetch Tenders & Calendar (Only if Approved or Public preview if you want, currently checking approval)
   const fetchTenders = async () => {
+    // Only fetch if user is approved (or if you want to show it anyway, remove this check)
+    if(status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
+
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -222,6 +205,7 @@ function App() {
   };
 
   const fetchCalendar = async () => {
+    if(status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}`);
     const d = await r.json();
     setCalDays(d.days || {});
@@ -231,7 +215,7 @@ function App() {
     fetchTenders();
     fetchCalendar();
     // eslint-disable-next-line
-  }, [month, year, district, category, searchQ]);
+  }, [month, year, district, category, searchQ, userData?.is_approved]);
 
   const filteredTenders = useMemo(() => {
     if (!selectedDay) return tenders;
@@ -358,6 +342,43 @@ function App() {
     }
   };
 
+  // ONBOARDING SUBMISSION HANDLER
+  const submitOnboarding = async (e) => {
+    e.preventDefault();
+    if(!onboardForm.company_name || !onboardForm.service) return toast.error('Please fill required fields');
+    setSubmittingOnboard(true);
+    
+    try {
+      const r = await fetch('/api/users/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email, 
+          service_category: onboardForm.service,
+          company_name: onboardForm.company_name,
+          company_type: onboardForm.company_type,
+          has_gst: onboardForm.has_gst,
+          has_msme: onboardForm.has_msme,
+          has_iso: onboardForm.has_iso,
+          status: 'pending'
+        })
+      });
+      
+      toast.success('Profile submitted! Waiting for MD Approval.');
+      // Update local state to show pending screen
+      setUserData(prev => ({ ...prev, onboarding_complete: true, is_approved: false }));
+    } catch (err) {
+      toast.error('Error submitting profile');
+    }
+    setSubmittingOnboard(false);
+  };
+
+  const handleEmployeeLogin = (e) => {
+    e.preventDefault();
+    toast.info('Employee Backend Auth is active. Verifying credentials...');
+    // Add real logic later if needed, for now prevent default behavior.
+  };
+
   useEffect(() => {
     if (email) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -374,6 +395,135 @@ function App() {
   else if (stateFilter === 'AP') currentDistricts = AP_DISTRICTS;
   else currentDistricts = [...TS_DISTRICTS, ...AP_DISTRICTS];
 
+
+  // ==============================================================================
+  // VIEW RENDERING (THE GATEKEEPER LOGIC)
+  // ==============================================================================
+
+  if (status === 'loading' || loadingUser) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+  }
+
+  // SCREEN 1: GATEKEEPER (Not Logged In)
+  if (status === 'unauthenticated') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md tender-shadow-lg overflow-hidden border-0">
+          <div className="bg-[#0A2647] p-6 text-center text-white">
+            <ShieldCheck className="w-12 h-12 mx-auto mb-2 text-[#16a34a]" />
+            <h1 className="text-2xl font-bold">{brandSettings.name}</h1>
+            <p className="text-sm text-slate-300 opacity-90 mt-1">Enterprise B2B Tender Portal</p>
+          </div>
+          <CardContent className="p-6 bg-white">
+            {gatewayMode === 'select' ? (
+              <div className="space-y-4">
+                <h2 className="text-center font-semibold text-slate-700 mb-4">Select your Portal Access</h2>
+                <Button onClick={() => signIn('google')} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
+                  <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
+                </Button>
+                <div className="relative flex items-center py-2">
+                  <div className="flex-grow border-t border-slate-200"></div>
+                  <span className="flex-shrink-0 mx-4 text-slate-400 text-xs font-medium">Internal Access</span>
+                  <div className="flex-grow border-t border-slate-200"></div>
+                </div>
+                <Button onClick={() => setGatewayMode('employee_login')} variant="outline" className="w-full h-12 text-[#0A2647] border-slate-300">
+                  <UserCog className="w-5 h-5 mr-2" /> Employee Login
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Button variant="ghost" size="sm" onClick={() => setGatewayMode('select')} className="p-0 h-auto hover:bg-transparent"><ChevronLeft className="w-4 h-4"/> Back</Button>
+                </div>
+                <h2 className="font-bold text-[#0A2647] text-lg">Employee Authentication</h2>
+                <form onSubmit={handleEmployeeLogin} className="space-y-3">
+                  <div>
+                    <Label>Employee ID (Email)</Label>
+                    <Input type="email" value={empEmail} onChange={e=>setEmpEmail(e.target.value)} required />
+                  </div>
+                  <div>
+                    <Label>Password</Label>
+                    <Input type="password" value={empPwd} onChange={e=>setEmpPwd(e.target.value)} required />
+                  </div>
+                  <Button type="submit" className="w-full bg-[#0A2647] hover:bg-[#144272] h-11">Secure Login</Button>
+                </form>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // SCREEN 2: CLIENT ONBOARDING (Logged in, but profile missing/empty)
+  if (userData && !userData.onboarding_complete && !userData.profile?.service_category) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 py-10">
+        <Card className="max-w-2xl mx-auto tender-shadow">
+          <CardHeader className="border-b bg-white text-center pb-6">
+             <User className="w-10 h-10 mx-auto text-[#16a34a] mb-2" />
+             <CardTitle className="text-2xl text-[#0A2647]">Complete Your Business Profile</CardTitle>
+             <CardDescription>To match you with the right tenders, we need a few details about your business.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-6 bg-slate-50/50">
+            <form onSubmit={submitOnboarding} className="space-y-5">
+              <div>
+                <Label className="text-[#0A2647] font-semibold">Company / Firm Name *</Label>
+                <Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} placeholder="e.g. Balaji Enterprises" className="mt-1 bg-white"/>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-[#0A2647] font-semibold">Company Type *</Label>
+                  <select required className="w-full border rounded-md p-2 mt-1 bg-white text-sm" value={onboardForm.company_type} onChange={e => setOnboardForm({...onboardForm, company_type: e.target.value})}>
+                    <option value="Proprietor">Proprietor (Individual)</option>
+                    <option value="Partnership">Partnership</option>
+                    <option value="Private Limited">Private Limited</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-[#0A2647] font-semibold">Core Service / Product *</Label>
+                  <Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} placeholder="e.g. Civil Works, Computers" className="mt-1 bg-white"/>
+                </div>
+              </div>
+              <div className="border-t pt-4">
+                <Label className="text-[#0A2647] font-semibold block mb-3">Do you have these basic documents?</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
+                    <input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate
+                  </label>
+                </div>
+                <p className="text-xs text-amber-600 mt-3 flex items-center gap-1"><Clock className="w-3 h-3"/> Don't worry if you don't have them. Our team will assist you in getting them.</p>
+              </div>
+              <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-2">
+                {submittingOnboard ? 'Submitting...' : 'Submit for MD Approval'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // SCREEN 3: PENDING MD APPROVAL
+  if (userData && !userData.is_approved && userData.onboarding_complete) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
+         <Clock className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
+         <h1 className="text-3xl font-bold text-[#0A2647] mb-2">Profile Under Review</h1>
+         <p className="text-slate-600 max-w-md mx-auto mb-6">Our MD is currently reviewing your business profile. Once verified, your personalized tender dashboard will be unlocked.</p>
+         <Button onClick={() => window.location.reload()} variant="outline" className="border-[#0A2647] text-[#0A2647] bg-white">Refresh Status</Button>
+         <Button onClick={() => signOut()} variant="ghost" className="mt-4 text-xs text-slate-400">Sign out</Button>
+      </div>
+    );
+  }
+
+  // SCREEN 4: THE MAIN DASHBOARD (If Approved and Active)
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
 
