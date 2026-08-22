@@ -1332,5 +1332,3 @@ function PlanGrid({ plans, buying, onBuy }) {
     </div>
   );
 }
-
-Brother and write a code to my account tab also.
