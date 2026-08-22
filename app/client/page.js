@@ -51,7 +51,6 @@ export default function ClientDashboard() {
       const r = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`);
       const d = await r.json();
       
-      // DB డేటా మాత్రమే (ఫేక్ డేటా లేకుండా)
       setUserData({
         ...d,
         is_approved: d.is_approved || false,
@@ -59,7 +58,7 @@ export default function ClientDashboard() {
         officer_queries: d.officer_queries || [],
         active_bids: d.active_bids || [],
         suggested_bids: d.suggested_bids || [],
-        custom_requests: d.custom_requests || [], // ట్రాకింగ్ కస్టమ్ టెండర్స్
+        custom_requests: d.custom_requests || [], 
         emd_ledger: d.emd_ledger || { total_paid: 0, refunded: 0 },
         pending_payments: d.pending_payments || []
       });
@@ -80,7 +79,6 @@ export default function ClientDashboard() {
     }
   };
 
-  // Google Drive అప్‌లోడ్ సిమ్యులేషన్
   const handleFileUpload = (docName, e) => {
     const file = e.target.files[0];
     if(file) {
@@ -97,20 +95,18 @@ export default function ClientDashboard() {
     }
   };
 
-  // కస్టమ్ టెండర్ రిక్వెస్ట్ సబ్‌మిట్
   const handleCustomTenderSubmit = (e) => {
     e.preventDefault();
     if(!customTenderForm.link_or_id || !customTenderForm.description) {
       return toast.error("Please provide the Tender ID/Link and Description.");
     }
     
-    // UI లో తక్షణం కనిపించడానికి (రియల్ టైమ్‌లో API కి పంపాలి)
     const newRequest = {
       id: Date.now(),
       link_or_id: customTenderForm.link_or_id,
       description: customTenderForm.description,
       status: 'Pending Officer Review',
-      officer_reply: 'Awaiting officer response...' // ఆఫీసర్ రిప్లై ఖాళీగా ఉంటుంది
+      officer_reply: 'Awaiting officer response...' 
     };
     
     setUserData(prev => ({
@@ -146,8 +142,14 @@ export default function ClientDashboard() {
     }
   };
 
-  const handleSignOut = () => {
-    localStorage.removeItem('tt_email');
+  // 🔴 FIX: PROPERLY DESTROY NEXTAUTH SESSION TO PREVENT FLASHING
+  const handleSignOut = async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tt_email');
+      localStorage.removeItem('tt_intent');
+      localStorage.removeItem('tt_role');
+    }
+    await signOut({ redirect: false });
     window.location.href = '/';
   };
 
@@ -172,7 +174,6 @@ export default function ClientDashboard() {
   const rawPayments = Array.isArray(userData?.pending_payments) ? userData.pending_payments : [];
   const pendingPayments = rawPayments.filter(p => p.status === 'UNPAID');
   
-  // EMD లెడ్జర్ సేఫ్ క్యాలిక్యులేషన్
   const emdData = userData?.emd_ledger;
   let totalEmd = 0;
   let refundedEmd = 0;
@@ -190,19 +191,16 @@ export default function ClientDashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       
-      {/* 1. THE EXECUTIVE HEADER */}
       <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <BrandLogo subtitle="Enterprise Portal" />
           
           <div className="flex items-center gap-4">
-             {/* DYNAMIC COMPANY NAME */}
              <div className="hidden md:flex flex-col items-end mr-2">
                <span className="text-sm font-bold text-[#0A2647]">{companyName}</span>
                <span className="text-[10px] text-slate-500">{email}</span>
              </div>
 
-             {/* NOTIFICATIONS */}
              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                    <Button variant="ghost" size="icon" className="relative text-slate-700">
@@ -222,8 +220,8 @@ export default function ClientDashboard() {
                    ) : (
                       <>
                         {queries.map((q, i) => (
-                          <DropdownMenuItem key={`q-${i}`} className="text-xs text-red-600 font-medium whitespace-normal cursor-pointer">
-                             ⚠️ {q.subject}
+                          <DropdownMenuItem key={`q-${i}`} className="text-xs text-red-600 font-medium whitespace-normal cursor-pointer flex flex-col items-start gap-1">
+                             <span>⚠️ {q.subject}</span>
                           </DropdownMenuItem>
                         ))}
                         {pendingPayments.map((p, i) => (
@@ -236,17 +234,34 @@ export default function ClientDashboard() {
                 </DropdownMenuContent>
              </DropdownMenu>
 
-             {/* SIGN OUT */}
-             <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-red-600 hover:text-red-700 hover:bg-red-50 font-bold border border-red-100">
-                <LogOut className="w-4 h-4 md:mr-2"/> <span className="hidden md:inline">Sign Out</span>
-             </Button>
+             <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                   <Button variant="outline" className="flex items-center gap-2 border-slate-200 bg-slate-50">
+                     <UserCircle className="w-5 h-5 text-[#0A2647]" />
+                     <div className="hidden md:flex flex-col items-start text-left">
+                       <span className="text-xs font-bold text-[#0A2647] leading-none">{clientName}</span>
+                       <span className="text-[9px] text-slate-500 font-semibold">{companyName}</span>
+                     </div>
+                     <ChevronDown className="w-3 h-3 text-slate-400" />
+                   </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 p-2">
+                   <div className="p-2 border-b mb-2 bg-slate-50 rounded-md">
+                     <p className="font-bold text-[#0A2647]">{clientName}</p>
+                     <p className="text-xs text-slate-500">{email}</p>
+                     <Badge className="mt-2 bg-blue-100 text-blue-800 hover:bg-blue-200 border-0">{userData.profile?.category || 'Vendor'}</Badge>
+                   </div>
+                   <DropdownMenuItem className="text-red-600 cursor-pointer font-medium" onClick={handleSignOut}>
+                     <LogOut className="w-4 h-4 mr-2" /> Sign Out
+                   </DropdownMenuItem>
+                </DropdownMenuContent>
+             </DropdownMenu>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-8 space-y-6">
         
-        {/* HERO WIDGET */}
         <div className="bg-[#0A2647] rounded-xl p-6 text-white shadow-lg relative overflow-hidden flex flex-col lg:flex-row justify-between lg:items-center gap-6">
           <div className="absolute -right-10 -top-10 opacity-10 pointer-events-none"><Briefcase className="w-64 h-64" /></div>
           <div className="relative z-10">
@@ -290,7 +305,6 @@ export default function ClientDashboard() {
 
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* 1. OFFICER QUERY & UNDERTAKING BLOCK (ఖాళీగా ఉంటుంది / ఆఫీసర్ రిక్వెస్ట్ చేస్తేనే కనిపిస్తుంది) */}
             <Card className={`border-t-4 shadow-sm bg-white ${queries.length > 0 ? 'border-t-red-500' : 'border-t-slate-300'}`}>
               <CardHeader className="pb-3 border-b">
                 <CardTitle className="flex items-center gap-2 text-base text-[#0A2647]">
@@ -329,7 +343,6 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* 2. CUSTOM TENDER REQUEST BLOCK (ఆఫీసర్ రిప్లై ట్రాకింగ్‌తో సహా) */}
             <Card className="tender-shadow border-t-4 border-t-emerald-500">
               <CardHeader className="bg-emerald-50/40 pb-4 border-b">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
@@ -367,7 +380,6 @@ export default function ClientDashboard() {
                   </div>
                 </form>
 
-                {/* Tracking Custom Tender Requests Status & Officer Reply */}
                 {customRequests.length > 0 && (
                   <div className="mt-6 border-t pt-4">
                      <h4 className="font-bold text-[#0A2647] mb-3">My Custom Tender Requests Status</h4>
@@ -393,7 +405,6 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* 3. ACTIVE BIDS TRACKER */}
             <Card className="tender-shadow">
               <CardHeader className="border-b pb-4 bg-slate-50">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Target className="w-5 h-5 text-blue-600"/> Active Bids Tracking</CardTitle>
@@ -421,7 +432,6 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* 4. OFFICER SUGGESTED BIDS */}
             <Card className="tender-shadow border-t-4 border-t-purple-500">
               <CardHeader className="border-b pb-4 bg-purple-50/50">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Target className="w-5 h-5 text-purple-600"/> Officer Suggested Bids</CardTitle>
@@ -451,7 +461,6 @@ export default function ClientDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 2: LIVE GOVT TENDERS */}
           <TabsContent value="live_tenders" className="space-y-6">
             <Card className="tender-shadow">
               <CardHeader className="bg-slate-50 border-b">
@@ -477,7 +486,6 @@ export default function ClientDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 3: GeM BUSINESS PROFILE */}
           <TabsContent value="profile" className="space-y-6">
              <Card className="tender-shadow">
                 <CardHeader className="bg-slate-50 border-b">
@@ -537,12 +545,10 @@ export default function ClientDashboard() {
              </Card>
           </TabsContent>
 
-          {/* TAB 4: CORPORATE VAULT (Document Uploads with your full list) */}
           <TabsContent value="vault" className="space-y-6">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-slate-50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><Database className="w-5 h-5 text-[#16a34a]"/> Corporate Drive Vault</CardTitle>
-                <CardDescription>Upload corporate documents here. They will securely sync to your designated Google Drive folder.</CardDescription>
               </CardHeader>
               <CardContent className="pt-6">
                  
@@ -610,7 +616,6 @@ export default function ClientDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 5: FINANCE & SLA */}
           <TabsContent value="finance" className="space-y-6 grid lg:grid-cols-2 gap-6">
             <Card className="tender-shadow border-t-4 border-t-amber-500 h-fit">
               <CardHeader className="pb-4 border-b bg-amber-50/30">
