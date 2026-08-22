@@ -35,7 +35,6 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
 
   try {
-    // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments();
@@ -45,13 +44,11 @@ export async function GET(request, { params }) {
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
 
-    // 2. BRAND SETTINGS (Logo & Name)
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
       return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
     }
 
-    // 3. TENDERS
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
       const month = searchParams.get('month');
@@ -79,7 +76,6 @@ export async function GET(request, { params }) {
       return json({ tenders });
     }
 
-    // 4. CALENDAR
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
@@ -98,7 +94,6 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
-    // 5. ACCESS CHECK
     if (path === 'access' || path === 'api/access') {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
@@ -112,7 +107,6 @@ export async function GET(request, { params }) {
       return json({ subscription: user?.subscription || null });
     }
 
-    // 6. PDF FETCH
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
@@ -141,10 +135,9 @@ export async function GET(request, { params }) {
       });
     }
 
-    // 7. GET TICKETS (SLA System)
     if (path === 'tickets' || path === 'api/tickets') {
       const email = searchParams.get('email');
-      const role = searchParams.get('role'); // admin can see all
+      const role = searchParams.get('role'); 
       let query = {};
       if (email && role !== 'admin') query.client_email = email.toLowerCase();
       
@@ -152,7 +145,6 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
-    // 8. GET PENDING USERS (For Admin Approvals)
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
          .find({ status: 'pending', is_approved: { $ne: true } })
@@ -161,7 +153,6 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
-    // 9. MY ACCOUNT DATA (/api/me) --- (పాత ఫీల్డ్స్ + కొత్త ప్రో ఫీల్డ్స్)
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
@@ -201,12 +192,10 @@ export async function GET(request, { params }) {
         onboarding_complete: user.onboarding_complete || false,
         is_approved: user.is_approved || false,
         profile: {
-          // పాత ఫీల్డ్స్ (Admin కోసం)
           company_type: user.company_type || '',
           has_gst: user.has_gst || false,
           has_msme: user.has_msme || false,
           has_iso: user.has_iso || false,
-          // కొత్త ఫీల్డ్స్ (Pro Dashboard కోసం)
           client_name: user.client_name || '',
           company_name: user.company_name || '',
           phone: user.phone || '',
@@ -215,7 +204,6 @@ export async function GET(request, { params }) {
           documents: user.documents || {},
           profile_score: user.profile_score || 0
         },
-        // ERP Modules for the Client Dashboard
         action_alerts: user.action_alerts || [],
         emd_ledger: user.emd_ledger || [],
         tender_workspaces: user.tender_workspaces || []
@@ -230,7 +218,7 @@ export async function GET(request, { params }) {
 }
 
 // =====================================================================
-// PUT REQUESTS (For L1 Price Market Intelligence)
+// PUT REQUESTS
 // =====================================================================
 export async function PUT(request, { params }) {
   const db = await getDb();
@@ -305,11 +293,10 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Auto-renewal cancelled successfully.' });
     }
 
-    // SLA Ticketing System
     if (path === 'tickets' || path === 'api/tickets') {
       const { email, department, subject, message } = body;
       const createdAt = new Date();
-      const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); // 24 Hours SLA Timer
+      const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); 
       
       const newTicket = {
         client_email: email.toLowerCase(),
@@ -337,7 +324,7 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket Resolved.' });
     }
 
-    // --- 🟢 UPDATED: ONBOARDING SUBMIT (AUTO-APPROVE CLIENT DIRECTLY) ---
+    // 🟢 FIX 3: AUTO-APPROVE CLIENT DIRECTLY AND ALERT MD
     if (path === 'users/profile' || path === 'api/users/profile') {
       const { 
         email, client_name, company_name, company_type, phone, address, 
@@ -347,17 +334,8 @@ export async function POST(request, { params }) {
       await db.collection('users').updateOne(
         { email: email.toLowerCase() },
         { $set: { 
-            // పాత ఫీల్డ్స్ (For Admin Dashboard)
-            company_type,
-            has_gst,
-            has_msme,
-            has_iso,
-            // కొత్త ఫీల్డ్స్
-            client_name, 
-            company_name, 
-            phone, 
-            address, 
-            service_category, 
+            company_type, has_gst, has_msme, has_iso, client_name, 
+            company_name, phone, address, service_category, 
             documents: documents || {},
             status: 'approved', 
             onboarding_complete: true, 
@@ -367,6 +345,18 @@ export async function POST(request, { params }) {
         }, 
         { upsert: true }
       );
+
+      // 🟢 FIX 4: CREATE SYSTEM ALERT FOR MD
+      await db.collection('tickets').insertOne({
+        department: 'System Alert',
+        subject: 'New Client Registered',
+        client_email: email.toLowerCase(),
+        message: `New client ${client_name} (${company_name}) has registered and was auto-approved.`,
+        status: 'RESOLVED',
+        reply: 'System Auto-Alert',
+        created_at: new Date()
+      });
+
       return json({ success: true });
     }
 
@@ -388,9 +378,6 @@ export async function POST(request, { params }) {
        return json({ success: true });
     }
 
-    // =====================================================================
-    // CASHFREE PAYMENT LOGIC
-    // =====================================================================
     if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
       const plan = body.plan;
       let amount = 12; 
