@@ -2,38 +2,22 @@
 import { useEffect, useState } from 'react';
 import BrandLogo from '@/components/BrandLogo';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, 
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
-  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, Building2 // <--- FIX: Added Building2 here
+  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -50,7 +34,7 @@ export default function AdminPage() {
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // Core Data State
+  // --- REAL DATA STATES (NO FAKE DATA) ---
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
   const [tickets, setTickets] = useState([]);
@@ -61,30 +45,22 @@ export default function AdminPage() {
   // MD Impersonation
   const [selectedClient, setSelectedClient] = useState(null);
 
-  // Architecture V1.0: Reports Filter
+  // Architecture: Reports Filter
   const [timeRange, setTimeRange] = useState('monthly'); 
 
-  // Architecture V1.0: Real Team Member Saving & Passwords
+  // Architecture: Real Team Member Saving & Passwords (Starts Empty)
   const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'officer' });
-  const [teamMembers, setTeamMembers] = useState([
-    { id: 'EMP-802', name: 'Ramesh Kumar', email: 'ramesh@tgtenders.in', password: 'Pass@123', role: 'employee', status: 'Active' },
-    { id: 'OFF-105', name: 'Suresh Officer', email: 'suresh@tgtenders.in', password: 'Sec@2026', role: 'officer', status: 'Active' }
-  ]); 
+  const [teamMembers, setTeamMembers] = useState([]); 
   const [showPwdId, setShowPwdId] = useState(null); 
 
-  // Architecture V1.0: Financial Progress Bar State
+  // Architecture: Financial Progress Bar State (Starts Empty)
   const [paymentRequestForm, setPaymentRequestForm] = useState({ client_id: '', amount: '', reason: '' });
-  const [financialRequests, setFinancialRequests] = useState([
-    { id: 'REQ-9281', client_id: 'CLI-1049 (Balaji Ent)', amount: '1499', reason: 'Yearly Subscription', status: 'paid', sent_time: '09:00 AM', open_time: '09:15 AM', paid_time: '09:20 AM' },
-    { id: 'REQ-9282', client_id: 'CLI-2201 (RR Const)', amount: '5000', reason: 'Document Prep Fee', status: 'opened', sent_time: '10:30 AM', open_time: '11:45 AM', paid_time: null }
-  ]);
+  const [financialRequests, setFinancialRequests] = useState([]);
 
-  // Architecture V1.0: Government Officers Directory
-  const [govOfficers, setGovOfficers] = useState([
-    { id: 1, name: 'K. Narsimha Rao', designation: 'Superintending Engineer', dept: 'R&B Dept', district: 'Hyderabad', phone: '9876543210', met_by: 'EMP-802', tender_ref: 'Road Extension Works', date: '22-Aug-2026' }
-  ]);
+  // Architecture: Government Officers Directory (Starts Empty)
+  const [govOfficers, setGovOfficers] = useState([]);
 
-  // Operations & Dispatch State
+  // Operations & Dispatch State (Starts Empty)
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
 
@@ -115,10 +91,8 @@ export default function AdminPage() {
         fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
         fetch(`/api/users/pending?t=${Date.now()}`, { headers }) 
       ]);
-      if (tRes.status === 401) {
-        logout();
-        return;
-      }
+      if (tRes.status === 401) return logout();
+      
       const tJson = await tRes.json();
       const sJson = await sRes.json();
       const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
@@ -224,6 +198,7 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error approving client'); }
   };
 
+  // --- ARCITECTURE: Financial Link Dispatch & Timeline Tracking ---
   const handleSendPaymentRequest = async (e) => {
     e.preventDefault();
     if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) {
@@ -245,6 +220,7 @@ export default function AdminPage() {
     setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
   };
 
+  // --- ARCHITECTURE: UIDs & Save Credentials ---
   const handleCreateTeamMember = (e) => {
     e.preventDefault();
     if(!officerForm.name || !officerForm.email || !officerForm.password) return toast.error("Fill all fields");
@@ -267,6 +243,7 @@ export default function AdminPage() {
     setOfficerForm({ name: '', email: '', password: '', role: 'officer' });
   };
 
+  // --- ARCHITECTURE: Direct MD Impersonation ---
   const impersonateUser = (type, email_or_id) => {
     toast.info(`Initializing secure MD bypass into ${type} dashboard...`);
     setTimeout(() => {
@@ -274,6 +251,7 @@ export default function AdminPage() {
     }, 1000);
   };
 
+  // --- ARCHITECTURE: Operations Dispatch with Smart Names ---
   const handleDispatchTask = (e) => {
     e.preventDefault();
     if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
@@ -297,7 +275,8 @@ export default function AdminPage() {
   if (!token) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 pb-20">
+      {/* ENTERPRISE MD HEADER */}
       <header className="bg-[#0A2647] text-white border-b sticky top-0 z-40 shadow-sm">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
@@ -322,6 +301,7 @@ export default function AdminPage() {
 
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         
+        {/* --- TABS SYSTEM --- */}
         <Tabs defaultValue="reports" className="w-full">
           <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-4">
             <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
@@ -364,64 +344,61 @@ export default function AdminPage() {
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={timeRange === 'daily' ? '12' : timeRange === 'weekly' ? '84' : stats.tenders || 312} />
-              <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Tenders Won" value={timeRange === 'daily' ? '2' : timeRange === 'weekly' ? '15' : '62'} />
-              <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Active Clients" value={stats.users || 48} />
-              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Total Revenue (Inc. Subs)" value={`₹${(timeRange === 'daily' ? 14900 : timeRange === 'weekly' ? 98500 : (stats.revenue ?? 0)).toLocaleString()}`} accent />
+              <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={tenders.length} />
+              <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Active Operations" value={dispatches.length} />
+              <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Active Clients" value={pendingUsers.length || stats.users || 0} />
+              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(stats.revenue || 0).toLocaleString()}`} accent />
             </div>
 
             <div className="grid lg:grid-cols-2 gap-6">
+               {/* Workforce Analytics Tracking */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Timesheets</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4">
-                     <div className="flex justify-between items-center border-b pb-2">
-                        <div>
-                           <p className="font-bold text-[#0A2647] text-sm">[EMP-802] Ramesh Employee</p>
-                           <p className="text-[10px] text-slate-500">Logged in: 09:14 AM • Active Hrs: 6h 20m</p>
-                        </div>
-                        <div className="text-right">
-                           <Badge className="bg-emerald-100 text-emerald-800 border-0 mb-1">92% Productive</Badge>
-                           <p className="text-[10px] font-mono text-slate-400">14 Tenders Published</p>
-                        </div>
-                     </div>
-                     <div className="flex justify-between items-center border-b pb-2">
-                        <div>
-                           <p className="font-bold text-[#0A2647] text-sm">[OFF-105] Suresh Officer</p>
-                           <p className="text-[10px] text-slate-500">Logged in: 10:05 AM • Active Hrs: 5h 10m</p>
-                        </div>
-                        <div className="text-right">
-                           <Badge className="bg-amber-100 text-amber-800 border-0 mb-1">64% Productive</Badge>
-                           <p className="text-[10px] font-mono text-slate-400">2 Clients Verified</p>
-                        </div>
-                     </div>
+                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Tracking</CardTitle></CardHeader>
+                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
+                     {teamMembers.length === 0 ? (
+                        <p className="text-center text-xs text-slate-500 py-8">No employees added yet. Create in Team Directory.</p>
+                     ) : (
+                        teamMembers.map((emp) => (
+                           <div key={emp.id} className="flex justify-between items-center border-b pb-2 last:border-0">
+                              <div>
+                                 <p className="font-bold text-[#0A2647] text-sm">[{emp.id}] {emp.name}</p>
+                                 <p className="text-[10px] text-slate-500">Role: {emp.role.toUpperCase()}</p>
+                              </div>
+                              <div className="text-right">
+                                 <Badge className="bg-emerald-100 text-emerald-800 border-0 mb-1">Active / Tracked</Badge>
+                                 <p className="text-[10px] font-mono text-slate-400">System Ready</p>
+                              </div>
+                           </div>
+                        ))
+                     )}
                   </CardContent>
                </Card>
 
+               {/* Client CRM Funnel */}
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Client Activity & Tender Funnel</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4">
-                     <div>
-                        <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[CLI-1049] Balaji Enterprises</span><span className="text-emerald-600 font-bold">Highly Active</span></div>
-                        <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                           <div className="bg-blue-500 h-2" style={{width: '60%'}} title="Ongoing (Applied)"></div>
-                           <div className="bg-emerald-500 h-2" style={{width: '30%'}} title="Won"></div>
-                           <div className="bg-red-500 h-2" style={{width: '10%'}} title="Lost"></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                           <p className="text-[9px] text-slate-400">Total: 10 Tenders</p>
-                           <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">6 Ongoing</span> • <span className="text-emerald-600">3 Won</span> • <span className="text-red-600">1 Lost</span></p>
-                        </div>
-                     </div>
-                     <div>
-                        <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[CLI-2201] RR Constructions</span><span className="text-amber-600 font-bold">Dull / Inactive</span></div>
-                        <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                           <div className="bg-blue-500 h-2" style={{width: '100%'}} title="Ongoing"></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                           <p className="text-[9px] text-slate-400">Total: 2 Tenders</p>
-                           <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">2 Ongoing</span> • 0 Won • 0 Lost</p>
-                        </div>
-                     </div>
+                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
+                     {pendingUsers.length === 0 ? (
+                        <p className="text-center text-xs text-slate-500 py-8">No clients registered yet.</p>
+                     ) : (
+                        pendingUsers.map(user => {
+                           const safeId = user?.email ? `CLI-${user.email.substring(0,4).toUpperCase()}` : 'CLI-XXXX';
+                           return (
+                              <div key={user._id} className="border-b border-slate-100 pb-3 last:border-0">
+                                 <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[{safeId}] {user.company_name}</span><span className="text-emerald-600 font-bold">Active</span></div>
+                                 <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
+                                    {/* Real logic would calculate these widths based on actual bid arrays, using placeholders for UI structure */}
+                                    <div className="bg-blue-500 h-2" style={{width: '60%'}} title="Ongoing (Applied)"></div>
+                                    <div className="bg-amber-500 h-2" style={{width: '20%'}} title="Awaiting Result"></div>
+                                 </div>
+                                 <div className="flex justify-between mt-1">
+                                    <p className="text-[9px] text-slate-400">Total Tracking Enabled</p>
+                                    <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">Applied</span> • <span className="text-emerald-600">Won</span> • <span className="text-red-600">Lost</span></p>
+                                 </div>
+                              </div>
+                           )
+                        })
+                     )}
                   </CardContent>
                </Card>
             </div>
@@ -436,7 +413,7 @@ export default function AdminPage() {
                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
                   <UserCheck className="w-5 h-5 text-[#16a34a]" /> Enterprise Client Approvals & Management
                 </CardTitle>
-                <CardDescription>Review new client KYC details. Use "MD Impersonate" for direct access to their profile and document vault.</CardDescription>
+                <CardDescription>Review new client KYC details. Use "Login as Client" for direct system access without passwords.</CardDescription>
               </CardHeader>
               <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
                 {pendingUsers.length === 0 ? (
@@ -447,16 +424,16 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {pendingUsers.map(user => (
+                    {pendingUsers.map(user => {
+                      const safeId = user?.email ? `CLI-${user.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
+                      return (
                       <div key={user._id} className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm flex flex-col xl:flex-row gap-5 justify-between items-start hover:shadow-md transition">
                         <div className="flex-1 w-full">
                           <div className="flex justify-between items-start">
                              <div>
                                <h4 className="font-black text-[#0A2647] text-xl">{user.company_name || 'Unnamed Company'}</h4>
                                <div className="flex gap-2 text-xs font-semibold text-slate-500 mb-2">
-                                 <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-mono tracking-widest text-[10px]">
-                                    CLI-{(user?.email || 'USER').substring(0,4).toUpperCase()}X
-                                 </Badge> • 
+                                 <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-mono tracking-widest text-[10px]">{safeId}</Badge> • 
                                  <span><Mail className="w-3 h-3 inline mr-1 text-slate-400"/>{user.email}</span> • <span>{user.company_type || 'Proprietor'}</span>
                                </div>
                              </div>
@@ -467,21 +444,23 @@ export default function AdminPage() {
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">PAN Number</span> <span className="text-slate-800 font-semibold">{user.pan_number || 'Pending Upload'}</span></div>
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block">Company Experience</span> <span className="text-slate-800 font-semibold">{user.experience_years ? `${user.experience_years} Years` : 'Not Specified'}</span></div>
                              <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block">Target Tenders / Service Category</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
+                             <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block">Business Description</span> <span className="text-slate-700 italic">{user.business_desc || 'No detailed business description provided by the client yet.'}</span></div>
                           </div>
                           
                           <div className="flex flex-wrap gap-2 mt-4">
                             <Badge variant={user.has_gst ? "default" : "outline"} className={user.has_gst ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>GST {user.has_gst ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_msme ? "default" : "outline"} className={user.has_msme ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>MSME {user.has_msme ? '✅' : '❌'}</Badge>
                             <Badge variant={user.has_iso ? "default" : "outline"} className={user.has_iso ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>ISO {user.has_iso ? '✅' : '❌'}</Badge>
+                            <Badge variant={user.has_dsc ? "default" : "outline"} className={user.has_dsc ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "text-slate-400"}>DSC {user.has_dsc ? '✅' : '❌'}</Badge>
                           </div>
                         </div>
 
                         <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
                           <Button onClick={() => impersonateUser('client', user.email)} className="w-full bg-[#0A2647] hover:bg-[#144272] text-white">
-                            <Eye className="w-4 h-4 mr-2" /> Login as Client
+                            <LogIn className="w-4 h-4 mr-2" /> Login as Client
                           </Button>
                           <Button onClick={() => setSelectedClient(user)} variant="outline" className="w-full text-blue-700 border-blue-300 hover:bg-blue-50">
-                            View Deep Details
+                            <Eye className="w-4 h-4 mr-2"/> View Vault & KYC
                           </Button>
                           
                           <div className="flex items-center gap-2 my-1">
@@ -491,11 +470,11 @@ export default function AdminPage() {
                           </div>
 
                           <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow">
-                            <CheckCircle2 className="w-4 h-4 mr-2" /> Force Verify Client
+                            <CheckCircle2 className="w-4 h-4 mr-2" /> Verify & Unlock Portal
                           </Button>
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 )}
               </CardContent>
@@ -549,33 +528,37 @@ export default function AdminPage() {
                   </CardHeader>
                   <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
                      {financialRequests.length === 0 ? (
-                        <p className="text-center text-slate-400 py-10 text-sm">No recent payment links dispatched.</p>
+                        <div className="text-center py-12 text-slate-400">
+                           <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                           <p className="text-sm font-semibold">No payment links dispatched yet.</p>
+                        </div>
                      ) : (
                         <div className="space-y-6">
                            {financialRequests.map(req => (
                               <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
                                  <div className="flex justify-between items-center mb-4">
                                     <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
-                                    <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
+                                    <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px]">{req.client_id}</Badge>
                                  </div>
                                  
-                                 <div className="relative pt-2 pb-1">
-                                    <div className="absolute top-4 left-4 right-4 h-1.5 bg-slate-100 rounded-full z-0"></div>
-                                    <div className={`absolute top-4 left-4 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[90%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
+                                 {/* Custom Status Timeline Bar */}
+                                 <div className="relative pt-2 pb-1 mx-2">
+                                    <div className="absolute top-4 left-0 right-0 h-1.5 bg-slate-100 rounded-full z-0"></div>
+                                    <div className={`absolute top-4 left-0 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[100%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
                                     
                                     <div className="relative z-10 flex justify-between px-1">
-                                       <div className="flex flex-col items-center gap-1">
+                                       <div className="flex flex-col items-center gap-1.5">
                                           <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
                                           <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span><span className="text-[9px] text-slate-400 font-mono">{req.sent_time}</span>
                                        </div>
-                                       <div className="flex flex-col items-center gap-1">
-                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                                       <div className="flex flex-col items-center gap-1.5">
+                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
                                             {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
                                           </div>
                                           <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
                                        </div>
-                                       <div className="flex flex-col items-center gap-1">
-                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                                       <div className="flex flex-col items-center gap-1.5">
+                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
                                             {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
                                           </div>
                                           <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span><span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
@@ -596,12 +579,13 @@ export default function AdminPage() {
           {/* ============================================================================== */}
           <TabsContent value="team" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
+               {/* Team Creation */}
                <Card className="tender-shadow border-t-4 border-t-blue-600 h-fit">
                   <CardHeader className="bg-blue-50/50 border-b pb-4">
                      <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
                        <Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID
                      </CardTitle>
-                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce. Saves directly to database.</CardDescription>
+                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleCreateTeamMember} className="space-y-4">
@@ -637,6 +621,7 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
+               {/* Live Saved Team Members */}
                <Card className="tender-shadow border-0 ring-1 ring-slate-200 h-fit">
                   <CardHeader className="bg-slate-50 border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg">Database: Active Team & Passwords</CardTitle>
@@ -645,7 +630,7 @@ export default function AdminPage() {
                      {teamMembers.length === 0 ? (
                         <div className="text-center py-12 text-slate-400">
                            <ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                           <p className="text-sm font-semibold">No fake data. Database is clean.</p>
+                           <p className="text-sm font-semibold">No Team Members Found.</p>
                            <p className="text-xs mt-1">Create a member to securely save them here.</p>
                         </div>
                      ) : (
@@ -666,6 +651,7 @@ export default function AdminPage() {
                                     <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.id}</Badge>
                                  </div>
                                  
+                                 {/* Password Reveal Section for MD */}
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
                                     <div className="flex flex-col">
                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
@@ -681,7 +667,7 @@ export default function AdminPage() {
 
                                  <div className="flex gap-2">
                                     <Button onClick={() => impersonateUser('employee', off.id)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs">
-                                       <UserCheck className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}
+                                       <LogIn className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}
                                     </Button>
                                     <Button variant="outline" className="text-red-500 hover:bg-red-50 border-red-200 h-9 px-4">Revoke</Button>
                                  </div>
@@ -693,45 +679,50 @@ export default function AdminPage() {
                </Card>
             </div>
 
+            {/* --- FEATURE: GOVT OFFICERS DIRECTORY --- */}
             <Card className="tender-shadow mt-6 border-0 ring-1 ring-slate-200">
                <CardHeader className="bg-slate-50 border-b pb-4">
                   <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-slate-500" /> Government Officers Directory (Logged by Staff)</CardTitle>
                   <CardDescription>A master database of all government officials met by our employees.</CardDescription>
                </CardHeader>
                <CardContent className="pt-4 p-0 sm:p-6">
-                  <div className="overflow-x-auto">
-                     <table className="w-full text-sm text-left border-collapse">
-                        <thead className="text-[10px] text-slate-500 uppercase font-bold tracking-wider bg-slate-100 border-b border-slate-200">
-                           <tr>
-                              <th className="px-4 py-3">Officer Name & Desig.</th>
-                              <th className="px-4 py-3">Dept & Location</th>
-                              <th className="px-4 py-3">Contact Info</th>
-                              <th className="px-4 py-3">Logged By</th>
-                              <th className="px-4 py-3">Context / Tender Ref</th>
-                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                           {govOfficers.map(go => (
-                              <tr key={go.id} className="hover:bg-slate-50 transition">
-                                 <td className="px-4 py-3">
-                                    <p className="font-bold text-[#0A2647] text-sm">{go.name}</p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{go.designation}</p>
-                                 </td>
-                                 <td className="px-4 py-3">
-                                    <Badge variant="outline" className="bg-white border-slate-300 font-semibold">{go.dept}</Badge>
-                                    <p className="text-[10px] text-slate-500 mt-1.5 font-medium"><MapPin className="w-3 h-3 inline mr-0.5 text-slate-400"/>{go.district}</p>
-                                 </td>
-                                 <td className="px-4 py-3 font-mono text-slate-700 font-semibold">{go.phone}</td>
-                                 <td className="px-4 py-3">
-                                    <Badge className="bg-blue-50 text-blue-700 border-blue-200">{go.met_by}</Badge>
-                                    <p className="text-[9px] text-slate-400 mt-1.5 font-medium">{go.date}</p>
-                                 </td>
-                                 <td className="px-4 py-3 text-xs text-slate-600 max-w-[180px] truncate" title={go.tender_ref}>{go.tender_ref}</td>
+                  {govOfficers.length === 0 ? (
+                     <div className="text-center py-10 text-slate-400"><Building2 className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm font-semibold">No Officer Data Logged Yet.</p></div>
+                  ) : (
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left border-collapse">
+                           <thead className="text-[10px] text-slate-500 uppercase font-bold tracking-wider bg-slate-100 border-b border-slate-200">
+                              <tr>
+                                 <th className="px-4 py-3">Officer Name & Desig.</th>
+                                 <th className="px-4 py-3">Dept & Location</th>
+                                 <th className="px-4 py-3">Contact Info</th>
+                                 <th className="px-4 py-3">Logged By</th>
+                                 <th className="px-4 py-3">Context / Tender Ref</th>
                               </tr>
-                           ))}
-                        </tbody>
-                     </table>
-                  </div>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100">
+                              {govOfficers.map(go => (
+                                 <tr key={go.id} className="hover:bg-slate-50 transition">
+                                    <td className="px-4 py-3">
+                                       <p className="font-bold text-[#0A2647] text-sm">{go.name}</p>
+                                       <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{go.designation}</p>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                       <Badge variant="outline" className="bg-white border-slate-300 font-semibold">{go.dept}</Badge>
+                                       <p className="text-[10px] text-slate-500 mt-1.5 font-medium"><MapPin className="w-3 h-3 inline mr-0.5 text-slate-400"/>{go.district}</p>
+                                    </td>
+                                    <td className="px-4 py-3 font-mono text-slate-700 font-semibold">{go.phone}</td>
+                                    <td className="px-4 py-3">
+                                       <Badge className="bg-blue-50 text-blue-700 border-blue-200">{go.met_by}</Badge>
+                                       <p className="text-[9px] text-slate-400 mt-1.5 font-medium">{go.date}</p>
+                                    </td>
+                                    <td className="px-4 py-3 text-xs text-slate-600 max-w-[180px] truncate" title={go.tender_ref}>{go.tender_ref}</td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
+                  )}
                </CardContent>
             </Card>
           </TabsContent>
@@ -780,7 +771,6 @@ export default function AdminPage() {
                      </form>
                   </CardContent>
                </Card>
-
                <Card className="tender-shadow border-0 bg-slate-50/50">
                   <CardHeader className="border-b pb-4"><CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Activity className="w-5 h-5 text-slate-400"/> Dispatch Radar (Live Tracking)</CardTitle></CardHeader>
                   <CardContent className="pt-4 max-h-[550px] overflow-y-auto">
@@ -810,14 +800,13 @@ export default function AdminPage() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 6: TENDERS PUBLISHER */}
+          {/* TAB 6 & 7 & 8: TENDERS PUBLISHER, TICKETS, SETTINGS (Safe Code with Bug fixes) */}
           {/* ============================================================================== */}
+          
           <TabsContent value="tenders" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className="lg:col-span-2 tender-shadow">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-[#0A2647]"><Plus className="w-4 h-4" /> Publish New Tender</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle className="flex items-center gap-2 text-[#0A2647]"><Plus className="w-4 h-4" /> Publish New Tender</CardTitle></CardHeader>
                 <CardContent>
                   <form onSubmit={publish} className="space-y-3">
                     <div><Label>Document Title (Work) *</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></div>
@@ -850,9 +839,7 @@ export default function AdminPage() {
                         </label>
                       </div>
                     </div>
-                    <Button type="submit" disabled={loading} className="w-full bg-[#16a34a] hover:bg-[#15803d] shadow-md h-12 text-base">
-                      {loading ? 'Publishing securely...' : 'Publish Tender & Notify Users'}
-                    </Button>
+                    <Button type="submit" disabled={loading} className="w-full bg-[#16a34a] hover:bg-[#15803d] shadow-md h-12 text-base">{loading ? 'Publishing...' : 'Publish Tender'}</Button>
                   </form>
                 </CardContent>
               </Card>
@@ -860,7 +847,7 @@ export default function AdminPage() {
               <Card className="lg:col-span-3 tender-shadow">
                 <CardHeader><CardTitle className="text-[#0A2647] flex items-center justify-between"><span>Published Tenders</span><Badge variant="outline">{tenders.length}</Badge></CardTitle></CardHeader>
                 <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                  {tenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No tenders yet. Publish your first one!</p>}
+                  {tenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No tenders yet.</p>}
                   {tenders.map((t) => (
                     <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
                       <div className="flex items-start justify-between gap-3">
@@ -868,9 +855,8 @@ export default function AdminPage() {
                           <div className="flex items-center gap-2 mb-2">
                             <Badge className="bg-[#0A2647]">{t.district}</Badge>
                             {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
-                            <span className="text-[10px] text-muted-foreground flex items-center bg-slate-100 px-2 py-0.5 rounded">
-                               <Clock className="w-3 h-3 mr-1"/> Last: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}
-                            </span>
+                            {/* CRITICAL FIX: Safe Date Parsing to prevent dashboard crash */}
+                            <span className="text-[10px] text-muted-foreground flex items-center bg-slate-100 px-2 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Last: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
                           </div>
                           <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
                           <p className="text-xs text-slate-500 mt-1">{t.department}</p>
@@ -879,9 +865,9 @@ export default function AdminPage() {
                       </div>
                       <div className="bg-emerald-50/50 p-2 rounded-md border border-emerald-100 flex flex-col sm:flex-row gap-2 items-center w-full mt-1">
                          <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
-                         <Input placeholder="Winning Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-32 border-emerald-200" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}/>
-                         <Input placeholder="Winner Name / Company" className="h-8 text-xs bg-white w-full sm:flex-1 border-emerald-200" value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], winner: e.target.value}}))}/>
-                         <Button size="sm" className="h-8 text-xs w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 shadow-sm" onClick={() => submitL1Price(t._id || t.id)}>Save</Button>
+                         <Input placeholder="Winning Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-32 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}/>
+                         <Input placeholder="Winner Name / Company" className="h-8 text-xs bg-white w-full sm:flex-1 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], winner: e.target.value}}))}/>
+                         <Button size="sm" className="h-8 text-xs w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 shadow-sm" onClick={() => submitL1Price(t._id || t.id)}>Save Intel</Button>
                       </div>
                     </div>
                   ))}
@@ -890,14 +876,9 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ============================================================================== */}
-          {/* TAB 7: TICKETS */}
-          {/* ============================================================================== */}
           <TabsContent value="tickets" className="mt-4">
             <Card className="tender-shadow border-t-4 border-t-amber-500">
-              <CardHeader className="bg-amber-50/30 border-b pb-4">
-                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MessageSquare className="w-5 h-5 text-amber-600" /> Client Helpdesk (SLA Monitor)</CardTitle>
-              </CardHeader>
+              <CardHeader className="bg-amber-50/30 border-b pb-4"><CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MessageSquare className="w-5 h-5 text-amber-600" /> Client Helpdesk (SLA Monitor)</CardTitle></CardHeader>
               <CardContent className="pt-6 max-h-[600px] overflow-y-auto bg-slate-50/30">
                 {tickets.length === 0 ? (
                    <div className="text-center py-10 bg-white border border-dashed rounded-xl"><CheckCircle2 className="w-10 h-10 mx-auto text-emerald-400 mb-2"/><p className="font-semibold text-slate-600">Zero Pending Tickets.</p></div>
@@ -906,16 +887,10 @@ export default function AdminPage() {
                       {tickets.map(ticket => (
                          <div key={ticket._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm relative hover:shadow-md transition">
                             <div className="flex justify-between items-start mb-3">
-                               <div>
-                                 <Badge className="mb-2 bg-slate-100 text-slate-600 border-0 text-[10px] uppercase">{ticket.department}</Badge>
-                                 <h4 className="font-bold text-[#0A2647] text-base leading-tight">{ticket.subject}</h4>
-                                 <p className="text-xs text-slate-500 mt-1 flex items-center"><UserCheck className="w-3 h-3 mr-1"/>{ticket.client_email}</p>
-                               </div>
+                               <div><Badge className="mb-2 bg-slate-100 text-slate-600 border-0 text-[10px] uppercase">{ticket.department}</Badge><h4 className="font-bold text-[#0A2647] text-base leading-tight">{ticket.subject}</h4><p className="text-xs text-slate-500 mt-1 flex items-center"><UserCheck className="w-3 h-3 mr-1"/>{ticket.client_email}</p></div>
                                <Badge className={ticket.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-red-500 text-white border-0 shadow-sm animate-pulse'}>{ticket.status === 'OPEN' ? 'ACTION REQUIRED' : 'RESOLVED'}</Badge>
                             </div>
-                            <div className="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 mb-4 shadow-inner">
-                               <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Issue Description:</span>"{ticket.message}"
-                            </div>
+                            <div className="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 mb-4 shadow-inner">"{ticket.message}"</div>
                             {ticket.status === 'OPEN' ? (
                                <div className="flex flex-col gap-2 border-t pt-4">
                                  <Label className="text-xs text-slate-500">Official Reply:</Label>
@@ -923,9 +898,7 @@ export default function AdminPage() {
                                  <Button onClick={() => submitTicketReply(ticket._id)} className="bg-emerald-600 hover:bg-emerald-700 shadow-sm w-full sm:w-auto self-end"><Send className="w-4 h-4 mr-2" /> Mark Resolved</Button>
                                </div>
                             ) : (
-                               <div className="bg-emerald-50/50 p-3 rounded-lg text-sm border border-emerald-100 border-l-4 border-l-emerald-500">
-                                  <span className="font-bold text-emerald-800 text-xs uppercase block mb-1">Official Resolution Sent:</span><span className="text-emerald-900">{ticket.reply}</span>
-                               </div>
+                               <div className="bg-emerald-50/50 p-3 rounded-lg text-sm border border-emerald-100 border-l-4 border-l-emerald-500"><span className="font-bold text-emerald-800 text-xs uppercase block mb-1">Official Resolution Sent:</span><span className="text-emerald-900">{ticket.reply}</span></div>
                             )}
                          </div>
                       ))}
@@ -935,9 +908,6 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
-          {/* ============================================================================== */}
-          {/* TAB 8: SETTINGS */}
-          {/* ============================================================================== */}
           <TabsContent value="settings" className="mt-4"><BrandSettings token={token} /></TabsContent>
         </Tabs>
       </main>
@@ -955,6 +925,7 @@ export default function AdminPage() {
                     <div>
                        <div className="flex items-center gap-3 mb-1">
                           <h2 className="text-2xl font-black tracking-wide">{selectedClient.company_name}</h2>
+                          {/* CRITICAL FIX: Safe substring to prevent crashes */}
                           <Badge className="bg-blue-500/20 text-blue-200 border border-blue-500/50 font-mono text-[10px]">CLI-{(selectedClient?.email || 'USER').substring(0,4).toUpperCase()}X</Badge>
                        </div>
                        <p className="text-emerald-300 text-sm flex items-center gap-2">
@@ -964,7 +935,6 @@ export default function AdminPage() {
                  </div>
                  <div className="text-right">
                     <Badge className="bg-emerald-500 text-white border-0 py-1.5 px-3 mb-1"><Eye className="w-4 h-4 mr-1.5"/> MD Impersonation Active</Badge>
-                    <p className="text-[10px] text-slate-400 font-mono">LIVE DATABASE VIEW</p>
                  </div>
                </div>
                <div className="p-6 space-y-6">
@@ -1089,7 +1059,7 @@ function BrandSettings({ token }) {
           <div className="sm:col-span-2 space-y-5">
             <div><Label className="text-slate-700 font-bold">Portal Brand Name</Label><Input value={brandName} onChange={e => setBrandName(e.target.value)} className="mt-1.5" /></div>
             <div><Label className="text-slate-700 font-bold">Portal Tagline</Label><Input value={tagline} onChange={e => setTagline(e.target.value)} className="mt-1.5" /></div>
-            <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d]">Save System Settings</Button>
+            <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d] h-11 px-8 shadow-md text-base">Save System Settings</Button>
           </div>
         </div>
       </CardContent>
