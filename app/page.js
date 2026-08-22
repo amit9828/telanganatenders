@@ -122,11 +122,15 @@ export default function App() {
   const [gatewayMode, setGatewayMode] = useState('select'); 
   const [empEmail, setEmpEmail] = useState('');
   const [empPwd, setEmpPwd] = useState('');
+  const [empLoading, setEmpLoading] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
   
-  const [intent, setIntent] = useState('');
+  // 🟢 FIX 1: Synchronous intent initialization to stop guest flash
+  const [intent, setIntent] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('tt_intent') || '';
+    return '';
+  });
 
-  // Comprehensive Onboarding Form State
   const [onboardForm, setOnboardForm] = useState({
     client_name: '',
     company_name: '', 
@@ -149,11 +153,9 @@ export default function App() {
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
-  // --- EXISTING STATES ---
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState(null);
-  
   const [category, setCategory] = useState('all');       
   const [stateFilter, setStateFilter] = useState('all'); 
   const [district, setDistrict] = useState('all');       
@@ -187,7 +189,6 @@ export default function App() {
       .catch(()=>{});
   }, []);
 
-  // 🔴 GHOST LOGIN CACHE FIX
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
@@ -217,17 +218,18 @@ export default function App() {
     }
   }, [session, status]);
 
-  // 🔴 FIX: AUTO-REDIRECT WITHOUT NEEDING APPROVAL (Removed `userData.is_approved` condition)
+  // 🟢 FIX 2: Removed is_approved condition. Client goes straight to dashboard.
   useEffect(() => {
     if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete) {
       router.push('/client');
     }
   }, [status, intent, userData, router]);
 
-  // 🔴 THE ULTIMATE GHOST-LOGIN & FLASHING FIX (Hard Sign Out)
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
-      localStorage.clear(); // Clears all local states strictly
+      localStorage.removeItem('tt_email');
+      localStorage.removeItem('tt_intent');
+      localStorage.removeItem('tt_role');
     }
     setEmail('');
     setUserData(null);
@@ -449,10 +451,10 @@ export default function App() {
     setSubmittingOnboard(false);
   };
 
-  // 🔴 FIX: EMPLOYEE & MD SMART LOGIN ROUTING
+  // 🟢 FIX 3: EMPLOYEE & MD SMART LOGIN ROUTING
   const handleEmployeeLogin = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    setEmpLoading(true);
     toast.info('Verifying credentials...');
     
     try {
@@ -484,7 +486,7 @@ export default function App() {
     } catch (err) {
       toast.error('Login failed due to network issue');
     } finally {
-      setLoading(false);
+      setEmpLoading(false);
     }
   };
 
@@ -509,7 +511,7 @@ export default function App() {
   }
 
   // SCREEN 1: GATEKEEPER
-  if (status === 'unauthenticated' && !isGuest) {
+  if (status === 'unauthenticated' && intent !== 'guest') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md tender-shadow-lg overflow-hidden border-0">
@@ -539,6 +541,7 @@ export default function App() {
 
                 <Button onClick={() => {
                   if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
+                  setIntent('guest');
                   setIsGuest(true);
                 }} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Eye className="w-5 h-5 mr-2" /> Browse as Guest
@@ -570,8 +573,8 @@ export default function App() {
                     <Label className="text-slate-600">Password</Label>
                     <Input type="password" value={empPwd} onChange={e=>setEmpPwd(e.target.value)} required className="mt-1" />
                   </div>
-                  <Button type="submit" disabled={loading} className="w-full bg-[#0A2647] hover:bg-[#144272] h-11 mt-2">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Secure Login'}
+                  <Button type="submit" disabled={empLoading} className="w-full bg-[#0A2647] hover:bg-[#144272] h-11 mt-2">
+                     {empLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Secure Login'}
                   </Button>
                 </form>
               </div>
@@ -629,7 +632,6 @@ export default function App() {
                 <p className="text-xs text-muted-foreground mb-4">Please tick the documents you currently hold to build your Vendor Master Profile.</p>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  
                   <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a] transition">
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card
                   </label>
