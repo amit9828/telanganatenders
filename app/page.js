@@ -126,7 +126,7 @@ function App() {
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
-  // --- EXISTING DASHBOARD STATES ---
+  // --- YOUR EXISTING STATES ---
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1-12
   const [selectedDay, setSelectedDay] = useState(null);
@@ -159,14 +159,13 @@ function App() {
       .catch(()=>{});
   }, []);
 
-  // 2. Auth & User Data Fetching (Gatekeeper Logic)
+  // 2. Auth & User Data Fetching
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e);
       if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
       
-      // Fetch full user data to check Onboarding & Approval status
       fetch(`/api/me?email=${encodeURIComponent(e)}`)
         .then((r) => r.json())
         .then((d) => {
@@ -183,7 +182,6 @@ function App() {
     }
   }, [session, status]);
 
-  // 3. Fetch Tenders & Calendar (Only fetch if Guest OR Approved)
   const fetchTenders = async () => {
     if (status === 'authenticated' && userData && !userData.is_approved && userData.onboarding_complete) return; 
 
@@ -252,7 +250,6 @@ function App() {
 
   const handleViewPDF = async (t) => {
     setPendingTender(t);
-    // If guest / not logged in, show email modal
     if (!email) {
       setEmailModal(true);
       return;
@@ -345,7 +342,6 @@ function App() {
     }
   };
 
-  // --- ONBOARDING SUBMISSION HANDLER ---
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.company_name || !onboardForm.service) return toast.error('Please fill required fields');
@@ -368,7 +364,6 @@ function App() {
       });
       
       toast.success('Profile submitted! Waiting for MD Approval.');
-      // Update local state to show pending screen
       setUserData(prev => ({ ...prev, onboarding_complete: true, is_approved: false }));
     } catch (err) {
       toast.error('Error submitting profile');
@@ -376,11 +371,9 @@ function App() {
     setSubmittingOnboard(false);
   };
 
-  // --- EMPLOYEE LOGIN HANDLER ---
   const handleEmployeeLogin = (e) => {
     e.preventDefault();
     toast.info('Employee Backend Auth is active. Verifying credentials...');
-    // Connected to Admin DB in Phase 4
   };
 
   useEffect(() => {
@@ -404,7 +397,6 @@ function App() {
   // CONDITIONAL VIEW RENDERING
   // ==============================================================================
 
-  // LOADER SCREEN
   if (status === 'loading' || loadingUser) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   }
@@ -414,8 +406,16 @@ function App() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md tender-shadow-lg overflow-hidden border-0">
-          <div className="bg-[#0A2647] p-8 text-center text-white relative">
-            <ShieldCheck className="w-12 h-12 mx-auto mb-3 text-[#16a34a]" />
+          <div className="bg-[#0A2647] p-8 text-center text-white relative flex flex-col items-center justify-center">
+            
+            {/* BRAND LOGO DISPLAYED INSTEAD OF GREEN TICK */}
+            {brandSettings.logo ? (
+               // eslint-disable-next-line @next/next/no-img-element
+               <img src={brandSettings.logo} alt="Logo" className="w-16 h-16 rounded-full object-contain mb-3 bg-white p-1 shadow-md" />
+            ) : (
+               <div className="w-12 h-12 bg-[#16a34a] rounded-full flex items-center justify-center text-white font-bold mb-3 shadow">TT</div>
+            )}
+
             <h1 className="text-2xl font-bold">{brandSettings.name}</h1>
             <p className="text-sm text-slate-300 opacity-90 mt-1">Enterprise B2B Tender Portal</p>
           </div>
@@ -429,7 +429,7 @@ function App() {
                   <Briefcase className="w-5 h-5 mr-2" /> Client / Contractor Portal
                 </Button>
 
-                {/* Guest / Public Visitor Access Button (Green) */}
+                {/* Browse as Guest Button (Green as requested) */}
                 <Button onClick={() => setIsGuest(true)} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base shadow-md">
                   <Eye className="w-5 h-5 mr-2" /> Browse as Guest
                 </Button>
@@ -471,7 +471,7 @@ function App() {
     );
   }
 
-  // SCREEN 2: CLIENT ONBOARDING (Logged in, but profile missing/empty)
+  // SCREEN 2: CLIENT ONBOARDING
   if (userData && !userData.onboarding_complete && !userData.profile?.service_category) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
@@ -514,7 +514,6 @@ function App() {
                     <input type="checkbox" className="accent-[#16a34a] w-4 h-4" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate
                   </label>
                 </div>
-                <p className="text-xs text-amber-600 mt-3 flex items-center gap-1"><Clock className="w-3 h-3"/> Don't worry if you don't have them. Our team will assist you in getting them.</p>
               </div>
               <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-2">
                 {submittingOnboard ? 'Submitting...' : 'Submit for MD Approval'}
@@ -540,7 +539,7 @@ function App() {
   }
 
   // ==============================================================================
-  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (Kept 100% Intact)
+  // SCREEN 4: YOUR ORIGINAL MAIN DASHBOARD (100% Intact)
   // ==============================================================================
 
   return (
@@ -582,7 +581,6 @@ function App() {
               </span>
             ) : null}
 
-            {/* Changed to switch between Sign In / Sign Out dynamically */}
             {session ? (
               <Button
                 onClick={() => signOut()}
@@ -601,9 +599,9 @@ function App() {
               <Button
                 onClick={() => { setIsGuest(false); signIn('google'); }}
                 size="sm"
-                className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d] text-white"
+                className="text-xs sm:text-sm h-8 sm:h-9 bg-[#16a34a] hover:bg-[#15803d]"
               >
-                Sign In / Register
+                Sign in
               </Button>
             )}
           </div>
@@ -623,7 +621,6 @@ function App() {
       <section className="navy-gradient text-white">
         <div className="container mx-auto px-3 sm:px-4 py-8 md:py-14">
           <div className="max-w-3xl">
-            {/* Added Badge to show Guest vs Approved Client */}
             {isGuest ? (
                <Badge className="bg-amber-500 hover:bg-amber-600 mb-3 text-[10px] sm:text-xs">
                  <Eye className="w-3 h-3 mr-1" /> Public Guest View
