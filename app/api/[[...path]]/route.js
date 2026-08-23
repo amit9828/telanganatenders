@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { MongoClient, ObjectId } from 'mongodb';
-import { google } from 'googleapis'; // 🚀 NEW: Google API Import
+import { google } from 'googleapis'; // 🚀 Google Drive Integration Kept Safe!
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ async function getDb() {
   return cachedDb;
 }
 
-// 🚀 STRICT RULE 3: ప్రతీ API రెస్పాన్స్ కి No-Cache హెడర్స్ పంపడం
+// 🚀 STRICT RULE: ప్రతీ API రెస్పాన్స్ కి No-Cache హెడర్స్ పంపడం
 function json(data, status = 200) {
   return NextResponse.json(data, { 
     status,
@@ -33,6 +33,18 @@ function json(data, status = 200) {
       'Pragma': 'no-cache',
       'Expires': '0',
     }
+  });
+}
+
+// 🚀 FIX: CORS మరియు Preflight ఇష్యూస్ ని బ్లాక్ చేయడానికి OPTIONS మెథడ్ యాడ్ చేసాం
+export async function OPTIONS(request) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
   });
 }
 
@@ -49,14 +61,14 @@ export async function GET(request, { params }) {
     // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
-      // 🚀 STRICT FIX: పాత కరప్ట్ అయిన అకౌంట్స్ ని కూడా వెతికి పట్టుకోవడానికి 
       const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
       const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
       const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
       const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
-    // 2. BRAND SETTINGS (Logo & Name)
+
+    // 2. BRAND SETTINGS
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
       return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
@@ -152,10 +164,10 @@ export async function GET(request, { params }) {
       });
     }
 
-    // 7. GET TICKETS (SLA System)
+    // 7. GET TICKETS
     if (path === 'tickets' || path === 'api/tickets') {
       const email = searchParams.get('email');
-      const role = searchParams.get('role'); // admin can see all
+      const role = searchParams.get('role');
       let query = {};
       if (email && role !== 'admin') query.client_email = email.toLowerCase();
       
@@ -163,47 +175,44 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
-   // 8. GET PENDING USERS (For Admin Approvals)
+    // 8. GET PENDING USERS
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
-         // 🚀 STRICT FIX: status='pending' అని కాకుండా, అప్రూవ్ కాని ప్రతి ఒక్కరినీ లాక్కురా అని కమాండ్ ఇచ్చాం
          .find({ is_approved: { $ne: true }, onboarding_complete: true })
          .sort({ created_at: -1 })
          .toArray();
       return json({ users });
     }
-    // 🚀 NEW 9. CLIENT REQUESTS (For MD/Employee Dashboard)
+
+    // 9. CLIENT REQUESTS
     if (path === 'client-requests' || path === 'api/client-requests') {
       const email = searchParams.get('email');
       let query = {};
-      if (email) query.client_email = email.toLowerCase(); // Fetch specific client requests if email is passed
-      
+      if (email) query.client_email = email.toLowerCase(); 
       const requests = await db.collection('client_requests').find(query).sort({ created_at: -1 }).toArray();
       return json({ requests });
     }
 
-    // 🚀 NEW 10. MD DISPATCHES (Alerts & Tasks)
+    // 10. MD DISPATCHES
     if (path === 'dispatches' || path === 'api/dispatches') {
       const targetId = searchParams.get('target_id');
       let query = {};
       if (targetId) query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') }; 
-      
       const dispatches = await db.collection('dispatches').find(query).sort({ created_at: -1 }).toArray();
       return json({ dispatches });
     }
 
-    // 🚀 NEW 11. GOVT OFFICERS DIRECTORY
+    // 11. GOVT OFFICERS
     if (path === 'gov-officers' || path === 'api/gov-officers') {
       const officers = await db.collection('gov_officers').find({}).sort({ created_at: -1 }).toArray();
       return json({ officers });
     }
 
-    // 🚀 NEW 12. ACTIVE BIDS TRACKER
+    // 12. ACTIVE BIDS
     if (path === 'bids' || path === 'api/bids') {
       const clientEmail = searchParams.get('client_email');
       let query = {};
       if (clientEmail) query.client_email = clientEmail.toLowerCase();
-      
       const bids = await db.collection('bids').find(query).sort({ created_at: -1 }).toArray();
       return json({ bids });
     }
@@ -240,7 +249,6 @@ export async function GET(request, { params }) {
         .sort({ paid_at: -1 })
         .toArray();
 
-      // Load their specific requests and bids directly into the /me endpoint
       const custom_requests = await db.collection('client_requests').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
       const active_bids = await db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
       const action_alerts = await db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray();
@@ -303,7 +311,6 @@ export async function PUT(request, { params }) {
         return json({ success: true, message: 'L1 Price Updated' });
      }
 
-     // 🚀 NEW: Update Client Request Status (MD / Employee updating Client Request)
      if (path === 'client-requests/reply' || path === 'api/client-requests/reply') {
         const { req_id, status, reply } = body;
         await db.collection('client_requests').updateOne(
@@ -313,7 +320,6 @@ export async function PUT(request, { params }) {
         return json({ success: true, message: 'Request Updated' });
      }
 
-     // 🚀 NEW: Update Bid Status (Employee updating Kanban)
      if (path === 'bids/update' || path === 'api/bids/update') {
         const { bid_id, status } = body;
         await db.collection('bids').updateOne(
@@ -323,7 +329,6 @@ export async function PUT(request, { params }) {
         return json({ success: true });
      }
 
-     // 🚀 NEW: Update Task Status (Employee marking MD task as Done)
      if (path === 'dispatches/complete' || path === 'api/dispatches/complete') {
         const { task_id } = body;
         await db.collection('dispatches').updateOne(
@@ -387,7 +392,6 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Auto-renewal cancelled successfully.' });
     }
 
-    // SLA Ticketing System
     if (path === 'tickets' || path === 'api/tickets') {
       const { email, department, subject, message } = body;
       const createdAt = new Date();
@@ -410,7 +414,6 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket Resolved.' });
     }
 
-    // ONBOARDING SUBMIT
     if (path === 'users/profile' || path === 'api/users/profile') {
       const { 
         email, client_name, company_name, company_type, phone, address, 
@@ -449,7 +452,6 @@ export async function POST(request, { params }) {
        return json({ success: true });
     }
 
-    // 🚀 NEW: Create Client Bid Request (Client -> MD)
     if (path === 'client-requests' || path === 'api/client-requests') {
        const { client_email, client_id, link_or_id, description } = body;
        const result = await db.collection('client_requests').insertOne({
@@ -459,16 +461,14 @@ export async function POST(request, { params }) {
        return json({ success: true, id: result.insertedId });
     }
 
-    // 🚀 NEW: Create Dispatch Task/Alert (MD -> Client/Employee)
     if (path === 'dispatches' || path === 'api/dispatches') {
        const { target_type, target_id, subject, message } = body;
        const result = await db.collection('dispatches').insertOne({
-          target_type, target_id, subject, message, status: 'Sent', created_at: new Date()
+          target_type, target_type, target_id, subject, message, status: 'Sent', created_at: new Date()
        });
        return json({ success: true, id: result.insertedId });
     }
 
-    // 🚀 NEW: Log Government Officer (Employee -> MD)
     if (path === 'gov-officers' || path === 'api/gov-officers') {
        const result = await db.collection('gov_officers').insertOne({
           ...body, created_at: new Date()
@@ -476,7 +476,6 @@ export async function POST(request, { params }) {
        return json({ success: true, id: result.insertedId });
     }
 
-    // 🚀 NEW: Create New Bid (Employee -> Client)
     if (path === 'bids' || path === 'api/bids') {
        const result = await db.collection('bids').insertOne({
           ...body, status: 'Doc Preparation', created_at: new Date()
@@ -484,7 +483,6 @@ export async function POST(request, { params }) {
        return json({ success: true, id: result.insertedId });
     }
 
-   // 🚀 NEW: Employee Activity & Attendance Logger
     if (path === 'employee/activity' || path === 'api/employee/activity') {
        const { email, action, details } = body;
        await db.collection('employee_logs').insertOne({
@@ -496,7 +494,6 @@ export async function POST(request, { params }) {
        return json({ success: true });
     }
 
-    // 🚀 NEW: Google Drive Auto-Folder Creation
     if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
        const { folderName, email } = body;
        
@@ -505,28 +502,24 @@ export async function POST(request, { params }) {
        }
 
        try {
-          // 1. Google తో అథెంటికేట్ అవ్వడం
           const auth = new google.auth.JWT(
              process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
              null,
-             process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'), // Fix for .env newline characters
-             ['https://www.googleapis.com/auth/drive.file'] // Scope for Drive access
+             process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+             ['https://www.googleapis.com/auth/drive.file']
           );
           const drive = google.drive({ version: 'v3', auth });
           
-          // 2. ఫోల్డర్ సెటప్
           const fileMetadata = {
-             name: folderName || `Client - ${email}`, // ఫోల్డర్ పేరు
+             name: folderName || `Client - ${email}`,
              mimeType: 'application/vnd.google-apps.folder',
           };
           
-          // 3. ఫోల్డర్ క్రియేట్ చేయడం
           const folder = await drive.files.create({
              resource: fileMetadata,
              fields: 'id, webViewLink'
           });
           
-          // 4. డేటాబేస్ లో యూజర్ కి ఆ ఫోల్డర్ లింక్ సేవ్ చేయడం
           if (email) {
              await db.collection('users').updateOne(
                 { email: email.toLowerCase() },
@@ -541,7 +534,6 @@ export async function POST(request, { params }) {
        }
     }
 
-    // CASHFREE PAYMENT LOGIC
     if (path === 'payment/order' || path === 'api/payment/order') {
       const plan = body.plan;
       let amount = 12; 
@@ -618,19 +610,15 @@ export async function POST(request, { params }) {
         return json({ error: 'Verify failed' }, 500);
       }
     }
-// 🚀 NEW: Cashfree Background Webhook Security
+
     if (path === 'payment/webhook' || path === 'api/payment/webhook') {
        try {
-         // Cashfree సర్వర్ పంపే డేటాను రిసీవ్ చేసుకోవడం
          const orderId = body?.data?.order?.order_id;
          const paymentStatus = body?.data?.payment?.payment_status;
 
          if (orderId && paymentStatus === 'SUCCESS') {
-            // ఆ ఆర్డర్ ఐడీ మన డేటాబేస్ లో ఉందో లేదో చెక్ చేయడం
             const paymentRecord = await db.collection('payments').findOne({ order_id: orderId });
-            
             if (paymentRecord && paymentRecord.status !== 'SUCCESS') {
-               // యూజర్ కి తెలియకుండానే బ్యాక్ గ్రౌండ్ లో పేమెంట్ సక్సెస్ చేయడం
                await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'SUCCESS', paid_at: new Date() } });
                const email = paymentRecord.email.toLowerCase();
                
