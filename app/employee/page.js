@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { signIn } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
-  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact
+  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay
 } from 'lucide-react';
 
 export default function EmployeeDashboard() {
@@ -199,7 +200,17 @@ export default function EmployeeDashboard() {
     toast.info('Item escalated to Managing Director successfully.');
     logActivity('ESCALATED_TICKET', 'Escalated a ticket to MD');
   };
+  const [impersonateEmail, setImpersonateEmail] = useState('');
 
+  const handleImpersonate = async (targetEmail) => {
+    if (!targetEmail) return toast.error('Enter a valid client email');
+    toast.loading(`Connecting to ${targetEmail}'s portal...`);
+    await signIn('impersonate', {
+      email: targetEmail,
+      adminToken: 'admin_success',
+      callbackUrl: '/account' // Redirects straight to their account
+    });
+  };
   if (!isMounted) return null;
 
   return (
@@ -407,8 +418,28 @@ export default function EmployeeDashboard() {
                 </form>
               </CardContent>
             </Card>
-          </TabsContent>
 
+            {/* 👇👇👇 STEP 3: PASTE IMPERSONATION CARD HERE 👇👇👇 */}
+            <Card className="shadow-sm max-w-2xl mx-auto border-t-4 border-t-blue-500 mt-6">
+              <CardHeader className="bg-blue-50/50 pb-4 border-b">
+                <CardTitle className="text-blue-900 flex items-center gap-2"><MonitorPlay className="w-5 h-5 text-blue-600"/> Client Troubleshooting</CardTitle>
+                <CardDescription>Login as a client directly to resolve issues without their password.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-slate-600">Client Email to Access</Label>
+                    <Input placeholder="client@example.com" value={impersonateEmail} onChange={e=>setImpersonateEmail(e.target.value)} className="mt-1 font-mono bg-white"/>
+                  </div>
+                  <Button onClick={() => handleImpersonate(impersonateEmail)} className="w-full bg-[#0A2647] hover:bg-[#144272] h-11">
+                    <MonitorPlay className="w-4 h-4 mr-2"/> Login to Client Dashboard
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            {/* 👆👆👆 END OF STEP 3 👆👆👆 */}
+
+          </TabsContent>
           {/* TAB 4: FULL MANUAL TENDER PUBLISHER */}
           <TabsContent value="publisher" className="space-y-6">
             <Card className="border-t-4 border-t-[#16a34a] shadow-sm max-w-3xl mx-auto">
@@ -478,6 +509,10 @@ export default function EmployeeDashboard() {
                     <div className="flex flex-col sm:flex-row gap-2">
                        <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500" />
                        <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0">Resolve</Button>
+                       
+                       {/* 🚀 NEW: Quick Login & Fix Button */}
+                       <Button onClick={() => handleImpersonate('client@example.com')} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                       
                        <Button onClick={escalateToMD} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
                     </div>
                  </div>
