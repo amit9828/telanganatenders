@@ -228,13 +228,20 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Client Redirect Hook
+ // Client & Guest Redirect Hook (🚀 FIXED LOGIC)
   useEffect(() => {
-    if (status === 'authenticated' && intent === 'client' && userData && userData.onboarding_complete) {
-      router.push('/client');
+    if (status === 'authenticated' && userData) {
+      // 1. If the intent is client and the profile is fully approved, redirect directly to the dashboard
+      if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
+        router.push('/client');
+      }
+      // 2. If logged in as a guest, set the guest state to true to show their dashboard
+      else if (intent === 'guest') {
+        setIsGuest(true);
+      }
     }
   }, [status, intent, userData, router]);
-
+  
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
       localStorage.clear();
@@ -411,6 +418,51 @@ export default function App() {
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
       return toast.error('Please fill required fields (Name, Company, Phone, Service)');
     }
+    setSubmittingOnboard(true);
+    
+    try {
+      const r = await fetch('/api/users/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email, 
+          client_name: onboardForm.client_name,
+          company_name: onboardForm.company_name,
+          phone: onboardForm.phone,
+          company_type: onboardForm.company_type,
+          service_category: onboardForm.service,
+          documents: {
+            has_gst: onboardForm.has_gst,
+            has_esi: onboardForm.has_esi,
+            has_epf: onboardForm.has_epf,
+            has_iso: onboardForm.has_iso,
+            has_bank: onboardForm.has_bank,
+            has_pan: onboardForm.has_pan,
+            has_aadhar: onboardForm.has_aadhar,
+            has_dsc: onboardForm.has_dsc,
+            has_ifsc: onboardForm.has_ifsc,
+            has_fssai: onboardForm.has_fssai,
+            has_cer: onboardForm.has_cer,
+            has_turnover: onboardForm.has_turnover,
+            has_annual_returns: onboardForm.has_annual_returns
+          },
+          status: 'pending' // 🚀 FIX: ఇక్కడ 'approved' బదులు 'pending' అని మార్చాం 
+        })
+      });
+      
+      toast.success('Profile created successfully! Sent for MD Approval.');
+      
+      setUserData(prev => ({ 
+        ...prev, 
+        onboarding_complete: true, 
+        is_approved: false // 🚀 FIX: ఇక్కడ కూడా false చేసాం
+      }));
+      
+    } catch (err) {
+      toast.error('Error submitting profile');
+    }
+    setSubmittingOnboard(false);
+  };
     setSubmittingOnboard(true);
     
     try {
