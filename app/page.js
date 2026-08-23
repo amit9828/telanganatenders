@@ -44,7 +44,7 @@ import {
   User,
   Briefcase,
   UserCog,
-  Eye,
+  Eye, // 🚀 FIX: Added 'Eye' icon to solve the ReferenceError
   LogOut
 } from 'lucide-react';
 
@@ -413,7 +413,6 @@ export default function App() {
     }
   };
 
-  // 🚀 CLEAN FIXED VERSION: No duplicate code, strict pending status
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
@@ -726,7 +725,7 @@ export default function App() {
               <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
             </div>
             
-            {/* 🚀 FIX: Bypass బటన్ ని పూర్తిగా తీసేసి, కేవలం Log Out మాత్రమే ఉంచాం */}
+            {/* 🚀 FIX: Removed the Bypass button, keeping only Log Out */}
             <div className="flex items-center justify-center mt-4">
               <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
                 <LogOut className="w-4 h-4 mr-2" /> Log Out
@@ -739,6 +738,7 @@ export default function App() {
       return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
     }
   }
+
   // ==============================================================================
   // SCREEN 4: MAIN PORTAL (Guests & Approved Browsers reach here)
   // ==============================================================================
