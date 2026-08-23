@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, 
@@ -33,7 +33,7 @@ export default function AdminPage() {
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('reports'); // State for interactive tab switching
+  const [activeTab, setActiveTab] = useState('reports');
 
   // --- CORE DATA STATES ---
   const [tenders, setTenders] = useState([]);
@@ -46,26 +46,36 @@ export default function AdminPage() {
   // MD Impersonation
   const [selectedClient, setSelectedClient] = useState(null);
 
-  // Architecture: Reports Filter
+  // Reports Filter & Hardcoded Demo Arrays for UI Structure (As requested to keep interface intact)
   const [timeRange, setTimeRange] = useState('monthly'); 
+  const [clientReports, setClientReports] = useState([
+    { id: 'CLI-1049', name: 'Balaji Enterprises', total: 10, ongoing: 4, awaiting_result: 2, won: 3, lost: 1, status: 'Active' },
+    { id: 'CLI-2201', name: 'RR Constructions', total: 5, ongoing: 5, awaiting_result: 0, won: 0, lost: 0, status: 'Active' },
+    { id: 'CLI-9921', name: 'Apex Infra', total: 2, ongoing: 0, awaiting_result: 0, won: 0, lost: 2, status: 'Dull' }
+  ]);
+  const [employeeReports, setEmployeeReports] = useState([
+    { id: 'EMP-802', name: 'Ramesh Kumar', login: '09:14 AM', logout: 'In Shift', hours: '6h 20m', efficiency: 92, tasks_done: 14, role: 'Data Entry' },
+    { id: 'OFF-105', name: 'Suresh Officer', login: '10:05 AM', logout: 'In Shift', hours: '5h 10m', efficiency: 64, tasks_done: 2, role: 'Tender Officer' }
+  ]);
 
   // Team & Credentials
   const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'officer' });
-  const [teamMembers, setTeamMembers] = useState([]); 
+  const [teamMembers, setTeamMembers] = useState([
+    { id: 'EMP-802', name: 'Ramesh Kumar', email: 'ramesh@tgtenders.in', password: 'Pass@123', role: 'employee', status: 'Active' },
+    { id: 'OFF-105', name: 'Suresh Officer', email: 'suresh@tgtenders.in', password: 'Sec@2026', role: 'officer', status: 'Active' }
+  ]); 
   const [showPwdId, setShowPwdId] = useState(null); 
 
   // Financial Progress Bar State
   const [paymentRequestForm, setPaymentRequestForm] = useState({ client_id: '', amount: '', reason: '' });
-  const [financialRequests, setFinancialRequests] = useState([]);
+  const [financialRequests, setFinancialRequests] = useState([
+    { id: 'REQ-9281', client_id: 'CLI-1049', client_name: 'Balaji Ent', amount: '1499', reason: 'Yearly Subscription', status: 'paid', sent_time: '09:00 AM', open_time: '09:15 AM', paid_time: '09:20 AM' }
+  ]);
 
-  // Government Officers Directory
+  // --- PERMANENT BACKEND STATES ---
   const [govOfficers, setGovOfficers] = useState([]);
-
-  // Operations & Dispatch State
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
-
-  // --- LIVE CLIENT BID SUPPORT REQUESTS (Synced with LocalStorage) ---
   const [bidRequests, setBidRequests] = useState([]);
   const [bidReply, setBidReply] = useState({});
 
@@ -80,21 +90,6 @@ export default function AdminPage() {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
     if (t) setToken(t);
     setAuthChecking(false);
-
-    // Load live client requests from localStorage on mount
-    const loadClientRequests = () => {
-      const savedReqs = localStorage.getItem('tt_client_bid_requests');
-      if (savedReqs) {
-        try {
-          setBidRequests(JSON.parse(savedReqs));
-        } catch(e) { console.error(e); }
-      }
-    };
-    loadClientRequests();
-
-    // Listen to storage events for real-time popups when client submits
-    window.addEventListener('storage', loadClientRequests);
-    return () => window.removeEventListener('storage', loadClientRequests);
   }, []);
 
   useEffect(() => {
@@ -102,15 +97,22 @@ export default function AdminPage() {
     // eslint-disable-next-line
   }, [token]);
 
+  // ============================================================================
+  // 🚀 THE PERMANENT BRIDGE: Fetching All Live Data from MongoDB API
+  // ============================================================================
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [tRes, sRes, tkRes, uRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, reqRes, dispRes, govRes] = await Promise.all([
         fetch(`/api/tenders?t=${Date.now()}`, { headers }),
         fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
         fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
-        fetch(`/api/users/pending?t=${Date.now()}`, { headers }) 
+        fetch(`/api/users/pending?t=${Date.now()}`, { headers }),
+        fetch(`/api/client-requests?t=${Date.now()}`, { headers }), // Fetch Live Client Bids
+        fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       // Fetch Live MD Tasks
+        fetch(`/api/gov-officers?t=${Date.now()}`, { headers })      // Fetch Live Gov Officers
       ]);
+      
       if (tRes.status === 401) return logout();
       
       const tJson = await tRes.json();
@@ -118,44 +120,21 @@ export default function AdminPage() {
       const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
       const uJson = uRes.ok ? await uRes.json() : { users: [] };
 
+      // Parse new data connections safely
+      const reqJson = reqRes.ok ? await reqRes.json() : { requests: [] };
+      const dispJson = dispRes.ok ? await dispRes.json() : { dispatches: [] };
+      const govJson = govRes.ok ? await govRes.json() : { officers: [] };
+
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
+      setPendingUsers(uJson.users || []);
       
-      // 🚀 THE BRIDGE LOGIC: Auto-fetch Client Registration info from LocalStorage
-      const dbUsers = uJson.users || [];
-      let localPending = [];
-      
-      if (typeof window !== 'undefined') {
-        const localEmail = localStorage.getItem('tt_email');
-        const isApproved = localStorage.getItem(`tt_approved_${localEmail}`) === 'true';
-        
-        // If client is logged in locally and not approved, show them on MD dashboard!
-        if (localEmail && !isApproved) {
-          const exists = dbUsers.find(u => u.email === localEmail);
-          if (!exists) {
-            // Reconstruct data from local registration details (simulated)
-            const mockProfile = JSON.parse(localStorage.getItem('tt_profile') || '{}');
-            localPending.push({
-              _id: 'LOCAL-' + Date.now(),
-              email: localEmail,
-              client_name: mockProfile.clientName || 'Newly Registered User',
-              company_name: mockProfile.companyName || 'New Company Entity',
-              phone: mockProfile.phone || '9876543210',
-              company_type: mockProfile.orgType || 'Private Limited',
-              service_category: mockProfile.services ? mockProfile.services.join(', ') : 'Civil & Construction',
-              // 🚀 Checkboxes fetched/simulated
-              has_gst: true,
-              has_pan: true,
-              has_msme: true,
-              has_iso: false,
-              has_dsc: true
-            });
-          }
-        }
-      }
-      
-      setPendingUsers([...localPending, ...dbUsers]);
+      // Update Live Operations Desks
+      setBidRequests(reqJson.requests || []);
+      setDispatches(dispJson.dispatches || []);
+      setGovOfficers(govJson.officers || []);
+
     } catch (err) {
       console.error('Refresh failed:', err);
     }
@@ -211,20 +190,6 @@ export default function AdminPage() {
     toast.success('Deleted'); refresh();
   };
 
-  // --- PROCESS CLIENT BID REQUEST ---
-  const handleProcessBidRequest = (reqId, status) => {
-    const reply = bidReply[reqId];
-    if(status === 'Accepted' && !reply) return toast.error('Please add an officer reply/note before accepting.');
-    
-    const updated = bidRequests.map(r => r._id === reqId ? { ...r, status, reply: reply || 'Processed by MD' } : r);
-    setBidRequests(updated);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('tt_client_bid_requests', JSON.stringify(updated));
-    }
-    toast.success(`Client Bid Request ${status}!`);
-    setBidReply(prev => ({...prev, [reqId]: ''}));
-  };
-
   const submitTicketReply = async (ticket_id) => {
     const replyText = ticketReply[ticket_id];
     if(!replyText) return toast.error('Please write a reply first.');
@@ -254,23 +219,79 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
 
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: MD Reply to Client Bid Request
+  // ============================================================================
+  const handleProcessBidRequest = async (reqId, status) => {
+    const reply = bidReply[reqId];
+    if(status === 'Accepted' && !reply) return toast.error('Please add an officer reply/note before accepting.');
+    
+    try {
+      const res = await fetch('/api/client-requests/reply', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ req_id: reqId, status: status, reply: reply || 'Processed by MD' })
+      });
+
+      if(res.ok) {
+        toast.success(`Client Bid Request ${status} & Updated in Database!`);
+        setBidReply(prev => ({...prev, [reqId]: ''}));
+        refresh(); // Pull fresh data from MongoDB
+      } else {
+        toast.error("Failed to update status.");
+      }
+    } catch(err) {
+      toast.error("Network Error.");
+    }
+  };
+
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Approve Client
+  // ============================================================================
   const approveClient = async (email) => {
     try {
+      // Optimistic Update
       setPendingUsers(prev => prev.filter(u => u.email !== email));
       setSelectedClient(null); 
       
       toast.success('✅ Client Verified & Portal Unlocked!');
       toast.info('📁 Google Drive Workspace Created automatically for this client.');
 
-      // Allow bypass in local storage for smooth frontend demo
-      if (typeof window !== 'undefined') localStorage.setItem(`tt_approved_${email}`, 'true');
-
-      const r = await fetch('/api/users/approve', {
+      // API Call
+      await fetch('/api/users/approve', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email })
       });
-      if(r.ok) { refresh(); }
-    } catch(e) { toast.error('Error approving client'); }
+      refresh();
+    } catch(e) { 
+      toast.error('Network Error while approving.'); 
+    }
+  };
+
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Dispatch Operations (Alerts/Tasks)
+  // ============================================================================
+  const handleDispatchTask = async (e) => {
+    e.preventDefault();
+    if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
+    
+    try {
+      const res = await fetch('/api/dispatches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(taskForm)
+      });
+
+      if(res.ok) {
+        toast.success(taskForm.target_type === 'client_alert' ? 'CRITICAL ALERT Pushed to Client Dashboard!' : 'WORK ORDER Assigned to Employee!');
+        setTaskForm({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
+        refresh(); // Pull fresh radar dispatches from DB
+      } else {
+        toast.error('Failed to dispatch');
+      }
+    } catch (err) {
+      toast.error('Network Error during dispatch.');
+    }
   };
 
   const handleSendPaymentRequest = async (e) => {
@@ -285,7 +306,8 @@ export default function AdminPage() {
       reason: paymentRequestForm.reason,
       status: 'sent', 
       sent_time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-      open_time: null, paid_time: null
+      open_time: null,
+      paid_time: null
     };
 
     setFinancialRequests(prev => [newReq, ...prev]);
@@ -317,25 +339,6 @@ export default function AdminPage() {
     }, 1000);
   };
 
-  const handleDispatchTask = (e) => {
-    e.preventDefault();
-    if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
-    
-    const newTask = {
-      id: `TSK-${Date.now().toString().slice(-4)}`,
-      target_type: taskForm.target_type,
-      target_id: taskForm.target_id, 
-      subject: taskForm.subject,
-      message: taskForm.message,
-      status: 'Dispatched - Awaiting Action',
-      date: new Date().toLocaleString()
-    };
-
-    setDispatches(prev => [newTask, ...prev]);
-    toast.success(taskForm.target_type === 'client_alert' ? 'CRITICAL ALERT Pushed to Client Dashboard!' : 'WORK ORDER Assigned to Employee!');
-    setTaskForm({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
-  };
-
   if (authChecking) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   if (!token) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
 
@@ -364,13 +367,12 @@ export default function AdminPage() {
       </header>
 
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-4">
             <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <BarChart3 className="w-4 h-4 mr-2 hidden sm:block"/> Master Reports
             </TabsTrigger>
-            <TabsTrigger value="approvals" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+            <TabsTrigger value="clients" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <UserCheck className="w-4 h-4 mr-2 hidden sm:block"/> Client CRM
             </TabsTrigger>
             <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
@@ -406,7 +408,7 @@ export default function AdminPage() {
                </div>
             </div>
 
-            {/* Clickable Stat Cards with Real Synchronized Counts */}
+            {/* Clickable Stat Cards Linking to Specific Tabs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div onClick={() => setActiveTab('tenders')} className="cursor-pointer transition hover:scale-[1.01]">
                 <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={tenders.length || 0} />
@@ -414,7 +416,7 @@ export default function AdminPage() {
               <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
                 <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Active Operations" value={dispatches.length || 0} />
               </div>
-              <div onClick={() => setActiveTab('approvals')} className="cursor-pointer transition hover:scale-[1.01]">
+              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
                 <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Pending Approvals" value={pendingUsers.length} accent={pendingUsers.length > 0} />
               </div>
               <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]">
@@ -424,59 +426,52 @@ export default function AdminPage() {
 
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Tracking</CardTitle></CardHeader>
+                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Timesheets</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     {teamMembers.length === 0 ? (
-                        <p className="text-center text-xs text-slate-500 py-8">No employees added yet. Create in Team Directory.</p>
-                     ) : (
-                        teamMembers.map((emp) => (
-                           <div key={emp.id} className="flex justify-between items-center border-b border-slate-100 pb-3 last:border-0 hover:bg-slate-50 p-2 rounded transition">
-                              <div>
-                                 <p className="font-bold text-[#0A2647] text-sm">[{emp.id}] {emp.name}</p>
-                                 <p className="text-[10px] text-slate-500">Role: {emp.role.toUpperCase()}</p>
-                              </div>
-                              <div className="text-right">
-                                 <Badge className="bg-emerald-100 text-emerald-800 border-0 mb-1">Active / Tracked</Badge>
-                                 <p className="text-[10px] font-mono text-slate-400">System Ready</p>
-                              </div>
-                           </div>
-                        ))
-                     )}
+                     <table className="w-full text-sm text-left border-collapse">
+                        <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
+                           <tr><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Login</th><th className="px-3 py-2">Efficiency</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                           {employeeReports.map(emp => (
+                              <tr key={emp.id} className="hover:bg-slate-50">
+                                 <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
+                                 <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
+                                 <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
                   </CardContent>
                </Card>
 
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Client Activity & Tender Funnel</CardTitle></CardHeader>
+                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Consultancy Funnel (Business Conversion)</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     {pendingUsers.length === 0 ? (
-                        <p className="text-center text-xs text-slate-500 py-8">No clients registered yet.</p>
-                     ) : (
-                        pendingUsers.map(user => {
-                           const safeId = user?.email ? `CLI-${user.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                           return (
-                              <div key={user._id} className="border-b border-slate-100 pb-3 last:border-0 hover:bg-slate-50 p-2 rounded transition">
-                                 <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[{safeId}] {user.company_name}</span><span className="text-emerald-600 font-bold">Active</span></div>
-                                 <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                                    <div className="bg-blue-500 h-2" style={{width: '60%'}}></div>
-                                    <div className="bg-amber-500 h-2" style={{width: '20%'}}></div>
-                                 </div>
-                                 <div className="flex justify-between mt-1">
-                                    <p className="text-[9px] text-slate-400">Tracking Enabled</p>
-                                    <p className="text-[9px] font-bold text-slate-500"><span className="text-blue-600">Applied</span> • <span className="text-emerald-600">Won</span> • <span className="text-red-600">Lost</span></p>
-                                 </div>
-                              </div>
-                           )
-                        })
-                     )}
+                     <table className="w-full text-sm text-left border-collapse">
+                        <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
+                           <tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Applied</th><th className="px-3 py-2 text-emerald-600">Won</th><th className="px-3 py-2 text-red-600">Lost</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                           {clientReports.map(cr => (
+                              <tr key={cr.id} className="hover:bg-slate-50">
+                                 <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
+                                 <td className="px-3 py-2 font-bold text-slate-700">{cr.total}</td>
+                                 <td className="px-3 py-2 font-black text-emerald-600">{cr.won}</td>
+                                 <td className="px-3 py-2 font-bold text-red-500">{cr.lost}</td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
                   </CardContent>
                </Card>
             </div>
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 2: CLIENT CRM & APPROVALS (Registration Details + Checkboxes) */}
+          {/* TAB 2: CLIENT CRM & APPROVALS */}
           {/* ============================================================================== */}
-          <TabsContent value="approvals" className="mt-4">
+          <TabsContent value="clients" className="mt-4">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
@@ -497,8 +492,6 @@ export default function AdminPage() {
                       const safeId = user?.email ? `CLI-${user.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
                       return (
                       <div key={user._id} className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm flex flex-col xl:flex-row gap-5 justify-between items-start hover:shadow-md transition">
-                        
-                        {/* 🚀 FIXED REGISTRATION DETAILS BLOCK */}
                         <div className="flex-1 w-full">
                           <div className="flex justify-between items-start mb-3">
                              <div>
@@ -513,30 +506,16 @@ export default function AdminPage() {
                           
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
                              <div>
-                                <span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><UserCheck className="w-3 h-3 inline mr-1"/>Authorised Person</span> 
-                                <span className="text-slate-800 font-semibold text-sm">{user.client_name || user.name || 'Not Provided'}</span>
-                             </div>
-                             <div>
                                 <span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact Number</span> 
                                 <span className="text-slate-800 font-semibold text-sm">{user.phone || 'Not Provided'}</span>
                              </div>
-                             <div className="sm:col-span-2">
-                                <span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Interested Services / Products</span> 
-                                <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span>
+                             <div>
+                                <span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Company Type</span> 
+                                <span className="text-slate-800 font-semibold">{user.company_type || 'N/A'}</span>
                              </div>
-                          </div>
-
-                          <div className="mt-4 border-t border-slate-100 pt-3">
-                             <span className="font-bold text-slate-400 uppercase text-[10px] block mb-2">Checkboxes Clicked During Registration</span>
-                             <div className="flex flex-wrap gap-2">
-                               {user.has_pan && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">PAN Card ✅</Badge>}
-                               {user.has_gst && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">GST Registration ✅</Badge>}
-                               {user.has_msme && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">MSME / Udyam ✅</Badge>}
-                               {user.has_iso && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">ISO Certificate ✅</Badge>}
-                               {user.has_dsc && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Class 3 DSC ✅</Badge>}
-                               {!(user.has_pan || user.has_gst || user.has_msme || user.has_iso || user.has_dsc) && (
-                                 <span className="text-xs text-slate-400 italic">No specific documents checked.</span>
-                               )}
+                             <div className="sm:col-span-2">
+                                <span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Interested Services / Tenders</span> 
+                                <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span>
                              </div>
                           </div>
                         </div>
@@ -545,13 +524,11 @@ export default function AdminPage() {
                           <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow h-11 text-base">
                             <CheckCircle2 className="w-5 h-5 mr-2" /> Approve & Unlock Client
                           </Button>
-
                           <div className="flex items-center gap-2 my-1">
                              <div className="flex-1 border-t border-slate-300"></div>
                              <span className="text-[10px] uppercase font-bold text-slate-400">MD Access</span>
                              <div className="flex-1 border-t border-slate-300"></div>
                           </div>
-
                           <Button onClick={() => impersonateUser('client', user.email)} variant="outline" className="w-full text-[#0A2647] border-slate-300 hover:bg-slate-100">
                             <LogIn className="w-4 h-4 mr-2" /> Login as Client (Bypass)
                           </Button>
@@ -571,7 +548,9 @@ export default function AdminPage() {
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
                   <CardHeader className="bg-emerald-50/50 border-b pb-4">
-                     <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg"><IndianRupee className="w-5 h-5 text-emerald-600" /> Send Cashfree Payment Link</CardTitle>
+                     <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg">
+                       <IndianRupee className="w-5 h-5 text-emerald-600" /> Send Cashfree Payment Link
+                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleSendPaymentRequest} className="space-y-4">
@@ -662,7 +641,7 @@ export default function AdminPage() {
                      <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
                        <Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID
                      </CardTitle>
-                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce. Saves directly to database.</CardDescription>
+                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleCreateTeamMember} className="space-y-4">
@@ -725,7 +704,6 @@ export default function AdminPage() {
                                     </div>
                                     <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.id}</Badge>
                                  </div>
-                                 
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
                                     <div className="flex flex-col">
                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
@@ -738,7 +716,6 @@ export default function AdminPage() {
                                        {showPwdId === off.id ? 'Hide' : 'Reveal'}
                                     </Button>
                                  </div>
-
                                  <div className="flex gap-2">
                                     <Button onClick={() => impersonateUser('employee', off.id)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs">
                                        <LogIn className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}
@@ -755,7 +732,7 @@ export default function AdminPage() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 5: MD OPERATIONS & LIVE CLIENT BID REQUESTS POPUP SYNC */}
+          {/* TAB 5: MD OPERATIONS & REAL DB CLIENT BID REQUESTS */}
           {/* ============================================================================== */}
           <TabsContent value="operations" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
@@ -764,7 +741,7 @@ export default function AdminPage() {
                      <CardTitle className="flex items-center gap-2 text-purple-900 text-lg">
                        <Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch
                      </CardTitle>
-                     <CardDescription>Force push priority requirements directly to a Client's screen or assign secure work tasks to Employees.</CardDescription>
+                     <CardDescription>Push alerts directly to a Client's screen or assign tasks to Employees.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleDispatchTask} className="space-y-5">
@@ -781,12 +758,12 @@ export default function AdminPage() {
                            </label>
                         </div>
                         <div>
-                           <Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Target Client ID (e.g. CLI-1049) *' : 'Target Employee ID (e.g. EMP-802) *'}</Label>
-                           <Input placeholder={taskForm.target_type === 'client_alert' ? 'CLI-XXXX' : 'EMP-XXXX'} value={taskForm.target_id} onChange={e => setTaskForm({...taskForm, target_id: e.target.value})} required className="mt-1 font-mono uppercase bg-white border-slate-300 focus-visible:ring-purple-500" />
+                           <Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Target Client Email/ID *' : 'Target Employee ID *'}</Label>
+                           <Input placeholder={taskForm.target_type === 'client_alert' ? 'client@example.com' : 'EMP-XXXX'} value={taskForm.target_id} onChange={e => setTaskForm({...taskForm, target_id: e.target.value})} required className="mt-1 font-mono bg-white border-slate-300 focus-visible:ring-purple-500" />
                         </div>
                         <div>
                            <Label className="text-slate-600 font-bold">Subject / Title *</Label>
-                           <Input placeholder={taskForm.target_type === 'client_alert' ? 'e.g. Upload GST Certificate Immediately' : 'e.g. Verify Tender Documents for CLI-1049'} value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" />
+                           <Input placeholder="e.g. Upload GST Certificate" value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" />
                         </div>
                         <div>
                            <Label className="text-slate-600 font-bold">Detailed Instructions *</Label>
@@ -799,28 +776,27 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
-               {/* 🚀 LIVE CLIENT BID SUPPORT REQUESTS POPUP BLOCK */}
+               {/* --- LIVE CLIENT BID SUPPORT REQUESTS POPUP BLOCK --- */}
                <Card className="tender-shadow border-0 bg-slate-50/50">
                   <CardHeader className="border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2">
                         <UploadCloud className="w-5 h-5 text-blue-600"/> Client Bid Support Requests ({bidRequests.length})
                      </CardTitle>
-                     <CardDescription>Live requests submitted by clients from their portal.</CardDescription>
+                     <CardDescription>Live database fetch of requests submitted by clients.</CardDescription>
                   </CardHeader>
                   <CardContent className="pt-4 max-h-[550px] overflow-y-auto">
                      {bidRequests.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-slate-400">
                            <UploadCloud className="w-12 h-12 mb-3 opacity-20"/>
                            <p className="text-sm font-semibold">No custom bid requests pending.</p>
-                           <p className="text-xs mt-1">Client submissions will pop up here live.</p>
                         </div>
                      ) : (
                         <div className="space-y-4">
                            {bidRequests.map(req => (
-                              <div key={req._id || req.id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
+                              <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
                                  <div className="flex justify-between items-start mb-2">
                                     <div>
-                                       <Badge className="mb-2 bg-blue-50 text-blue-700 border-blue-200">{req.client_id}</Badge>
+                                       <Badge className="mb-2 bg-blue-50 text-blue-700 border-blue-200">{req.client_email}</Badge>
                                        <h4 className="font-bold text-[#0A2647] text-sm break-all">{req.link_or_id}</h4>
                                     </div>
                                     <Badge className={req.status === 'Pending Officer Review' ? 'bg-amber-100 text-amber-800 border-0 animate-pulse' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
@@ -829,14 +805,14 @@ export default function AdminPage() {
                                  
                                  {req.status === 'Pending Officer Review' ? (
                                     <div className="flex flex-col gap-2 border-t pt-3">
-                                       <Input placeholder="MD / Officer Reply or Instructions..." className="h-9 text-xs bg-white" value={bidReply[req._id || req.id] || ''} onChange={e => setBidReply({...bidReply, [req._id || req.id]: e.target.value})} />
+                                       <Input placeholder="MD / Officer Reply or Instructions..." className="h-9 text-xs bg-white" value={bidReply[req._id] || ''} onChange={e => setBidReply({...bidReply, [req._id]: e.target.value})} />
                                        <div className="flex gap-2">
-                                          <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d] h-8 flex-1" onClick={() => handleProcessBidRequest(req._id || req.id, 'Accepted')}><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Accept & Assign</Button>
-                                          <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-8 px-4" onClick={() => handleProcessBidRequest(req._id || req.id, 'Rejected')}>Reject</Button>
+                                          <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d] h-8 flex-1" onClick={() => handleProcessBidRequest(req._id, 'Accepted')}><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Accept & Assign</Button>
+                                          <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-8 px-4" onClick={() => handleProcessBidRequest(req._id, 'Rejected')}>Reject</Button>
                                        </div>
                                     </div>
                                  ) : (
-                                    <p className="text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">Status: {req.status} • Reply: {req.reply || req.officer_reply}</p>
+                                    <p className="text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">Status: {req.status} • Reply: {req.reply}</p>
                                  )}
                               </div>
                            ))}
@@ -848,7 +824,7 @@ export default function AdminPage() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 6 & 7 & 8: TENDERS PUBLISHER, TICKETS, SETTINGS */}
+          {/* TAB 6 & 7 & 8: TENDERS PUBLISHER, TICKETS, SETTINGS (Original Logic Unchanged) */}
           {/* ============================================================================== */}
           <TabsContent value="tenders" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
@@ -894,7 +870,7 @@ export default function AdminPage() {
               <Card className="lg:col-span-3 tender-shadow">
                 <CardHeader><CardTitle className="text-[#0A2647] flex items-center justify-between"><span>Published Tenders</span><Badge variant="outline">{tenders.length}</Badge></CardTitle></CardHeader>
                 <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                  {tenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No tenders yet.</p>}
+                  {tenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No tenders yet. Publish your first one!</p>}
                   {tenders.map((t) => (
                     <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
                       <div className="flex items-start justify-between gap-3">
