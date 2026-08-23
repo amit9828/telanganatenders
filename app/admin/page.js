@@ -17,7 +17,7 @@ import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, 
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
-  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, Building2, UploadCloud
+  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, Building2, UploadCloud, PhoneCall
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -33,8 +33,9 @@ export default function AdminPage() {
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('reports'); // State for interactive tab switching
 
-  // --- CORE DATA STATES (REAL DATA ONLY) ---
+  // --- CORE DATA STATES ---
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
   const [tickets, setTickets] = useState([]);
@@ -48,23 +49,23 @@ export default function AdminPage() {
   // Architecture: Reports Filter
   const [timeRange, setTimeRange] = useState('monthly'); 
 
-  // Architecture: Real Team Member Saving & Passwords
+  // Team & Credentials
   const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'officer' });
   const [teamMembers, setTeamMembers] = useState([]); 
   const [showPwdId, setShowPwdId] = useState(null); 
 
-  // Architecture: Financial Progress Bar State
+  // Financial Progress Bar State
   const [paymentRequestForm, setPaymentRequestForm] = useState({ client_id: '', amount: '', reason: '' });
   const [financialRequests, setFinancialRequests] = useState([]);
 
-  // Architecture: Government Officers Directory
+  // Government Officers Directory
   const [govOfficers, setGovOfficers] = useState([]);
 
   // Operations & Dispatch State
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
 
-  // --- NEW FIX: Client Bid Support Requests State (No Fake Data) ---
+  // --- LIVE CLIENT BID SUPPORT REQUESTS (Synced with LocalStorage) ---
   const [bidRequests, setBidRequests] = useState([]);
   const [bidReply, setBidReply] = useState({});
 
@@ -79,6 +80,21 @@ export default function AdminPage() {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
     if (t) setToken(t);
     setAuthChecking(false);
+
+    // Load live client requests from localStorage on mount
+    const loadClientRequests = () => {
+      const savedReqs = localStorage.getItem('tt_client_bid_requests');
+      if (savedReqs) {
+        try {
+          setBidRequests(JSON.parse(savedReqs));
+        } catch(e) { console.error(e); }
+      }
+    };
+    loadClientRequests();
+
+    // Listen to storage events for real-time popups when client submits
+    window.addEventListener('storage', loadClientRequests);
+    return () => window.removeEventListener('storage', loadClientRequests);
   }, []);
 
   useEffect(() => {
@@ -106,8 +122,8 @@ export default function AdminPage() {
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
       
-      // Load strictly real DB users
-      setPendingUsers(uJson.users || []);
+      const dbUsers = uJson.users || [];
+      setPendingUsers(dbUsers);
     } catch (err) {
       console.error('Refresh failed:', err);
     }
@@ -128,9 +144,7 @@ export default function AdminPage() {
     
     const reader = new FileReader();
     reader.onload = () => {
-      const result = reader.result?.toString() || '';
-      const b64 = result.split(',')[1] || '';
-      setPdfBase64(b64);
+      setPdfBase64(reader.result?.toString().split(',')[1] || '');
       setPdfName(file.name);
       toast.success(`PDF loaded: ${file.name}`);
     };
@@ -150,13 +164,13 @@ export default function AdminPage() {
         body: JSON.stringify({ ...form, pdf_base64: pdfBase64, pdf_filename: pdfName || 'tender.pdf' }),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) return toast.error(d.error || `Server Error (${r.status}) - Try smaller PDF`);
+      if (!r.ok) return toast.error(d.error || `Server Error (${r.status})`);
       
-      toast.success(`Tender published! ${d.notified || ''} user(s) notified by email.`);
+      toast.success(`Tender published successfully!`);
       setForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
       setPdfBase64(''); setPdfName('');
       refresh();
-    } catch (err) { toast.error('Network Error: File might be too large for server limit.'); } finally { setLoading(false); }
+    } catch (err) { toast.error('Network Error.'); } finally { setLoading(false); }
   };
 
   const remove = async (id) => {
@@ -165,14 +179,17 @@ export default function AdminPage() {
     toast.success('Deleted'); refresh();
   };
 
-  // --- FIX: Client Bid Request Processing ---
+  // --- PROCESS CLIENT BID REQUEST ---
   const handleProcessBidRequest = (reqId, status) => {
     const reply = bidReply[reqId];
-    if(status === 'Accepted' && !reply) return toast.error('Please add a reply/note before accepting.');
+    if(status === 'Accepted' && !reply) return toast.error('Please add an officer reply/note before accepting.');
     
-    // Simulate updating DB
-    setBidRequests(prev => prev.filter(r => r._id !== reqId));
-    toast.success(`Client Bid Request ${status} Successfully!`);
+    const updated = bidRequests.map(r => r._id === reqId ? { ...r, status, reply: reply || 'Processed by MD' } : r);
+    setBidRequests(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tt_client_bid_requests', JSON.stringify(updated));
+    }
+    toast.success(`Client Bid Request ${status}!`);
     setBidReply(prev => ({...prev, [reqId]: ''}));
   };
 
@@ -205,6 +222,7 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
 
+  // --- SMART CLIENT APPROVAL (Optimistic Sync) ---
   const approveClient = async (email) => {
     try {
       setPendingUsers(prev => prev.filter(u => u.email !== email));
@@ -217,10 +235,8 @@ export default function AdminPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email })
       });
-      if(r.ok) { console.log('Backend sync successful'); }
-    } catch(e) { 
-      toast.error('Network Error: But client unlocked in current session.'); 
-    }
+      if(r.ok) { refresh(); }
+    } catch(e) { toast.error('Error approving client'); }
   };
 
   const handleSendPaymentRequest = async (e) => {
@@ -235,8 +251,7 @@ export default function AdminPage() {
       reason: paymentRequestForm.reason,
       status: 'sent', 
       sent_time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-      open_time: null,
-      paid_time: null
+      open_time: null, paid_time: null
     };
 
     setFinancialRequests(prev => [newReq, ...prev]);
@@ -273,8 +288,13 @@ export default function AdminPage() {
     if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
     
     const newTask = {
-      id: `TSK-${Date.now().toString().slice(-4)}`, target_type: taskForm.target_type, target_id: taskForm.target_id, 
-      subject: taskForm.subject, message: taskForm.message, status: 'Dispatched - Awaiting Action', date: new Date().toLocaleString()
+      id: `TSK-${Date.now().toString().slice(-4)}`,
+      target_type: taskForm.target_type,
+      target_id: taskForm.target_id, 
+      subject: taskForm.subject,
+      message: taskForm.message,
+      status: 'Dispatched - Awaiting Action',
+      date: new Date().toLocaleString()
     };
 
     setDispatches(prev => [newTask, ...prev]);
@@ -311,7 +331,8 @@ export default function AdminPage() {
 
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         
-        <Tabs defaultValue="reports" className="w-full">
+        {/* --- TABS SYSTEM --- */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-4">
             <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <BarChart3 className="w-4 h-4 mr-2 hidden sm:block"/> Master Reports
@@ -340,7 +361,7 @@ export default function AdminPage() {
           </TabsList>
 
           {/* ============================================================================== */}
-          {/* TAB 1: MASTER REPORTS */}
+          {/* TAB 1: MASTER REPORTS (Interactive Clickable Stat Cards) */}
           {/* ============================================================================== */}
           <TabsContent value="reports" className="space-y-4">
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
@@ -352,11 +373,20 @@ export default function AdminPage() {
                </div>
             </div>
 
+            {/* Clickable Stat Cards with Real Synchronized Counts */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={tenders.length || 0} />
-              <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Active Operations" value={dispatches.length || 0} />
-              <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Pending Approvals" value={pendingUsers.length || stats.users || 0} />
-              <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(stats.revenue || 0).toLocaleString()}`} accent />
+              <div onClick={() => setActiveTab('tenders')} className="cursor-pointer transition hover:scale-[1.01]">
+                <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={tenders.length || 0} />
+              </div>
+              <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
+                <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Active Operations" value={dispatches.length || 0} />
+              </div>
+              <div onClick={() => setActiveTab('approvals')} className="cursor-pointer transition hover:scale-[1.01]">
+                <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Pending Approvals" value={pendingUsers.length} accent={pendingUsers.length > 0} />
+              </div>
+              <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]">
+                <StatCard icon={<IndianRupee className="w-4 h-4 text-emerald-600" />} label="Gross Revenue" value={`₹${(stats.revenue || 0).toLocaleString()}`} />
+              </div>
             </div>
 
             <div className="grid lg:grid-cols-2 gap-6">
@@ -394,8 +424,8 @@ export default function AdminPage() {
                               <div key={user._id} className="border-b border-slate-100 pb-3 last:border-0 hover:bg-slate-50 p-2 rounded transition">
                                  <div className="flex justify-between text-xs mb-1"><span className="font-semibold">[{safeId}] {user.company_name}</span><span className="text-emerald-600 font-bold">Active</span></div>
                                  <div className="w-full bg-slate-100 rounded-full h-2 flex overflow-hidden">
-                                    <div className="bg-blue-500 h-2" style={{width: '60%'}} title="Ongoing (Applied)"></div>
-                                    <div className="bg-amber-500 h-2" style={{width: '20%'}} title="Awaiting Result"></div>
+                                    <div className="bg-blue-500 h-2" style={{width: '60%'}}></div>
+                                    <div className="bg-amber-500 h-2" style={{width: '20%'}}></div>
                                  </div>
                                  <div className="flex justify-between mt-1">
                                     <p className="text-[9px] text-slate-400">Tracking Enabled</p>
@@ -446,7 +476,6 @@ export default function AdminPage() {
                              <Badge className="bg-amber-100 text-amber-800 border-0 uppercase tracking-widest text-[10px]">Awaiting Approval</Badge>
                           </div>
                           
-                          {/* REAL REGISTRATION DETAILS: Contact & Interest only */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
                              <div>
                                 <span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact Number</span> 
@@ -464,17 +493,14 @@ export default function AdminPage() {
                         </div>
 
                         <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
-                          {/* APPROVE ACTION BUTTON */}
                           <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow h-11 text-base">
                             <CheckCircle2 className="w-5 h-5 mr-2" /> Approve & Unlock Client
                           </Button>
-
                           <div className="flex items-center gap-2 my-1">
                              <div className="flex-1 border-t border-slate-300"></div>
                              <span className="text-[10px] uppercase font-bold text-slate-400">MD Access</span>
                              <div className="flex-1 border-t border-slate-300"></div>
                           </div>
-
                           <Button onClick={() => impersonateUser('client', user.email)} variant="outline" className="w-full text-[#0A2647] border-slate-300 hover:bg-slate-100">
                             <LogIn className="w-4 h-4 mr-2" /> Login as Client (Bypass)
                           </Button>
@@ -576,7 +602,7 @@ export default function AdminPage() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 4: TEAM DIRECTORY & GOVT OFFICERS */}
+          {/* TAB 4: TEAM DIRECTORY */}
           {/* ============================================================================== */}
           <TabsContent value="team" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
@@ -648,7 +674,6 @@ export default function AdminPage() {
                                     </div>
                                     <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.id}</Badge>
                                  </div>
-                                 
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
                                     <div className="flex flex-col">
                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
@@ -661,7 +686,6 @@ export default function AdminPage() {
                                        {showPwdId === off.id ? 'Hide' : 'Reveal'}
                                     </Button>
                                  </div>
-
                                  <div className="flex gap-2">
                                     <Button onClick={() => impersonateUser('employee', off.id)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs">
                                        <LogIn className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}
@@ -675,51 +699,20 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
             </div>
-
-            <Card className="tender-shadow mt-6 border-0 ring-1 ring-slate-200">
-               <CardHeader className="bg-slate-50 border-b pb-4">
-                  <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-slate-500" /> Government Officers Directory</CardTitle>
-               </CardHeader>
-               <CardContent className="pt-4 p-0 sm:p-6">
-                  {govOfficers.length === 0 ? (
-                     <div className="text-center py-10 text-slate-400"><Building2 className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm font-semibold">No Officer Data Logged Yet.</p></div>
-                  ) : (
-                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left border-collapse">
-                           <thead className="text-[10px] text-slate-500 uppercase font-bold tracking-wider bg-slate-100 border-b border-slate-200">
-                              <tr>
-                                 <th className="px-4 py-3">Officer Name & Desig.</th>
-                                 <th className="px-4 py-3">Dept & Location</th>
-                                 <th className="px-4 py-3">Contact Info</th>
-                                 <th className="px-4 py-3">Logged By</th>
-                                 <th className="px-4 py-3">Context / Tender Ref</th>
-                              </tr>
-                           </thead>
-                           <tbody className="divide-y divide-slate-100">
-                              {govOfficers.map(go => (
-                                 <tr key={go.id} className="hover:bg-slate-50 transition">
-                                    <td className="px-4 py-3"><p className="font-bold text-[#0A2647] text-sm">{go.name}</p><p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{go.designation}</p></td>
-                                    <td className="px-4 py-3"><Badge variant="outline" className="bg-white border-slate-300 font-semibold">{go.dept}</Badge><p className="text-[10px] text-slate-500 mt-1.5 font-medium"><MapPin className="w-3 h-3 inline mr-0.5 text-slate-400"/>{go.district}</p></td>
-                                    <td className="px-4 py-3 font-mono text-slate-700 font-semibold">{go.phone}</td>
-                                    <td className="px-4 py-3"><Badge className="bg-blue-50 text-blue-700 border-blue-200">{go.met_by}</Badge><p className="text-[9px] text-slate-400 mt-1.5 font-medium">{go.date}</p></td>
-                                    <td className="px-4 py-3 text-xs text-slate-600 max-w-[150px] truncate" title={go.tender_ref}>{go.tender_ref}</td>
-                                 </tr>
-                              ))}
-                           </tbody>
-                        </table>
-                     </div>
-                  )}
-               </CardContent>
-            </Card>
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 5: MD OPERATIONS & DISPATCH */}
+          {/* TAB 5: MD OPERATIONS & CLIENT BID REQUESTS POPUP SYNC */}
           {/* ============================================================================== */}
           <TabsContent value="operations" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-purple-600">
-                  <CardHeader className="bg-purple-50/30 border-b pb-4"><CardTitle className="flex items-center gap-2 text-purple-900 text-lg"><Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch</CardTitle></CardHeader>
+                  <CardHeader className="bg-purple-50/30 border-b pb-4">
+                     <CardTitle className="flex items-center gap-2 text-purple-900 text-lg">
+                       <Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch
+                     </CardTitle>
+                     <CardDescription>Force push priority requirements directly to a Client's screen or assign secure work tasks to Employees.</CardDescription>
+                  </CardHeader>
                   <CardContent className="pt-6">
                      <form onSubmit={handleDispatchTask} className="space-y-5">
                         <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
@@ -734,23 +727,39 @@ export default function AdminPage() {
                               <span className="text-sm font-bold">Employee Task</span>
                            </label>
                         </div>
-                        <div><Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Target Client ID (e.g. CLI-1049) *' : 'Target Employee ID (e.g. EMP-802) *'}</Label><Input placeholder={taskForm.target_type === 'client_alert' ? 'CLI-XXXX' : 'EMP-XXXX'} value={taskForm.target_id} onChange={e => setTaskForm({...taskForm, target_id: e.target.value})} required className="mt-1 font-mono uppercase bg-white border-slate-300 focus-visible:ring-purple-500" /></div>
-                        <div><Label className="text-slate-600 font-bold">Subject / Title *</Label><Input placeholder={taskForm.target_type === 'client_alert' ? 'e.g. Upload GST Certificate Immediately' : 'e.g. Verify Tender Documents'} value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" /></div>
-                        <div><Label className="text-slate-600 font-bold">Detailed Instructions *</Label><Textarea rows={4} placeholder="Describe exactly what needs to be done..." value={taskForm.message} onChange={e => setTaskForm({...taskForm, message: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" /></div>
-                        <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 shadow-md h-12 text-base"><ClipboardList className="w-5 h-5 mr-2" /> Dispatch Now</Button>
+                        <div>
+                           <Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Target Client ID (e.g. CLI-1049) *' : 'Target Employee ID (e.g. EMP-802) *'}</Label>
+                           <Input placeholder={taskForm.target_type === 'client_alert' ? 'CLI-XXXX' : 'EMP-XXXX'} value={taskForm.target_id} onChange={e => setTaskForm({...taskForm, target_id: e.target.value})} required className="mt-1 font-mono uppercase bg-white border-slate-300 focus-visible:ring-purple-500" />
+                        </div>
+                        <div>
+                           <Label className="text-slate-600 font-bold">Subject / Title *</Label>
+                           <Input placeholder="e.g. Upload GST Certificate Immediately" value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" />
+                        </div>
+                        <div>
+                           <Label className="text-slate-600 font-bold">Detailed Instructions *</Label>
+                           <Textarea rows={4} placeholder="Describe exactly what needs to be done..." value={taskForm.message} onChange={e => setTaskForm({...taskForm, message: e.target.value})} required className="mt-1 bg-white border-slate-300 focus-visible:ring-purple-500" />
+                        </div>
+                        <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 shadow-md h-12 text-base">
+                           <ClipboardList className="w-5 h-5 mr-2" /> Dispatch Now
+                        </Button>
                      </form>
                   </CardContent>
                </Card>
 
-               {/* --- FIX: CLIENT BID SUPPORT REQUESTS BLOCK INSIDE OPERATIONS --- */}
+               {/* --- LIVE CLIENT BID SUPPORT REQUESTS POPUP BLOCK --- */}
                <Card className="tender-shadow border-0 bg-slate-50/50">
-                  <CardHeader className="border-b pb-4"><CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><UploadCloud className="w-5 h-5 text-blue-600"/> Client Bid Support Requests</CardTitle></CardHeader>
+                  <CardHeader className="border-b pb-4">
+                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2">
+                        <UploadCloud className="w-5 h-5 text-blue-600"/> Client Bid Support Requests ({bidRequests.length})
+                     </CardTitle>
+                     <CardDescription>Live requests submitted by clients from their portal.</CardDescription>
+                  </CardHeader>
                   <CardContent className="pt-4 max-h-[550px] overflow-y-auto">
                      {bidRequests.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-slate-400">
                            <UploadCloud className="w-12 h-12 mb-3 opacity-20"/>
                            <p className="text-sm font-semibold">No custom bid requests pending.</p>
-                           <p className="text-xs mt-1">Client submissions will appear here.</p>
+                           <p className="text-xs mt-1">Client submissions will pop up here live.</p>
                         </div>
                      ) : (
                         <div className="space-y-4">
@@ -761,18 +770,20 @@ export default function AdminPage() {
                                        <Badge className="mb-2 bg-blue-50 text-blue-700 border-blue-200">{req.client_id}</Badge>
                                        <h4 className="font-bold text-[#0A2647] text-sm break-all">{req.link_or_id}</h4>
                                     </div>
-                                    <Badge className={req.status === 'Pending Review' ? 'bg-amber-100 text-amber-800 border-0' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
+                                    <Badge className={req.status === 'Pending Review' ? 'bg-amber-100 text-amber-800 border-0 animate-pulse' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
                                  {req.status === 'Pending Review' ? (
-                                    <div className="flex gap-2">
-                                       <Input placeholder="MD / Officer Reply..." className="h-9 text-xs" value={bidReply[req._id] || ''} onChange={e => setBidReply({...bidReply, [req._id]: e.target.value})} />
-                                       <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d] h-9" onClick={() => handleProcessBidRequest(req._id, 'Accepted')}><CheckCircle2 className="w-4 h-4 mr-1"/> Accept</Button>
-                                       <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-9" onClick={() => handleProcessBidRequest(req._id, 'Rejected')}>Reject</Button>
+                                    <div className="flex flex-col gap-2 border-t pt-3">
+                                       <Input placeholder="MD / Officer Reply or Instructions..." className="h-9 text-xs bg-white" value={bidReply[req._id] || ''} onChange={e => setBidReply({...bidReply, [req._id]: e.target.value})} />
+                                       <div className="flex gap-2">
+                                          <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d] h-8 flex-1" onClick={() => handleProcessBidRequest(req._id, 'Accepted')}><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Accept & Assign</Button>
+                                          <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-8 px-4" onClick={() => handleProcessBidRequest(req._id, 'Rejected')}>Reject</Button>
+                                       </div>
                                     </div>
                                  ) : (
-                                    <p className="text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">Action Taken: {req.status}</p>
+                                    <p className="text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">Status: {req.status} • Reply: {req.reply}</p>
                                  )}
                               </div>
                            ))}
@@ -784,7 +795,7 @@ export default function AdminPage() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 6 & 7 & 8: TENDERS PUBLISHER, TICKETS, SETTINGS (Original Logic) */}
+          {/* TAB 6 & 7 & 8: TENDERS PUBLISHER, TICKETS, SETTINGS */}
           {/* ============================================================================== */}
           <TabsContent value="tenders" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
