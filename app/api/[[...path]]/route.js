@@ -38,7 +38,8 @@ export async function GET(request, { params }) {
     // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
-      const usersCount = await db.collection('users').countDocuments();
+      // 🔥 FIX: Count only properly pending users for Admin Dashboard
+      const usersCount = await db.collection('users').countDocuments({ status: 'pending', is_approved: { $ne: true } });
       const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
       const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
       const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -161,7 +162,43 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
-    // 9. MY ACCOUNT DATA (/api/me) --- (పాత ఫీల్డ్స్ + కొత్త ప్రో ఫీల్డ్స్)
+    // 🚀 NEW 9. CLIENT REQUESTS (For MD/Employee Dashboard)
+    if (path === 'client-requests' || path === 'api/client-requests') {
+      const email = searchParams.get('email');
+      let query = {};
+      if (email) query.client_email = email.toLowerCase(); // Fetch specific client requests if email is passed
+      
+      const requests = await db.collection('client_requests').find(query).sort({ created_at: -1 }).toArray();
+      return json({ requests });
+    }
+
+    // 🚀 NEW 10. MD DISPATCHES (Alerts & Tasks)
+    if (path === 'dispatches' || path === 'api/dispatches') {
+      const targetId = searchParams.get('target_id');
+      let query = {};
+      if (targetId) query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') }; 
+      
+      const dispatches = await db.collection('dispatches').find(query).sort({ created_at: -1 }).toArray();
+      return json({ dispatches });
+    }
+
+    // 🚀 NEW 11. GOVT OFFICERS DIRECTORY
+    if (path === 'gov-officers' || path === 'api/gov-officers') {
+      const officers = await db.collection('gov_officers').find({}).sort({ created_at: -1 }).toArray();
+      return json({ officers });
+    }
+
+    // 🚀 NEW 12. ACTIVE BIDS TRACKER
+    if (path === 'bids' || path === 'api/bids') {
+      const clientEmail = searchParams.get('client_email');
+      let query = {};
+      if (clientEmail) query.client_email = clientEmail.toLowerCase();
+      
+      const bids = await db.collection('bids').find(query).sort({ created_at: -1 }).toArray();
+      return json({ bids });
+    }
+
+    // 13. MY ACCOUNT DATA (/api/me)
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
@@ -193,6 +230,11 @@ export async function GET(request, { params }) {
         .sort({ paid_at: -1 })
         .toArray();
 
+      // Load their specific requests and bids directly into the /me endpoint
+      const custom_requests = await db.collection('client_requests').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
+      const active_bids = await db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
+      const action_alerts = await db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray();
+
       return json({
         subscription: user.subscription || null,
         unlocked_tenders: unlocked_tenders,
@@ -201,12 +243,10 @@ export async function GET(request, { params }) {
         onboarding_complete: user.onboarding_complete || false,
         is_approved: user.is_approved || false,
         profile: {
-          // పాత ఫీల్డ్స్ (Admin కోసం)
           company_type: user.company_type || '',
           has_gst: user.has_gst || false,
           has_msme: user.has_msme || false,
           has_iso: user.has_iso || false,
-          // కొత్త ఫీల్డ్స్ (Pro Dashboard కోసం)
           client_name: user.client_name || '',
           company_name: user.company_name || '',
           phone: user.phone || '',
@@ -215,10 +255,13 @@ export async function GET(request, { params }) {
           documents: user.documents || {},
           profile_score: user.profile_score || 0
         },
-        // ERP Modules for the Client Dashboard
-        action_alerts: user.action_alerts || [],
+        action_alerts: action_alerts || [],
         emd_ledger: user.emd_ledger || [],
-        tender_workspaces: user.tender_workspaces || []
+        tender_workspaces: user.tender_workspaces || [],
+        custom_requests: custom_requests || [],
+        active_bids: active_bids || [],
+        officer_queries: user.officer_queries || [],
+        pending_payments: user.pending_payments || []
       });
     }
 
@@ -230,11 +273,12 @@ export async function GET(request, { params }) {
 }
 
 // =====================================================================
-// PUT REQUESTS (For L1 Price Market Intelligence)
+// PUT REQUESTS (Updating Data)
 // =====================================================================
 export async function PUT(request, { params }) {
   const db = await getDb();
   const pathArray = params?.path || [];
+  const path = pathArray.join('/');
   
   try {
      const body = await request.json().catch(() => null);
@@ -248,6 +292,37 @@ export async function PUT(request, { params }) {
         );
         return json({ success: true, message: 'L1 Price Updated' });
      }
+
+     // 🚀 NEW: Update Client Request Status (MD / Employee updating Client Request)
+     if (path === 'client-requests/reply' || path === 'api/client-requests/reply') {
+        const { req_id, status, reply } = body;
+        await db.collection('client_requests').updateOne(
+           { _id: new ObjectId(req_id) },
+           { $set: { status, reply, updated_at: new Date() } }
+        );
+        return json({ success: true, message: 'Request Updated' });
+     }
+
+     // 🚀 NEW: Update Bid Status (Employee updating Kanban)
+     if (path === 'bids/update' || path === 'api/bids/update') {
+        const { bid_id, status } = body;
+        await db.collection('bids').updateOne(
+           { _id: new ObjectId(bid_id) },
+           { $set: { status, updated_at: new Date() } }
+        );
+        return json({ success: true });
+     }
+
+     // 🚀 NEW: Update Task Status (Employee marking MD task as Done)
+     if (path === 'dispatches/complete' || path === 'api/dispatches/complete') {
+        const { task_id } = body;
+        await db.collection('dispatches').updateOne(
+           { _id: new ObjectId(task_id) },
+           { $set: { status: 'Completed', completed_at: new Date() } }
+        );
+        return json({ success: true });
+     }
+
      return json({ error: 'PUT endpoint not found' }, 404);
   } catch(e) {
      return json({ error: 'Server Error' }, 500);
@@ -255,7 +330,7 @@ export async function PUT(request, { params }) {
 }
 
 // =====================================================================
-// POST REQUESTS
+// POST REQUESTS (Creating Data)
 // =====================================================================
 export async function POST(request, { params }) {
   const db = await getDb();
@@ -264,7 +339,7 @@ export async function POST(request, { params }) {
 
   try {
     const body = await request.json().catch(() => null);
-    if (!body) return json({ error: 'Invalid JSON body or file too large' }, 400);
+    if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
     if (path === 'admin/login' || path === 'api/admin/login') {
       if (!body.email || !body.password) return json({ error: 'Credentials required' }, 400);
@@ -275,10 +350,7 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'tenders' || path === 'api/tenders' || path === 'admin/tenders' || path === 'api/admin/tenders') {
-      const newTender = { 
-        ...body, 
-        created_at: new Date() 
-      };
+      const newTender = { ...body, created_at: new Date() };
       const result = await db.collection('tenders').insertOne(newTender);
       return json({ success: true, message: 'Tender published successfully', id: result.insertedId });
     }
@@ -309,23 +381,14 @@ export async function POST(request, { params }) {
     if (path === 'tickets' || path === 'api/tickets') {
       const { email, department, subject, message } = body;
       const createdAt = new Date();
-      const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); // 24 Hours SLA Timer
+      const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); 
       
       const newTicket = {
-        client_email: email.toLowerCase(),
-        department: department,
-        subject: subject,
-        message: message,
-        status: 'OPEN', 
-        created_at: createdAt,
-        sla_deadline: deadline,
-        reply: null,
-        replied_by: null,
-        replied_at: null
+        client_email: email.toLowerCase(), department, subject, message,
+        status: 'OPEN', created_at: createdAt, sla_deadline: deadline, reply: null
       };
-      
       const result = await db.collection('tickets').insertOne(newTicket);
-      return json({ success: true, message: 'Ticket raised successfully. Our team will reply within 24 hours.', id: result.insertedId });
+      return json({ success: true, message: 'Ticket raised successfully.', id: result.insertedId });
     }
 
     if (path === 'tickets/reply' || path === 'api/tickets/reply') {
@@ -337,7 +400,7 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket Resolved.' });
     }
 
-    // --- 🟢 UPDATED: ONBOARDING SUBMIT (పాతవి + కొత్తవి కలిపి) ---
+    // ONBOARDING SUBMIT
     if (path === 'users/profile' || path === 'api/users/profile') {
       const { 
         email, client_name, company_name, company_type, phone, address, 
@@ -347,21 +410,10 @@ export async function POST(request, { params }) {
       await db.collection('users').updateOne(
         { email: email.toLowerCase() },
         { $set: { 
-            // పాత ఫీల్డ్స్ (For Admin Dashboard)
-            company_type,
-            has_gst,
-            has_msme,
-            has_iso,
-            // కొత్త ఫీల్డ్స్
-            client_name, 
-            company_name, 
-            phone, 
-            address, 
-            service_category, 
-            documents: documents || {},
-            status: status || 'pending', 
-            onboarding_complete: true, 
-            profile_score: 80 
+            company_type, has_gst, has_msme, has_iso,
+            client_name, company_name, phone, address, service_category, 
+            documents: documents || {}, status: status || 'pending', 
+            onboarding_complete: true, profile_score: 80 
           } 
         }, 
         { upsert: true }
@@ -387,14 +439,48 @@ export async function POST(request, { params }) {
        return json({ success: true });
     }
 
-    // =====================================================================
+    // 🚀 NEW: Create Client Bid Request (Client -> MD)
+    if (path === 'client-requests' || path === 'api/client-requests') {
+       const { client_email, client_id, link_or_id, description } = body;
+       const result = await db.collection('client_requests').insertOne({
+          client_email: client_email.toLowerCase(), client_id, link_or_id, description,
+          status: 'Pending Officer Review', reply: '', created_at: new Date()
+       });
+       return json({ success: true, id: result.insertedId });
+    }
+
+    // 🚀 NEW: Create Dispatch Task/Alert (MD -> Client/Employee)
+    if (path === 'dispatches' || path === 'api/dispatches') {
+       const { target_type, target_id, subject, message } = body;
+       const result = await db.collection('dispatches').insertOne({
+          target_type, target_id, subject, message, status: 'Sent', created_at: new Date()
+       });
+       return json({ success: true, id: result.insertedId });
+    }
+
+    // 🚀 NEW: Log Government Officer (Employee -> MD)
+    if (path === 'gov-officers' || path === 'api/gov-officers') {
+       const result = await db.collection('gov_officers').insertOne({
+          ...body, created_at: new Date()
+       });
+       return json({ success: true, id: result.insertedId });
+    }
+
+    // 🚀 NEW: Create New Bid (Employee -> Client)
+    if (path === 'bids' || path === 'api/bids') {
+       const result = await db.collection('bids').insertOne({
+          ...body, status: 'Doc Preparation', created_at: new Date()
+       });
+       return json({ success: true, id: result.insertedId });
+    }
+
     // CASHFREE PAYMENT LOGIC
-    // =====================================================================
-    if (path === 'payment/order' || path === 'api/payment/order' || path === 'subscription/create' || path === 'api/subscription/create') {
+    if (path === 'payment/order' || path === 'api/payment/order') {
       const plan = body.plan;
       let amount = 12; 
-      if (plan === 'month') amount = 149;
-      if (plan === 'year') amount = 1499;
+      if (plan === 'month') amount = 14900;
+      if (plan === 'year') amount = 149900;
+      if (plan === 'single') amount = 1000;
 
       const orderId = 'order_' + Date.now();
       const customerId = body.email ? body.email.replace(/[^a-zA-Z0-9]/g, '').substring(0, 50) : 'cust_' + Date.now();
@@ -408,7 +494,7 @@ export async function POST(request, { params }) {
           method: 'POST',
           headers: { 'x-client-id': appId, 'x-client-secret': secretKey, 'x-api-version': '2023-08-01', 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            order_amount: amount, order_currency: 'INR', order_id: orderId,
+            order_amount: amount/100, order_currency: 'INR', order_id: orderId,
             customer_details: { customer_id: customerId, customer_email: body.email || 'guest@example.com', customer_phone: '9999999999' },
             order_meta: { return_url: "https://www.tgtenders.in/payment-status?order_id={order_id}" }
           })
@@ -417,10 +503,10 @@ export async function POST(request, { params }) {
         const data = await cashfreeResponse.json();
         if (data.payment_session_id) {
           await db.collection('payments').insertOne({
-             order_id: orderId, email: body.email, amount: amount, plan: plan,
+             order_id: orderId, email: body.email, amount: amount/100, plan: plan,
              tenderId: body.tenderId || null, status: 'PENDING', created_at: new Date()
           });
-          return json({ payment_session_id: data.payment_session_id });
+          return json({ payment_session_id: data.payment_session_id, order: { id: orderId, amount: amount } });
         } else {
           return json({ error: data.message || 'Rejected' }, 400);
         }
