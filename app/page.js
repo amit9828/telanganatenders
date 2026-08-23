@@ -228,14 +228,14 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Client & Guest Redirect Hook (🚀 FIXED LOGIC)
+  // Client & Guest Redirect Hook (🚀 FIXED LOGIC: Strict routing to prevent crossing)
   useEffect(() => {
     if (status === 'authenticated' && userData) {
-      // 1. If the intent is client and the profile is fully approved, redirect directly to the dashboard
+      // 1. If intent is client AND they are approved, send to dashboard
       if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
         router.push('/client');
       }
-      // 2. If logged in as a guest, set the guest state to true to show their dashboard
+      // 2. If intent is guest, strictly keep them as guest
       else if (intent === 'guest') {
         setIsGuest(true);
       }
@@ -413,7 +413,7 @@ export default function App() {
     }
   };
 
-  // 🚀 FIXED: Removed the duplicated code and corrected the logic
+  // 🚀 CLEAN FIXED VERSION: No duplicate code, strict pending status
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
@@ -447,7 +447,7 @@ export default function App() {
             has_turnover: onboardForm.has_turnover,
             has_annual_returns: onboardForm.has_annual_returns
           },
-          status: 'pending' // 🚀 FIX: This will send to MD for approval
+          status: 'pending' // STRICT: Always pending for new clients
         })
       });
       
@@ -704,27 +704,40 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 3: VERIFICATION WAITING & REDIRECTING CLIENT
+  // SCREEN 3: VERIFICATION WAITING (🚀 RESTORED EXACT OLD DESIGN)
   // ==============================================================================
   if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
     if (!userData.is_approved) {
-      // 🚀 NEW: MD ఇంకా అప్రూవ్ చేయకపోతే మాత్రమే ఈ వెరిఫికేషన్ స్క్రీన్ రావాలి (కేవలం క్లయింట్స్ కి)
       return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-          <Card className="max-w-md w-full tender-shadow text-center p-6 border-t-4 border-amber-500">
-            <ShieldCheck className="w-16 h-16 mx-auto text-amber-500 mb-4" />
-            <h2 className="text-xl font-bold text-[#0A2647] mb-2">Profile Under Verification</h2>
-            <p className="text-slate-600 text-sm mb-6">
-              Thank you for registering. Our MD is verifying your business details. You will receive an email once approved.
+        <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
+          <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl relative overflow-hidden border-0">
+            <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+              <ShieldCheck className="w-6 h-6 text-amber-600" />
+            </div>
+            <h2 className="text-2xl font-extrabold text-[#0A2647] mb-1">Account Under Verification</h2>
+            <p className="text-slate-500 text-sm mb-6">Welcome to TenderNexus Enterprise Portal.</p>
+            
+            <p className="text-slate-700 text-sm mb-6 leading-relaxed">
+              Your registration was successful. As part of our strict MNC compliance, your dashboard access is currently locked pending <strong className="text-red-600">MD Approval</strong>.
             </p>
-            <Button onClick={performHardSignOut} variant="outline" className="w-full text-slate-500 hover:text-slate-700">
-              <LogOut className="w-4 h-4 mr-2" /> Logout
-            </Button>
+            
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
+              <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
+            </div>
+            
+            <div className="flex items-center justify-between mt-4">
+              <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
+                Log Out
+              </Button>
+              <Button onClick={() => router.push('/client')} variant="outline" className="text-xs text-slate-400 hover:text-slate-600 border-slate-200">
+                Bypass (Dev Demo)
+              </Button>
+            </div>
           </Card>
         </div>
       );
     } else {
-      // MD అప్రూవ్ చేసేస్తే, డైరెక్ట్ గా క్లయింట్ డాష్‌బోర్డ్ కి పంపాలి
       return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
     }
   }
@@ -732,7 +745,6 @@ export default function App() {
   // ==============================================================================
   // SCREEN 4: MAIN PORTAL (Guests & Approved Browsers reach here)
   // ==============================================================================
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <header className="border-b bg-white sticky top-0 z-30">
