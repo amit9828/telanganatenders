@@ -49,14 +49,13 @@ export async function GET(request, { params }) {
     // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
-      // 🔥 FIX: Count only properly pending users for Admin Dashboard
-      const usersCount = await db.collection('users').countDocuments({ status: 'pending', is_approved: { $ne: true } });
+      // 🚀 STRICT FIX: పాత కరప్ట్ అయిన అకౌంట్స్ ని కూడా వెతికి పట్టుకోవడానికి 
+      const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
       const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
       const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
       const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
-
     // 2. BRAND SETTINGS (Logo & Name)
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
@@ -164,15 +163,15 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
-    // 8. GET PENDING USERS (For Admin Approvals)
+   // 8. GET PENDING USERS (For Admin Approvals)
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
-         .find({ status: 'pending', is_approved: { $ne: true } })
+         // 🚀 STRICT FIX: status='pending' అని కాకుండా, అప్రూవ్ కాని ప్రతి ఒక్కరినీ లాక్కురా అని కమాండ్ ఇచ్చాం
+         .find({ is_approved: { $ne: true }, onboarding_complete: true })
          .sort({ created_at: -1 })
          .toArray();
       return json({ users });
     }
-
     // 🚀 NEW 9. CLIENT REQUESTS (For MD/Employee Dashboard)
     if (path === 'client-requests' || path === 'api/client-requests') {
       const email = searchParams.get('email');
