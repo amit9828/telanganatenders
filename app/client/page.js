@@ -35,11 +35,6 @@ export default function ClientDashboard() {
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
 
-  // --- MD Alerts State ---
-  const [criticalAlerts, setCriticalAlerts] = useState([
-    { id: 1, text: 'Immediate signature required on Annexure II for Medical Equipment Bid.', time: '10 mins ago', from: 'Operations' }
-  ]);
-
   // --- Dynamic Business Profile State ---
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -55,7 +50,7 @@ export default function ClientDashboard() {
     { id: 'msme', name: 'MSME Udyam', status: 'verified', file: 'udyam_cert.pdf' }
   ]);
 
-  // --- Funnel & Wins State (Read-only data from Backend) ---
+  // --- Funnel & Wins State ---
   const [clientStats, setClientStats] = useState({ recommended: 3, participated: 12, ongoing: 4, won: 5, lost: 3, revenue: 14500000 });
   const [wonBids, setWonBids] = useState([
     { id: 'GEM/2026/B/102938', desc: 'Construction of Medical College Block - B', value: '₹4,50,00,000', validity: '12-Dec-2027', date: '15-Jul-2026' }
@@ -65,25 +60,42 @@ export default function ClientDashboard() {
     setIsMounted(true);
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') || 'client@apex.com' : 'client@apex.com';
     setEmail(e);
-    setProfileForm(prev => ({ ...prev, email: e }));
     setClientId(`CLI-${e.substring(0, 4).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`);
     fetchPublicTenders();
-
-    // Simulate Fetching Client Data from Backend
-    setTimeout(() => {
-      setUserData({ 
-        is_approved: false, // 🔒 SET TO FALSE INITIALLY TO SHOW MD LOCK SCREEN
-        profile: { category: 'Service Provider' },
-        officer_queries: [{ id: 1, subject: 'Update DSC Info', message: 'Please upload your new Class 3 DSC token details.' }],
-        active_bids: [{ bid_no: 'BID-991', description: 'Supply of IT Hardware', submitted_on: '20-Aug-2026', last_date: '30-Aug-2026', status: 'Evaluating' }],
-        suggested_bids: [{ id: 'GEM-221', title: 'Network Infrastructure Setup', dept: 'IT Dept', win_prob: '85%' }],
-        custom_requests: [],
-        emd_ledger: { total_paid: 250000, refunded: 50000 },
-        pending_payments: [{ reason: 'Tender Prep Fee for BID-991', amount: 2500, status: 'UNPAID' }]
-      }); 
-      setLoading(false);
-    }, 1000);
+    fetchClientData(e); // 🚀 Permanent Database Fetch
   }, []);
+
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Fetch User Data from DB
+  // ============================================================================
+  const fetchClientData = async (userEmail) => {
+    try {
+      const r = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`);
+      if(r.ok) {
+        const d = await r.json();
+        setUserData(d);
+
+        // Pre-fill editable profile from Database
+        if(d.profile) {
+          setProfileForm(prev => ({
+            ...prev,
+            email: userEmail,
+            clientName: d.profile.client_name || prev.clientName,
+            companyName: d.profile.company_name || prev.companyName,
+            orgType: d.profile.company_type || prev.orgType,
+            phone: d.profile.phone || prev.phone,
+            gstin: d.profile.gstin || prev.gstin,
+            udyam: d.profile.udyam || prev.udyam,
+            services: d.profile.service_category ? d.profile.service_category.split(',') : prev.services
+          }));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchPublicTenders = async () => {
     try {
@@ -109,10 +121,33 @@ export default function ClientDashboard() {
     const newServices = profileForm.services.filter((_, i) => i !== index);
     setProfileForm(prev => ({...prev, services: newServices}));
   };
-  const saveProfile = (e) => {
+  
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Save Profile to DB
+  // ============================================================================
+  const saveProfile = async (e) => {
     e.preventDefault();
-    setIsEditingProfile(false);
-    toast.success("Business Profile Updated Successfully! Synced with MD Database.");
+    try {
+      const r = await fetch('/api/users/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          client_name: profileForm.clientName,
+          company_name: profileForm.companyName,
+          company_type: profileForm.orgType,
+          phone: profileForm.phone,
+          service_category: profileForm.services.join(',')
+        })
+      });
+      if(r.ok) {
+        setIsEditingProfile(false);
+        toast.success("Business Profile Updated Successfully! Synced with MD Database.");
+        fetchClientData(email); // Refresh Data
+      }
+    } catch(err) {
+      toast.error("Network Error.");
+    }
   };
 
   // --- Vault Upload ---
@@ -127,9 +162,61 @@ export default function ClientDashboard() {
     }
   };
 
-  // --- Original Handlers ---
-  const handleCustomTenderSubmit = (e) => { e.preventDefault(); toast.success("Custom tender request submitted!"); setCustomTenderForm({ link_or_id: '', description: '', file: null }); };
-  const handleTicketSubmit = (e) => { e.preventDefault(); toast.success('24/7 SLA Ticket raised successfully!'); setTicketForm({ subject: '', message: '' }); };
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Send Custom Bid Request to Database
+  // ============================================================================
+  const handleCustomTenderSubmit = async (e) => { 
+    e.preventDefault(); 
+    if(!customTenderForm.link_or_id || !customTenderForm.description) {
+      return toast.error("Please fill all details");
+    }
+
+    try {
+      const res = await fetch('/api/client-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_email: email,
+          client_id: clientId,
+          link_or_id: customTenderForm.link_or_id,
+          description: customTenderForm.description
+        })
+      });
+
+      if(res.ok) {
+        toast.success("Custom tender request submitted successfully to Operations Team!"); 
+        setCustomTenderForm({ link_or_id: '', description: '', file: null }); 
+        fetchClientData(email); // Refresh Data
+      } else {
+        toast.error("Failed to submit request.");
+      }
+    } catch(err) {
+      toast.error("Network Error.");
+    }
+  };
+  
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Create SLA Ticket in Database
+  // ============================================================================
+  const handleTicketSubmit = async (e) => { 
+    e.preventDefault(); 
+    if(!ticketForm.subject || !ticketForm.message) return toast.error('Fill subject and message');
+    try {
+      const r = await fetch('/api/tickets', {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, department: 'Support', subject: ticketForm.subject, message: ticketForm.message })
+      });
+      if(r.ok) {
+        toast.success('24/7 SLA Ticket raised successfully!'); 
+        setTicketForm({ subject: '', message: '' }); 
+        fetchClientData(email); // Refresh Data
+      }
+    } catch(err) {
+      toast.error("Network Error.");
+    }
+  };
+
   const handleQueryResponse = (id) => { toast.success('Response submitted to Officer.'); };
   
   const handleSignOut = async () => {
@@ -141,7 +228,7 @@ export default function ClientDashboard() {
   if (!isMounted || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
   // ============================================================================
-  // 🔒 THE MNC SECURITY GATE: HOLDING SCREEN FOR MD APPROVAL
+  // 🔒 MNC SECURITY GATE: HOLDING SCREEN FOR MD APPROVAL
   // ============================================================================
   if (userData && !userData.is_approved) {
     return (
@@ -167,7 +254,6 @@ export default function ClientDashboard() {
              </div>
              <div className="mt-8 flex justify-between items-center">
                 <Button variant="ghost" onClick={handleSignOut} className="text-slate-500 hover:text-slate-700">Log Out</Button>
-                {/* Developer bypass button to see the dashboard without actually calling */}
                 <Button onClick={bypassLockScreen} size="sm" variant="outline" className="border-slate-300 text-xs text-slate-400 hover:text-slate-600">Bypass (Dev Demo)</Button>
              </div>
            </CardContent>
@@ -181,8 +267,8 @@ export default function ClientDashboard() {
   // ============================================================================
   const queries = userData?.officer_queries || [];
   const activeBids = userData?.active_bids || [];
-  const suggestedBids = userData?.suggested_bids || [];
   const customRequests = userData?.custom_requests || [];
+  const criticalAlerts = userData?.action_alerts || [];
   const pendingPayments = userData?.pending_payments || [];
   
   const emdData = userData?.emd_ledger;
@@ -215,7 +301,7 @@ export default function ClientDashboard() {
                    <DropdownMenuSeparator />
                    {criticalAlerts.map((alert, i) => (
                       <DropdownMenuItem key={`alert-${i}`} className="text-xs text-red-600 font-medium whitespace-normal cursor-pointer flex flex-col items-start gap-1">
-                         <span>🚨 {alert.text}</span>
+                         <span>🚨 {alert.subject}</span>
                       </DropdownMenuItem>
                    ))}
                    {queries.map((q, i) => (
@@ -267,12 +353,12 @@ export default function ClientDashboard() {
           <div className="bg-red-600 text-white rounded-xl p-4 shadow-lg flex items-start gap-4 animate-in fade-in slide-in-from-top-4">
              <AlertTriangle className="w-8 h-8 shrink-0 text-red-200" />
              <div className="flex-1">
-                <h3 className="font-black text-lg uppercase tracking-wide">Action Required from MD</h3>
+                <h3 className="font-black text-lg uppercase tracking-wide">Action Required from MD / Admin</h3>
                 <div className="mt-2 space-y-2">
-                   {criticalAlerts.map(alert => (
-                     <div key={alert.id} className="bg-red-700/50 p-3 rounded-lg border border-red-500/50 flex justify-between items-center">
-                        <p className="font-medium text-sm">{alert.text}</p>
-                        <Button size="sm" onClick={() => setCriticalAlerts([])} className="h-7 text-xs bg-white text-red-700 hover:bg-red-50">Dismiss</Button>
+                   {criticalAlerts.map((alert, idx) => (
+                     <div key={idx} className="bg-red-700/50 p-3 rounded-lg border border-red-500/50 flex justify-between items-center">
+                        <p className="font-medium text-sm">{alert.subject}: {alert.message}</p>
+                        <Button size="sm" onClick={() => fetchClientData(email)} className="h-7 text-xs bg-white text-red-700 hover:bg-red-50">Dismiss</Button>
                      </div>
                    ))}
                 </div>
@@ -280,7 +366,7 @@ export default function ClientDashboard() {
           </div>
         )}
 
-        {/* --- TOP FUNNEL METRICS (Read Only Data from MD/Officer) --- */}
+        {/* --- TOP FUNNEL METRICS --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
            <Card className="border-0 shadow-sm ring-1 ring-slate-200 bg-white">
               <CardContent className="p-4 flex flex-col items-center text-center">
@@ -300,7 +386,7 @@ export default function ClientDashboard() {
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Ongoing Bids</p>
-                 <p className="text-2xl font-black text-blue-700">{clientStats.ongoing}</p>
+                 <p className="text-2xl font-black text-blue-700">{activeBids.length || clientStats.ongoing}</p>
               </CardContent>
            </Card>
            <Card className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80">
@@ -321,35 +407,34 @@ export default function ClientDashboard() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
           <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-6">
-            <TabsTrigger value="dashboard" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold">
+            <TabsTrigger value="dashboard" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Active Dashboard
             </TabsTrigger>
-            <TabsTrigger value="live_tenders" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold">
+            <TabsTrigger value="live_tenders" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Globe className="w-4 h-4 mr-2 hidden sm:block"/> Live Tenders
             </TabsTrigger>
-            <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold">
+            <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> GeM Profile
             </TabsTrigger>
-            <TabsTrigger value="vault" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold">
+            <TabsTrigger value="vault" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Database className="w-4 h-4 mr-2 hidden sm:block"/> Corp Vault
             </TabsTrigger>
-            <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold">
+            <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
               <Trophy className="w-4 h-4 mr-2 hidden sm:block"/> Winning Bids
             </TabsTrigger>
-            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold">
-              <Banknote className="w-4 h-4 mr-2 hidden sm:block"/> Finance & SLA
+            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              <Banknote className="w-4 h-4 mr-2 hidden sm:block"/> Finance/SLA
             </TabsTrigger>
           </TabsList>
 
           {/* ============================================================================== */}
-          {/* TAB 1: DYNAMIC BUSINESS PROFILE (Editable & Descriptive) */}
+          {/* TAB 1: DYNAMIC BUSINESS PROFILE */}
           {/* ============================================================================== */}
           <TabsContent value="profile" className="space-y-6">
              <Card className="tender-shadow border-t-4 border-t-blue-600">
                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                    <div>
                      <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-600"/> Official Business Profile</CardTitle>
-                     <CardDescription>Enter your complete company details to optimize tender matching.</CardDescription>
                    </div>
                    {!isEditingProfile && (
                       <Button onClick={() => setIsEditingProfile(true)} className="bg-[#0A2647] hover:bg-[#144272] shrink-0">Edit Profile</Button>
@@ -423,7 +508,7 @@ export default function ClientDashboard() {
                       <div className="border-t border-slate-100 pt-5">
                          <Label className="text-xs font-bold text-[#0A2647] uppercase tracking-wider">Overall Business Description</Label>
                          {isEditingProfile ? (
-                            <Textarea rows={4} value={profileForm.description} onChange={e=>setProfileForm({...profileForm, description: e.target.value})} className="mt-2" placeholder="Briefly describe your company's expertise, capacity, and target markets..."/>
+                            <Textarea rows={4} value={profileForm.description} onChange={e=>setProfileForm({...profileForm, description: e.target.value})} className="mt-2" placeholder="Briefly describe your company's expertise..."/>
                          ) : <p className="text-sm text-slate-700 bg-slate-50 p-4 rounded-lg border mt-2 leading-relaxed">{profileForm.description}</p>}
                       </div>
 
@@ -439,7 +524,7 @@ export default function ClientDashboard() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 2: INTERACTIVE VAULT (Categorized Blocks) */}
+          {/* TAB 2: INTERACTIVE VAULT */}
           {/* ============================================================================== */}
           <TabsContent value="vault" className="space-y-6">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
@@ -449,7 +534,6 @@ export default function ClientDashboard() {
               </CardHeader>
               <CardContent className="pt-6 space-y-8">
                  
-                 {/* BLOCK 1: ACTION REQUIRED (MISSING / REJECTED) */}
                  <div>
                     <h4 className="font-black text-slate-700 mb-3 flex items-center gap-2 border-b pb-2"><AlertTriangle className="w-4 h-4 text-amber-500"/> Action Required (Pending Uploads)</h4>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -465,11 +549,9 @@ export default function ClientDashboard() {
                             </label>
                          </div>
                        ))}
-                       {vaultDocs.filter(d => d.status === 'missing').length === 0 && <p className="text-xs text-slate-500 italic p-2">No pending uploads required.</p>}
                     </div>
                  </div>
 
-                 {/* BLOCK 2: UPLOADED (PENDING REVIEW) */}
                  <div>
                     <h4 className="font-black text-blue-900 mb-3 flex items-center gap-2 border-b pb-2"><Clock className="w-4 h-4 text-blue-500"/> Uploaded (Pending MD Verification)</h4>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -485,11 +567,9 @@ export default function ClientDashboard() {
                             </div>
                          </div>
                        ))}
-                       {vaultDocs.filter(d => d.status === 'uploaded').length === 0 && <p className="text-xs text-slate-500 italic p-2">No documents currently under review.</p>}
                     </div>
                  </div>
 
-                 {/* BLOCK 3: VERIFIED & SECURED */}
                  <div>
                     <h4 className="font-black text-emerald-900 mb-3 flex items-center gap-2 border-b pb-2"><ShieldCheck className="w-4 h-4 text-emerald-500"/> Verified & Secured Documents</h4>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -555,27 +635,66 @@ export default function ClientDashboard() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 4: ORIGINAL ACTIVE DASHBOARD (Officer Queries & Custom Requests) */}
+          {/* TAB 4: ACTIVE DASHBOARD (Officer Queries, Visual Stepper, Custom Request) */}
           {/* ============================================================================== */}
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* Officer Queries Block */}
-            <Card className={`border-t-4 shadow-sm bg-white ${queries.length > 0 ? 'border-t-red-500' : 'border-t-slate-300'}`}>
-              <CardHeader className="pb-3 border-b">
-                <CardTitle className="flex items-center gap-2 text-base text-[#0A2647]">
-                   <AlertTriangle className={`w-5 h-5 ${queries.length > 0 ? 'text-red-600' : 'text-slate-400'}`}/> Officer Query & Undertakings Block
-                </CardTitle>
+            {/* Visual Stepper Logic UI */}
+            <Card className="tender-shadow">
+              <CardHeader className="border-b pb-4 bg-slate-50">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
               </CardHeader>
-              <CardContent className="pt-4">
-                 {queries.length === 0 ? (
-                    <div className="text-center p-6 bg-slate-50 rounded-md border border-dashed border-slate-300">
-                       <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2"/>
-                       <p className="text-slate-600 font-medium text-sm">No Active Queries or Undertakings Required.</p>
-                       <p className="text-xs text-slate-400 mt-1">When an officer requires your signature, it will appear here.</p>
+              <CardContent className="p-5">
+                 {activeBids.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400">
+                      <p className="text-sm font-semibold">No active bids in progress.</p>
                     </div>
                  ) : (
-                    queries.map((q, idx) => (
-                      <div key={idx} className="bg-red-50/50 p-4 rounded-md border border-red-100 grid md:grid-cols-2 gap-6 mb-4 last:mb-0">
+                    activeBids.map((bid, i) => (
+                       <div key={i} className="mb-4 border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col gap-6">
+                          <div>
+                            <Badge variant="outline" className="text-[10px] mb-2 font-mono bg-slate-50">{bid.bid_no}</Badge>
+                            <p className="font-bold text-[#0A2647] text-base leading-tight">{bid.description}</p>
+                          </div>
+                          <div className="relative mt-2 px-2 sm:px-6">
+                             <div className="absolute top-3 left-8 right-8 h-1.5 bg-slate-100 rounded-full z-0"></div>
+                             <div className="absolute top-3 left-8 w-[50%] h-1.5 bg-blue-500 rounded-full z-0"></div>
+                             <div className="relative z-10 flex justify-between">
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Doc Prep</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Submitted</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shadow ring-4 ring-white animate-pulse"><Clock className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-amber-700 uppercase">Evaluating</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-300 flex items-center justify-center shadow ring-4 ring-white"><Trophy className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-slate-400 uppercase">Result</span>
+                                </div>
+                             </div>
+                          </div>
+                       </div>
+                    ))
+                 )}
+              </CardContent>
+            </Card>
+
+            {/* Officer Queries Block */}
+            {queries.length > 0 && (
+              <Card className={`border-t-4 shadow-sm bg-white border-t-red-500`}>
+                <CardHeader className="pb-3 border-b">
+                  <CardTitle className="flex items-center gap-2 text-base text-[#0A2647]">
+                     <AlertTriangle className={`w-5 h-5 text-red-600`}/> Officer Query & Undertakings Block
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                   {queries.map((q, idx) => (
+                      <div key={idx} className="bg-red-50/50 p-4 rounded-md border border-red-100 grid md:grid-cols-2 gap-6 mb-4">
                          <div>
                             <div className="flex justify-between">
                                <p className="font-bold text-slate-800 mb-2">{q.subject}</p>
@@ -589,14 +708,14 @@ export default function ClientDashboard() {
                             </Button>
                             <div className="flex items-center gap-2 mt-2">
                               <Input type="file" onChange={(e) => handleFileUpload('Undertaking', e)} accept=".pdf,.jpg" className="text-xs h-9 cursor-pointer file:text-xs file:bg-slate-100 file:border-0 file:rounded file:px-2" />
-                              <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d]" onClick={() => handleQueryResponse(q.id)}>Submit to Officer</Button>
+                              <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d]" onClick={() => handleQueryResponse(q.id)}>Submit</Button>
                             </div>
                          </div>
                       </div>
-                    ))
-                 )}
-              </CardContent>
-            </Card>
+                   ))}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Custom Tender Request */}
             <Card className="tender-shadow border-t-4 border-t-blue-500">
@@ -604,7 +723,7 @@ export default function ClientDashboard() {
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
                   <UploadCloud className="w-5 h-5 text-blue-600"/> Found a Tender? Request Bid Support
                 </CardTitle>
-                <CardDescription>Upload tender details you found externally. Track our officer's reply here.</CardDescription>
+                <CardDescription>Upload tender details you found externally. Track our officer's reply here and in your MD Operations.</CardDescription>
               </CardHeader>
               <CardContent className="pt-5">
                 <form onSubmit={handleCustomTenderSubmit} className="grid md:grid-cols-2 gap-6">
@@ -635,65 +754,32 @@ export default function ClientDashboard() {
                     </Button>
                   </div>
                 </form>
-              </CardContent>
-            </Card>
 
-            {/* Active Bids */}
-            <Card className="tender-shadow">
-              <CardHeader className="border-b pb-4 bg-slate-50">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Active Bids Tracking</CardTitle>
-              </CardHeader>
-              <CardContent className="p-5">
-                 {activeBids.length === 0 ? (
-                    <div className="text-center p-6">
-                       <p className="text-slate-500 text-sm">You have no active bids currently processed.</p>
-                    </div>
-                 ) : (
-                   activeBids.map((bid, i) => (
-                     <div key={i} className="mb-4 last:mb-0 border rounded-lg p-4 bg-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition">
-                       <div className="flex-1">
-                         <Badge variant="outline" className="text-[10px] mb-1.5">{bid.bid_no}</Badge>
-                         <p className="font-bold text-[#0A2647] text-base">{bid.description}</p>
-                         <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-500 font-medium">
-                           <span className="flex items-center gap-1"><Upload className="w-3 h-3"/> Submitted: {bid.submitted_on}</span>
-                           <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-amber-500"/> Last Date: {bid.last_date}</span>
-                         </div>
-                       </div>
-                       <Badge className="bg-blue-100 text-blue-800 border-0 px-3 py-1.5">{bid.status}</Badge>
-                     </div>
-                   ))
-                 )}
-              </CardContent>
-            </Card>
-
-            {/* Officer Suggested Bids */}
-            <Card className="tender-shadow border-t-4 border-t-purple-500">
-              <CardHeader className="border-b pb-4 bg-purple-50/50">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Target className="w-5 h-5 text-purple-600"/> Officer Suggested Bids</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {suggestedBids.length === 0 ? (
-                    <div className="text-center p-6">
-                       <p className="text-slate-500 text-sm">No new suggestions from your dedicated officer.</p>
-                    </div>
-                ) : (
-                  <div className="divide-y">
-                     {suggestedBids.map(tender => (
-                       <div key={tender.id} className="p-5 hover:bg-slate-50 transition flex flex-col md:flex-row justify-between gap-4">
-                          <div>
-                            <Badge className="bg-purple-100 text-purple-800 border-0 mb-2">Win Probability: {tender.win_prob}</Badge>
-                            <h4 className="font-bold text-[#0A2647] text-base">{tender.title}</h4>
-                            <p className="text-xs text-muted-foreground mt-1">{tender.id} • {tender.dept}</p>
-                          </div>
-                          <div className="flex flex-col gap-2 shrink-0">
-                            <Button size="sm" className="bg-[#0A2647] hover:bg-[#144272] w-full">Apply Request</Button>
-                          </div>
-                       </div>
+                {/* Show Permanent Saved Custom Requests */}
+                {customRequests.length > 0 && (
+                  <div className="mt-6 border-t pt-6 space-y-4">
+                     <h4 className="font-bold text-[#0A2647]">My Submitted Requests ({customRequests.length})</h4>
+                     {customRequests.map(req => (
+                        <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
+                           <div className="flex-1">
+                              <div className="flex justify-between items-start">
+                                 <h4 className="font-bold text-[#0A2647] text-sm break-all mb-1">{req.link_or_id}</h4>
+                                 <Badge className={req.status === 'Pending Officer Review' ? 'bg-amber-100 text-amber-800 border-0' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">"{req.description}"</p>
+                              {req.reply && (
+                                 <div className="mt-2 text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">
+                                    Officer Reply: {req.reply}
+                                 </div>
+                              )}
+                           </div>
+                        </div>
                      ))}
                   </div>
                 )}
               </CardContent>
             </Card>
+
           </TabsContent>
 
           {/* ============================================================================== */}
@@ -705,27 +791,23 @@ export default function ClientDashboard() {
                 <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Public Procurement Tenders</CardTitle>
               </CardHeader>
               <CardContent className="p-0 divide-y">
-                 {publicTenders.length === 0 ? (
-                    <div className="text-center p-6 text-slate-500 text-sm">Loading latest govt tenders...</div>
-                 ) : (
-                    publicTenders.map(t => (
-                      <div key={t._id} className="p-4 hover:bg-slate-50 flex flex-col md:flex-row justify-between md:items-center gap-4">
-                         <div>
-                            <p className="font-bold text-[#0A2647]">{t.title}</p>
-                            <p className="text-xs text-slate-500 mt-1">{t.department} • {t.district} • Last Date: {new Date(t.last_date).toLocaleDateString()}</p>
-                         </div>
-                         <a href={`/?open_tender=${t._id}`} target="_blank" rel="noreferrer">
-                           <Button size="sm" variant="outline"><FileText className="w-4 h-4 mr-2"/> View Notice</Button>
-                         </a>
+                 {publicTenders.map(t => (
+                   <div key={t._id} className="p-4 hover:bg-slate-50 flex flex-col md:flex-row justify-between md:items-center gap-4">
+                      <div>
+                         <p className="font-bold text-[#0A2647]">{t.title}</p>
+                         <p className="text-xs text-slate-500 mt-1">{t.department} • {t.district} • Last Date: {new Date(t.last_date).toLocaleDateString()}</p>
                       </div>
-                    ))
-                 )}
+                      <a href={`/?open_tender=${t._id}`} target="_blank" rel="noreferrer">
+                        <Button size="sm" variant="outline"><FileText className="w-4 h-4 mr-2"/> View Notice</Button>
+                      </a>
+                   </div>
+                 ))}
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 6: FINANCE & SLA (Original logic) */}
+          {/* TAB 6: FINANCE & SLA */}
           {/* ============================================================================== */}
           <TabsContent value="finance" className="space-y-6 grid lg:grid-cols-2 gap-6">
             <Card className="tender-shadow border-t-4 border-t-amber-500 h-fit">
@@ -739,7 +821,7 @@ export default function ClientDashboard() {
                    </div>
                    <div className="border-t pt-4">
                       <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
-                      {pendingPayments.length === 0 ? (
+                      {!pendingPayments || pendingPayments.length === 0 ? (
                          <p className="text-xs text-slate-500 text-center py-2">No pending fees requested.</p>
                       ) : (
                         pendingPayments.map((pay, i) => (
