@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis'; // 🚀 NEW: Google API Import
 
-// Forces dynamic rendering to prevent stale cache data
+// 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 let cachedClient = null;
 let cachedDb = null;
@@ -22,8 +24,16 @@ async function getDb() {
   return cachedDb;
 }
 
+// 🚀 STRICT RULE 3: ప్రతీ API రెస్పాన్స్ కి No-Cache హెడర్స్ పంపడం
 function json(data, status = 200) {
-  return NextResponse.json(data, { status });
+  return NextResponse.json(data, { 
+    status,
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    }
+  });
 }
 
 // =====================================================================
