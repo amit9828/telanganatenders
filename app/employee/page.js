@@ -20,11 +20,9 @@ export default function EmployeeDashboard() {
   const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
   const [loading, setLoading] = useState(true);
 
-  // MD Assigned Tasks (Coming from Admin Dashboard)
-  const [mdTasks, setMdTasks] = useState([
-    { id: 'TSK-101', subject: 'Verify Balaji Ent GST', status: 'Pending', priority: 'High' },
-    { id: 'TSK-102', subject: 'Call RR Constructions for DSC', status: 'Completed', priority: 'Medium' }
-  ]);
+  // --- PERMANENT BACKEND STATES ---
+  const [mdTasks, setMdTasks] = useState([]);
+  const [bids, setBids] = useState([]);
 
   // Manual Tender Entry Form
   const [tenderForm, setTenderForm] = useState({
@@ -35,19 +33,45 @@ export default function EmployeeDashboard() {
   // Client Action Alert Form
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
 
-  // Kanban Mock Bids State (Manual Status Tracking)
-  const [bids, setBids] = useState([
-    { id: 'BID-001', title: 'Medical Equipment Supply', client: 'CLI-1042 (RR Const)', status: 'Awaiting Docs', portal: 'GeM' },
-    { id: 'BID-002', title: 'Road Construction Works', client: 'CLI-2099 (Balaji Ent)', status: 'Submitted', portal: 'State R&B' },
-  ]);
-
   useEffect(() => {
     setIsMounted(true);
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_emp_email') : 'employee@tgtenders.in';
     setEmail(e || 'employee@tgtenders.in');
-    setLoading(false);
+    
+    // 🚀 INITIAL DB FETCH ON LOAD
+    fetchLiveOperationsData(e || 'employee@tgtenders.in');
   }, []);
 
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Fetch MD Tasks & Kanban Bids
+  // ============================================================================
+  const fetchLiveOperationsData = async (userEmail) => {
+    try {
+      const [tasksRes, bidsRes] = await Promise.all([
+        fetch('/api/dispatches'), // Fetch all dispatches (Tasks)
+        fetch('/api/bids')        // Fetch all active bids for Kanban
+      ]);
+
+      if (tasksRes.ok) {
+        const tData = await tasksRes.json();
+        // Filter only tasks meant for employees (or this specific employee)
+        const employeeTasks = (tData.dispatches || []).filter(d => d.target_type === 'employee_task');
+        setMdTasks(employeeTasks);
+      }
+      if (bidsRes.ok) {
+        const bData = await bidsRes.json();
+        setBids(bData.bids || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch live operations data", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Publish Tender
+  // ============================================================================
   const handlePublishTender = async (e) => {
     e.preventDefault();
     if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date) {
@@ -72,21 +96,84 @@ export default function EmployeeDashboard() {
     setPublishing(false);
   };
 
-  const sendActionAlert = (e) => {
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Push Alert to Client
+  // ============================================================================
+  const sendActionAlert = async (e) => {
     e.preventDefault();
     if(!alertForm.client_id || !alertForm.message) return toast.error('Fill all fields');
-    toast.success(`CRITICAL ALERT pushed to Client Dashboard (${alertForm.client_id})!`);
-    setAlertForm({ client_id: '', message: '' });
+    
+    try {
+      const res = await fetch('/api/dispatches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_type: 'client_alert',
+          target_id: alertForm.client_id,
+          subject: 'ACTION REQUIRED: Operations Update',
+          message: alertForm.message
+        })
+      });
+
+      if (res.ok) {
+        toast.success(`CRITICAL ALERT pushed to Client Dashboard (${alertForm.client_id})!`);
+        setAlertForm({ client_id: '', message: '' });
+      } else {
+        toast.error('Failed to send alert to client.');
+      }
+    } catch (err) {
+      toast.error('Network Error while pushing alert.');
+    }
   };
 
-  const updateBidStatus = (id, newStatus) => {
-    setBids(bids.map(b => b.id === id ? { ...b, status: newStatus } : b));
-    toast.success(`Bid ${id} updated to "${newStatus}". Client Notified.`);
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Update Bid Kanban Status
+  // ============================================================================
+  const updateBidStatus = async (id, newStatus) => {
+    // Optimistic UI update
+    setBids(bids.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b));
+    
+    try {
+      const res = await fetch('/api/bids/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bid_id: id, status: newStatus })
+      });
+
+      if (res.ok) {
+        toast.success(`Bid updated to "${newStatus}". Client Notified.`);
+      } else {
+        toast.error('Failed to update bid status in database.');
+        fetchLiveOperationsData(email); // Revert if failed
+      }
+    } catch (err) {
+      toast.error('Network Error during status update.');
+    }
   };
 
-  const markTaskDone = (taskId) => {
-    setMdTasks(mdTasks.map(t => t.id === taskId ? { ...t, status: 'Completed' } : t));
-    toast.success('Task marked completed. MD Dashboard Updated.');
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Mark MD Task as Done
+  // ============================================================================
+  const markTaskDone = async (taskId) => {
+    // Optimistic UI update
+    setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed' } : t));
+    
+    try {
+      const res = await fetch('/api/dispatches/complete', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId })
+      });
+
+      if (res.ok) {
+        toast.success('Task marked completed. MD Dashboard Updated.');
+      } else {
+        toast.error('Failed to mark task as completed.');
+        fetchLiveOperationsData(email); // Revert if failed
+      }
+    } catch (err) {
+      toast.error('Network Error while updating task.');
+    }
   };
 
   const escalateToMD = () => {
@@ -121,19 +208,24 @@ export default function EmployeeDashboard() {
            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
            <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Tasks Assigned by MD / Admin</h3>
            <div className="grid md:grid-cols-2 gap-4">
-              {mdTasks.map(task => (
-                 <div key={task.id} className="flex justify-between items-center bg-slate-50 border p-3 rounded-lg">
-                    <div>
-                       <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>{task.priority} Priority</Badge>
-                       <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
+              {mdTasks.length === 0 ? (
+                 <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
+              ) : (
+                 mdTasks.map(task => (
+                    <div key={task._id || task.id} className="flex justify-between items-center bg-slate-50 border p-3 rounded-lg">
+                       <div>
+                          <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>Priority Task</Badge>
+                          <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
+                          <p className="text-xs text-slate-500 mt-1">{task.message}</p>
+                       </div>
+                       {task.status !== 'Completed' ? (
+                          <Button size="sm" onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0">Mark Done</Button>
+                       ) : (
+                          <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>
+                       )}
                     </div>
-                    {task.status === 'Pending' ? (
-                       <Button size="sm" onClick={() => markTaskDone(task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs">Mark Done</Button>
-                    ) : (
-                       <Badge className="bg-emerald-100 text-emerald-800 border-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>
-                    )}
-                 </div>
-              ))}
+                 ))
+              )}
            </div>
         </div>
 
@@ -158,40 +250,45 @@ export default function EmployeeDashboard() {
             <Card className="shadow-sm border-0 ring-1 ring-slate-200">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><Kanban className="w-5 h-5 text-blue-600"/> Active Bids Workflow Tracker</CardTitle>
-                <CardDescription>Manually update the progress of ongoing client bids.</CardDescription>
+                <CardDescription>Manually update the progress of ongoing client bids. This syncs directly to the client's dashboard.</CardDescription>
               </CardHeader>
               <CardContent className="pt-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  {bids.map(b => (
-                    <div key={b.id} className="border rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition">
-                      <div>
-                        <div className="flex justify-between items-start mb-2">
-                          <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px]">{b.id}</Badge>
-                          <Badge className="bg-blue-100 text-blue-800 border-0">{b.status}</Badge>
+                {bids.length === 0 ? (
+                  <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
+                ) : (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {bids.map(b => (
+                      <div key={b._id || b.id} className="border rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition">
+                        <div>
+                          <div className="flex justify-between items-start mb-2">
+                            <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px]">{b.bid_no || b.id}</Badge>
+                            <Badge className="bg-blue-100 text-blue-800 border-0">{b.status}</Badge>
+                          </div>
+                          <h4 className="font-bold text-[#0A2647] mt-1">{b.title || b.description}</h4>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1 font-semibold">
+                            <Building2 className="w-3 h-3 text-emerald-600"/> Client: {b.client_email || b.client}
+                          </p>
                         </div>
-                        <h4 className="font-bold text-[#0A2647] mt-1">{b.title}</h4>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1 font-semibold">
-                          <Building2 className="w-3 h-3 text-emerald-600"/> Client: {b.client}
-                        </p>
+                        
+                        <div className="border-t pt-3 flex items-center justify-between gap-2">
+                          <span className="text-xs text-slate-500 font-semibold">Update Status:</span>
+                          <select 
+                            className="border rounded px-2 py-1.5 text-xs bg-slate-50 font-bold text-[#0A2647] outline-none focus:ring-2 focus:ring-blue-500"
+                            value={b.status}
+                            onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
+                          >
+                            <option value="Doc Preparation">Doc Preparation</option>
+                            <option value="Awaiting Docs">Ask Client for Docs</option>
+                            <option value="Submitted">Mark Submitted</option>
+                            <option value="Evaluating">Evaluating</option>
+                            <option value="Won">Declare Won</option>
+                            <option value="Lost">Declare Lost</option>
+                          </select>
+                        </div>
                       </div>
-                      
-                      <div className="border-t pt-3 flex items-center justify-between gap-2">
-                        <span className="text-xs text-slate-500 font-semibold">Update Status:</span>
-                        <select 
-                          className="border rounded px-2 py-1.5 text-xs bg-slate-50 font-bold text-[#0A2647] outline-none focus:ring-2 focus:ring-blue-500"
-                          value={b.status}
-                          onChange={(e) => updateBidStatus(b.id, e.target.value)}
-                        >
-                          <option value="Document Preparation">Doc Preparation</option>
-                          <option value="Awaiting Docs">Ask Client for Docs</option>
-                          <option value="Submitted">Mark Submitted</option>
-                          <option value="Won">Declare Won</option>
-                          <option value="Lost">Declare Lost</option>
-                        </select>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -206,12 +303,12 @@ export default function EmployeeDashboard() {
               <CardContent className="pt-4">
                 <form onSubmit={sendActionAlert} className="space-y-4">
                   <div>
-                    <Label className="text-slate-600">Client ID / Email (e.g. CLI-1042)</Label>
-                    <Input required placeholder="CLI-XXXX or client@example.com" value={alertForm.client_id} onChange={e=>setAlertForm({...alertForm, client_id: e.target.value})} className="mt-1 font-mono"/>
+                    <Label className="text-slate-600">Client ID / Email</Label>
+                    <Input required placeholder="client@example.com" value={alertForm.client_id} onChange={e=>setAlertForm({...alertForm, client_id: e.target.value})} className="mt-1 font-mono bg-white"/>
                   </div>
                   <div>
                     <Label className="text-slate-600">Requirement / Message</Label>
-                    <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm" placeholder="e.g., Please upload your updated GST certificate for the ongoing bid..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
+                    <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please upload your updated GST certificate for the ongoing bid..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
                   </div>
                   <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-11">
                     <Send className="w-4 h-4 mr-2"/> Push Alert to Client Dashboard
@@ -221,7 +318,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 3: FULL MANUAL TENDER PUBLISHER (Restored fully) */}
+          {/* TAB 3: FULL MANUAL TENDER PUBLISHER */}
           <TabsContent value="publisher" className="space-y-6">
             <Card className="border-t-4 border-t-[#16a34a] shadow-sm max-w-3xl mx-auto">
               <CardHeader className="bg-slate-50/50 pb-4">
@@ -267,7 +364,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 4: FULL SLA HELPDESK (Restored fully) */}
+          {/* TAB 4: FULL SLA HELPDESK */}
           <TabsContent value="sla" className="space-y-6">
             <Card className="shadow-sm max-w-3xl mx-auto">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
@@ -288,7 +385,7 @@ export default function EmployeeDashboard() {
                     <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3">"Need help linking my Class 3 DSC token to the GeM vendor profile."</p>
                     
                     <div className="flex flex-col sm:flex-row gap-2">
-                       <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white" />
+                       <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500" />
                        <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0">Resolve</Button>
                        <Button onClick={escalateToMD} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
                     </div>
