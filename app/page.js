@@ -44,7 +44,7 @@ import {
   User,
   Briefcase,
   UserCog,
-  Eye, // 🚀 FIX: Added 'Eye' icon to solve the ReferenceError
+  Eye,
   LogOut
 } from 'lucide-react';
 
