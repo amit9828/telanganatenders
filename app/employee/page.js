@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
-  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle
+  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact
 } from 'lucide-react';
 
 export default function EmployeeDashboard() {
@@ -23,44 +23,57 @@ export default function EmployeeDashboard() {
   // --- PERMANENT BACKEND STATES ---
   const [mdTasks, setMdTasks] = useState([]);
   const [bids, setBids] = useState([]);
+  const [officers, setOfficers] = useState([]);
 
-  // Manual Tender Entry Form
+  // Forms
   const [tenderForm, setTenderForm] = useState({
     title: '', department: '', last_date: '', district: 'Hyderabad', category: 'Product', supply_details: ''
   });
   const [publishing, setPublishing] = useState(false);
-
-  // Client Action Alert Form
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
+  
+  // Govt Officer Form State
+  const [officerForm, setOfficerForm] = useState({ name: '', department: '', phone: '', designation: '', notes: '' });
+  const [savingOfficer, setSavingOfficer] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_emp_email') : 'employee@tgtenders.in';
-    setEmail(e || 'employee@tgtenders.in');
+    const finalEmail = e || 'employee@tgtenders.in';
+    setEmail(finalEmail);
     
     // 🚀 INITIAL DB FETCH ON LOAD
-    fetchLiveOperationsData(e || 'employee@tgtenders.in');
+    fetchLiveOperationsData(finalEmail);
+
+    // 🚀 AUTO-LOG ATTENDANCE ON LOAD
+    fetch('/api/employee/activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: finalEmail, action: 'LOGIN', details: 'Employee started session on portal.' })
+    }).catch(err => console.log('Attendance log failed', err));
+    
   }, []);
 
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Fetch MD Tasks & Kanban Bids
-  // ============================================================================
   const fetchLiveOperationsData = async (userEmail) => {
     try {
-      const [tasksRes, bidsRes] = await Promise.all([
-        fetch('/api/dispatches'), // Fetch all dispatches (Tasks)
-        fetch('/api/bids')        // Fetch all active bids for Kanban
+      const [tasksRes, bidsRes, officersRes] = await Promise.all([
+        fetch('/api/dispatches'), 
+        fetch('/api/bids'),       
+        fetch('/api/gov-officers') // Fetch Govt Officers
       ]);
 
       if (tasksRes.ok) {
         const tData = await tasksRes.json();
-        // Filter only tasks meant for employees (or this specific employee)
         const employeeTasks = (tData.dispatches || []).filter(d => d.target_type === 'employee_task');
         setMdTasks(employeeTasks);
       }
       if (bidsRes.ok) {
         const bData = await bidsRes.json();
         setBids(bData.bids || []);
+      }
+      if (officersRes.ok) {
+        const oData = await officersRes.json();
+        setOfficers(oData.officers || []);
       }
     } catch (err) {
       console.error("Failed to fetch live operations data", err);
@@ -69,14 +82,9 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Publish Tender
-  // ============================================================================
   const handlePublishTender = async (e) => {
     e.preventDefault();
-    if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date) {
-      return toast.error('Please fill all required fields');
-    }
+    if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date) return toast.error('Please fill all required fields');
     setPublishing(true);
     try {
       const r = await fetch('/api/tenders', {
@@ -87,6 +95,8 @@ export default function EmployeeDashboard() {
       if(r.ok) {
         toast.success('Tender published manually and synced with portal calendar!');
         setTenderForm({ title: '', department: '', last_date: '', district: 'Hyderabad', category: 'Product', supply_details: '' });
+        // Log Activity
+        logActivity('PUBLISHED_TENDER', `Published tender: ${tenderForm.title}`);
       } else {
         toast.error('Failed to publish tender');
       }
@@ -96,88 +106,98 @@ export default function EmployeeDashboard() {
     setPublishing(false);
   };
 
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Push Alert to Client
-  // ============================================================================
   const sendActionAlert = async (e) => {
     e.preventDefault();
     if(!alertForm.client_id || !alertForm.message) return toast.error('Fill all fields');
-    
     try {
       const res = await fetch('/api/dispatches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_type: 'client_alert',
-          target_id: alertForm.client_id,
-          subject: 'ACTION REQUIRED: Operations Update',
-          message: alertForm.message
-        })
+        body: JSON.stringify({ target_type: 'client_alert', target_id: alertForm.client_id, subject: 'ACTION REQUIRED: Operations Update', message: alertForm.message })
       });
-
       if (res.ok) {
         toast.success(`CRITICAL ALERT pushed to Client Dashboard (${alertForm.client_id})!`);
+        logActivity('SENT_ALERT', `Alert to ${alertForm.client_id}`);
         setAlertForm({ client_id: '', message: '' });
-      } else {
-        toast.error('Failed to send alert to client.');
       }
     } catch (err) {
       toast.error('Network Error while pushing alert.');
     }
   };
 
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Update Bid Kanban Status
-  // ============================================================================
   const updateBidStatus = async (id, newStatus) => {
-    // Optimistic UI update
     setBids(bids.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b));
-    
     try {
       const res = await fetch('/api/bids/update', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bid_id: id, status: newStatus })
       });
-
       if (res.ok) {
         toast.success(`Bid updated to "${newStatus}". Client Notified.`);
+        logActivity('UPDATED_BID', `Changed bid ${id} status to ${newStatus}`);
       } else {
-        toast.error('Failed to update bid status in database.');
-        fetchLiveOperationsData(email); // Revert if failed
+        fetchLiveOperationsData(email); 
       }
     } catch (err) {
       toast.error('Network Error during status update.');
     }
   };
 
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Mark MD Task as Done
-  // ============================================================================
   const markTaskDone = async (taskId) => {
-    // Optimistic UI update
     setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed' } : t));
-    
     try {
       const res = await fetch('/api/dispatches/complete', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskId })
       });
-
       if (res.ok) {
         toast.success('Task marked completed. MD Dashboard Updated.');
+        logActivity('COMPLETED_TASK', `Task ${taskId} marked as done`);
       } else {
-        toast.error('Failed to mark task as completed.');
-        fetchLiveOperationsData(email); // Revert if failed
+        fetchLiveOperationsData(email);
       }
     } catch (err) {
       toast.error('Network Error while updating task.');
     }
   };
 
+  // 🚀 NEW: Save Govt Officer Function
+  const handleSaveOfficer = async (e) => {
+    e.preventDefault();
+    if(!officerForm.name || !officerForm.department || !officerForm.phone) return toast.error('Name, Dept and Phone are required');
+    setSavingOfficer(true);
+    try {
+      const res = await fetch('/api/gov-officers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(officerForm)
+      });
+      if (res.ok) {
+        toast.success('Govt Officer added to Central Directory!');
+        logActivity('ADDED_OFFICER', `Added officer: ${officerForm.name}`);
+        setOfficerForm({ name: '', department: '', phone: '', designation: '', notes: '' });
+        fetchLiveOperationsData(email); // Refresh list
+      }
+    } catch (err) {
+      toast.error('Failed to save officer data');
+    }
+    setSavingOfficer(false);
+  };
+
+  // Helper function to log activity
+  const logActivity = (action, details) => {
+    fetch('/api/employee/activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, action, details })
+    }).catch(err => console.log('Activity log failed', err));
+  };
+
   const escalateToMD = () => {
     toast.info('Item escalated to Managing Director successfully.');
+    logActivity('ESCALATED_TICKET', 'Escalated a ticket to MD');
   };
 
   if (!isMounted) return null;
@@ -195,7 +215,7 @@ export default function EmployeeDashboard() {
              </div>
           </div>
           <div className="flex gap-3 items-center">
-             <Badge className="bg-[#16a34a] border-0 hidden sm:inline-flex">Free PDF Access Enabled</Badge>
+             <Badge className="bg-[#16a34a] border-0 hidden sm:inline-flex">Session Active</Badge>
              <a href="/"><Button variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:text-white hover:bg-slate-800"><ArrowLeft className="w-4 h-4 mr-2"/> Exit System</Button></a>
           </div>
         </div>
@@ -230,22 +250,26 @@ export default function EmployeeDashboard() {
         </div>
 
         <Tabs defaultValue="kanban" className="w-full">
-          <TabsList className="grid w-full lg:w-[900px] grid-cols-4 bg-slate-200 h-auto p-1 mb-6 rounded-lg">
+          {/* UPDATED: Added Officers Tab */}
+          <TabsList className="grid w-full lg:w-[1000px] grid-cols-5 bg-slate-200 h-auto p-1 mb-6 rounded-lg overflow-x-auto">
             <TabsTrigger value="kanban" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Bid Workflow
+              <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Bids
+            </TabsTrigger>
+            <TabsTrigger value="officers" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
             </TabsTrigger>
             <TabsTrigger value="clients" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <AlertCircle className="w-4 h-4 mr-2 hidden sm:block"/> Client Alerts
+              <AlertCircle className="w-4 h-4 mr-2 hidden sm:block"/> Alerts
             </TabsTrigger>
             <TabsTrigger value="publisher" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Manual Data
+              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Data
             </TabsTrigger>
             <TabsTrigger value="sla" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: KANBAN BID WORKFLOW */}
+          {/* TAB 1: KANBAN BID WORKFLOW (Existing) */}
           <TabsContent value="kanban" className="space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
@@ -293,7 +317,74 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 2: CLIENT ACTION ALERTS */}
+          {/* 🚀 NEW TAB 2: GOVT OFFICERS DIRECTORY */}
+          <TabsContent value="officers" className="space-y-6">
+            <div className="grid md:grid-cols-3 gap-6">
+              {/* Form Section */}
+              <Card className="shadow-sm border-t-4 border-t-purple-600 md:col-span-1 h-fit">
+                <CardHeader className="bg-purple-50/50 pb-4 border-b">
+                  <CardTitle className="text-purple-900 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-purple-600"/> Add Govt Officer</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleSaveOfficer} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600">Officer Name *</Label>
+                      <Input required value={officerForm.name} onChange={e=>setOfficerForm({...officerForm, name: e.target.value})} className="mt-1 bg-white"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Department *</Label>
+                      <Input required placeholder="e.g. R&B" value={officerForm.department} onChange={e=>setOfficerForm({...officerForm, department: e.target.value})} className="mt-1 bg-white"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Designation</Label>
+                      <Input placeholder="e.g. Executive Engineer" value={officerForm.designation} onChange={e=>setOfficerForm({...officerForm, designation: e.target.value})} className="mt-1 bg-white"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Phone Number *</Label>
+                      <Input required type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Follow-up Notes</Label>
+                      <textarea className="w-full border rounded-md p-2 mt-1 h-20 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-500" value={officerForm.notes} onChange={e=>setOfficerForm({...officerForm, notes: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" disabled={savingOfficer} className="w-full bg-purple-600 hover:bg-purple-700 h-11">
+                      {savingOfficer ? 'Saving...' : 'Save to Directory'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* Directory List Section */}
+              <Card className="shadow-sm md:col-span-2">
+                <CardHeader className="bg-slate-50 border-b pb-4">
+                  <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
+                  <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4 p-0">
+                  {officers.length === 0 ? (
+                    <p className="text-center text-sm text-slate-500 py-10">No officers added yet.</p>
+                  ) : (
+                    <div className="divide-y">
+                      {officers.map(officer => (
+                        <div key={officer._id || Math.random()} className="p-4 hover:bg-slate-50 transition flex flex-col sm:flex-row justify-between gap-4">
+                          <div>
+                            <h4 className="font-bold text-[#0A2647] text-base">{officer.name}</h4>
+                            <p className="text-sm font-semibold text-purple-700">{officer.designation} - {officer.department}</p>
+                            {officer.notes && <p className="text-xs text-slate-600 mt-2 bg-slate-100 p-2 rounded italic">"{officer.notes}"</p>}
+                          </div>
+                          <div className="shrink-0 flex sm:flex-col gap-2 items-end">
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-sm py-1">📞 {officer.phone}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* TAB 3: CLIENT ACTION ALERTS */}
           <TabsContent value="clients" className="space-y-6">
             <Card className="shadow-sm max-w-2xl mx-auto border-t-4 border-t-red-500">
               <CardHeader className="bg-red-50/50 pb-4 border-b">
@@ -318,7 +409,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 3: FULL MANUAL TENDER PUBLISHER */}
+          {/* TAB 4: FULL MANUAL TENDER PUBLISHER */}
           <TabsContent value="publisher" className="space-y-6">
             <Card className="border-t-4 border-t-[#16a34a] shadow-sm max-w-3xl mx-auto">
               <CardHeader className="bg-slate-50/50 pb-4">
@@ -364,7 +455,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 4: FULL SLA HELPDESK */}
+          {/* TAB 5: FULL SLA HELPDESK */}
           <TabsContent value="sla" className="space-y-6">
             <Card className="shadow-sm max-w-3xl mx-auto">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
