@@ -228,7 +228,7 @@ export default function App() {
     }
   }, [session, status]);
 
- // Client & Guest Redirect Hook (🚀 FIXED LOGIC)
+  // Client & Guest Redirect Hook (🚀 FIXED LOGIC)
   useEffect(() => {
     if (status === 'authenticated' && userData) {
       // 1. If the intent is client and the profile is fully approved, redirect directly to the dashboard
@@ -413,6 +413,7 @@ export default function App() {
     }
   };
 
+  // 🚀 FIXED: Removed the duplicated code and corrected the logic
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) {
@@ -446,7 +447,7 @@ export default function App() {
             has_turnover: onboardForm.has_turnover,
             has_annual_returns: onboardForm.has_annual_returns
           },
-          status: 'pending' // 🚀 FIX: ఇక్కడ 'approved' బదులు 'pending' అని మార్చాం 
+          status: 'pending' // 🚀 FIX: This will send to MD for approval
         })
       });
       
@@ -455,56 +456,9 @@ export default function App() {
       setUserData(prev => ({ 
         ...prev, 
         onboarding_complete: true, 
-        is_approved: false // 🚀 FIX: ఇక్కడ కూడా false చేసాం
+        is_approved: false
       }));
       
-    } catch (err) {
-      toast.error('Error submitting profile');
-    }
-    setSubmittingOnboard(false);
-  };
-    setSubmittingOnboard(true);
-    
-    try {
-      const r = await fetch('/api/users/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email, 
-          client_name: onboardForm.client_name,
-          company_name: onboardForm.company_name,
-          phone: onboardForm.phone,
-          company_type: onboardForm.company_type,
-          service_category: onboardForm.service,
-          documents: {
-            has_gst: onboardForm.has_gst,
-            has_esi: onboardForm.has_esi,
-            has_epf: onboardForm.has_epf,
-            has_iso: onboardForm.has_iso,
-            has_bank: onboardForm.has_bank,
-            has_pan: onboardForm.has_pan,
-            has_aadhar: onboardForm.has_aadhar,
-            has_dsc: onboardForm.has_dsc,
-            has_ifsc: onboardForm.has_ifsc,
-            has_fssai: onboardForm.has_fssai,
-            has_cer: onboardForm.has_cer,
-            has_turnover: onboardForm.has_turnover,
-            has_annual_returns: onboardForm.has_annual_returns
-          },
-          status: 'approved' 
-        })
-      });
-      
-      toast.success('Profile created successfully! Loading your dashboard...');
-      
-      setUserData(prev => ({ 
-        ...prev, 
-        onboarding_complete: true, 
-        is_approved: true 
-      }));
-      
-      router.push('/client');
-
     } catch (err) {
       toast.error('Error submitting profile');
     }
