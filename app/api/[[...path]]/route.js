@@ -609,7 +609,38 @@ export async function POST(request, { params }) {
         return json({ error: 'Verify failed' }, 500);
       }
     }
+// 🚀 NEW: Cashfree Background Webhook Security
+    if (path === 'payment/webhook' || path === 'api/payment/webhook') {
+       try {
+         // Cashfree సర్వర్ పంపే డేటాను రిసీవ్ చేసుకోవడం
+         const orderId = body?.data?.order?.order_id;
+         const paymentStatus = body?.data?.payment?.payment_status;
 
+         if (orderId && paymentStatus === 'SUCCESS') {
+            // ఆ ఆర్డర్ ఐడీ మన డేటాబేస్ లో ఉందో లేదో చెక్ చేయడం
+            const paymentRecord = await db.collection('payments').findOne({ order_id: orderId });
+            
+            if (paymentRecord && paymentRecord.status !== 'SUCCESS') {
+               // యూజర్ కి తెలియకుండానే బ్యాక్ గ్రౌండ్ లో పేమెంట్ సక్సెస్ చేయడం
+               await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'SUCCESS', paid_at: new Date() } });
+               const email = paymentRecord.email.toLowerCase();
+               
+               if (paymentRecord.plan === 'single' && paymentRecord.tenderId) {
+                 await db.collection('users').updateOne({ email }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
+               } else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
+                 const days = paymentRecord.plan === 'year' ? 365 : 30;
+                 const expireDate = new Date();
+                 expireDate.setDate(expireDate.getDate() + days);
+                 await db.collection('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true });
+               }
+            }
+         }
+         return json({ success: true, message: 'Webhook Processed Successfully' });
+       } catch (error) {
+         console.error('Webhook processing error:', error);
+         return json({ error: 'Webhook Error' }, 500);
+       }
+    }
     return json({ error: 'POST not found', path }, 404);
   } catch (error) {
     console.error('Server POST Error:', error);
