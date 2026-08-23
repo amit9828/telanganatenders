@@ -704,7 +704,7 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 3: VERIFICATION WAITING (🚀 RESTORED EXACT OLD DESIGN)
+  // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
   // ==============================================================================
   if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
     if (!userData.is_approved) {
@@ -726,12 +726,10 @@ export default function App() {
               <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
             </div>
             
-            <div className="flex items-center justify-between mt-4">
+            {/* 🚀 FIX: Bypass బటన్ ని పూర్తిగా తీసేసి, కేవలం Log Out మాత్రమే ఉంచాం */}
+            <div className="flex items-center justify-center mt-4">
               <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
-                Log Out
-              </Button>
-              <Button onClick={() => router.push('/client')} variant="outline" className="text-xs text-slate-400 hover:text-slate-600 border-slate-200">
-                Bypass (Dev Demo)
+                <LogOut className="w-4 h-4 mr-2" /> Log Out
               </Button>
             </div>
           </Card>
@@ -741,7 +739,6 @@ export default function App() {
       return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
     }
   }
-
   // ==============================================================================
   // SCREEN 4: MAIN PORTAL (Guests & Approved Browsers reach here)
   // ==============================================================================
