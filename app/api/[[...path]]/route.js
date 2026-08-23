@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { MongoClient, ObjectId } from 'mongodb';
+import { google } from 'googleapis'; // 🚀 NEW: Google API Import
 
 // Forces dynamic rendering to prevent stale cache data
 export const dynamic = 'force-dynamic';
@@ -473,6 +474,7 @@ export async function POST(request, { params }) {
        });
        return json({ success: true, id: result.insertedId });
     }
+
    // 🚀 NEW: Employee Activity & Attendance Logger
     if (path === 'employee/activity' || path === 'api/employee/activity') {
        const { email, action, details } = body;
@@ -484,6 +486,52 @@ export async function POST(request, { params }) {
        });
        return json({ success: true });
     }
+
+    // 🚀 NEW: Google Drive Auto-Folder Creation
+    if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
+       const { folderName, email } = body;
+       
+       if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+          return json({ error: 'Google Drive Keys missing in Vercel Environment Variables' }, 500);
+       }
+
+       try {
+          // 1. Google తో అథెంటికేట్ అవ్వడం
+          const auth = new google.auth.JWT(
+             process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+             null,
+             process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'), // Fix for .env newline characters
+             ['https://www.googleapis.com/auth/drive.file'] // Scope for Drive access
+          );
+          const drive = google.drive({ version: 'v3', auth });
+          
+          // 2. ఫోల్డర్ సెటప్
+          const fileMetadata = {
+             name: folderName || `Client - ${email}`, // ఫోల్డర్ పేరు
+             mimeType: 'application/vnd.google-apps.folder',
+          };
+          
+          // 3. ఫోల్డర్ క్రియేట్ చేయడం
+          const folder = await drive.files.create({
+             resource: fileMetadata,
+             fields: 'id, webViewLink'
+          });
+          
+          // 4. డేటాబేస్ లో యూజర్ కి ఆ ఫోల్డర్ లింక్ సేవ్ చేయడం
+          if (email) {
+             await db.collection('users').updateOne(
+                { email: email.toLowerCase() },
+                { $set: { drive_folder_id: folder.data.id, drive_folder_link: folder.data.webViewLink } }
+             );
+          }
+
+          return json({ success: true, folderId: folder.data.id, folderLink: folder.data.webViewLink });
+       } catch (error) {
+          console.error('Drive API Error:', error);
+          return json({ error: 'Failed to create Google Drive folder' }, 500);
+       }
+    }
+
     // CASHFREE PAYMENT LOGIC
     if (path === 'payment/order' || path === 'api/payment/order') {
       const plan = body.plan;
