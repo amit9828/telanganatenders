@@ -473,7 +473,17 @@ export async function POST(request, { params }) {
        });
        return json({ success: true, id: result.insertedId });
     }
-
+   // 🚀 NEW: Employee Activity & Attendance Logger
+    if (path === 'employee/activity' || path === 'api/employee/activity') {
+       const { email, action, details } = body;
+       await db.collection('employee_logs').insertOne({
+          email: email.toLowerCase(),
+          action,
+          details,
+          timestamp: new Date()
+       });
+       return json({ success: true });
+    }
     // CASHFREE PAYMENT LOGIC
     if (path === 'payment/order' || path === 'api/payment/order') {
       const plan = body.plan;
