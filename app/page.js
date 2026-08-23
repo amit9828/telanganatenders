@@ -698,14 +698,33 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 3: REDIRECTING CLIENT
+  // SCREEN 3: VERIFICATION WAITING & REDIRECTING CLIENT
   // ==============================================================================
   if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+    if (!userData.is_approved) {
+      // 🚀 NEW: MD ఇంకా అప్రూవ్ చేయకపోతే మాత్రమే ఈ వెరిఫికేషన్ స్క్రీన్ రావాలి (కేవలం క్లయింట్స్ కి)
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+          <Card className="max-w-md w-full tender-shadow text-center p-6 border-t-4 border-amber-500">
+            <ShieldCheck className="w-16 h-16 mx-auto text-amber-500 mb-4" />
+            <h2 className="text-xl font-bold text-[#0A2647] mb-2">Profile Under Verification</h2>
+            <p className="text-slate-600 text-sm mb-6">
+              Thank you for registering. Our MD is verifying your business details. You will receive an email once approved.
+            </p>
+            <Button onClick={performHardSignOut} variant="outline" className="w-full text-slate-500 hover:text-slate-700">
+              <LogOut className="w-4 h-4 mr-2" /> Logout
+            </Button>
+          </Card>
+        </div>
+      );
+    } else {
+      // MD అప్రూవ్ చేసేస్తే, డైరెక్ట్ గా క్లయింట్ డాష్‌బోర్డ్ కి పంపాలి
+      return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+    }
   }
 
   // ==============================================================================
-  // SCREEN 4: GUEST MAIN DASHBOARD (Only Guests reach here)
+  // SCREEN 4: MAIN PORTAL (Guests & Approved Browsers reach here)
   // ==============================================================================
 
   return (
