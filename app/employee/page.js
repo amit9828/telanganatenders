@@ -53,7 +53,7 @@ export default function EmployeeDashboard() {
   const [isEditingTender, setIsEditingTender] = useState(null); 
   const [pdfName, setPdfName] = useState('');
   const [pdfBase64, setPdfBase64] = useState('');
-  const [tenderSearch, setTenderSearch] = useState(''); // 🚀 NEW: Tender Search State
+  const [tenderSearch, setTenderSearch] = useState(''); 
   
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
   const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
@@ -560,7 +560,6 @@ export default function EmployeeDashboard() {
      o.district?.toLowerCase().includes(officerSearch.toLowerCase())
   );
 
-  // 🚀 NEW: Filter logic for Tenders DB using Bid Number (or title)
   const filteredTenders = publicTenders.filter(t => 
      t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
      t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
@@ -1143,6 +1142,7 @@ export default function EmployeeDashboard() {
           <TabsContent value="publisher" className="w-full space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
+               {/* 🚀 FIXED: BUTTON FOR VIEW PDF UPDATED */}
                <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
                  <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
                    <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
@@ -1219,7 +1219,6 @@ export default function EmployeeDashboard() {
                        </CardTitle>
                        <CardDescription>View all tenders uploaded by you or MD. Select a tender to suggest it directly to a client.</CardDescription>
                      </div>
-                     {/* 🚀 NEW: Search Bar for Live Tenders Database */}
                      <div className="relative shrink-0 mt-2 sm:mt-0">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <Input placeholder="Search Bid Number..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
@@ -1257,6 +1256,7 @@ export default function EmployeeDashboard() {
                               </div>
                               
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
+                                 {/* 🚀 BUG FIX: Calling handleViewPDF instead of direct window.open */}
                                  <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                                     <FileText className="w-3 h-3 mr-1.5"/> View PDF
                                  </Button>
