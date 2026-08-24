@@ -135,12 +135,12 @@ export async function GET(request, { params }) {
       return json({ subscription: user?.subscription || null });
     }
 
-    // 6. PDF FETCH (🚀 UPDATED: DIRECT PDF FILE RENDERING + PAYWALL BYPASS)
+    // 6. PDF FETCH
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
-      const role = searchParams.get('role'); // 🚀 NEW: Role checking
-      const format = searchParams.get('format'); // Support fallback if needed
+      const role = searchParams.get('role');
+      const format = searchParams.get('format'); 
 
       if (!email) return json({ error: 'Email required' }, 400);
 
@@ -155,7 +155,6 @@ export async function GET(request, { params }) {
       
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
 
-      // 🚀 FIX: BYPASS PAYWALL FOR EMPLOYEE & MD
       if (role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL) {
           hasSubscription = true; 
       }
@@ -165,7 +164,6 @@ export async function GET(request, { params }) {
       const tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) });
       if (!tender || !tender.pdf_base64) return json({ error: 'PDF not found' }, 404);
 
-      // 🚀 NEW: బ్రౌజర్‌లో window.open() చేసినప్పుడు డైరెక్ట్‌గా PDF ఓపెన్ అవ్వడానికి ఈ లాజిక్ వాడతాం!
       if (format === 'json') {
           return json({
              pdf_base64: tender.pdf_base64,
@@ -175,7 +173,6 @@ export async function GET(request, { params }) {
           });
       } else {
           try {
-             // Base64 స్ట్రింగ్‌ని రియల్ PDF File (Buffer) లాగా మార్చి పంపడం
              const pdfBuffer = Buffer.from(tender.pdf_base64, 'base64');
              return new NextResponse(pdfBuffer, {
                  status: 200,
@@ -250,6 +247,20 @@ export async function GET(request, { params }) {
       if (clientEmail) query.client_email = clientEmail.toLowerCase();
       const bids = await db.collection('bids').find(query).sort({ created_at: -1 }).toArray();
       return json({ bids });
+    }
+
+    // 🚀 NEW: EMPLOYEES (TEAM DIRECTORY) FETCH
+    if (path === 'employees' || path === 'api/employees') {
+      const team = await db.collection('employees').find({}).sort({ created_at: -1 }).toArray();
+      return json({ team });
+    }
+
+    // 🚀 NEW: FINANCE LEDGER BALANCE SHEET FETCH
+    if (path === 'finance/ledger' || path === 'api/finance/ledger') {
+      const transactions = await db.collection('finance_ledger').find({}).sort({ created_at: -1 }).toArray();
+      const totalCredit = transactions.filter(t => t.type === 'CREDIT').reduce((sum, t) => sum + Number(t.amount), 0);
+      const totalDebit = transactions.filter(t => t.type === 'DEBIT').reduce((sum, t) => sum + Number(t.amount), 0);
+      return json({ transactions, balance: totalCredit - totalDebit });
     }
 
     // 13. MY ACCOUNT DATA (/api/me)
@@ -337,13 +348,17 @@ export async function PUT(request, { params }) {
      const body = await request.json().catch(() => null);
      if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
+     // 🚀 FIX: ALLOW FULL EDIT OF TENDERS INSTEAD OF JUST L1 PRICE
      if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
         const tenderId = pathArray[1];
+        let updateFields = { ...body, updated_at: new Date() };
+        delete updateFields._id; // Prevent MongoDB error of overwriting _id
+
         await db.collection('tenders').updateOne(
            { _id: new ObjectId(tenderId) },
-           { $set: { l1_price: body.l1_price, l1_winner: body.l1_winner } }
+           { $set: updateFields }
         );
-        return json({ success: true, message: 'L1 Price Updated' });
+        return json({ success: true, message: 'Tender Updated' });
      }
 
      if (path === 'client-requests/reply' || path === 'api/client-requests/reply') {
@@ -355,11 +370,41 @@ export async function PUT(request, { params }) {
         return json({ success: true, message: 'Request Updated' });
      }
 
+     // 🚀 NEW: ASSIGN CLIENT REQUEST TASK TO EMPLOYEE (MD Operations)
+     if (path === 'client-requests/assign' || path === 'api/client-requests/assign') {
+        const { req_id, emp_id, emp_name, status, reply } = body;
+        
+        await db.collection('client_requests').updateOne(
+           { _id: new ObjectId(req_id) },
+           { $set: { status: `Assigned to ${emp_name} (${emp_id})`, reply, updated_at: new Date() } }
+        );
+
+        // 🚀 Create Dispatch / Tracker for Employee Automatically
+        const reqData = await db.collection('client_requests').findOne({ _id: new ObjectId(req_id) });
+        if (reqData) {
+            await db.collection('dispatches').insertOne({
+                target_type: 'employee_task',
+                target_id: emp_id, 
+                subject: `Assigned Task: Client ${reqData.client_email}`,
+                message: reply || reqData.description,
+                status: 'Sent',
+                priority: 'High',
+                created_at: new Date()
+            });
+        }
+        return json({ success: true, message: 'Assigned successfully' });
+     }
+
      if (path === 'bids/update' || path === 'api/bids/update') {
-        const { bid_id, status } = body;
+        const { bid_id, status, bid_no, description } = body;
+        let updateData = { updated_at: new Date() };
+        if (status) updateData.status = status;
+        if (bid_no !== undefined) updateData.bid_no = bid_no;
+        if (description !== undefined) updateData.description = description;
+
         await db.collection('bids').updateOne(
            { _id: new ObjectId(bid_id) },
-           { $set: { status, updated_at: new Date() } }
+           { $set: updateData }
         );
         return json({ success: true });
      }
@@ -426,6 +471,27 @@ export async function DELETE(request, { params }) {
 
       if (result && result.deletedCount > 0) return json({ success: true, message: 'Bid tracking removed' });
       else return json({ error: 'Bid not found' }, 404);
+    }
+
+    // 🚀 NEW: DELETE TICKETS PERMANENTLY
+    if (path === 'tickets' || path === 'api/tickets') {
+      const id = searchParams.get('id');
+      if (!id) return json({ error: 'Missing Ticket ID' }, 400);
+      let result = null;
+      if (ObjectId.isValid(id)) result = await db.collection('tickets').deleteOne({ _id: new ObjectId(id) });
+      if (!result || result.deletedCount === 0) result = await db.collection('tickets').deleteOne({ _id: id });
+      if (result && result.deletedCount > 0) return json({ success: true, message: 'Ticket deleted' });
+      return json({ error: 'Ticket not found' }, 404);
+    }
+
+    // 🚀 NEW: DELETE EMPLOYEES
+    if (path === 'employees' || path === 'api/employees') {
+      const id = searchParams.get('id');
+      if (!id) return json({ error: 'Missing Employee ID' }, 400);
+      let result = null;
+      if (ObjectId.isValid(id)) result = await db.collection('employees').deleteOne({ _id: new ObjectId(id) });
+      if (!result || result.deletedCount === 0) result = await db.collection('employees').deleteOne({ _id: id });
+      return json({ success: true, message: 'Employee Deleted' });
     }
     
     return json({ error: 'DELETE endpoint not found' }, 404);
@@ -620,6 +686,37 @@ export async function POST(request, { params }) {
         { $pull: { officer_queries: { id: queryId } } }
       );
       return json({ success: true });
+    }
+
+    // 🚀 NEW: ADD FINANCE LEDGER TRANSACTION
+    if (path === 'finance/ledger' || path === 'api/finance/ledger') {
+        const newTxn = {
+            type: body.type, // CREDIT or DEBIT
+            amount: Number(body.amount),
+            reason: body.reason,
+            client_id: body.client_id || 'N/A',
+            payment_mode: body.payment_mode || 'OFFLINE',
+            proof_base64: body.proof_base64 || null,
+            created_at: new Date()
+        };
+        await db.collection('finance_ledger').insertOne(newTxn);
+        return json({ success: true, message: 'Transaction Added' });
+    }
+
+    // 🚀 NEW: CREATE EMPLOYEE
+    if (path === 'employees' || path === 'api/employees') {
+        const count = await db.collection('employees').countDocuments();
+        const newEmpId = `EMP-${1000 + count + 1}`; // Auto generate ID
+        const newEmployee = { 
+            emp_id: newEmpId, 
+            name: body.name, 
+            email: body.email.toLowerCase(), 
+            password: body.password, // Saved directly for explicit login
+            role: body.role || 'Employee',
+            created_at: new Date() 
+        };
+        const result = await db.collection('employees').insertOne(newEmployee);
+        return json({ success: true, emp_id: newEmpId, id: result.insertedId });
     }
 
     if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
