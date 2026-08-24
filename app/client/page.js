@@ -19,6 +19,22 @@ import {
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck
 } from 'lucide-react';
 
+// డిఫాల్ట్ గా అడగాల్సిన డాక్యుమెంట్ల లిస్ట్ (కచ్చితంగా కావాల్సినవి)
+const DEFAULT_VAULT_DOCS = [
+  { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
+  { id: 'pan', name: 'PAN Card', status: 'missing', file: null },
+  { id: 'bank_account', name: 'Bank Account Details', status: 'missing', file: null },
+  { id: 'cancelled_check', name: 'Cancelled Check', status: 'missing', file: null },
+  { id: 'dsc', name: 'DSC (Class 3)', status: 'missing', file: null },
+  { id: 'msme', name: 'MSME (Udyam)', status: 'missing', file: null },
+  { id: 'iso', name: 'ISO Certificate', status: 'missing', file: null },
+  { id: 'ca_turnover', name: 'Last 3 Years CA Turnover', status: 'missing', file: null },
+  { id: 'annual_returns', name: 'Annual Returns / ITR', status: 'missing', file: null },
+  { id: 'fssai', name: 'FSSAI License', status: 'missing', file: null },
+  { id: 'firm_reg', name: 'Firm / Pvt Ltd Registration', status: 'missing', file: null },
+  { id: 'other_license', name: 'Other Trade Licenses', status: 'missing', file: null }
+];
+
 export default function ClientDashboard() {
   const [isMounted, setIsMounted] = useState(false);
   const [email, setEmail] = useState('');
@@ -32,7 +48,6 @@ export default function ClientDashboard() {
   const [buying, setBuying] = useState(false);
 
   // --- Forms State ---
-  const [uploadedFiles, setUploadedFiles] = useState({});
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
 
@@ -45,11 +60,9 @@ export default function ClientDashboard() {
   });
 
   // --- Real-time Stats, Vault & Wins State ---
-  const [vaultDocs, setVaultDocs] = useState([]);
+  const [vaultDocs, setVaultDocs] = useState(DEFAULT_VAULT_DOCS);
   const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
-  
-  // 🟢 NEW STATE FOR RECOMMENDED TENDERS
   const [recommendedTenders, setRecommendedTenders] = useState([]);
 
   useEffect(() => {
@@ -58,7 +71,7 @@ export default function ClientDashboard() {
     setEmail(e);
     setClientId(`CLI-${e.substring(0, 4).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`);
     fetchPublicTenders();
-    fetchClientData(e); // 🚀 Permanent Database Fetch
+    fetchClientData(e); 
   }, []);
 
   // ============================================================================
@@ -74,12 +87,20 @@ export default function ClientDashboard() {
         // 1. LIVE TRACKING
         if(d.stats) setClientStats(d.stats);
         if(d.won_bids) setWonBids(d.won_bids);
-        if(d.vault_docs) setVaultDocs(d.vault_docs);
-        
-        // 🟢 CATCHING RECOMMENDED TENDERS FROM MD/OFFICER BACKEND
         if(d.recommended_tenders) setRecommendedTenders(d.recommended_tenders);
+        
+        // 2. VAULT DOCS MERGE (డిఫాల్ట్ డాక్యుమెంట్స్ + బ్యాకెండ్ నుండి వచ్చినవి కలపడం)
+        if (d.vault_docs && d.vault_docs.length > 0) {
+            const mergedDocs = DEFAULT_VAULT_DOCS.map(defaultDoc => {
+                const found = d.vault_docs.find(bd => bd.id === defaultDoc.id);
+                return found ? found : defaultDoc;
+            });
+            setVaultDocs(mergedDocs);
+        } else {
+            setVaultDocs(DEFAULT_VAULT_DOCS);
+        }
 
-        // Pre-fill editable profile from Database
+        // 3. Pre-fill editable profile from Database
         if(d.profile) {
           setProfileForm(prev => ({
             ...prev,
@@ -148,7 +169,7 @@ export default function ClientDashboard() {
       });
       if(r.ok) {
         setIsEditingProfile(false);
-        toast.success("Business Profile Updated Successfully! Synced with MD Database.");
+        toast.success("Client Profile Updated Successfully! Synced with MD Database.");
         fetchClientData(email); // Refresh Data
       }
     } catch(err) {
@@ -168,7 +189,7 @@ export default function ClientDashboard() {
       formData.append('file', file);
       formData.append('docId', docId);
       formData.append('email', email);
-      formData.append('clientName', profileForm.clientName); 
+      formData.append('clientName', profileForm.companyName || profileForm.clientName); 
 
       try {
         const res = await fetch('/api/vault/upload', {
@@ -177,7 +198,7 @@ export default function ClientDashboard() {
         });
         
         if(res.ok) {
-          toast.success(`Document uploaded successfully! Pending Officer Approval.`);
+          toast.success(`Document uploaded successfully! Pending MD Approval.`);
           fetchClientData(email); // Refreshes UI with real DB dates and statuses
         } else {
           toast.error('Upload failed. Please try again.');
@@ -394,7 +415,6 @@ export default function ClientDashboard() {
 
         {/* --- TOP FUNNEL METRICS (Clickable Links to Tabs) --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-           {/* 🟢 RECOMMENDED BLOCK CLICKS DIRECTLY TO DASHBOARD */}
            <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
@@ -600,12 +620,9 @@ export default function ClientDashboard() {
                               <Label className="font-bold text-blue-900 text-sm">{doc.name}</Label>
                               <Badge className="bg-blue-100 text-blue-800 border-0 text-[10px] uppercase font-bold tracking-wider">Under Review</Badge>
                             </div>
-                            <div className="bg-white p-2.5 border border-blue-100 rounded-lg flex flex-col gap-2 shadow-inner">
-                               <div className="flex justify-between items-center">
-                                  <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file_name}>{doc.file_name || doc.file}</span>
-                                  {/* Real Live Date */}
-                                  <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
-                               </div>
+                            <div className="bg-white p-2.5 border border-blue-100 rounded-lg flex items-center justify-between shadow-inner">
+                               <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file_name}>{doc.file_name || doc.file}</span>
+                               <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
                             </div>
                          </div>
                        ))}
@@ -694,11 +711,11 @@ export default function ClientDashboard() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 4: ACTIVE DASHBOARD (Recommended, Tracking, Queries) */}
+          {/* TAB 4: ACTIVE DASHBOARD */}
           {/* ============================================================================== */}
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* 🟢 NEW RECOMMENDED TENDERS BLOCK */}
+            {/* RECOMMENDED TENDERS BLOCK */}
             <Card className="tender-shadow border-t-4 border-t-blue-500 bg-blue-50/20">
               <CardHeader className="border-b pb-4 bg-white">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
