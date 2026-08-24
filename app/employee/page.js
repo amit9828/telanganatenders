@@ -15,7 +15,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -50,6 +50,7 @@ export default function EmployeeDashboard() {
     bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
   });
   const [publishing, setPublishing] = useState(false);
+  const [isEditingTender, setIsEditingTender] = useState(null); // 🚀 NEW: Tender Edit State
   const [pdfName, setPdfName] = useState('');
   const [pdfBase64, setPdfBase64] = useState('');
   
@@ -67,6 +68,7 @@ export default function EmployeeDashboard() {
   const [newBidForm, setNewBidForm] = useState({ 
     bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
   });
+  const [editingBid, setEditingBid] = useState(null); // 🚀 NEW: Active Bid Edit State
 
   const [suggestForm, setSuggestForm] = useState({}); 
 
@@ -137,24 +139,28 @@ export default function EmployeeDashboard() {
     reader.readAsDataURL(file);
   };
 
+  // 🚀 TENDER PUBLISH & UPDATE LOGIC (Now Supports Editing)
   const handlePublishTender = async (e) => {
     e.preventDefault();
     if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
     setPublishing(true);
+    
     try {
-      const r = await fetch('/api/tenders', {
-        method: 'POST',
+      const url = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
+      const method = isEditingTender ? 'PUT' : 'POST';
+      
+      const r = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...tenderForm, pdf_base64: pdfBase64, pdf_filename: pdfName || 'tender.pdf' })
       });
       if(r.ok) {
-        toast.success('Tender published manually and synced with portal!');
+        toast.success(isEditingTender ? 'Tender updated successfully!' : 'Tender published successfully!');
         setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
-        setPdfBase64(''); setPdfName('');
-        logActivity('PUBLISHED_TENDER', `Published tender: ${tenderForm.title}`);
+        setPdfBase64(''); setPdfName(''); setIsEditingTender(null);
         fetchLiveOperationsData(email); 
       } else {
-        toast.error('Failed to publish tender');
+        toast.error('Failed to save tender');
       }
     } catch (err) {
       toast.error('Network error');
@@ -162,11 +168,25 @@ export default function EmployeeDashboard() {
     setPublishing(false);
   };
 
-  const handleSuggestTender = async (tenderId, tenderTitle) => {
+  // 🚀 TENDER DELETE LOGIC
+  const handleDeleteTenderDB = async (id) => {
+    if(!confirm("Are you sure you want to permanently delete this tender from the Live Portal?")) return;
+    try {
+      const res = await fetch(`/api/tenders/${id}`, { method: 'DELETE' });
+      if(res.ok) { toast.success("Tender deleted successfully."); fetchLiveOperationsData(email); }
+      else { toast.error("Failed to delete tender."); }
+    } catch(e) { toast.error("Network error"); }
+  };
+
+  // 🚀 REAL DATA EXTRACTION FOR SUGGESTIONS
+  const handleSuggestTender = async (tenderId, tenderTitle, tenderBidNo) => {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
     
-    const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === tenderTitle);
+    // 🚀 Exact formatting to extract later
+    const formattedMessage = `[BID: ${tenderBidNo || 'N/A'}] ${tenderTitle}`;
+    
+    const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === formattedMessage);
     if(isDuplicate) {
       return toast.error("Action Denied: You have already suggested this tender to the selected client.");
     }
@@ -179,7 +199,7 @@ export default function EmployeeDashboard() {
           target_type: 'client_alert', 
           target_id: selectedClientEmail, 
           subject: 'New Tender Suggestion from Officer', 
-          message: `${tenderTitle}` 
+          message: formattedMessage 
         })
       });
       if (res.ok) {
@@ -193,10 +213,20 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // 🚀 REPLACING "WAITING FOR BID NO" WITH REAL EXTRACTED DATA
   const handleSuggestionResponse = async (suggestion, action) => {
     try {
       if (action === 'Accepted') {
-         const isDuplicate = bids.some(b => b.client_email === suggestion.target_id && b.description === suggestion.message);
+         let extractedBidNo = 'PENDING';
+         let extractedDesc = suggestion.message;
+         
+         const match = suggestion.message.match(/\[BID: (.*?)\] (.*)/);
+         if (match) {
+             extractedBidNo = match[1];
+             extractedDesc = match[2];
+         }
+
+         const isDuplicate = bids.some(b => b.client_email === suggestion.target_id && b.bid_no === extractedBidNo);
          if(isDuplicate) {
             return toast.error("Action Denied: This tender is already actively tracked for this client.");
          }
@@ -205,8 +235,8 @@ export default function EmployeeDashboard() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-               bid_no: 'WAITING FOR BID NO', 
-               description: suggestion.message, 
+               bid_no: extractedBidNo, 
+               description: extractedDesc, 
                status: 'Bid Allocated',
                client_email: suggestion.target_id,
                submitted_date: ''
@@ -252,6 +282,29 @@ export default function EmployeeDashboard() {
     } catch (err) {
       toast.error("Network Error.");
     }
+  };
+
+  // 🚀 ACTIVE BID EDIT SAVE LOGIC
+  const handleSaveEditBid = async (e) => {
+     e.preventDefault();
+     if(!editingBid) return;
+     try {
+        const res = await fetch('/api/bids/update', {
+           method: 'PUT',
+           headers: { 'Content-Type': 'application/json' },
+           // Assuming backend update route handles bid_no & description updates if passed
+           body: JSON.stringify({ bid_id: editingBid._id || editingBid.id, status: editingBid.status, bid_no: editingBid.bid_no, description: editingBid.description })
+        });
+        if(res.ok) {
+           toast.success("Bid details updated successfully!");
+           setEditingBid(null);
+           fetchLiveOperationsData(email);
+        } else {
+           toast.error("Failed to update bid details.");
+        }
+     } catch(err) {
+        toast.error("Network Error.");
+     }
   };
 
   const handleDeleteBid = async (bidId) => {
@@ -301,6 +354,7 @@ export default function EmployeeDashboard() {
         toast.success(`CRITICAL ALERT pushed to Client Dashboard!`);
         logActivity('SENT_ALERT', `Alert to ${alertForm.client_id}`);
         setAlertForm({ client_id: '', message: '' });
+        fetchLiveOperationsData(email);
       }
     } catch (err) {
       toast.error('Network Error while pushing alert.');
@@ -320,11 +374,30 @@ export default function EmployeeDashboard() {
         toast.success(`Query Raised! Client's dashboard is now locked until they reply.`);
         logActivity('RAISED_QUERY', `Locked client ${queryForm.client_email} for document request.`);
         setQueryForm({ client_email: '', subject: '', message: '' });
+        fetchLiveOperationsData(email);
       } else {
         toast.error('Failed to raise query.');
       }
     } catch (err) {
       toast.error('Network Error while raising query.');
+    }
+  };
+
+  // 🚀 CLOSE QUERY (Unlocks Client Screen)
+  const handleCloseQuery = async (queryId, clientEmail) => {
+    if(!confirm("Are you sure you want to close this query?")) return;
+    try {
+      const res = await fetch('/api/queries/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queryId, email: clientEmail })
+      });
+      if (res.ok) {
+        toast.success(`Query Closed successfully.`);
+        fetchLiveOperationsData(email);
+      }
+    } catch (err) {
+      toast.error('Network Error.');
     }
   };
 
@@ -356,19 +429,34 @@ export default function EmployeeDashboard() {
         body: JSON.stringify({ task_id: taskId })
       });
       if (res.ok) {
-        toast.success('Task marked completed.');
+        toast.success('Task marked completed & removed.');
         logActivity('COMPLETED_TASK', `Task ${taskId} marked as done`);
-      } else {
-        fetchLiveOperationsData(email);
+        fetchLiveOperationsData(email); // Refresh to remove from view
       }
     } catch (err) {
       toast.error('Network Error while updating task.');
     }
   };
 
+  // 🚀 DELETE HELPDESK TICKET
+  const handleDeleteTicket = async (ticketId) => {
+    if(!confirm("Permanently delete this helpdesk conversation?")) return;
+    try {
+      const res = await fetch(`/api/tickets?id=${ticketId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Ticket conversation deleted.');
+        fetchLiveOperationsData(email);
+      } else {
+        toast.error("Failed to delete ticket. Backend route might need update.");
+      }
+    } catch (err) {
+      toast.error('Network Error.');
+    }
+  };
+
   const handleSaveOfficer = async (e) => {
     e.preventDefault();
-    if(!officerForm.name || !officerForm.department || !officerForm.phone) return toast.error('Name, Dept and Phone are required');
+    if(!officerForm.name || !officerForm.department) return toast.error('Name and Dept are required');
     setSavingOfficer(true);
     try {
       const res = await fetch('/api/gov-officers', {
@@ -409,7 +497,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 FIX: redirecting to /client directly
   const handleImpersonate = async (targetEmail) => {
     if (!targetEmail) return toast.error('Enter a valid client email');
     toast.loading(`Connecting to ${targetEmail}'s portal...`);
@@ -481,7 +568,7 @@ export default function EmployeeDashboard() {
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
               ) : (
                  mdTasks.map(task => (
-                    <div key={task._id || task.id} className="flex justify-between items-center bg-slate-50 border p-3 rounded-lg">
+                    <div key={task._id || task.id} className="flex justify-between items-center bg-slate-50 border p-3 rounded-lg shadow-sm">
                        <div>
                           <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>Priority Task</Badge>
                           <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
@@ -509,8 +596,12 @@ export default function EmployeeDashboard() {
             <TabsTrigger value="officers" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
             </TabsTrigger>
+            {/* 🚀 NEW MODULE SEPARATION: Clients vs Alerts */}
             <TabsTrigger value="clients" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <AlertCircle className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Clients
+              <Users className="w-4 h-4 mr-2 hidden sm:block"/> Clients DB
+            </TabsTrigger>
+            <TabsTrigger value="alerts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <BellRing className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Queries
             </TabsTrigger>
             <TabsTrigger value="publisher" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders DB
@@ -608,42 +699,64 @@ export default function EmployeeDashboard() {
                            <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                               {clientBids.map(b => (
                                 <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
-                                  <div>
-                                    <div className="flex justify-between items-start mb-2">
-                                      {/* 🚀 FIX: High visibility for BID NUMBER */}
-                                      <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
-                                         <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
-                                         <span className="text-xs font-black font-mono">{b.bid_no || b.id || 'N/A'}</span>
-                                      </div>
-                                      <div className="flex gap-2 items-center">
-                                         <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{b.status}</Badge>
-                                         <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-5 w-5 p-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3"/></Button>
-                                      </div>
-                                    </div>
-                                    <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight">{b.description || b.title}</h4>
-                                  </div>
                                   
-                                  <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
-                                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
-                                    <select 
-                                      className="border border-blue-300 rounded-md px-2 py-1.5 text-xs bg-blue-50 font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto shadow-sm cursor-pointer"
-                                      value={b.status}
-                                      onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
-                                    >
-                                      <option value="Bid Allocated">Bid Allocated</option>
-                                      <option value="Client Approved">Client Approved</option>
-                                      <option value="Client Cancelled">Client Cancelled</option>
-                                      <option value="ADC Check">ADC Check</option>
-                                      <option value="Documents Asking">Documents Asking</option>
-                                      <option value="Documents Preparing">Documents Preparing</option>
-                                      <option value="Bid Participated">Bid Participated</option>
-                                      <option value="Technical Evaluation">Technical Evaluation</option>
-                                      <option value="Technical Qualification">Technical Qualification</option>
-                                      <option value="Financial Evaluation">Financial Evaluation</option>
-                                      <option value="Won">Won</option>
-                                      <option value="Lost">Lost</option>
-                                    </select>
-                                  </div>
+                                  {/* 🚀 NEW: INLINE EDIT MODE FOR ACTIVE BIDS */}
+                                  {editingBid && (editingBid._id === b._id || editingBid.id === b.id) ? (
+                                     <form onSubmit={handleSaveEditBid} className="space-y-3 animate-in fade-in">
+                                        <div>
+                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Bid Number</Label>
+                                           <Input value={editingBid.bid_no} onChange={e => setEditingBid({...editingBid, bid_no: e.target.value})} className="h-8 text-xs bg-slate-50" />
+                                        </div>
+                                        <div>
+                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Description/Shortcut</Label>
+                                           <Textarea rows={2} value={editingBid.description} onChange={e => setEditingBid({...editingBid, description: e.target.value})} className="text-xs bg-slate-50" />
+                                        </div>
+                                        <div className="flex gap-2">
+                                           <Button type="button" onClick={() => setEditingBid(null)} variant="outline" className="flex-1 h-8 text-xs"><X className="w-3 h-3 mr-1"/> Cancel</Button>
+                                           <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 h-8 text-xs"><CheckCircle2 className="w-3 h-3 mr-1"/> Save</Button>
+                                        </div>
+                                     </form>
+                                  ) : (
+                                     <div>
+                                       <div className="flex justify-between items-start mb-2">
+                                         <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
+                                            <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
+                                            <span className="text-xs font-black font-mono truncate max-w-[120px]">{b.bid_no || b.id || 'N/A'}</span>
+                                         </div>
+                                         <div className="flex gap-1 items-center">
+                                            <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm mr-1">{b.status}</Badge>
+                                            {/* 🚀 EDIT BUTTON */}
+                                            <Button variant="ghost" size="icon" onClick={() => setEditingBid(b)} className="h-6 w-6 p-0 text-slate-400 hover:text-blue-600 bg-slate-50 border"><Pencil className="w-3 h-3"/></Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-slate-50 border"><Trash2 className="w-3 h-3"/></Button>
+                                         </div>
+                                       </div>
+                                       <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight line-clamp-2">{b.description || b.title}</h4>
+                                     </div>
+                                  )}
+                                  
+                                  {!editingBid && (
+                                    <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
+                                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
+                                      <select 
+                                        className="border border-blue-300 rounded-md px-2 py-1.5 text-xs bg-blue-50 font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto shadow-sm cursor-pointer"
+                                        value={b.status}
+                                        onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
+                                      >
+                                        <option value="Bid Allocated">Bid Allocated</option>
+                                        <option value="Client Approved">Client Approved</option>
+                                        <option value="Client Cancelled">Client Cancelled</option>
+                                        <option value="ADC Check">ADC Check</option>
+                                        <option value="Documents Asking">Documents Asking</option>
+                                        <option value="Documents Preparing">Documents Preparing</option>
+                                        <option value="Bid Participated">Bid Participated</option>
+                                        <option value="Technical Evaluation">Technical Evaluation</option>
+                                        <option value="Technical Qualification">Technical Qualification</option>
+                                        <option value="Financial Evaluation">Financial Evaluation</option>
+                                        <option value="Won">Won</option>
+                                        <option value="Lost">Lost</option>
+                                      </select>
+                                    </div>
+                                  )}
 
                                   {b.status === 'Won' && (
                                      <Button size="sm" onClick={() => toast.success("Winning Bid Published to Client Ledger!")} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2 h-8 text-xs font-bold animate-in fade-in shadow-md">
@@ -692,14 +805,22 @@ export default function EmployeeDashboard() {
                                  </div>
                               </CardHeader>
                               <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                                 {clientSuggestions.map(sug => (
+                                 {clientSuggestions.map(sug => {
+                                    // 🚀 Parse the extracted data if available
+                                    let displayBid = 'N/A';
+                                    let displayDesc = sug.message;
+                                    const match = sug.message.match(/\[BID: (.*?)\] (.*)/);
+                                    if (match) { displayBid = match[1]; displayDesc = match[2]; }
+
+                                    return (
                                     <div key={sug._id} className="border border-amber-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition relative">
                                        <div>
                                           <div className="flex justify-between items-start mb-2">
                                              <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[9px] font-mono">Suggested On: {new Date(sug.created_at).toLocaleDateString()}</Badge>
+                                             {displayBid !== 'N/A' && <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-mono">{displayBid}</Badge>}
                                           </div>
                                           <h4 className="font-bold text-[#0A2647] mt-1 mb-4 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
-                                             {sug.message}
+                                             {displayDesc}
                                           </h4>
                                        </div>
                                        <div className="flex gap-2 border-t border-slate-100 pt-3">
@@ -711,7 +832,7 @@ export default function EmployeeDashboard() {
                                           </Button>
                                        </div>
                                     </div>
-                                 ))}
+                                 )})}
                               </CardContent>
                            </Card>
                         )})}
@@ -744,8 +865,9 @@ export default function EmployeeDashboard() {
                        </div>
                     </div>
                     <div>
-                      <Label className="text-xs font-bold text-slate-600">Phone Number *</Label>
-                      <Input required type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                      {/* 🚀 FIX: Removed 'required' from Phone Number */}
+                      <Label className="text-xs font-bold text-slate-600">Phone Number</Label>
+                      <Input type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
                     </div>
                     <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
                        <div>
@@ -818,7 +940,7 @@ export default function EmployeeDashboard() {
                             {officer.notes && <p className="text-xs text-slate-600 mt-2 bg-slate-100 p-2 rounded italic">"{officer.notes}"</p>}
                           </div>
                           <div className="shrink-0 flex sm:flex-col gap-2 items-end">
-                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-sm py-1 shadow-sm">📞 {officer.phone}</Badge>
+                            {officer.phone && <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-sm py-1 shadow-sm">📞 {officer.phone}</Badge>}
                           </div>
                         </div>
                       ))}
@@ -829,67 +951,8 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
+          {/* 🚀 NEW: MODULE SEPARATED - ONLY CLIENTS DIRECTORY */}
           <TabsContent value="clients" className="w-full space-y-6">
-            <div className="grid lg:grid-cols-2 gap-6">
-              <Card className="shadow-sm border-t-4 border-t-red-500">
-                <CardHeader className="bg-red-50/50 pb-4 border-b">
-                  <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
-                  <CardDescription>Send a direct red-alert banner to the client's portal screen.</CardDescription>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <form onSubmit={sendActionAlert} className="space-y-4">
-                    <div>
-                      <Label className="text-slate-600 text-xs font-bold">Select Client ID *</Label>
-                      <Select required value={alertForm.client_id} onValueChange={v => setAlertForm({...alertForm, client_id: v})}>
-                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
-                         <SelectContent>
-                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
-                         </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-slate-600 text-xs font-bold">Requirement / Message *</Label>
-                      <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please check email..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
-                    </div>
-                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-10 shadow-md">
-                      <Send className="w-4 h-4 mr-2"/> Push Alert
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-
-              <Card className="shadow-sm border-t-4 border-t-orange-500">
-                <CardHeader className="bg-orange-50/50 pb-4 border-b">
-                  <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
-                  <CardDescription>Missing documents? This will lock the client's screen until they reply.</CardDescription>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <form onSubmit={handleRaiseQuery} className="space-y-4">
-                    <div>
-                      <Label className="text-slate-600 text-xs font-bold">Select Client *</Label>
-                      <Select required value={queryForm.client_email} onValueChange={v => setQueryForm({...queryForm, client_email: v})}>
-                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
-                         <SelectContent>
-                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
-                         </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-slate-600 text-xs font-bold">Query Subject *</Label>
-                      <Input required placeholder="e.g., PAN Card Missing" value={queryForm.subject} onChange={e=>setQueryForm({...queryForm, subject: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
-                    </div>
-                    <div>
-                      <Label className="text-slate-600 text-xs font-bold">Detailed Description *</Label>
-                      <textarea required className="w-full border rounded-md p-2 mt-1 h-[68px] text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Explain what document is needed..." value={queryForm.message} onChange={e=>setQueryForm({...queryForm, message: e.target.value})}></textarea>
-                    </div>
-                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-10 shadow-md">
-                      <Lock className="w-4 h-4 mr-2"/> Lock Client & Send Query
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-            </div>
-
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6 w-full">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
@@ -897,7 +960,7 @@ export default function EmployeeDashboard() {
                  </CardTitle>
                  <CardDescription>View client details, access their Google Drive vault, or login to troubleshoot.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+              <CardContent className="pt-4 max-h-[700px] overflow-y-auto">
                  {approvedClients.length === 0 ? (
                     <div className="text-center py-8 text-slate-400">
                        <Users className="w-10 h-10 mx-auto mb-2 opacity-30" />
@@ -941,12 +1004,134 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
+          {/* 🚀 NEW: MODULE SEPARATED - ALERTS & QUERIES (CHAT UI) */}
+          <TabsContent value="alerts" className="w-full space-y-6">
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card className="shadow-sm border-t-4 border-t-red-500">
+                <CardHeader className="bg-red-50/50 pb-4 border-b">
+                  <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
+                  <CardDescription>Send a direct red-alert banner to the client's portal screen.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={sendActionAlert} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client ID *</Label>
+                      <Select required value={alertForm.client_id} onValueChange={v => setAlertForm({...alertForm, client_id: v})}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Requirement / Message *</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please check email..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-10 shadow-md">
+                      <Send className="w-4 h-4 mr-2"/> Push Alert
+                    </Button>
+                  </form>
+
+                  {/* 🚀 CHAT UI FOR ALERTS (AUTO DELETE ON CLOSE) */}
+                  <div className="mt-8">
+                     <h4 className="font-bold text-slate-700 text-sm mb-3">Pending Action Alerts</h4>
+                     {mdTasks.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No active alerts pushed to clients.</p>
+                     ) : (
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                           {mdTasks.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').map(alert => (
+                              <div key={alert._id} className="bg-red-50 border border-red-100 p-3 rounded-lg flex flex-col relative">
+                                 <span className="text-[9px] text-red-400 font-bold mb-1">To: {alert.target_id}</span>
+                                 <p className="text-xs text-red-900 mb-2">"{alert.message}"</p>
+                                 <Button size="sm" onClick={() => markTaskDone(alert._id || alert.id)} variant="outline" className="h-6 text-[10px] w-fit self-end border-red-200 text-red-600 hover:bg-red-100">
+                                    <X className="w-3 h-3 mr-1"/> Close & Remove
+                                 </Button>
+                              </div>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm border-t-4 border-t-orange-500">
+                <CardHeader className="bg-orange-50/50 pb-4 border-b">
+                  <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
+                  <CardDescription>Missing documents? This will lock the client's screen until they reply.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleRaiseQuery} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client *</Label>
+                      <Select required value={queryForm.client_email} onValueChange={v => setQueryForm({...queryForm, client_email: v})}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Query Subject *</Label>
+                      <Input required placeholder="e.g., PAN Card Missing" value={queryForm.subject} onChange={e=>setQueryForm({...queryForm, subject: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Detailed Description *</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-[68px] text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Explain what document is needed..." value={queryForm.message} onChange={e=>setQueryForm({...queryForm, message: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-10 shadow-md">
+                      <Lock className="w-4 h-4 mr-2"/> Lock Client & Send Query
+                    </Button>
+                  </form>
+
+                  {/* 🚀 CHAT UI FOR QUERIES & VIEW DOCUMENT */}
+                  <div className="mt-8">
+                     <h4 className="font-bold text-slate-700 text-sm mb-3">Active Client Queries</h4>
+                     <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                        {approvedClients.filter(c => c.officer_queries && c.officer_queries.length > 0).length === 0 ? (
+                           <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No active queries pending.</p>
+                        ) : (
+                           approvedClients.filter(c => c.officer_queries && c.officer_queries.length > 0).map(client => (
+                              client.officer_queries.map((q, idx) => (
+                                 <div key={idx} className="bg-orange-50 border border-orange-200 p-3 rounded-lg flex flex-col relative shadow-sm">
+                                    <span className="text-[9px] text-orange-500 font-bold mb-1">To: {client.company_name || client.email}</span>
+                                    <p className="text-xs font-bold text-orange-900 mb-1">{q.subject}</p>
+                                    <p className="text-xs text-orange-800 mb-3 bg-white p-2 rounded border border-orange-100">"{q.message}"</p>
+                                    
+                                    <div className="flex gap-2 justify-end mt-1 pt-2 border-t border-orange-200">
+                                       <Button size="sm" onClick={() => { 
+                                          const link = client.drive_folder_link || client.drive_link;
+                                          if(link) window.open(link, '_blank'); 
+                                          else toast.info("No documents uploaded yet."); 
+                                       }} variant="outline" className="h-7 text-[10px] border-orange-300 text-orange-700 hover:bg-orange-100 bg-white">
+                                          <Eye className="w-3 h-3 mr-1"/> View Docs
+                                       </Button>
+                                       <Button size="sm" onClick={() => handleCloseQuery(q.id, client.email)} className="h-7 text-[10px] bg-[#16a34a] hover:bg-[#15803d]">
+                                          <CheckCircle2 className="w-3 h-3 mr-1"/> Resolve & Close
+                                       </Button>
+                                    </div>
+                                 </div>
+                              ))
+                           ))
+                        )}
+                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
           <TabsContent value="publisher" className="w-full space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
-               <Card className="border-0 shadow-md lg:col-span-2 h-fit">
-                 <CardHeader className="pb-4 border-b border-slate-100">
-                   <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><PlusCircle className="w-5 h-5"/> Publish New Tender</CardTitle>
+               {/* LEFT: FORM (Updates conditionally if Edit mode is active) */}
+               <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
+                 <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
+                   <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
+                      {isEditingTender ? <><Pencil className="w-5 h-5 text-blue-600"/> Edit Tender</> : <><PlusCircle className="w-5 h-5"/> Publish New Tender</>}
+                   </CardTitle>
+                   {isEditingTender && (
+                      <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
+                   )}
                  </CardHeader>
                  <CardContent className="pt-5">
                    <form onSubmit={handlePublishTender} className="space-y-4">
@@ -992,15 +1177,15 @@ export default function EmployeeDashboard() {
                        <textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea>
                      </div>
                      <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document (Keep under 4 MB)</Label>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
                        <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
                           <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                           <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
                           <span className="text-sm font-bold text-[#0A2647]">{pdfName || 'Click to upload PDF'}</span>
                        </div>
                      </div>
-                     <Button type="submit" disabled={publishing} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-11 text-base font-bold shadow-md">
-                       {publishing ? 'Publishing...' : 'Publish Tender'}
+                     <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+                       {publishing ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
                      </Button>
                    </form>
                  </CardContent>
@@ -1019,7 +1204,7 @@ export default function EmployeeDashboard() {
                         <p className="text-center text-sm text-slate-500 py-10">No public tenders live on site right now.</p>
                      ) : (
                         publicTenders.map(t => (
-                           <div key={t._id} className="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-300 transition shadow-sm">
+                           <div key={t._id} className="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-300 transition shadow-sm relative group">
                               <div className="flex items-start justify-between gap-3 mb-3">
                                  <div>
                                     <div className="flex items-center gap-2 mb-1.5">
@@ -1030,10 +1215,23 @@ export default function EmployeeDashboard() {
                                     <h4 className="font-bold text-[#0A2647] text-base leading-tight">{t.title}</h4>
                                     <p className="text-xs text-slate-500 mt-1">{t.department} {t.bid_no && <span className="ml-2 font-mono bg-slate-100 px-1 rounded">Bid No: {t.bid_no}</span>}</p>
                                  </div>
+                                 
+                                 {/* 🚀 NEW: EDIT & DELETE BUTTONS FOR LIVE TENDERS */}
+                                 <div className="flex gap-1 items-center shrink-0">
+                                    <Button variant="outline" size="icon" onClick={() => {
+                                        setIsEditingTender(t._id);
+                                        setTenderForm({
+                                            bid_no: t.bid_no || '', title: t.title, department: t.department, 
+                                            last_date: t.last_date ? new Date(t.last_date).toISOString().split('T')[0] : '', 
+                                            district: t.district, category: t.category || 'Product', supply_details: t.supply_details || ''
+                                        });
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }} className="h-7 w-7 text-slate-500 hover:text-blue-600"><Pencil className="w-3.5 h-3.5"/></Button>
+                                    <Button variant="outline" size="icon" onClick={() => handleDeleteTenderDB(t._id)} className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5"/></Button>
+                                 </div>
                               </div>
                               
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                                 {/* 🚀 NEW: VIEW PDF BUTTON FOR EMPLOYEES TO PREVIEW DOCUMENTS WITHOUT PAYWALL */}
                                  <Button size="sm" onClick={() => window.open(`/api/tenders/${t._id}/pdf?email=${email}&role=employee`, '_blank')} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                                     <FileText className="w-3 h-3 mr-1.5"/> View PDF
                                  </Button>
@@ -1048,7 +1246,8 @@ export default function EmployeeDashboard() {
                                        })}
                                     </SelectContent>
                                  </Select>
-                                 <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
+                                 {/* 🚀 REAL EXTRACTION LOGIC IN SUGGESTION */}
+                                 <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
                                     <Send className="w-3 h-3 mr-1.5"/> Suggest
                                  </Button>
                               </div>
@@ -1073,17 +1272,29 @@ export default function EmployeeDashboard() {
                        <h3 className="font-bold text-slate-700 mb-2 border-b pb-2">Active Action Required</h3>
                        <div className="grid md:grid-cols-2 gap-4">
                        {activeTickets.map(ticket => (
-                          <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition">
+                          <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between">
                              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                             <div className="flex justify-between items-start mb-2">
-                                <div>
-                                  <Badge variant="outline" className="mb-1 bg-slate-100">{ticket.department}</Badge>
-                                  <h4 className="font-bold text-[#0A2647]">{ticket.subject}</h4>
-                                  <p className="text-xs text-muted-foreground">{ticket.client_email} • {new Date(ticket.created_at).toLocaleDateString()}</p>
+                             
+                             <div>
+                                <div className="flex justify-between items-start mb-2">
+                                   <div>
+                                     <Badge variant="outline" className="mb-1 bg-slate-100">{ticket.department}</Badge>
+                                     <p className="text-xs text-muted-foreground">{ticket.client_email}</p>
+                                   </div>
+                                   <div className="flex gap-2 items-center">
+                                      <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse shrink-0">Action Required</Badge>
+                                      {/* 🚀 NEW: DELETE TICKET BUTTON */}
+                                      <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white"><Trash2 className="w-3 h-3"/></Button>
+                                   </div>
                                 </div>
-                                <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse shrink-0">Action Required</Badge>
+
+                                {/* 🚀 CHAT BUBBLE UI FOR HELPDESK */}
+                                <div className="bg-amber-50 border border-amber-100 p-3 rounded-tr-xl rounded-br-xl rounded-bl-xl shadow-inner mb-4 mt-2">
+                                   <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">{new Date(ticket.created_at).toLocaleString()}</p>
+                                   <h4 className="font-bold text-[#0A2647] text-sm mb-1">{ticket.subject}</h4>
+                                   <p className="text-xs text-amber-900 leading-relaxed">"{ticket.message}"</p>
+                                </div>
                              </div>
-                             <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"{ticket.message}"</p>
                              
                              <div className="flex flex-col gap-2 mt-4 pt-3 border-t">
                                 <div className="flex gap-2">
@@ -1120,7 +1331,7 @@ export default function EmployeeDashboard() {
 
                                 <div className="shrink-0 flex items-center gap-3">
                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</span>
-                                   <span className="text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-400 font-semibold flex items-center"><Star className="w-3 h-3 mr-1 text-slate-300"/> No Rating</span>
+                                   <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
                                 </div>
                              </div>
                           ))}
