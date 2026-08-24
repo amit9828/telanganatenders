@@ -119,6 +119,7 @@ export default function AdminPage() {
       const empJson = empRes.ok ? await empRes.json() : { team: [] };
       const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
 
+      // Connecting Pure Live Data
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
@@ -130,6 +131,7 @@ export default function AdminPage() {
       setLedgerTxns(ledgerJson.transactions || []);
       setLedgerBalance(ledgerJson.balance || 0);
 
+      // Live Reports Mapping
       setClientReports((aJson.users || []).map(c => ({
          id: c.email, name: c.company_name || c.name || 'Unknown',
          total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
@@ -341,7 +343,6 @@ export default function AdminPage() {
      toast.success("Deleted permanently.");
   };
 
-  // 🚀 NEW: SLA Actions
   const handleGiveWarning = async (id) => {
     try {
       await fetch('/api/dispatches/update', {
@@ -363,7 +364,6 @@ export default function AdminPage() {
     } catch(e) { toast.error("Network error"); }
   };
 
-  // 🚀 FIXED: Robust Document Opener
   const handleViewDocument = (req) => {
     const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
     if (docLink) {
@@ -472,7 +472,6 @@ export default function AdminPage() {
              </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* 🚀 FIXED: Public Site opens in new tab securely bypassing lock */}
             <a href="/?guest_login=true" target="_blank" rel="noopener noreferrer">
                <Button variant="outline" size="sm" className="text-xs sm:text-sm bg-transparent border-slate-600 text-slate-200 hover:text-white hover:bg-slate-800">View Public Site</Button>
             </a>
@@ -504,17 +503,29 @@ export default function AdminPage() {
                   <Button size="sm" variant={timeRange === 'monthly' ? 'default' : 'ghost'} onClick={()=>setTimeRange('monthly')} className={`h-7 text-xs ${timeRange === 'monthly' ? 'bg-[#0A2647] text-white' : ''}`}>Monthly</Button>
                </div>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]"><StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={tenders.length || 0} /></div>
-              <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Active Operations" value={dispatches.length + bidRequests.length} />
+            
+            {/* 🚀 NEW: Added "Total Clients" Box & Connected to Pure Live States */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]">
+                 <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders" value={tenders.length} />
               </div>
-              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]"><StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Pending Approvals" value={pendingUsers.length} accent={pendingUsers.length > 0} /></div>
-              <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]"><StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${(ledgerBalance || 0).toLocaleString()}`} /></div>
+              <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
+                 <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Operations" value={dispatches.length + bidRequests.length} />
+              </div>
+              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
+                 <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Total Clients" value={approvedClients.length} />
+              </div>
+              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
+                 <StatCard icon={<UserPlus className="w-4 h-4 text-orange-500" />} label="Pending Appr." value={pendingUsers.length} accent={pendingUsers.length > 0} />
+              </div>
+              <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]">
+                 <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${ledgerBalance.toLocaleString()}`} />
+              </div>
             </div>
+
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Live Data</CardTitle></CardHeader>
+                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Logs</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
                      {employeeReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No active employees found.</p> : (
                        <table className="w-full text-sm text-left border-collapse">
@@ -642,7 +653,7 @@ export default function AdminPage() {
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
                                 ) : (
-                                   <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
                                       <Database className="w-4 h-4 mr-2" /> Sync Drive Space
                                    </Button>
                                 )}
@@ -984,7 +995,7 @@ export default function AdminPage() {
                      </CardContent>
                   </Card>
 
-                  {/* 🚀 NEW: SLA TRACKER CARD */}
+                  {/* 🚀 FIXED: SLA TRACKER CARD */}
                   <Card className="tender-shadow border-t-4 border-t-red-500">
                      <CardHeader className="bg-red-50/30 border-b pb-4">
                         <CardTitle className="flex items-center gap-2 text-red-900 text-lg"><Clock className="w-5 h-5 text-red-600"/> Dispatch SLA Tracker</CardTitle>
