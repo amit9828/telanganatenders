@@ -17,6 +17,7 @@ import {
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
   Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star
 } from 'lucide-react';
+
 const DISTRICTS = [
   'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
   'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
@@ -26,7 +27,6 @@ const DISTRICTS = [
   'Srikakulam', 'Vizianagaram', 'Prakasam'
 ];
 
-// Array of border colors to dynamically assign to different clients
 const BORDER_COLORS = [
   'border-blue-500', 'border-purple-500', 'border-emerald-500', 
   'border-orange-500', 'border-indigo-500', 'border-rose-500'
@@ -63,7 +63,7 @@ export default function EmployeeDashboard() {
     state: '', district: '', address: '', pincode: '', notes: '' 
   });
   const [savingOfficer, setSavingOfficer] = useState(false);
-  const [officerSearch, setOfficerSearch] = useState(''); // 🚀 NEW: Officer Search State
+  const [officerSearch, setOfficerSearch] = useState('');
 
   const [showAddBid, setShowAddBid] = useState(false);
   const [newBidForm, setNewBidForm] = useState({ 
@@ -175,7 +175,7 @@ export default function EmployeeDashboard() {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
     
-    // 🚀 NEW: DUPLICATE SUGGESTION PREVENTION
+    // 🚀 DUPLICATE SUGGESTION PREVENTION
     const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === tenderTitle);
     if(isDuplicate) {
       return toast.error("Action Denied: You have already suggested this tender to the selected client.");
@@ -206,7 +206,12 @@ export default function EmployeeDashboard() {
   const handleSuggestionResponse = async (suggestion, action) => {
     try {
       if (action === 'Accepted') {
-         // Create new bid
+         // 🚀 PREVENT DUPLICATE ENTRY TO ACTIVE BIDS
+         const isDuplicate = bids.some(b => b.client_email === suggestion.target_id && b.description === suggestion.message);
+         if(isDuplicate) {
+            return toast.error("Action Denied: This tender is already actively tracked for this client.");
+         }
+
          const res = await fetch('/api/bids', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -238,7 +243,6 @@ export default function EmployeeDashboard() {
     e.preventDefault();
     if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
     
-    // 🚀 NEW: DUPLICATE BID TRACKER PREVENTION
     const isDuplicate = bids.some(b => b.bid_no === newBidForm.bid_no && b.client_email === newBidForm.client_email);
     if(isDuplicate) return toast.error("Action Denied: This Bid Number is already active for this client!");
 
@@ -261,7 +265,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 NEW: DELETE ACTIVE BID (FRONTEND LOGIC TO REMOVE ACCESS)
   const handleDeleteBid = async (bidId) => {
      if(!confirm("Are you sure you want to delete this bid access from the tracker?")) return;
      try {
@@ -270,10 +273,31 @@ export default function EmployeeDashboard() {
           toast.success("Bid tracking removed."); 
           fetchLiveOperationsData(email); 
        } else {
-          // Fallback if backend doesn't support DELETE /api/bids yet
           toast.error("Failed to remove. Backend route might need update.");
        }
      } catch(e) { toast.error("Network error"); }
+  }
+
+  // 🚀 NEW: CREATE DRIVE FOLDER BRIDGE API CALL
+  const handleCreateDriveFolder = async (clientEmail, companyName) => {
+      toast.info("Generating secure Google Drive Workspace...");
+      try {
+          const res = await fetch('/api/drive/create-folder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: clientEmail, folderName: `Client - ${companyName}` })
+          });
+          const data = await res.json();
+          if(res.ok && data.folderLink) {
+              toast.success("Drive Workspace Synced!");
+              fetchLiveOperationsData(email);
+              window.open(data.folderLink, '_blank');
+          } else {
+              toast.error(data.error || "Failed to create drive.");
+          }
+      } catch(e) {
+          toast.error("Network Error.");
+      }
   }
 
   const sendActionAlert = async (e) => {
@@ -417,7 +441,6 @@ export default function EmployeeDashboard() {
 
   if (!isMounted) return null;
 
-  // 🚀 GROUP BIDS BY CLIENT
   const groupedBids = bids.reduce((acc, bid) => {
       const key = bid.client_email || 'Unknown';
       if (!acc[key]) acc[key] = [];
@@ -425,7 +448,6 @@ export default function EmployeeDashboard() {
       return acc;
   }, {});
 
-  // 🚀 GROUP SUGGESTIONS BY CLIENT
   const groupedSuggestions = suggestions.reduce((acc, sug) => {
       const key = sug.target_id || 'Unknown';
       if (!acc[key]) acc[key] = [];
@@ -433,20 +455,17 @@ export default function EmployeeDashboard() {
       return acc;
   }, {});
 
-  // 🚀 FILTER OFFICERS
   const filteredOfficers = officers.filter(o => 
      o.name?.toLowerCase().includes(officerSearch.toLowerCase()) || 
      o.department?.toLowerCase().includes(officerSearch.toLowerCase()) ||
      o.district?.toLowerCase().includes(officerSearch.toLowerCase())
   );
 
-  // 🚀 SEPARATE HELPDESK TICKETS
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* ENTERPRISE HEADER */}
       <header className="bg-[#0A2647] border-b sticky top-0 z-30 shadow-md text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -463,13 +482,13 @@ export default function EmployeeDashboard() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
+      {/* 🚀 FULL PAGE WIDTH CONTAINER */}
+      <main className="w-full px-4 sm:px-8 py-6">
         
-        {/* MD PRIORITY TASKS WIDGET */}
-        <div className="mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+        <div className="mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
            <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Tasks Assigned by MD / Admin</h3>
-           <div className="grid md:grid-cols-2 gap-4">
+           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {mdTasks.length === 0 ? (
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
               ) : (
@@ -492,30 +511,31 @@ export default function EmployeeDashboard() {
         </div>
 
         <Tabs defaultValue="kanban" className="w-full">
-          <TabsList className="grid w-full lg:w-[1200px] grid-cols-6 bg-slate-200 h-auto p-1 mb-6 rounded-lg overflow-x-auto">
-            <TabsTrigger value="kanban" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+          {/* 🚀 FULL WIDTH TABS LIST */}
+          <TabsList className="flex flex-wrap w-full bg-slate-200 h-auto p-1 mb-6 rounded-lg gap-1">
+            <TabsTrigger value="kanban" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Active Bids
             </TabsTrigger>
-            <TabsTrigger value="suggestions" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+            <TabsTrigger value="suggestions" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Lightbulb className="w-4 h-4 mr-2 hidden sm:block"/> Suggestions
             </TabsTrigger>
-            <TabsTrigger value="officers" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+            <TabsTrigger value="officers" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
             </TabsTrigger>
-            <TabsTrigger value="clients" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+            <TabsTrigger value="clients" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <AlertCircle className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Clients
             </TabsTrigger>
-            <TabsTrigger value="publisher" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+            <TabsTrigger value="publisher" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders DB
             </TabsTrigger>
-            <TabsTrigger value="sla" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+            <TabsTrigger value="sla" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk
             </TabsTrigger>
           </TabsList>
 
           {/* 🚀 TAB 1: KANBAN BID WORKFLOW (GROUPED BY CLIENT WITH NEW COLORS & STATUS) */}
-          <TabsContent value="kanban" className="space-y-6">
-            <Card className="shadow-sm border-0 ring-1 ring-slate-200">
+          <TabsContent value="kanban" className="w-full space-y-6">
+            <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>
                    <CardTitle className="text-[#0A2647] flex items-center gap-2"><Kanban className="w-5 h-5 text-blue-600"/> Active Bid Events Tracker</CardTitle>
@@ -531,7 +551,7 @@ export default function EmployeeDashboard() {
                 {showAddBid && (
                    <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner animate-in fade-in slide-in-from-top-4">
                       <h4 className="font-bold text-blue-900 mb-4 flex items-center"><Target className="w-4 h-4 mr-2"/> Create New Bid Tracking Row</h4>
-                      <form onSubmit={handleAddBidRow} className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      <form onSubmit={handleAddBidRow} className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
                          <div>
                             <Label className="text-xs font-bold text-slate-600">Select Client *</Label>
                             <Select required value={newBidForm.client_email} onValueChange={v => setNewBidForm({...newBidForm, client_email: v})}>
@@ -566,7 +586,11 @@ export default function EmployeeDashboard() {
                                </SelectContent>
                             </Select>
                          </div>
-                         <div className="sm:col-span-2">
+                         <div>
+                            <Label className="text-xs font-bold text-slate-600">Submitted Date (Optional)</Label>
+                            <Input type="date" value={newBidForm.submitted_date} onChange={e=>setNewBidForm({...newBidForm, submitted_date: e.target.value})} className="mt-1 bg-white h-9" />
+                         </div>
+                         <div className="sm:col-span-3">
                             <Label className="text-xs font-bold text-slate-600">Description of Work *</Label>
                             <Input required placeholder="Short title of the tender work..." value={newBidForm.description} onChange={e=>setNewBidForm({...newBidForm, description: e.target.value})} className="mt-1 bg-white h-9" />
                          </div>
@@ -581,11 +605,11 @@ export default function EmployeeDashboard() {
                   <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
                 ) : (
                   <div className="space-y-6">
-                    {/* 🚀 Render Grouped by Client with Dynamic Colors */}
+                    {/* 🚀 GROUPED BIDS BY CLIENT */}
                     {Object.entries(groupedBids).map(([clientEmail, clientBids], index) => {
                         const clientInfo = approvedClients.find(c => c.email === clientEmail);
                         const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
-                        const colorClass = BORDER_COLORS[index % BORDER_COLORS.length]; // Dynamic Color Variation
+                        const colorClass = BORDER_COLORS[index % BORDER_COLORS.length]; 
                         
                         return (
                         <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
@@ -598,7 +622,7 @@ export default function EmployeeDashboard() {
                                  <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{clientBids.length} Active Bids</Badge>
                               </div>
                            </CardHeader>
-                           <CardContent className="p-4 grid gap-4 md:grid-cols-2">
+                           <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                               {clientBids.map(b => (
                                 <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
                                   <div>
@@ -635,11 +659,11 @@ export default function EmployeeDashboard() {
                                     </select>
                                   </div>
 
-                                  {/* 🚀 NEW: WINNING REDIRECT / NOTIFICATION */}
+                                  {/* 🚀 WINNING REDIRECT / NOTIFICATION */}
                                   {b.status === 'Won' && (
-                                     <div className="bg-emerald-100 text-emerald-800 p-2 text-xs font-bold rounded-md mt-2 flex items-center justify-center animate-in fade-in">
-                                        <Trophy className="w-4 h-4 mr-2 text-emerald-600" /> Bid Won & Sent to Client Ledger
-                                     </div>
+                                     <Button size="sm" onClick={() => toast.success("Winning Bid Published to Client Ledger!")} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2 h-8 text-xs font-bold animate-in fade-in shadow-md">
+                                        <Trophy className="w-4 h-4 mr-2" /> Publish Win to Client
+                                     </Button>
                                   )}
 
                                 </div>
@@ -653,8 +677,8 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 TAB 2: SUGGESTIONS MODULE (GROUPED BY CLIENT) */}
-          <TabsContent value="suggestions" className="space-y-6">
+          {/* 🚀 TAB 2: SUGGESTIONS MODULE */}
+          <TabsContent value="suggestions" className="w-full space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                <CardHeader className="bg-slate-50/50 border-b pb-4">
                   <CardTitle className="text-[#0A2647] flex items-center gap-2"><Lightbulb className="w-5 h-5 text-amber-500"/> Suggested Tenders Tracker</CardTitle>
@@ -668,11 +692,10 @@ export default function EmployeeDashboard() {
                      </div>
                   ) : (
                      <div className="space-y-6">
-                        {/* 🚀 Render Grouped by Client */}
                         {Object.entries(groupedSuggestions).map(([clientEmail, clientSuggestions], index) => {
                            const clientInfo = approvedClients.find(c => c.email === clientEmail);
                            const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
-                           const colorClass = BORDER_COLORS[(index + 1) % BORDER_COLORS.length]; // Mix colors
+                           const colorClass = BORDER_COLORS[(index + 1) % BORDER_COLORS.length]; 
                            
                            return (
                            <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
@@ -685,7 +708,7 @@ export default function EmployeeDashboard() {
                                     <Badge className="bg-amber-100 text-amber-800 border-0 shadow-sm">{clientSuggestions.length} Suggestions</Badge>
                                  </div>
                               </CardHeader>
-                              <CardContent className="p-4 grid gap-4 md:grid-cols-2">
+                              <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                                  {clientSuggestions.map(sug => (
                                     <div key={sug._id} className="border border-amber-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition relative">
                                        <div>
@@ -697,8 +720,8 @@ export default function EmployeeDashboard() {
                                           </h4>
                                        </div>
                                        <div className="flex gap-2 border-t border-slate-100 pt-3">
-                                          <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Accepted')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-9 text-xs">
-                                             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Client Accepted
+                                          <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Accepted')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-9 text-xs shadow-sm">
+                                             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Accepted
                                           </Button>
                                           <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-9 text-xs">
                                              <XCircle className="w-3.5 h-3.5 mr-1.5"/> Rejected
@@ -715,11 +738,10 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 3: GOVT OFFICERS DIRECTORY (UPDATED WITH SEARCH BAR) */}
-          <TabsContent value="officers" className="space-y-6">
-            <div className="grid md:grid-cols-3 gap-6">
-              {/* Form Section */}
-              <Card className="shadow-sm border-t-4 border-t-purple-600 md:col-span-1 h-fit">
+          {/* 🚀 TAB 3: GOVT OFFICERS DIRECTORY (UPDATED SEARCH ALIGNMENT) */}
+          <TabsContent value="officers" className="w-full space-y-6">
+            <div className="grid lg:grid-cols-3 gap-6">
+              <Card className="shadow-sm border-t-4 border-t-purple-600 lg:col-span-1 h-fit">
                 <CardHeader className="bg-purple-50/50 pb-4 border-b">
                   <CardTitle className="text-purple-900 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-purple-600"/> Add Govt Officer</CardTitle>
                 </CardHeader>
@@ -743,7 +765,6 @@ export default function EmployeeDashboard() {
                       <Label className="text-xs font-bold text-slate-600">Phone Number *</Label>
                       <Input required type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
                     </div>
-                    
                     <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
                        <div>
                           <Label className="text-xs font-bold text-slate-600">State</Label>
@@ -786,23 +807,23 @@ export default function EmployeeDashboard() {
               </Card>
 
               {/* Directory List Section */}
-              <Card className="shadow-sm md:col-span-2">
+              <Card className="shadow-sm lg:col-span-2 w-full">
                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                   <div>
                      <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
                      <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
                   </div>
-                  {/* 🚀 NEW: SEARCH BAR FOR OFFICERS */}
-                  <div className="relative">
+                  {/* 🚀 SEARCH BAR ALIGNED RIGHT */}
+                  <div className="relative shrink-0">
                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                     <Input placeholder="Search officers..." value={officerSearch} onChange={e=>setOfficerSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-64 bg-white" />
+                     <Input placeholder="Search officers..." value={officerSearch} onChange={e=>setOfficerSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
                   </div>
                 </CardHeader>
                 <CardContent className="pt-4 p-0">
                   {filteredOfficers.length === 0 ? (
                     <p className="text-center text-sm text-slate-500 py-10">No officers found.</p>
                   ) : (
-                    <div className="divide-y max-h-[600px] overflow-y-auto">
+                    <div className="divide-y max-h-[650px] overflow-y-auto">
                       {filteredOfficers.map(officer => (
                         <div key={officer._id || Math.random()} className="p-4 hover:bg-slate-50 transition flex flex-col sm:flex-row justify-between gap-4">
                           <div>
@@ -830,9 +851,8 @@ export default function EmployeeDashboard() {
           </TabsContent>
 
           {/* TAB 4: ALERTS, QUERIES & CLIENT LIST */}
-          <TabsContent value="clients" className="space-y-6">
+          <TabsContent value="clients" className="w-full space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              {/* Push Action Request */}
               <Card className="shadow-sm border-t-4 border-t-red-500">
                 <CardHeader className="bg-red-50/50 pb-4 border-b">
                   <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
@@ -853,14 +873,13 @@ export default function EmployeeDashboard() {
                       <Label className="text-slate-600 text-xs font-bold">Requirement / Message *</Label>
                       <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please check email..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
                     </div>
-                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-10 shadow-sm">
+                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-10 shadow-md">
                       <Send className="w-4 h-4 mr-2"/> Push Alert
                     </Button>
                   </form>
                 </CardContent>
               </Card>
 
-              {/* Raise Document Query (Locks Client Dashboard) */}
               <Card className="shadow-sm border-t-4 border-t-orange-500">
                 <CardHeader className="bg-orange-50/50 pb-4 border-b">
                   <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
@@ -885,7 +904,7 @@ export default function EmployeeDashboard() {
                       <Label className="text-slate-600 text-xs font-bold">Detailed Description *</Label>
                       <textarea required className="w-full border rounded-md p-2 mt-1 h-[68px] text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Explain what document is needed..." value={queryForm.message} onChange={e=>setQueryForm({...queryForm, message: e.target.value})}></textarea>
                     </div>
-                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-10 shadow-sm">
+                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-10 shadow-md">
                       <Lock className="w-4 h-4 mr-2"/> Lock Client & Send Query
                     </Button>
                   </form>
@@ -893,8 +912,7 @@ export default function EmployeeDashboard() {
               </Card>
             </div>
 
-            {/* ACTIVE VERIFIED CLIENTS DIRECTORY */}
-            <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6">
+            <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6 w-full">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
                     <Briefcase className="w-5 h-5 text-blue-600" /> Active Clients Directory
@@ -924,14 +942,16 @@ export default function EmployeeDashboard() {
                              </div>
                              
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
-                                {/* 🚀 NEW: SAFE DRIVE FOLDER LINK REDIRECTION */}
-                                <Button size="sm" onClick={() => { 
-                                   const link = client.drive_folder_link || client.drive_link;
-                                   if(link) window.open(link, '_blank'); 
-                                   else toast.info("Drive folder is not synced yet."); 
-                                }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
-                                   <Database className="w-4 h-4 mr-2" /> View Documents (Drive)
-                                </Button>
+                                {/* 🚀 NEW: SAFE DRIVE FOLDER CREATION & LINK BRIDGE */}
+                                {client.drive_folder_link || client.drive_link ? (
+                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                      <Database className="w-4 h-4 mr-2" /> Open Drive
+                                   </Button>
+                                ) : (
+                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                                      <Database className="w-4 h-4 mr-2" /> Sync Drive Space
+                                   </Button>
+                                )}
                                 <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -945,7 +965,7 @@ export default function EmployeeDashboard() {
           </TabsContent>
 
           {/* 🚀 TAB 5: PUBLISHER & LIVE TENDERS SUGGESTION (EXACT UI FROM SCREENSHOT) */}
-          <TabsContent value="publisher" className="space-y-6">
+          <TabsContent value="publisher" className="w-full space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
                {/* Left: Upload Form MATCHING SCREENSHOT EXACTLY */}
@@ -960,7 +980,6 @@ export default function EmployeeDashboard() {
                        <Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/>
                      </div>
                      <div>
-                       {/* 🚀 NEW: MANDATORY BID NUMBER FOR INTERNAL TRACKING */}
                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label>
                        <Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
                      </div>
@@ -1012,8 +1031,7 @@ export default function EmployeeDashboard() {
                  </CardContent>
                </Card>
 
-               {/* Right: Live Public Tenders & Suggestion Tool */}
-               <Card className="shadow-sm border-0 ring-1 ring-slate-200 lg:col-span-3">
+               <Card className="shadow-sm border-0 ring-1 ring-slate-200 lg:col-span-3 h-fit">
                   <CardHeader className="bg-slate-50/50 pb-4 border-b">
                      <CardTitle className="text-[#0A2647] flex items-center justify-between text-lg">
                         <span className="flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Live Portal Tenders</span>
@@ -1064,19 +1082,20 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* 🚀 TAB 6: FULL SLA HELPDESK (UPDATED WITH COMPACT RESOLVED TICKET DETAILS) */}
-          <TabsContent value="sla" className="space-y-6">
-            <Card className="shadow-sm max-w-4xl mx-auto">
+          {/* 🚀 TAB 6: FULL SLA HELPDESK (UPDATED WITH COMPACT RESOLVED TICKET ROW) */}
+          <TabsContent value="sla" className="w-full space-y-6">
+            <Card className="shadow-sm w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><MessageSquare className="w-5 h-5 text-amber-500"/> Client Helpdesk & SLA Tracker</CardTitle>
                 <CardDescription>Resolve queries within 24 hours or escalate to MD.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-6 max-h-[600px] overflow-y-auto">
+              <CardContent className="pt-6 max-h-[800px] overflow-y-auto">
                  
                  {/* ACTIVE TICKETS */}
                  {activeTickets.length > 0 && (
                     <div className="mb-8 space-y-4">
                        <h3 className="font-bold text-slate-700 mb-2 border-b pb-2">Active Action Required</h3>
+                       <div className="grid md:grid-cols-2 gap-4">
                        {activeTickets.map(ticket => (
                           <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition">
                              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
@@ -1086,41 +1105,47 @@ export default function EmployeeDashboard() {
                                   <h4 className="font-bold text-[#0A2647]">{ticket.subject}</h4>
                                   <p className="text-xs text-muted-foreground">{ticket.client_email} • {new Date(ticket.created_at).toLocaleDateString()}</p>
                                 </div>
-                                <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse">Action Required</Badge>
+                                <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse shrink-0">Action Required</Badge>
                              </div>
                              <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"{ticket.message}"</p>
                              
-                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-3 border-t">
-                                <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
-                                <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
-                                
-                                <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
-                                <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
+                             <div className="flex flex-col gap-2 mt-4 pt-3 border-t">
+                                <div className="flex gap-2">
+                                   <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
+                                   <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
+                                </div>
+                                <div className="flex gap-2">
+                                   <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                                   <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 flex-1 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
+                                </div>
                              </div>
                           </div>
                        ))}
+                       </div>
                     </div>
                  )}
 
-                 {/* RESOLVED TICKETS - HORIZONTAL COMPACT VIEW */}
+                 {/* 🚀 RESOLVED TICKETS - EXTREMELY COMPACT HORIZONTAL ROW */}
                  <div>
                     <h3 className="font-bold text-emerald-700 mb-3 border-b pb-2">Resolved Tickets History</h3>
                     {resolvedTickets.length === 0 ? (
                        <p className="text-sm text-slate-400">No resolved tickets yet.</p>
                     ) : (
-                       <div className="space-y-3">
+                       <div className="space-y-2">
                           {resolvedTickets.map(ticket => (
-                             <div key={ticket._id} className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col sm:flex-row justify-between sm:items-center gap-3 hover:bg-slate-100 transition shadow-inner">
-                                <div className="flex-1 min-w-0">
-                                   <div className="flex items-center gap-2 mb-1">
-                                      <Badge variant="outline" className="text-[9px] bg-white text-emerald-700 border-emerald-200 py-0 h-4">Resolved</Badge>
-                                      <h5 className="font-bold text-sm text-[#0A2647] truncate">{ticket.subject}</h5>
-                                   </div>
-                                   <p className="text-xs text-slate-600 truncate"><b>Q:</b> {ticket.message} | <b>A:</b> <span className="text-emerald-700">{ticket.reply || 'Resolved by Support'}</span></p>
+                             <div key={ticket._id} className="bg-slate-50 border border-slate-200 rounded-md p-2 px-3 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-slate-100 transition shadow-sm">
+                                <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0 shadow-sm w-fit">Resolved</Badge>
+                                
+                                <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-2">
+                                   <span className="text-xs font-bold text-[#0A2647] w-full sm:w-[150px] truncate">{ticket.subject}</span>
+                                   <span className="text-xs text-slate-600 truncate flex-1">
+                                      <b>Q:</b> {ticket.message} <span className="text-slate-300 mx-1">|</span> <b>A:</b> <span className="text-emerald-700 font-semibold">{ticket.reply || 'Resolved by Support'}</span>
+                                   </span>
                                 </div>
-                                <div className="shrink-0 text-right">
-                                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</p>
-                                   <span className="text-[10px] bg-white border px-1.5 py-0.5 rounded text-slate-400 font-semibold inline-flex items-center mt-1"><Star className="w-3 h-3 mr-1 text-slate-300"/> No Rating</span>
+
+                                <div className="shrink-0 flex items-center gap-3">
+                                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</span>
+                                   <span className="text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-400 font-semibold flex items-center"><Star className="w-3 h-3 mr-1 text-slate-300"/> No Rating</span>
                                 </div>
                              </div>
                           ))}
