@@ -15,7 +15,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Star
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -25,6 +25,12 @@ const DISTRICTS = [
   'Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore',
   'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru',
   'Srikakulam', 'Vizianagaram', 'Prakasam'
+];
+
+// Array of border colors to dynamically assign to different clients
+const BORDER_COLORS = [
+  'border-blue-500', 'border-purple-500', 'border-emerald-500', 
+  'border-orange-500', 'border-indigo-500', 'border-rose-500'
 ];
 
 export default function EmployeeDashboard() {
@@ -58,6 +64,7 @@ export default function EmployeeDashboard() {
     state: '', district: '', address: '', pincode: '', notes: '' 
   });
   const [savingOfficer, setSavingOfficer] = useState(false);
+  const [officerSearch, setOfficerSearch] = useState(''); // 🚀 NEW: Officer Search State
 
   const [showAddBid, setShowAddBid] = useState(false);
   const [newBidForm, setNewBidForm] = useState({ 
@@ -142,7 +149,7 @@ export default function EmployeeDashboard() {
 
   const handlePublishTender = async (e) => {
     e.preventDefault();
-    if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date) return toast.error('Please fill all required fields');
+    if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
     setPublishing(true);
     try {
       const r = await fetch('/api/tenders', {
@@ -200,6 +207,7 @@ export default function EmployeeDashboard() {
   const handleSuggestionResponse = async (suggestion, action) => {
     try {
       if (action === 'Accepted') {
+         // Create new bid
          const res = await fetch('/api/bids', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -231,6 +239,10 @@ export default function EmployeeDashboard() {
     e.preventDefault();
     if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
     
+    // 🚀 NEW: DUPLICATE BID TRACKER PREVENTION
+    const isDuplicate = bids.some(b => b.bid_no === newBidForm.bid_no && b.client_email === newBidForm.client_email);
+    if(isDuplicate) return toast.error("Action Denied: This Bid Number is already active for this client!");
+
     try {
       const res = await fetch('/api/bids', {
         method: 'POST',
@@ -249,6 +261,21 @@ export default function EmployeeDashboard() {
       toast.error("Network Error.");
     }
   };
+
+  // 🚀 NEW: DELETE ACTIVE BID (FRONTEND LOGIC TO REMOVE ACCESS)
+  const handleDeleteBid = async (bidId) => {
+     if(!confirm("Are you sure you want to delete this bid access from the tracker?")) return;
+     try {
+       const res = await fetch(`/api/bids?id=${bidId}`, { method: 'DELETE' });
+       if (res.ok) { 
+          toast.success("Bid tracking removed."); 
+          fetchLiveOperationsData(email); 
+       } else {
+          // Fallback if backend doesn't support DELETE /api/bids yet
+          toast.error("Failed to remove. Backend route might need update.");
+       }
+     } catch(e) { toast.error("Network error"); }
+  }
 
   const sendActionAlert = async (e) => {
     e.preventDefault();
@@ -391,7 +418,7 @@ export default function EmployeeDashboard() {
 
   if (!isMounted) return null;
 
-  // 🚀 NEW: GROUP BIDS BY CLIENT
+  // 🚀 GROUP BIDS BY CLIENT
   const groupedBids = bids.reduce((acc, bid) => {
       const key = bid.client_email || 'Unknown';
       if (!acc[key]) acc[key] = [];
@@ -399,13 +426,24 @@ export default function EmployeeDashboard() {
       return acc;
   }, {});
 
-  // 🚀 NEW: GROUP SUGGESTIONS BY CLIENT
+  // 🚀 GROUP SUGGESTIONS BY CLIENT
   const groupedSuggestions = suggestions.reduce((acc, sug) => {
       const key = sug.target_id || 'Unknown';
       if (!acc[key]) acc[key] = [];
       acc[key].push(sug);
       return acc;
   }, {});
+
+  // 🚀 FILTER OFFICERS
+  const filteredOfficers = officers.filter(o => 
+     o.name?.toLowerCase().includes(officerSearch.toLowerCase()) || 
+     o.department?.toLowerCase().includes(officerSearch.toLowerCase()) ||
+     o.district?.toLowerCase().includes(officerSearch.toLowerCase())
+  );
+
+  // 🚀 SEPARATE HELPDESK TICKETS
+  const activeTickets = tickets.filter(t => t.status === 'OPEN');
+  const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -476,7 +514,7 @@ export default function EmployeeDashboard() {
             </TabsTrigger>
           </TabsList>
 
-          {/* 🚀 TAB 1: KANBAN BID WORKFLOW (GROUPED BY CLIENT) */}
+          {/* 🚀 TAB 1: KANBAN BID WORKFLOW (GROUPED BY CLIENT WITH NEW COLORS & STATUS) */}
           <TabsContent value="kanban" className="space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -544,19 +582,19 @@ export default function EmployeeDashboard() {
                   <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
                 ) : (
                   <div className="space-y-6">
-                    {/* 🚀 Render Grouped by Client */}
-                    {Object.entries(groupedBids).map(([clientEmail, clientBids]) => {
+                    {/* 🚀 Render Grouped by Client with Dynamic Colors */}
+                    {Object.entries(groupedBids).map(([clientEmail, clientBids], index) => {
                         const clientInfo = approvedClients.find(c => c.email === clientEmail);
                         const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
-                        const cId = clientInfo ? clientInfo.client_id : 'CLI-XXXX';
+                        const colorClass = BORDER_COLORS[index % BORDER_COLORS.length]; // Dynamic Color Variation
                         
                         return (
-                        <Card key={clientEmail} className="border-t-4 border-t-blue-500 shadow-sm overflow-hidden">
+                        <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
                            <CardHeader className="bg-slate-50 border-b py-3 px-4">
                               <div className="flex justify-between items-center">
                                  <div>
-                                    <CardTitle className="text-base text-[#0A2647]">{cName}</CardTitle>
-                                    <CardDescription className="text-xs font-mono mt-0.5">{cId} | {clientEmail}</CardDescription>
+                                    <CardTitle className="text-xl uppercase font-black text-[#0A2647]">{cName}</CardTitle>
+                                    <CardDescription className="text-xs font-mono mt-0.5">{clientEmail}</CardDescription>
                                  </div>
                                  <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{clientBids.length} Active Bids</Badge>
                               </div>
@@ -567,7 +605,10 @@ export default function EmployeeDashboard() {
                                   <div>
                                     <div className="flex justify-between items-start mb-2">
                                       <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] border border-slate-200">{b.bid_no || b.id}</Badge>
-                                      <Badge className="bg-blue-50 text-blue-700 border-blue-200 shadow-sm">{b.status}</Badge>
+                                      <div className="flex gap-2 items-center">
+                                         <Badge className="bg-blue-50 text-blue-700 border-blue-200 shadow-sm">{b.status}</Badge>
+                                         <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-5 w-5 p-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3"/></Button>
+                                      </div>
                                     </div>
                                     <h4 className="font-bold text-[#0A2647] mt-1 text-sm leading-tight">{b.description || b.title}</h4>
                                   </div>
@@ -594,6 +635,14 @@ export default function EmployeeDashboard() {
                                       <option value="Lost">Lost</option>
                                     </select>
                                   </div>
+
+                                  {/* 🚀 NEW: WINNING REDIRECT / NOTIFICATION */}
+                                  {b.status === 'Won' && (
+                                     <div className="bg-emerald-100 text-emerald-800 p-2 text-xs font-bold rounded-md mt-2 flex items-center justify-center animate-in fade-in">
+                                        <Trophy className="w-4 h-4 mr-2 text-emerald-600" /> Bid Won & Sent to Client Ledger
+                                     </div>
+                                  )}
+
                                 </div>
                               ))}
                            </CardContent>
@@ -621,20 +670,20 @@ export default function EmployeeDashboard() {
                   ) : (
                      <div className="space-y-6">
                         {/* 🚀 Render Grouped by Client */}
-                        {Object.entries(groupedSuggestions).map(([clientEmail, clientSuggestions]) => {
+                        {Object.entries(groupedSuggestions).map(([clientEmail, clientSuggestions], index) => {
                            const clientInfo = approvedClients.find(c => c.email === clientEmail);
                            const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
-                           const cId = clientInfo ? clientInfo.client_id : 'CLI-XXXX';
+                           const colorClass = BORDER_COLORS[(index + 1) % BORDER_COLORS.length]; // Mix colors
                            
                            return (
-                           <Card key={clientEmail} className="border-t-4 border-t-amber-400 shadow-sm overflow-hidden">
+                           <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
                               <CardHeader className="bg-amber-50/30 border-b py-3 px-4">
                                  <div className="flex justify-between items-center">
                                     <div>
-                                       <CardTitle className="text-base text-[#0A2647]">{cName}</CardTitle>
-                                       <CardDescription className="text-xs font-mono mt-0.5">{cId} | {clientEmail}</CardDescription>
+                                       <CardTitle className="text-lg uppercase font-black text-[#0A2647]">{cName}</CardTitle>
+                                       <CardDescription className="text-xs font-mono mt-0.5">{clientEmail}</CardDescription>
                                     </div>
-                                    <Badge className="bg-amber-100 text-amber-800 border-0 shadow-sm">{clientSuggestions.length} Suggestions Pending</Badge>
+                                    <Badge className="bg-amber-100 text-amber-800 border-0 shadow-sm">{clientSuggestions.length} Suggestions</Badge>
                                  </div>
                               </CardHeader>
                               <CardContent className="p-4 grid gap-4 md:grid-cols-2">
@@ -644,7 +693,7 @@ export default function EmployeeDashboard() {
                                           <div className="flex justify-between items-start mb-2">
                                              <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[9px] font-mono">Suggested On: {new Date(sug.created_at).toLocaleDateString()}</Badge>
                                           </div>
-                                          <h4 className="font-bold text-[#0A2647] mt-1 mb-4 text-sm leading-relaxed">
+                                          <h4 className="font-bold text-[#0A2647] mt-1 mb-4 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
                                              {sug.message}
                                           </h4>
                                        </div>
@@ -667,9 +716,10 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 3: GOVT OFFICERS DIRECTORY */}
+          {/* TAB 3: GOVT OFFICERS DIRECTORY (UPDATED WITH SEARCH BAR) */}
           <TabsContent value="officers" className="space-y-6">
             <div className="grid md:grid-cols-3 gap-6">
+              {/* Form Section */}
               <Card className="shadow-sm border-t-4 border-t-purple-600 md:col-span-1 h-fit">
                 <CardHeader className="bg-purple-50/50 pb-4 border-b">
                   <CardTitle className="text-purple-900 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-purple-600"/> Add Govt Officer</CardTitle>
@@ -694,6 +744,7 @@ export default function EmployeeDashboard() {
                       <Label className="text-xs font-bold text-slate-600">Phone Number *</Label>
                       <Input required type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
                     </div>
+                    
                     <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
                        <div>
                           <Label className="text-xs font-bold text-slate-600">State</Label>
@@ -735,26 +786,36 @@ export default function EmployeeDashboard() {
                 </CardContent>
               </Card>
 
+              {/* Directory List Section */}
               <Card className="shadow-sm md:col-span-2">
-                <CardHeader className="bg-slate-50 border-b pb-4">
-                  <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
-                  <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
+                <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                  <div>
+                     <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
+                     <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
+                  </div>
+                  {/* 🚀 NEW: SEARCH BAR FOR OFFICERS */}
+                  <div className="relative">
+                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                     <Input placeholder="Search officers..." value={officerSearch} onChange={e=>setOfficerSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-64 bg-white" />
+                  </div>
                 </CardHeader>
                 <CardContent className="pt-4 p-0">
-                  {officers.length === 0 ? (
-                    <p className="text-center text-sm text-slate-500 py-10">No officers added yet.</p>
+                  {filteredOfficers.length === 0 ? (
+                    <p className="text-center text-sm text-slate-500 py-10">No officers found.</p>
                   ) : (
-                    <div className="divide-y">
-                      {officers.map(officer => (
+                    <div className="divide-y max-h-[600px] overflow-y-auto">
+                      {filteredOfficers.map(officer => (
                         <div key={officer._id || Math.random()} className="p-4 hover:bg-slate-50 transition flex flex-col sm:flex-row justify-between gap-4">
                           <div>
                             <h4 className="font-bold text-[#0A2647] text-base">{officer.name}</h4>
                             <p className="text-sm font-semibold text-purple-700">{officer.designation} - {officer.department}</p>
+                            
                             {(officer.state || officer.district) && (
                                <p className="text-[10px] text-slate-500 font-bold mt-1 flex items-center gap-1">
                                   <MapPin className="w-3 h-3"/> {officer.district}{officer.district && officer.state ? ', ' : ''}{officer.state} {officer.pincode ? `- ${officer.pincode}` : ''}
                                </p>
                             )}
+                            
                             {officer.notes && <p className="text-xs text-slate-600 mt-2 bg-slate-100 p-2 rounded italic">"{officer.notes}"</p>}
                           </div>
                           <div className="shrink-0 flex sm:flex-col gap-2 items-end">
@@ -769,9 +830,10 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 4: ALERTS, QUERIES & CLIENT LIST (UPDATED DROPDOWNS) */}
+          {/* TAB 4: ALERTS, QUERIES & CLIENT LIST */}
           <TabsContent value="clients" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
+              {/* Push Action Request */}
               <Card className="shadow-sm border-t-4 border-t-red-500">
                 <CardHeader className="bg-red-50/50 pb-4 border-b">
                   <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
@@ -799,6 +861,7 @@ export default function EmployeeDashboard() {
                 </CardContent>
               </Card>
 
+              {/* Raise Document Query (Locks Client Dashboard) */}
               <Card className="shadow-sm border-t-4 border-t-orange-500">
                 <CardHeader className="bg-orange-50/50 pb-4 border-b">
                   <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
@@ -831,6 +894,7 @@ export default function EmployeeDashboard() {
               </Card>
             </div>
 
+            {/* ACTIVE VERIFIED CLIENTS DIRECTORY */}
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
@@ -858,25 +922,15 @@ export default function EmployeeDashboard() {
                                    </div>
                                    <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
                                 </div>
-                                
-                                <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
-                                   <div>
-                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Contact Number</span>
-                                      <span className="font-semibold text-slate-700">{client.phone || '--'}</span>
-                                   </div>
-                                   <div>
-                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">GSTIN</span>
-                                      <span className="font-semibold text-slate-700 uppercase">{client.gstin || '--'}</span>
-                                   </div>
-                                   <div className="col-span-2 mt-1">
-                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Services / Interest</span>
-                                      <span className="font-semibold text-blue-700 text-sm truncate">{client.tender_interest || client.service_category || 'All Categories'}</span>
-                                   </div>
-                                </div>
                              </div>
                              
-                             <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                                <Button size="sm" onClick={() => { if(client.drive_link) window.open(client.drive_link, '_blank'); else toast.info("Drive folder is not synced yet."); }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
+                                {/* 🚀 NEW: SAFE DRIVE FOLDER LINK REDIRECTION */}
+                                <Button size="sm" onClick={() => { 
+                                   const link = client.drive_folder_link || client.drive_link;
+                                   if(link) window.open(link, '_blank'); 
+                                   else toast.info("Drive folder is not synced yet."); 
+                                }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
                                    <Database className="w-4 h-4 mr-2" /> View Documents (Drive)
                                 </Button>
                                 <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
@@ -907,8 +961,9 @@ export default function EmployeeDashboard() {
                        <Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/>
                      </div>
                      <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use)</Label>
-                       <Input value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
+                       {/* 🚀 NEW: MANDATORY BID NUMBER FOR INTERNAL TRACKING */}
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label>
+                       <Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
                      </div>
                      <div>
                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label>
@@ -1010,79 +1065,70 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* 🚀 TAB 6: FULL SLA HELPDESK (UPDATED WITH RESOLVED TICKET DETAILS) */}
+          {/* 🚀 TAB 6: FULL SLA HELPDESK (UPDATED WITH COMPACT RESOLVED TICKET DETAILS) */}
           <TabsContent value="sla" className="space-y-6">
-            <Card className="shadow-sm max-w-3xl mx-auto">
+            <Card className="shadow-sm max-w-4xl mx-auto">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><MessageSquare className="w-5 h-5 text-amber-500"/> Client Helpdesk & SLA Tracker</CardTitle>
                 <CardDescription>Resolve queries within 24 hours or escalate to MD.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
-                 {tickets.length === 0 ? (
-                    <p className="text-center text-sm text-slate-500 py-10">No pending helpdesk tickets right now.</p>
-                 ) : (
-                    tickets.map(ticket => (
-                       <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition mb-4">
-                          <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                          <div className="flex justify-between items-start mb-2">
-                             <div>
-                               <Badge variant="outline" className="mb-1 bg-slate-100">{ticket.department}</Badge>
-                               <h4 className="font-bold text-[#0A2647]">{ticket.subject}</h4>
-                               <p className="text-xs text-muted-foreground">{ticket.client_email} • {new Date(ticket.created_at).toLocaleDateString()}</p>
+              <CardContent className="pt-6 max-h-[600px] overflow-y-auto">
+                 
+                 {/* ACTIVE TICKETS */}
+                 {activeTickets.length > 0 && (
+                    <div className="mb-8 space-y-4">
+                       <h3 className="font-bold text-slate-700 mb-2 border-b pb-2">Active Action Required</h3>
+                       {activeTickets.map(ticket => (
+                          <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition">
+                             <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+                             <div className="flex justify-between items-start mb-2">
+                                <div>
+                                  <Badge variant="outline" className="mb-1 bg-slate-100">{ticket.department}</Badge>
+                                  <h4 className="font-bold text-[#0A2647]">{ticket.subject}</h4>
+                                  <p className="text-xs text-muted-foreground">{ticket.client_email} • {new Date(ticket.created_at).toLocaleDateString()}</p>
+                                </div>
+                                <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse">Action Required</Badge>
                              </div>
-                             <Badge className={ticket.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-amber-100 text-amber-800 border-0 animate-pulse'}>
-                                {ticket.status === 'OPEN' ? 'Action Required' : 'Resolved'}
-                             </Badge>
+                             <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"{ticket.message}"</p>
+                             
+                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-3 border-t">
+                                <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
+                                <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
+                                
+                                <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                                <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
+                             </div>
                           </div>
-                          
-                          {ticket.status === 'OPEN' ? (
-                             <>
-                                <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"{ticket.message}"</p>
-                                <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-3 border-t">
-                                   <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
-                                   <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
-                                   
-                                   <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
-                                   <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
-                                </div>
-                             </>
-                          ) : (
-                             // 🚀 RESOLVED TICKET DETAILED VIEW 
-                             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4 shadow-inner">
-                                <div className="flex justify-between items-center mb-2 border-b border-slate-200 pb-2">
-                                   <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Ticket History</span>
-                                   <Badge variant="outline" className="bg-white text-[9px]">Closed</Badge>
-                                </div>
-                                <div className="grid sm:grid-cols-2 gap-4 mb-3">
-                                   <div>
-                                      <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Raised On</p>
-                                      <p className="text-xs font-semibold text-slate-700">{new Date(ticket.created_at).toLocaleString()}</p>
+                       ))}
+                    </div>
+                 )}
+
+                 {/* RESOLVED TICKETS - HORIZONTAL COMPACT VIEW */}
+                 <div>
+                    <h3 className="font-bold text-emerald-700 mb-3 border-b pb-2">Resolved Tickets History</h3>
+                    {resolvedTickets.length === 0 ? (
+                       <p className="text-sm text-slate-400">No resolved tickets yet.</p>
+                    ) : (
+                       <div className="space-y-3">
+                          {resolvedTickets.map(ticket => (
+                             <div key={ticket._id} className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col sm:flex-row justify-between sm:items-center gap-3 hover:bg-slate-100 transition shadow-inner">
+                                <div className="flex-1 min-w-0">
+                                   <div className="flex items-center gap-2 mb-1">
+                                      <Badge variant="outline" className="text-[9px] bg-white text-emerald-700 border-emerald-200 py-0 h-4">Resolved</Badge>
+                                      <h5 className="font-bold text-sm text-[#0A2647] truncate">{ticket.subject}</h5>
                                    </div>
-                                   <div>
-                                      <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Replied On</p>
-                                      <p className="text-xs font-semibold text-slate-700">{ticket.replied_at ? new Date(ticket.replied_at).toLocaleString() : '--'}</p>
-                                   </div>
+                                   <p className="text-xs text-slate-600 truncate"><b>Q:</b> {ticket.message} | <b>A:</b> <span className="text-emerald-700">{ticket.reply || 'Resolved by Support'}</span></p>
                                 </div>
-                                <div className="mb-3">
-                                   <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Client Query</p>
-                                   <p className="text-sm font-medium text-slate-800">"{ticket.message}"</p>
-                                </div>
-                                <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100 border-l-4 border-l-emerald-500">
-                                   <p className="text-[10px] text-emerald-800 font-bold uppercase mb-1">Official Resolution</p>
-                                   <p className="text-sm font-semibold text-emerald-900">{ticket.reply || 'Resolved by Support Team'}</p>
-                                </div>
-                                <div className="mt-3 flex items-center justify-between bg-white border border-slate-200 p-2 rounded-lg">
-                                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Client Satisfaction</span>
-                                   <div className="flex gap-1">
-                                      {/* UI Placeholder for rating/satisfaction */}
-                                      <span className="text-xs px-2 py-1 bg-slate-100 rounded text-slate-400 font-semibold flex items-center"><Star className="w-3 h-3 mr-1 text-slate-300"/> Awaiting Feedback</span>
-                                   </div>
+                                <div className="shrink-0 text-right">
+                                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</p>
+                                   <span className="text-[10px] bg-white border px-1.5 py-0.5 rounded text-slate-400 font-semibold inline-flex items-center mt-1"><Star className="w-3 h-3 mr-1 text-slate-300"/> No Rating</span>
                                 </div>
                              </div>
-                          )}
+                          ))}
                        </div>
-                    ))
-                 )}
+                    )}
+                 </div>
+
               </CardContent>
             </Card>
           </TabsContent>
