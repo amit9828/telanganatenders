@@ -53,6 +53,7 @@ export default function EmployeeDashboard() {
   const [isEditingTender, setIsEditingTender] = useState(null); 
   const [pdfName, setPdfName] = useState('');
   const [pdfBase64, setPdfBase64] = useState('');
+  const [tenderSearch, setTenderSearch] = useState(''); // 🚀 NEW: Tender Search State
   
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
   const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
@@ -139,7 +140,6 @@ export default function EmployeeDashboard() {
     reader.readAsDataURL(file);
   };
 
-  // 🚀 FIX: PROPERLY CONVERT BASE64 JSON TO PDF BLOB
   const handleViewPDF = async (tenderId) => {
     const toastId = toast.loading('Opening PDF Document...');
     try {
@@ -558,6 +558,12 @@ export default function EmployeeDashboard() {
      o.name?.toLowerCase().includes(officerSearch.toLowerCase()) || 
      o.department?.toLowerCase().includes(officerSearch.toLowerCase()) ||
      o.district?.toLowerCase().includes(officerSearch.toLowerCase())
+  );
+
+  // 🚀 NEW: Filter logic for Tenders DB using Bid Number (or title)
+  const filteredTenders = publicTenders.filter(t => 
+     t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
+     t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
   );
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
@@ -1205,18 +1211,25 @@ export default function EmployeeDashboard() {
                </Card>
 
                <Card className="shadow-sm border-0 ring-1 ring-slate-200 lg:col-span-3 h-fit">
-                  <CardHeader className="bg-slate-50/50 pb-4 border-b">
-                     <CardTitle className="text-[#0A2647] flex items-center justify-between text-lg">
-                        <span className="flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Live Portal Tenders</span>
-                        <Badge variant="outline" className="bg-white">{publicTenders.length}</Badge>
-                     </CardTitle>
-                     <CardDescription>View all tenders uploaded by you or MD. Select a tender to suggest it directly to a client.</CardDescription>
+                  <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+                     <div>
+                       <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg mb-1">
+                          <Globe className="w-5 h-5 text-blue-600"/> Live Portal Tenders
+                          <Badge variant="outline" className="bg-white ml-2">{filteredTenders.length}</Badge>
+                       </CardTitle>
+                       <CardDescription>View all tenders uploaded by you or MD. Select a tender to suggest it directly to a client.</CardDescription>
+                     </div>
+                     {/* 🚀 NEW: Search Bar for Live Tenders Database */}
+                     <div className="relative shrink-0 mt-2 sm:mt-0">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Input placeholder="Search Bid Number..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
+                     </div>
                   </CardHeader>
                   <CardContent className="pt-4 max-h-[700px] overflow-y-auto space-y-4 pr-2">
-                     {publicTenders.length === 0 ? (
-                        <p className="text-center text-sm text-slate-500 py-10">No public tenders live on site right now.</p>
+                     {filteredTenders.length === 0 ? (
+                        <p className="text-center text-sm text-slate-500 py-10">No matching tenders found.</p>
                      ) : (
-                        publicTenders.map(t => (
+                        filteredTenders.map(t => (
                            <div key={t._id} className="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-300 transition shadow-sm relative group">
                               <div className="flex items-start justify-between gap-3 mb-3">
                                  <div>
@@ -1244,7 +1257,6 @@ export default function EmployeeDashboard() {
                               </div>
                               
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                                 {/* 🚀 FIX: CALLING NEW PDF BLOB RENDERER FUNCTION INSTEAD OF DIRECT LINK */}
                                  <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                                     <FileText className="w-3 h-3 mr-1.5"/> View PDF
                                  </Button>
