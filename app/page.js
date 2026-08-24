@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
-import { Eye } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
   Card,
