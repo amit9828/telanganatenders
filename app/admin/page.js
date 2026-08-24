@@ -268,12 +268,21 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while approving.'); }
   };
 
-  const revokeClientAccess = async (email) => {
-    if (!confirm("Are you sure you want to completely REVOKE access for this client?")) return;
+  // 🚀 NEW: Permanent Delete / Wipe out for Clients
+  const deleteClientPermanently = async (email) => {
+    if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data (Bids, Tickets, Requests)? This action CANNOT be undone.")) return;
     try {
-      const res = await fetch('/api/users/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email }) });
-      if (res.ok) { toast.success("Client access revoked successfully!"); refresh(); } else { toast.error("Failed to revoke client access."); }
-    } catch(e) { toast.error('Network Error while revoking.'); }
+      const res = await fetch(`/api/users?email=${encodeURIComponent(email)}`, { 
+         method: 'DELETE', 
+         headers: { Authorization: `Bearer ${token}` } 
+      });
+      if (res.ok) { 
+         toast.success("Client and all data permanently wiped out!"); 
+         refresh(); 
+      } else { 
+         toast.error("Failed to delete client."); 
+      }
+    } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
   const impersonateUser = (type, email_or_id) => {
@@ -504,7 +513,6 @@ export default function AdminPage() {
                </div>
             </div>
             
-            {/* 🚀 NEW: Added "Total Clients" Box & Connected to Pure Live States */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]">
                  <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders" value={tenders.length} />
@@ -653,12 +661,16 @@ export default function AdminPage() {
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
                                 ) : (
-                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                                   <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
                                       <Database className="w-4 h-4 mr-2" /> Sync Drive Space
                                    </Button>
                                 )}
                                 <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
+                                </Button>
+                                {/* 🚀 NEW: Delete Permanently Button for wiping out client */}
+                                <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
+                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                              </div>
                           </div>
