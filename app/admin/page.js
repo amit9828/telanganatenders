@@ -13,11 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
 import {
-  ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, 
+  ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, PlusCircle,
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
-  PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, FolderPlus, RefreshCw, Trophy
+  PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -80,7 +80,7 @@ export default function AdminPage() {
   const [pdfBase64, setPdfBase64] = useState('');
   const [pdfName, setPdfName] = useState('');
   
-  // 🚀 FIXED: Renamed to match JSX strictly
+  // Edit State
   const [isEditingTender, setIsEditingTender] = useState(null);
 
   useEffect(() => {
@@ -195,7 +195,6 @@ export default function AdminPage() {
     if (!form.title || !form.department || !form.last_date || !form.district) return toast.error('Fill all required fields');
     setLoading(true);
     try {
-      // 🚀 FIXED: Using isEditingTender instead of editingTenderId
       const endpoint = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
       const method = isEditingTender ? 'PUT' : 'POST';
       const payload = { ...form, pdf_filename: pdfName || 'tender.pdf' };
@@ -219,7 +218,6 @@ export default function AdminPage() {
       title: t.title || '', department: t.department || '', last_date: t.last_date ? new Date(t.last_date).toISOString().split('T')[0] : '', 
       district: t.district || '', category: t.category || 'Product', supply_details: t.supply_details || '', bid_no: t.bid_no || ''
     });
-    // 🚀 FIXED
     setIsEditingTender(t._id || t.id);
     toast.info("Edit mode active. Update details and click save.");
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -565,7 +563,7 @@ export default function AdminPage() {
                                       <Database className="w-4 h-4 mr-2" /> Sync Drive Space
                                    </Button>
                                 )}
-                                <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
+                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
                              </div>
