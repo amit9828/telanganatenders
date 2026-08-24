@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
@@ -35,26 +36,18 @@ export default function ClientDashboard() {
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
 
-  // --- Dynamic Business Profile State ---
+  // --- Dynamic Business Profile State (Empty Default) ---
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
-    clientName: 'Rahul Reddy', orgType: 'Private Limited', companyName: 'Apex Infra Projects',
-    phone: '9876543210', email: '', gstin: '36ABCDE1234F1Z5', incorpDate: '2020-05-14',
-    udyam: 'UDYAM-TS-02-12345', services: ['Civil Construction', 'Roads & Buildings'], description: 'Specialized in high-quality civil engineering and road development projects across Telangana and Andhra Pradesh.'
+    clientName: '', orgType: 'Private Limited', companyName: '',
+    phone: '', email: '', gstin: '', incorpDate: '',
+    udyam: '', address: '', services: [''], description: ''
   });
 
-  // --- Categorized Vault State ---
-  const [vaultDocs, setVaultDocs] = useState([
-    { id: 'gst', name: 'GST Certificate', status: 'missing', file: null },
-    { id: 'pan', name: 'PAN Card', status: 'uploaded', file: 'pan_card_apex.pdf' },
-    { id: 'msme', name: 'MSME Udyam', status: 'verified', file: 'udyam_cert.pdf' }
-  ]);
-
-  // --- Funnel & Wins State ---
-  const [clientStats, setClientStats] = useState({ recommended: 3, participated: 12, ongoing: 4, won: 5, lost: 3, revenue: 14500000 });
-  const [wonBids, setWonBids] = useState([
-    { id: 'GEM/2026/B/102938', desc: 'Construction of Medical College Block - B', value: '₹4,50,00,000', validity: '12-Dec-2027', date: '15-Jul-2026' }
-  ]);
+  // --- Real-time Stats, Vault & Wins State (Empty Default) ---
+  const [vaultDocs, setVaultDocs] = useState([]);
+  const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
+  const [wonBids, setWonBids] = useState([]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -75,6 +68,11 @@ export default function ClientDashboard() {
         const d = await r.json();
         setUserData(d);
 
+        // 1. LIVE TRACKING: Map real stats, won bids, and vault docs from your DB
+        if(d.stats) setClientStats(d.stats);
+        if(d.won_bids) setWonBids(d.won_bids);
+        if(d.vault_docs) setVaultDocs(d.vault_docs);
+
         // Pre-fill editable profile from Database
         if(d.profile) {
           setProfileForm(prev => ({
@@ -86,7 +84,9 @@ export default function ClientDashboard() {
             phone: d.profile.phone || prev.phone,
             gstin: d.profile.gstin || prev.gstin,
             udyam: d.profile.udyam || prev.udyam,
-            services: d.profile.service_category ? d.profile.service_category.split(',') : prev.services
+            address: d.profile.address || prev.address,
+            services: d.profile.service_category ? d.profile.service_category.split(',') : prev.services,
+            description: d.profile.description || prev.description
           }));
         }
       }
@@ -101,9 +101,7 @@ export default function ClientDashboard() {
     try {
       const r = await fetch('/api/tenders');
       const d = await r.json();
-      setPublicTenders(d.tenders || [
-        { _id: '1', title: 'Road Construction in Hyderabad', department: 'GHMC', district: 'Hyderabad', last_date: '2026-09-15' }
-      ]);
+      setPublicTenders(d.tenders || []);
     } catch (err) { console.error(err); }
   };
 
@@ -137,6 +135,8 @@ export default function ClientDashboard() {
           company_name: profileForm.companyName,
           company_type: profileForm.orgType,
           phone: profileForm.phone,
+          address: profileForm.address,
+          description: profileForm.description,
           service_category: profileForm.services.join(',')
         })
       });
@@ -150,15 +150,35 @@ export default function ClientDashboard() {
     }
   };
 
-  // --- Vault Upload ---
-  const handleFileUpload = (docId, e) => {
+  // ============================================================================
+  // 🚀 REAL GOOGLE DRIVE UPLOAD LOGIC
+  // ============================================================================
+  const handleFileUpload = async (docId, e) => {
     const file = e?.target?.files?.[0];
     if(file) {
-      toast.info(`Uploading ${file.name} to Secure Server...`);
-      setTimeout(() => {
-        setVaultDocs(prev => prev.map(d => d.id === docId ? { ...d, status: 'uploaded', file: file.name } : d));
-        toast.success(`Document uploaded successfully! Pending Officer Approval.`);
-      }, 1500);
+      toast.info(`Uploading ${file.name} to Secure Google Drive...`);
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('docId', docId);
+      formData.append('email', email);
+      formData.append('clientName', profileForm.clientName); 
+
+      try {
+        const res = await fetch('/api/vault/upload', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if(res.ok) {
+          toast.success(`Document uploaded successfully! Pending Officer Approval.`);
+          fetchClientData(email); // Refreshes UI with real DB dates and statuses
+        } else {
+          toast.error('Upload failed. Please try again.');
+        }
+      } catch (err) {
+        toast.error('Network Error during upload.');
+      }
     }
   };
 
@@ -282,7 +302,7 @@ export default function ClientDashboard() {
           <BrandLogo subtitle="Enterprise Portal" />
           <div className="flex items-center gap-4">
              <div className="hidden md:flex flex-col items-end mr-2">
-               <span className="text-sm font-bold text-[#0A2647]">{profileForm.companyName}</span>
+               <span className="text-sm font-bold text-[#0A2647]">{profileForm.companyName || 'Guest Company'}</span>
                <span className="text-[10px] font-mono text-slate-500 tracking-widest">{clientId}</span>
              </div>
              <DropdownMenu>
@@ -325,7 +345,7 @@ export default function ClientDashboard() {
                    <Button variant="outline" className="flex items-center gap-2 border-slate-200 bg-slate-50">
                      <UserCircle className="w-5 h-5 text-[#0A2647]" />
                      <div className="hidden md:flex flex-col items-start text-left">
-                       <span className="text-xs font-bold text-[#0A2647] leading-none">{profileForm.clientName}</span>
+                       <span className="text-xs font-bold text-[#0A2647] leading-none">{profileForm.clientName || 'User'}</span>
                        <span className="text-[9px] text-slate-500 font-semibold">{profileForm.companyName}</span>
                      </div>
                      <ChevronDown className="w-3 h-3 text-slate-400" />
@@ -366,37 +386,37 @@ export default function ClientDashboard() {
           </div>
         )}
 
-        {/* --- TOP FUNNEL METRICS --- */}
+        {/* --- TOP FUNNEL METRICS (Clickable Links to Tabs) --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-           <Card className="border-0 shadow-sm ring-1 ring-slate-200 bg-white">
+           <Card onClick={() => setActiveTab('live_tenders')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recommended</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
-           <Card className="border-0 shadow-sm ring-1 ring-slate-200 bg-white">
+           <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <FileText className="w-5 h-5 text-slate-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Participated</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.participated}</p>
               </CardContent>
            </Card>
-           <Card className="border-0 shadow-sm ring-1 ring-blue-500/50 bg-blue-50/50">
+           <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-blue-500/50 bg-blue-50/50 cursor-pointer hover:ring-blue-600 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Ongoing Bids</p>
                  <p className="text-2xl font-black text-blue-700">{activeBids.length || clientStats.ongoing}</p>
               </CardContent>
            </Card>
-           <Card className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80">
+           <Card onClick={() => setActiveTab('wins')} className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80 cursor-pointer hover:ring-emerald-600 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Trophy className="w-5 h-5 text-emerald-600 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Tenders Won</p>
                  <p className="text-2xl font-black text-emerald-700">{clientStats.won}</p>
               </CardContent>
            </Card>
-           <Card className="border-0 shadow-sm ring-1 ring-emerald-500 bg-emerald-600 text-white col-span-2 lg:col-span-1">
+           <Card onClick={() => setActiveTab('finance')} className="border-0 shadow-sm ring-1 ring-emerald-500 bg-emerald-600 text-white col-span-2 lg:col-span-1 cursor-pointer hover:ring-emerald-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Banknote className="w-5 h-5 text-emerald-200 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Project Revenue</p>
@@ -414,7 +434,7 @@ export default function ClientDashboard() {
               <Globe className="w-4 h-4 mr-2 hidden sm:block"/> Live Tenders
             </TabsTrigger>
             <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
-              <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> GeM Profile
+              <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> Client Profile
             </TabsTrigger>
             <TabsTrigger value="vault" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Database className="w-4 h-4 mr-2 hidden sm:block"/> Corp Vault
@@ -434,7 +454,7 @@ export default function ClientDashboard() {
              <Card className="tender-shadow border-t-4 border-t-blue-600">
                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                    <div>
-                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-600"/> Official Business Profile</CardTitle>
+                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-600"/> Client Business Profile</CardTitle>
                    </div>
                    {!isEditingProfile && (
                       <Button onClick={() => setIsEditingProfile(true)} className="bg-[#0A2647] hover:bg-[#144272] shrink-0">Edit Profile</Button>
@@ -467,6 +487,10 @@ export default function ClientDashboard() {
                          <div>
                             <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Registered Email ID</Label>
                             <p className="font-semibold text-slate-500 bg-slate-100 p-2.5 rounded border mt-1 cursor-not-allowed">{profileForm.email}</p>
+                         </div>
+                         <div className="md:col-span-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Registered Address</Label>
+                            {isEditingProfile ? <Textarea value={profileForm.address} onChange={e=>setProfileForm({...profileForm, address: e.target.value})} className="mt-1" rows={2}/> : <p className="font-semibold text-[#0A2647] bg-slate-50 p-2.5 rounded border mt-1">{profileForm.address || 'Not provided'}</p>}
                          </div>
                          <div>
                             <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">GSTIN Number</Label>
@@ -534,15 +558,22 @@ export default function ClientDashboard() {
               </CardHeader>
               <CardContent className="pt-6 space-y-8">
                  
+                 {/* MISSING OR REJECTED DOCS */}
                  <div>
                     <h4 className="font-black text-slate-700 mb-3 flex items-center gap-2 border-b pb-2"><AlertTriangle className="w-4 h-4 text-amber-500"/> Action Required (Pending Uploads)</h4>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                        {vaultDocs.filter(d => d.status === 'missing' || d.status === 'rejected').map((doc) => (
-                         <div key={doc.id} className="bg-white p-4 border rounded-xl shadow-sm border-amber-200 bg-amber-50/30 transition hover:shadow-md">
-                            <div className="flex justify-between items-center mb-3">
+                         <div key={doc.id} className={`bg-white p-4 border rounded-xl shadow-sm ${doc.status === 'rejected' ? 'border-red-300 bg-red-50' : 'border-amber-200 bg-amber-50/30'} transition hover:shadow-md`}>
+                            <div className="flex justify-between items-start mb-3">
                               <Label className="font-bold text-slate-800 text-sm">{doc.name}</Label>
-                              <Badge className="bg-amber-100 text-amber-800 border-0 text-[10px] uppercase font-bold tracking-wider">Missing</Badge>
+                              <Badge className={doc.status === 'rejected' ? 'bg-red-100 text-red-800 border-0 text-[10px]' : 'bg-amber-100 text-amber-800 border-0 text-[10px]'}>
+                                {doc.status === 'rejected' ? 'Rejected' : 'Missing'}
+                              </Badge>
                             </div>
+                            {/* Rejection Message Display */}
+                            {doc.status === 'rejected' && doc.reject_reason && (
+                               <p className="text-xs text-red-700 font-semibold mb-3">Reason: {doc.reject_reason}</p>
+                            )}
                             <label className="cursor-pointer flex items-center justify-center w-full bg-[#0A2647] hover:bg-[#144272] text-white p-2.5 rounded-lg transition text-xs font-semibold shadow-sm">
                               <UploadCloud className="w-4 h-4 mr-2" /> Upload PDF
                               <input type="file" className="hidden" accept=".pdf, image/*" onChange={(e) => handleFileUpload(doc.id, e)} />
@@ -552,6 +583,7 @@ export default function ClientDashboard() {
                     </div>
                  </div>
 
+                 {/* UPLOADED (UNDER REVIEW) DOCS */}
                  <div>
                     <h4 className="font-black text-blue-900 mb-3 flex items-center gap-2 border-b pb-2"><Clock className="w-4 h-4 text-blue-500"/> Uploaded (Pending MD Verification)</h4>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -562,14 +594,15 @@ export default function ClientDashboard() {
                               <Badge className="bg-blue-100 text-blue-800 border-0 text-[10px] uppercase font-bold tracking-wider">Under Review</Badge>
                             </div>
                             <div className="bg-white p-2.5 border border-blue-100 rounded-lg flex items-center justify-between shadow-inner">
-                               <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file}>{doc.file}</span>
-                               <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-600 px-2 font-semibold"><Eye className="w-3 h-3 mr-1"/> View</Button>
+                               <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file_name}>{doc.file_name || doc.file}</span>
+                               <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
                             </div>
                          </div>
                        ))}
                     </div>
                  </div>
 
+                 {/* VERIFIED DOCUMENTS */}
                  <div>
                     <h4 className="font-black text-emerald-900 mb-3 flex items-center gap-2 border-b pb-2"><ShieldCheck className="w-4 h-4 text-emerald-500"/> Verified & Secured Documents</h4>
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -579,9 +612,25 @@ export default function ClientDashboard() {
                               <Label className="font-bold text-emerald-900 text-sm">{doc.name}</Label>
                               <Badge className="bg-emerald-500 text-white border-0 text-[10px] uppercase font-bold tracking-wider"><CheckCircle2 className="w-3 h-3 mr-1"/> MD Approved</Badge>
                             </div>
-                            <div className="bg-white p-2.5 border border-emerald-100 rounded-lg flex items-center justify-between shadow-inner">
-                               <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file}>{doc.file}</span>
-                               <Button size="sm" variant="outline" className="h-6 text-[10px] border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-2 font-bold"><Download className="w-3 h-3 mr-1"/> Download</Button>
+                            <div className="bg-white p-2.5 border border-emerald-100 rounded-lg flex flex-col gap-2 shadow-inner">
+                               <div className="flex justify-between items-center">
+                                  <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file_name}>{doc.file_name || doc.file}</span>
+                                  {/* Real Live Date */}
+                                  <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
+                               </div>
+                               <div className="flex items-center gap-2 mt-1">
+                                  {/* View & Download Links to Google Drive */}
+                                  {doc.view_url && (
+                                    <a href={doc.view_url} target="_blank" rel="noreferrer" className="flex-1">
+                                      <Button size="sm" variant="ghost" className="w-full h-7 text-[10px] px-2 font-bold bg-slate-100 hover:bg-slate-200 text-[#0A2647]"><Eye className="w-3 h-3 mr-1"/> View</Button>
+                                    </a>
+                                  )}
+                                  {doc.download_url && (
+                                    <a href={doc.download_url} target="_blank" rel="noreferrer" className="flex-1">
+                                      <Button size="sm" variant="outline" className="w-full h-7 text-[10px] border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-2 font-bold"><Download className="w-3 h-3 mr-1"/> Download</Button>
+                                    </a>
+                                  )}
+                               </div>
                             </div>
                          </div>
                        ))}
