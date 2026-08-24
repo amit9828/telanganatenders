@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { signIn } from 'next-auth/react'; // 🚀 FIXED: Imported proper authentication
 import BrandLogo from '@/components/BrandLogo';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
@@ -268,7 +269,6 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while approving.'); }
   };
 
-  // 🚀 NEW: Permanent Delete / Wipe out for Clients
   const deleteClientPermanently = async (email) => {
     if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data (Bids, Tickets, Requests)? This action CANNOT be undone.")) return;
     try {
@@ -285,9 +285,14 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
-  const impersonateUser = (type, email_or_id) => {
-    toast.info(`Initializing secure MD bypass into ${type} dashboard...`);
-    setTimeout(() => { window.open(`/${type}?impersonate=${encodeURIComponent(email_or_id)}&bypass=true`, '_blank'); }, 1000);
+  // 🚀 FIXED: NextAuth Real Authentication for MD Impersonation
+  const impersonateUser = async (type, email_or_id) => {
+    toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
+    await signIn('impersonate', { 
+       email: email_or_id, 
+       adminToken: 'admin_success', 
+       callbackUrl: `/${type}` 
+    });
   };
 
   // --- HELPDESK TICKETS ---
@@ -668,7 +673,6 @@ export default function AdminPage() {
                                 <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
-                                {/* 🚀 NEW: Delete Permanently Button for wiping out client */}
                                 <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
                                    <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -1007,7 +1011,6 @@ export default function AdminPage() {
                      </CardContent>
                   </Card>
 
-                  {/* 🚀 FIXED: SLA TRACKER CARD */}
                   <Card className="tender-shadow border-t-4 border-t-red-500">
                      <CardHeader className="bg-red-50/30 border-b pb-4">
                         <CardTitle className="flex items-center gap-2 text-red-900 text-lg"><Clock className="w-5 h-5 text-red-600"/> Dispatch SLA Tracker</CardTitle>
