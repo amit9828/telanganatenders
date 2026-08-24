@@ -11,11 +11,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+// 🚀 FIX: UploadCloud, Clock అన్నీ ఇక్కడినుండే రావాలి
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock 
 } from 'lucide-react';
 
 const DISTRICTS = [
