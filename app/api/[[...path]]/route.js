@@ -345,6 +345,46 @@ export async function PUT(request, { params }) {
 }
 
 // =====================================================================
+// DELETE REQUESTS (Added from the old tenders/[id]/route.js)
+// =====================================================================
+export async function DELETE(request, { params }) {
+  const db = await getDb();
+  const pathArray = params?.path || [];
+  
+  try {
+    // Check if the path is like /api/tenders/[id]
+    if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
+      const id = pathArray[1];
+      if (!id) return json({ error: 'Missing Tender ID' }, 400);
+
+      const collection = db.collection('tenders');
+      let result = null;
+
+      if (ObjectId.isValid(id)) {
+        result = await collection.deleteOne({ _id: new ObjectId(id) });
+      }
+      if (!result || result.deletedCount === 0) {
+        result = await collection.deleteOne({ _id: id });
+      }
+      if (!result || result.deletedCount === 0) {
+        result = await collection.deleteOne({ id: id });
+      }
+
+      if (result && result.deletedCount > 0) {
+        return json({ success: true, message: 'Tender deleted successfully' });
+      } else {
+        return json({ error: 'Tender not found in database' }, 404);
+      }
+    }
+    
+    return json({ error: 'DELETE endpoint not found' }, 404);
+  } catch (error) {
+    console.error('Delete API Error:', error);
+    return json({ error: 'Server Error', details: error.message }, 500);
+  }
+}
+
+// =====================================================================
 // POST REQUESTS (Creating Data)
 // =====================================================================
 export async function POST(request, { params }) {
