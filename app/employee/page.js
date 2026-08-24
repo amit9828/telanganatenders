@@ -15,7 +15,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Star
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -39,12 +39,12 @@ export default function EmployeeDashboard() {
   const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
   const [publicTenders, setPublicTenders] = useState([]); 
-  const [suggestions, setSuggestions] = useState([]); // 🚀 NEW: Suggestions State
+  const [suggestions, setSuggestions] = useState([]); 
   const [tickets, setTickets] = useState([]); 
 
   // Forms
   const [tenderForm, setTenderForm] = useState({
-    title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
+    bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
   });
   const [publishing, setPublishing] = useState(false);
   const [pdfName, setPdfName] = useState('');
@@ -53,20 +53,17 @@ export default function EmployeeDashboard() {
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
   const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
   
-  // Govt Officer Form State 
   const [officerForm, setOfficerForm] = useState({ 
     name: '', department: '', designation: '', phone: '', 
     state: '', district: '', address: '', pincode: '', notes: '' 
   });
   const [savingOfficer, setSavingOfficer] = useState(false);
 
-  // Active Bid Row State
   const [showAddBid, setShowAddBid] = useState(false);
   const [newBidForm, setNewBidForm] = useState({ 
     bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
   });
 
-  // Suggest Tender State
   const [suggestForm, setSuggestForm] = useState({}); 
 
   useEffect(() => {
@@ -100,8 +97,6 @@ export default function EmployeeDashboard() {
         const tData = await tasksRes.json();
         const allDispatches = tData.dispatches || [];
         setMdTasks(allDispatches.filter(d => d.target_type === 'employee_task'));
-        
-        // 🚀 NEW: Filter Suggestions (Sent to Clients)
         setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed'));
       }
       if (bidsRes.ok) {
@@ -157,7 +152,7 @@ export default function EmployeeDashboard() {
       });
       if(r.ok) {
         toast.success('Tender published manually and synced with portal!');
-        setTenderForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
+        setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
         setPdfBase64(''); setPdfName('');
         logActivity('PUBLISHED_TENDER', `Published tender: ${tenderForm.title}`);
         fetchLiveOperationsData(email); 
@@ -170,10 +165,15 @@ export default function EmployeeDashboard() {
     setPublishing(false);
   };
 
-  // 🚀 NEW: Suggest Tender to Client
   const handleSuggestTender = async (tenderId, tenderTitle) => {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
+    
+    // 🚀 NEW: DUPLICATE SUGGESTION PREVENTION
+    const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === tenderTitle);
+    if(isDuplicate) {
+      return toast.error("Action Denied: You have already suggested this tender to the selected client.");
+    }
     
     try {
       const res = await fetch('/api/dispatches', {
@@ -183,7 +183,7 @@ export default function EmployeeDashboard() {
           target_type: 'client_alert', 
           target_id: selectedClientEmail, 
           subject: 'New Tender Suggestion from Officer', 
-          message: `${tenderTitle}` // Only storing title in message for easy parsing
+          message: `${tenderTitle}` 
         })
       });
       if (res.ok) {
@@ -197,18 +197,16 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 NEW: Handle Client Suggestion Response (Accept/Reject)
   const handleSuggestionResponse = async (suggestion, action) => {
     try {
       if (action === 'Accepted') {
-         // Create new bid
          const res = await fetch('/api/bids', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-               bid_no: 'AWAITING DOCS', // Default 
-               description: suggestion.message, // The tender title
-               status: 'Client Approved',
+               bid_no: 'WAITING FOR BID NO', 
+               description: suggestion.message, 
+               status: 'Bid Allocated',
                client_email: suggestion.target_id,
                submitted_date: ''
             })
@@ -218,7 +216,6 @@ export default function EmployeeDashboard() {
          toast.info("Suggestion Rejected and removed from list.");
       }
 
-      // Mark suggestion dispatch as completed to hide it
       await fetch('/api/dispatches/complete', {
          method: 'PUT',
          headers: { 'Content-Type': 'application/json' },
@@ -230,7 +227,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 NEW: Add Manual Bid Tracker Row
   const handleAddBidRow = async (e) => {
     e.preventDefault();
     if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
@@ -322,7 +318,7 @@ export default function EmployeeDashboard() {
         body: JSON.stringify({ task_id: taskId })
       });
       if (res.ok) {
-        toast.success('Task marked completed. MD Dashboard Updated.');
+        toast.success('Task marked completed.');
         logActivity('COMPLETED_TASK', `Task ${taskId} marked as done`);
       } else {
         fetchLiveOperationsData(email);
@@ -361,7 +357,7 @@ export default function EmployeeDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
            target_type: 'employee_task', 
-           target_id: 'MD', // Sending to MD
+           target_id: 'MD', 
            subject: `ESCALATION: ${ticket.subject}`, 
            message: `Client ${ticket.client_email} is facing an issue that needs MD attention.\n\nIssue: ${ticket.message}` 
         })
@@ -378,7 +374,6 @@ export default function EmployeeDashboard() {
   const handleImpersonate = async (targetEmail) => {
     if (!targetEmail) return toast.error('Enter a valid client email');
     toast.loading(`Connecting to ${targetEmail}'s portal...`);
-    // Note: Ensure NextAuth config allows impersonate provider.
     await signIn('impersonate', {
       email: targetEmail,
       adminToken: 'admin_success',
@@ -395,6 +390,22 @@ export default function EmployeeDashboard() {
   };
 
   if (!isMounted) return null;
+
+  // 🚀 NEW: GROUP BIDS BY CLIENT
+  const groupedBids = bids.reduce((acc, bid) => {
+      const key = bid.client_email || 'Unknown';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(bid);
+      return acc;
+  }, {});
+
+  // 🚀 NEW: GROUP SUGGESTIONS BY CLIENT
+  const groupedSuggestions = suggestions.reduce((acc, sug) => {
+      const key = sug.target_id || 'Unknown';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(sug);
+      return acc;
+  }, {});
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -465,13 +476,13 @@ export default function EmployeeDashboard() {
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: KANBAN BID WORKFLOW (UPDATED STATUSES) */}
+          {/* 🚀 TAB 1: KANBAN BID WORKFLOW (GROUPED BY CLIENT) */}
           <TabsContent value="kanban" className="space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>
                    <CardTitle className="text-[#0A2647] flex items-center gap-2"><Kanban className="w-5 h-5 text-blue-600"/> Active Bid Events Tracker</CardTitle>
-                   <CardDescription>Manually add or update the progress of ongoing client bids. This syncs directly to the client's dashboard.</CardDescription>
+                   <CardDescription>Manually add or update the progress of ongoing client bids.</CardDescription>
                 </div>
                 <Button onClick={() => setShowAddBid(!showAddBid)} className="bg-blue-600 hover:bg-blue-700 shrink-0">
                    <PlusCircle className="w-4 h-4 mr-2"/> Add New Bid Row
@@ -479,7 +490,7 @@ export default function EmployeeDashboard() {
               </CardHeader>
               <CardContent className="pt-4">
                 
-                {/* ADD NEW BID FORM (TOGGLEABLE) */}
+                {/* ADD NEW BID FORM */}
                 {showAddBid && (
                    <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner animate-in fade-in slide-in-from-top-4">
                       <h4 className="font-bold text-blue-900 mb-4 flex items-center"><Target className="w-4 h-4 mr-2"/> Create New Bid Tracking Row</h4>
@@ -487,7 +498,7 @@ export default function EmployeeDashboard() {
                          <div>
                             <Label className="text-xs font-bold text-slate-600">Select Client *</Label>
                             <Select required value={newBidForm.client_email} onValueChange={v => setNewBidForm({...newBidForm, client_email: v})}>
-                               <SelectTrigger className="mt-1 bg-white"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
                                <SelectContent>
                                   {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
                                </SelectContent>
@@ -495,18 +506,35 @@ export default function EmployeeDashboard() {
                          </div>
                          <div>
                             <Label className="text-xs font-bold text-slate-600">Bid Number / ID *</Label>
-                            <Input required placeholder="e.g. GEM/2026/B/..." value={newBidForm.bid_no} onChange={e=>setNewBidForm({...newBidForm, bid_no: e.target.value})} className="mt-1 bg-white" />
+                            <Input required placeholder="e.g. GEM/2026/B/..." value={newBidForm.bid_no} onChange={e=>setNewBidForm({...newBidForm, bid_no: e.target.value})} className="mt-1 bg-white h-9" />
                          </div>
+                         {/* 🚀 NEW: STATUS DROPDOWN FOR NEW BIDS */}
                          <div>
-                            <Label className="text-xs font-bold text-slate-600">Submitted Date (Optional)</Label>
-                            <Input type="date" value={newBidForm.submitted_date} onChange={e=>setNewBidForm({...newBidForm, submitted_date: e.target.value})} className="mt-1 bg-white" />
+                            <Label className="text-xs font-bold text-slate-600">Initial Status *</Label>
+                            <Select required value={newBidForm.status} onValueChange={v => setNewBidForm({...newBidForm, status: v})}>
+                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select Status" /></SelectTrigger>
+                               <SelectContent>
+                                  <SelectItem value="Bid Allocated">Bid Allocated</SelectItem>
+                                  <SelectItem value="Client Approved">Client Approved</SelectItem>
+                                  <SelectItem value="Client Cancelled">Client Cancelled</SelectItem>
+                                  <SelectItem value="ADC Check">ADC Check</SelectItem>
+                                  <SelectItem value="Documents Asking">Documents Asking</SelectItem>
+                                  <SelectItem value="Documents Preparing">Documents Preparing</SelectItem>
+                                  <SelectItem value="Bid Participated">Bid Participated</SelectItem>
+                                  <SelectItem value="Technical Evaluation">Technical Evaluation</SelectItem>
+                                  <SelectItem value="Technical Qualification">Technical Qualification</SelectItem>
+                                  <SelectItem value="Financial Evaluation">Financial Evaluation</SelectItem>
+                                  <SelectItem value="Won">Won</SelectItem>
+                                  <SelectItem value="Lost">Lost</SelectItem>
+                               </SelectContent>
+                            </Select>
                          </div>
                          <div className="sm:col-span-2">
                             <Label className="text-xs font-bold text-slate-600">Description of Work *</Label>
-                            <Input required placeholder="Short title of the tender work..." value={newBidForm.description} onChange={e=>setNewBidForm({...newBidForm, description: e.target.value})} className="mt-1 bg-white" />
+                            <Input required placeholder="Short title of the tender work..." value={newBidForm.description} onChange={e=>setNewBidForm({...newBidForm, description: e.target.value})} className="mt-1 bg-white h-9" />
                          </div>
                          <div className="sm:col-span-1 flex items-end">
-                            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-10 shadow-md"><CheckCircle2 className="w-4 h-4 mr-2"/> Save Record</Button>
+                            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-9 shadow-md"><CheckCircle2 className="w-4 h-4 mr-2"/> Save Record</Button>
                          </div>
                       </form>
                    </div>
@@ -515,90 +543,123 @@ export default function EmployeeDashboard() {
                 {bids.length === 0 ? (
                   <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
                 ) : (
-                  <div className="grid md:grid-cols-2 gap-4">
-                    {bids.map(b => (
-                      <div key={b._id || b.id} className="border rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition border-l-4 border-l-blue-500">
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] border border-slate-200">{b.bid_no || b.id}</Badge>
-                            <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{b.status}</Badge>
-                          </div>
-                          <h4 className="font-bold text-[#0A2647] mt-1 text-sm leading-tight">{b.description || b.title}</h4>
-                          <p className="text-xs text-muted-foreground flex justify-between items-center mt-2 font-semibold bg-slate-50 p-2 rounded">
-                            <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5 text-blue-600"/> {b.client_email || b.client}</span>
-                            {b.submitted_date && <span className="text-[10px]">{new Date(b.submitted_date).toLocaleDateString()}</span>}
-                          </p>
-                        </div>
+                  <div className="space-y-6">
+                    {/* 🚀 Render Grouped by Client */}
+                    {Object.entries(groupedBids).map(([clientEmail, clientBids]) => {
+                        const clientInfo = approvedClients.find(c => c.email === clientEmail);
+                        const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
+                        const cId = clientInfo ? clientInfo.client_id : 'CLI-XXXX';
                         
-                        {/* 🚀 NEW STATUS DROPDOWN OPTIONS AS REQUESTED */}
-                        <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
-                          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
-                          <select 
-                            className="border border-blue-200 rounded-md px-2 py-1.5 text-xs bg-blue-50 font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto shadow-sm cursor-pointer"
-                            value={b.status}
-                            onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
-                          >
-                            <option value="Bid Allocated">Bid Allocated</option>
-                            <option value="Client Approved">Client Approved</option>
-                            <option value="Client Cancelled">Client Cancelled</option>
-                            <option value="ADC Check">ADC Check</option>
-                            <option value="Documents Asking">Documents Asking</option>
-                            <option value="Documents Preparing">Documents Preparing</option>
-                            <option value="Bid Participated">Bid Participated</option>
-                            <option value="Technical Evaluation">Technical Evaluation</option>
-                            <option value="Technical Qualification">Technical Qualification</option>
-                            <option value="Financial Evaluation">Financial Evaluation</option>
-                            <option value="Won">Won</option>
-                            <option value="Lost">Lost</option>
-                          </select>
-                        </div>
-                      </div>
-                    ))}
+                        return (
+                        <Card key={clientEmail} className="border-t-4 border-t-blue-500 shadow-sm overflow-hidden">
+                           <CardHeader className="bg-slate-50 border-b py-3 px-4">
+                              <div className="flex justify-between items-center">
+                                 <div>
+                                    <CardTitle className="text-base text-[#0A2647]">{cName}</CardTitle>
+                                    <CardDescription className="text-xs font-mono mt-0.5">{cId} | {clientEmail}</CardDescription>
+                                 </div>
+                                 <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{clientBids.length} Active Bids</Badge>
+                              </div>
+                           </CardHeader>
+                           <CardContent className="p-4 grid gap-4 md:grid-cols-2">
+                              {clientBids.map(b => (
+                                <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
+                                  <div>
+                                    <div className="flex justify-between items-start mb-2">
+                                      <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] border border-slate-200">{b.bid_no || b.id}</Badge>
+                                      <Badge className="bg-blue-50 text-blue-700 border-blue-200 shadow-sm">{b.status}</Badge>
+                                    </div>
+                                    <h4 className="font-bold text-[#0A2647] mt-1 text-sm leading-tight">{b.description || b.title}</h4>
+                                  </div>
+                                  
+                                  {/* STATUS DROPDOWN SELECTION */}
+                                  <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
+                                    <select 
+                                      className="border border-blue-300 rounded-md px-2 py-1.5 text-xs bg-blue-50 font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto shadow-sm cursor-pointer"
+                                      value={b.status}
+                                      onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
+                                    >
+                                      <option value="Bid Allocated">Bid Allocated</option>
+                                      <option value="Client Approved">Client Approved</option>
+                                      <option value="Client Cancelled">Client Cancelled</option>
+                                      <option value="ADC Check">ADC Check</option>
+                                      <option value="Documents Asking">Documents Asking</option>
+                                      <option value="Documents Preparing">Documents Preparing</option>
+                                      <option value="Bid Participated">Bid Participated</option>
+                                      <option value="Technical Evaluation">Technical Evaluation</option>
+                                      <option value="Technical Qualification">Technical Qualification</option>
+                                      <option value="Financial Evaluation">Financial Evaluation</option>
+                                      <option value="Won">Won</option>
+                                      <option value="Lost">Lost</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              ))}
+                           </CardContent>
+                        </Card>
+                    )})}
                   </div>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* 🚀 NEW TAB: SUGGESTIONS MODULE */}
+          {/* 🚀 TAB 2: SUGGESTIONS MODULE (GROUPED BY CLIENT) */}
           <TabsContent value="suggestions" className="space-y-6">
-            <Card className="shadow-sm border-t-4 border-t-indigo-500">
-               <CardHeader className="bg-indigo-50/30 border-b pb-4">
-                  <CardTitle className="text-indigo-900 flex items-center gap-2"><Lightbulb className="w-5 h-5 text-indigo-600"/> Tenders Suggested to Clients</CardTitle>
+            <Card className="shadow-sm border-0 ring-1 ring-slate-200">
+               <CardHeader className="bg-slate-50/50 border-b pb-4">
+                  <CardTitle className="text-[#0A2647] flex items-center gap-2"><Lightbulb className="w-5 h-5 text-amber-500"/> Suggested Tenders Tracker</CardTitle>
                   <CardDescription>Track all tenders you have suggested. If a client accepts, convert it to an Active Bid.</CardDescription>
                </CardHeader>
-               <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+               <CardContent className="pt-4 max-h-[700px] overflow-y-auto">
                   {suggestions.length === 0 ? (
                      <div className="text-center py-10 text-slate-400">
                         <Lightbulb className="w-12 h-12 mx-auto mb-3 opacity-20"/>
                         <p className="text-sm font-semibold">No pending suggestions.</p>
                      </div>
                   ) : (
-                     <div className="grid md:grid-cols-2 gap-4">
-                        {suggestions.map(sug => {
-                           const clientObj = approvedClients.find(c => c.email === sug.target_id);
-                           const cName = clientObj ? clientObj.company_name || clientObj.name : sug.target_id;
+                     <div className="space-y-6">
+                        {/* 🚀 Render Grouped by Client */}
+                        {Object.entries(groupedSuggestions).map(([clientEmail, clientSuggestions]) => {
+                           const clientInfo = approvedClients.find(c => c.email === clientEmail);
+                           const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
+                           const cId = clientInfo ? clientInfo.client_id : 'CLI-XXXX';
+                           
                            return (
-                           <div key={sug._id} className="border border-indigo-100 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:border-indigo-300 transition relative overflow-hidden">
-                              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-                              <div>
-                                 <div className="flex justify-between items-start mb-2">
-                                    <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px]">{cName}</Badge>
-                                    <span className="text-[10px] text-slate-400 font-mono">{new Date(sug.created_at).toLocaleDateString()}</span>
+                           <Card key={clientEmail} className="border-t-4 border-t-amber-400 shadow-sm overflow-hidden">
+                              <CardHeader className="bg-amber-50/30 border-b py-3 px-4">
+                                 <div className="flex justify-between items-center">
+                                    <div>
+                                       <CardTitle className="text-base text-[#0A2647]">{cName}</CardTitle>
+                                       <CardDescription className="text-xs font-mono mt-0.5">{cId} | {clientEmail}</CardDescription>
+                                    </div>
+                                    <Badge className="bg-amber-100 text-amber-800 border-0 shadow-sm">{clientSuggestions.length} Suggestions Pending</Badge>
                                  </div>
-                                 <h4 className="font-bold text-[#0A2647] mt-2 mb-4 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
-                                    {sug.message}
-                                 </h4>
-                              </div>
-                              <div className="flex gap-2 border-t border-slate-100 pt-3">
-                                 <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Accepted')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-9 text-xs">
-                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Client Accepted
-                                 </Button>
-                                 <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-9 text-xs">
-                                    <XCircle className="w-3.5 h-3.5 mr-1.5"/> Rejected
-                                 </Button>
-                              </div>
-                           </div>
+                              </CardHeader>
+                              <CardContent className="p-4 grid gap-4 md:grid-cols-2">
+                                 {clientSuggestions.map(sug => (
+                                    <div key={sug._id} className="border border-amber-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition relative">
+                                       <div>
+                                          <div className="flex justify-between items-start mb-2">
+                                             <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[9px] font-mono">Suggested On: {new Date(sug.created_at).toLocaleDateString()}</Badge>
+                                          </div>
+                                          <h4 className="font-bold text-[#0A2647] mt-1 mb-4 text-sm leading-relaxed">
+                                             {sug.message}
+                                          </h4>
+                                       </div>
+                                       <div className="flex gap-2 border-t border-slate-100 pt-3">
+                                          <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Accepted')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-9 text-xs">
+                                             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Client Accepted
+                                          </Button>
+                                          <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-9 text-xs">
+                                             <XCircle className="w-3.5 h-3.5 mr-1.5"/> Rejected
+                                          </Button>
+                                       </div>
+                                    </div>
+                                 ))}
+                              </CardContent>
+                           </Card>
                         )})}
                      </div>
                   )}
@@ -606,10 +667,9 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 2: GOVT OFFICERS DIRECTORY (UPDATED) */}
+          {/* TAB 3: GOVT OFFICERS DIRECTORY */}
           <TabsContent value="officers" className="space-y-6">
             <div className="grid md:grid-cols-3 gap-6">
-              {/* Form Section */}
               <Card className="shadow-sm border-t-4 border-t-purple-600 md:col-span-1 h-fit">
                 <CardHeader className="bg-purple-50/50 pb-4 border-b">
                   <CardTitle className="text-purple-900 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-purple-600"/> Add Govt Officer</CardTitle>
@@ -634,8 +694,6 @@ export default function EmployeeDashboard() {
                       <Label className="text-xs font-bold text-slate-600">Phone Number *</Label>
                       <Input required type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
                     </div>
-                    
-                    {/* NEW LOCATION FIELDS */}
                     <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
                        <div>
                           <Label className="text-xs font-bold text-slate-600">State</Label>
@@ -677,7 +735,6 @@ export default function EmployeeDashboard() {
                 </CardContent>
               </Card>
 
-              {/* Directory List Section */}
               <Card className="shadow-sm md:col-span-2">
                 <CardHeader className="bg-slate-50 border-b pb-4">
                   <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
@@ -693,14 +750,11 @@ export default function EmployeeDashboard() {
                           <div>
                             <h4 className="font-bold text-[#0A2647] text-base">{officer.name}</h4>
                             <p className="text-sm font-semibold text-purple-700">{officer.designation} - {officer.department}</p>
-                            
-                            {/* Display new location data if available */}
                             {(officer.state || officer.district) && (
                                <p className="text-[10px] text-slate-500 font-bold mt-1 flex items-center gap-1">
                                   <MapPin className="w-3 h-3"/> {officer.district}{officer.district && officer.state ? ', ' : ''}{officer.state} {officer.pincode ? `- ${officer.pincode}` : ''}
                                </p>
                             )}
-                            
                             {officer.notes && <p className="text-xs text-slate-600 mt-2 bg-slate-100 p-2 rounded italic">"{officer.notes}"</p>}
                           </div>
                           <div className="shrink-0 flex sm:flex-col gap-2 items-end">
@@ -715,10 +769,9 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 3: ALERTS, QUERIES & CLIENT LIST (UPDATED WITH DROPDOWNS) */}
+          {/* TAB 4: ALERTS, QUERIES & CLIENT LIST (UPDATED DROPDOWNS) */}
           <TabsContent value="clients" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              {/* Push Action Request */}
               <Card className="shadow-sm border-t-4 border-t-red-500">
                 <CardHeader className="bg-red-50/50 pb-4 border-b">
                   <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
@@ -746,7 +799,6 @@ export default function EmployeeDashboard() {
                 </CardContent>
               </Card>
 
-              {/* Raise Document Query (Locks Client Dashboard) */}
               <Card className="shadow-sm border-t-4 border-t-orange-500">
                 <CardHeader className="bg-orange-50/50 pb-4 border-b">
                   <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
@@ -779,7 +831,6 @@ export default function EmployeeDashboard() {
               </Card>
             </div>
 
-            {/* ACTIVE VERIFIED CLIENTS DIRECTORY (Dynamic Fetch from Bids Array) */}
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
@@ -797,13 +848,6 @@ export default function EmployeeDashboard() {
                     <div className="grid xl:grid-cols-2 gap-4">
                        {approvedClients.map(client => {
                           const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                          
-                          // DYNAMIC BID CALCULATIONS FROM KANBAN ROW ENTRIES
-                          const cBids = bids.filter(b => b.client_email === client.email || b.client === client.email);
-                          const totalBids = cBids.length;
-                          const wonBids = cBids.filter(b => b.status === 'Won').length;
-                          const ongoingBids = cBids.filter(b => !['Won', 'Lost'].includes(b.status));
-
                           return (
                           <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
                              <div>
@@ -817,40 +861,20 @@ export default function EmployeeDashboard() {
                                 
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div>
-                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span>
-                                      <span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span>
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Contact Number</span>
+                                      <span className="font-semibold text-slate-700">{client.phone || '--'}</span>
                                    </div>
                                    <div>
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">GSTIN</span>
+                                      <span className="font-semibold text-slate-700 uppercase">{client.gstin || '--'}</span>
+                                   </div>
+                                   <div className="col-span-2 mt-1">
                                       <span className="text-slate-400 block text-[9px] uppercase font-bold">Services / Interest</span>
-                                      <span className="font-semibold text-blue-700 truncate">{client.tender_interest || client.service_category || 'All Categories'}</span>
-                                   </div>
-                                   <div className="mt-2">
-                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Bids Participated</span>
-                                      <span className="font-black text-blue-700 text-sm">{totalBids}</span>
-                                   </div>
-                                   <div className="mt-2">
-                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Bids Won</span>
-                                      <span className="font-black text-emerald-600 text-sm">{wonBids}</span>
-                                   </div>
-                                   
-                                   {/* Status of Ongoing Bids (if any) */}
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1">
-                                      <span className="text-slate-500 uppercase font-bold text-[10px] block mb-1">Current Ongoing Bid Status</span>
-                                      {ongoingBids.length > 0 ? (
-                                         ongoingBids.slice(0, 2).map((ob, idx) => (
-                                            <div key={idx} className="flex justify-between items-center text-[10px] mb-1">
-                                               <span className="font-bold text-slate-700 truncate mr-2">{ob.bid_no || ob.description}</span>
-                                               <Badge variant="outline" className="text-[9px] font-semibold py-0 h-4 bg-white border-blue-200 text-blue-800">{ob.status}</Badge>
-                                            </div>
-                                         ))
-                                      ) : (
-                                         <span className="text-[10px] text-slate-400">No active ongoing bids.</span>
-                                      )}
+                                      <span className="font-semibold text-blue-700 text-sm truncate">{client.tender_interest || client.service_category || 'All Categories'}</span>
                                    </div>
                                 </div>
                              </div>
                              
-                             {/* ONLY DRIVE & LOGIN BUTTONS FOR EMPLOYEE (NO DELETE/REVOKE) */}
                              <div className="flex flex-col sm:flex-row gap-2 mt-1">
                                 <Button size="sm" onClick={() => { if(client.drive_link) window.open(client.drive_link, '_blank'); else toast.info("Drive folder is not synced yet."); }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
                                    <Database className="w-4 h-4 mr-2" /> View Documents (Drive)
@@ -867,7 +891,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 TAB 4: PUBLISHER & LIVE TENDERS SUGGESTION (UPDATED UI) */}
+          {/* 🚀 TAB 5: PUBLISHER & LIVE TENDERS SUGGESTION (EXACT UI FROM SCREENSHOT) */}
           <TabsContent value="publisher" className="space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
@@ -881,6 +905,10 @@ export default function EmployeeDashboard() {
                      <div>
                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
                        <Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/>
+                     </div>
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use)</Label>
+                       <Input value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
                      </div>
                      <div>
                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label>
@@ -953,11 +981,10 @@ export default function EmployeeDashboard() {
                                        <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {new Date(t.last_date).toLocaleDateString()}</span>
                                     </div>
                                     <h4 className="font-bold text-[#0A2647] text-base leading-tight">{t.title}</h4>
-                                    <p className="text-xs text-slate-500 mt-1">{t.department}</p>
+                                    <p className="text-xs text-slate-500 mt-1">{t.department} {t.bid_no && <span className="ml-2 font-mono bg-slate-100 px-1 rounded">Bid No: {t.bid_no}</span>}</p>
                                  </div>
                               </div>
                               
-                              {/* 🚀 SUGGEST TO CLIENT BOX (DROPDOWN INSTEAD OF TEXT) */}
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
                                  <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">Suggest To:</span>
                                  <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
@@ -983,7 +1010,7 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 5: FULL SLA HELPDESK (UPDATED ESCALATION) */}
+          {/* 🚀 TAB 6: FULL SLA HELPDESK (UPDATED WITH RESOLVED TICKET DETAILS) */}
           <TabsContent value="sla" className="space-y-6">
             <Card className="shadow-sm max-w-3xl mx-auto">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
@@ -1007,22 +1034,50 @@ export default function EmployeeDashboard() {
                                 {ticket.status === 'OPEN' ? 'Action Required' : 'Resolved'}
                              </Badge>
                           </div>
-                          <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"{ticket.message}"</p>
                           
                           {ticket.status === 'OPEN' ? (
-                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-3 border-t">
-                                <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
-                                <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
-                                
-                                <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
-                                
-                                {/* 🚀 NEW: Escalate to MD API Call */}
-                                <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
-                             </div>
+                             <>
+                                <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"{ticket.message}"</p>
+                                <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-3 border-t">
+                                   <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
+                                   <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
+                                   
+                                   <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                                   <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
+                                </div>
+                             </>
                           ) : (
-                             <div className="bg-emerald-50/50 p-3 rounded-lg text-sm border border-emerald-100 border-l-4 border-l-emerald-500 mt-2">
-                                <span className="font-bold text-emerald-800 text-xs uppercase block mb-1">Official Resolution:</span>
-                                <span className="text-emerald-900">{ticket.reply || 'Resolved by Support Team'}</span>
+                             // 🚀 RESOLVED TICKET DETAILED VIEW 
+                             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4 shadow-inner">
+                                <div className="flex justify-between items-center mb-2 border-b border-slate-200 pb-2">
+                                   <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Ticket History</span>
+                                   <Badge variant="outline" className="bg-white text-[9px]">Closed</Badge>
+                                </div>
+                                <div className="grid sm:grid-cols-2 gap-4 mb-3">
+                                   <div>
+                                      <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Raised On</p>
+                                      <p className="text-xs font-semibold text-slate-700">{new Date(ticket.created_at).toLocaleString()}</p>
+                                   </div>
+                                   <div>
+                                      <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Replied On</p>
+                                      <p className="text-xs font-semibold text-slate-700">{ticket.replied_at ? new Date(ticket.replied_at).toLocaleString() : '--'}</p>
+                                   </div>
+                                </div>
+                                <div className="mb-3">
+                                   <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Client Query</p>
+                                   <p className="text-sm font-medium text-slate-800">"{ticket.message}"</p>
+                                </div>
+                                <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100 border-l-4 border-l-emerald-500">
+                                   <p className="text-[10px] text-emerald-800 font-bold uppercase mb-1">Official Resolution</p>
+                                   <p className="text-sm font-semibold text-emerald-900">{ticket.reply || 'Resolved by Support Team'}</p>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between bg-white border border-slate-200 p-2 rounded-lg">
+                                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Client Satisfaction</span>
+                                   <div className="flex gap-1">
+                                      {/* UI Placeholder for rating/satisfaction */}
+                                      <span className="text-xs px-2 py-1 bg-slate-100 rounded text-slate-400 font-semibold flex items-center"><Star className="w-3 h-3 mr-1 text-slate-300"/> Awaiting Feedback</span>
+                                   </div>
+                                </div>
                              </div>
                           )}
                        </div>
