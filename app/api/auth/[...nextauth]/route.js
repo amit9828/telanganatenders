@@ -27,18 +27,23 @@ const handler = NextAuth({
       },
     }),
     
-    // 🚀 EMPLOYEE LOGIN PROVIDER
+    // 🚀 EMPLOYEE LOGIN PROVIDER (Now supports EMP-XXXX ID or Email)
     CredentialsProvider({
       id: 'employee-login',
       name: 'Employee Login',
       credentials: {
-        email: { label: "Email", type: "text" },
+        email: { label: "Email or Employee ID", type: "text" }, 
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
         const db = await getDb();
+        const identifier = credentials.email.trim();
+        
         const employee = await db.collection('employees').findOne({ 
-           email: credentials.email.toLowerCase(), 
+           $or: [
+             { email: identifier.toLowerCase() },
+             { emp_id: new RegExp(`^${identifier}$`, 'i') } // Matches EMP-XXXX
+           ],
            password: credentials.password 
         });
         
@@ -55,21 +60,28 @@ const handler = NextAuth({
       }
     }),
 
-    // 🚀 UPDATED: IMPERSONATE LOGIN PROVIDER (MD Bypass)
+    // 🚀 UPDATED: IMPERSONATE LOGIN PROVIDER (Supports CLI-XXXX, EMP-XXXX, and Email)
     CredentialsProvider({
       id: 'impersonate',
       name: 'Impersonate',
       credentials: {
-        email: { label: "Email", type: "text" },
+        email: { label: "Email or ID", type: "text" },
         adminToken: { label: "Token", type: "text" }
       },
       async authorize(credentials) {
         if (credentials.adminToken === 'admin_success' || credentials.adminToken === process.env.ADMIN_TOKEN) {
            const db = await getDb();
-           const searchEmail = credentials.email.toLowerCase();
+           const searchStr = credentials.email.trim();
+           const searchEmail = searchStr.toLowerCase();
            
-           // 1. First check if it's a Client
-           const user = await db.collection('users').findOne({ email: searchEmail });
+           // 1. First check if it's a Client (by Email or CLI-XXXX)
+           const user = await db.collection('users').findOne({
+             $or: [
+               { email: searchEmail },
+               { client_id: new RegExp(`^${searchStr}$`, 'i') }
+             ]
+           });
+
            if (user) {
               return { 
                  id: user._id.toString(), 
@@ -83,8 +95,14 @@ const handler = NextAuth({
               };
            }
 
-           // 2. If not client, check if it's an Employee (MD bypassing into employee account)
-           const emp = await db.collection('employees').findOne({ email: searchEmail });
+           // 2. If not client, check if it's an Employee (by Email or EMP-XXXX)
+           const emp = await db.collection('employees').findOne({
+             $or: [
+               { email: searchEmail },
+               { emp_id: new RegExp(`^${searchStr}$`, 'i') }
+             ]
+           });
+
            if (emp) {
               return { 
                  id: emp._id.toString(), 
