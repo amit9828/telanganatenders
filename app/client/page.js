@@ -44,10 +44,13 @@ export default function ClientDashboard() {
     udyam: '', address: '', services: [''], description: ''
   });
 
-  // --- Real-time Stats, Vault & Wins State (Empty Default) ---
+  // --- Real-time Stats, Vault & Wins State ---
   const [vaultDocs, setVaultDocs] = useState([]);
   const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
+  
+  // 🟢 NEW STATE FOR RECOMMENDED TENDERS
+  const [recommendedTenders, setRecommendedTenders] = useState([]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -57,14 +60,6 @@ export default function ClientDashboard() {
     fetchPublicTenders();
     fetchClientData(e); // 🚀 Permanent Database Fetch
   }, []);
-
-  // --- Real-time Stats, Vault & Wins State ---
-  const [vaultDocs, setVaultDocs] = useState([]);
-  const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
-  const [wonBids, setWonBids] = useState([]);
-  
-  // 🟢 క్రొత్తగా యాడ్ చేసిన State (Recommended Tenders కోసం)
-  const [recommendedTenders, setRecommendedTenders] = useState([]);
 
   // ============================================================================
   // 🚀 PERMANENT BACKEND LOGIC: Fetch User Data from DB
@@ -81,7 +76,7 @@ export default function ClientDashboard() {
         if(d.won_bids) setWonBids(d.won_bids);
         if(d.vault_docs) setVaultDocs(d.vault_docs);
         
-        // 🟢 క్రొత్త కనెక్షన్: బ్యాకెండ్ నుండి recommended_tenders వస్తే దాన్ని సెట్ చేయడం
+        // 🟢 CATCHING RECOMMENDED TENDERS FROM MD/OFFICER BACKEND
         if(d.recommended_tenders) setRecommendedTenders(d.recommended_tenders);
 
         // Pre-fill editable profile from Database
@@ -397,9 +392,9 @@ export default function ClientDashboard() {
           </div>
         )}
 
-        {/* --- TOP FUNNEL METRICS --- */}
+        {/* --- TOP FUNNEL METRICS (Clickable Links to Tabs) --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-           {/* 🟢 ఇక్కడ 'live_tenders' తీసేసి 'dashboard' అని పెట్టాను */}
+           {/* 🟢 RECOMMENDED BLOCK CLICKS DIRECTLY TO DASHBOARD */}
            <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
@@ -407,7 +402,6 @@ export default function ClientDashboard() {
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
-           {/* మిగతా కార్డ్స్ సేమ్ అలాగే ఉంచండి... */}
            <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <FileText className="w-5 h-5 text-slate-500 mb-2"/>
@@ -606,9 +600,12 @@ export default function ClientDashboard() {
                               <Label className="font-bold text-blue-900 text-sm">{doc.name}</Label>
                               <Badge className="bg-blue-100 text-blue-800 border-0 text-[10px] uppercase font-bold tracking-wider">Under Review</Badge>
                             </div>
-                            <div className="bg-white p-2.5 border border-blue-100 rounded-lg flex items-center justify-between shadow-inner">
-                               <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file_name}>{doc.file_name || doc.file}</span>
-                               <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
+                            <div className="bg-white p-2.5 border border-blue-100 rounded-lg flex flex-col gap-2 shadow-inner">
+                               <div className="flex justify-between items-center">
+                                  <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file_name}>{doc.file_name || doc.file}</span>
+                                  {/* Real Live Date */}
+                                  <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
+                               </div>
                             </div>
                          </div>
                        ))}
@@ -697,11 +694,11 @@ export default function ClientDashboard() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 4: ACTIVE DASHBOARD */}
+          {/* TAB 4: ACTIVE DASHBOARD (Recommended, Tracking, Queries) */}
           {/* ============================================================================== */}
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* 🟢 క్రొత్తగా యాడ్ చేసిన RECOMMENDED TENDERS బ్లాక్ */}
+            {/* 🟢 NEW RECOMMENDED TENDERS BLOCK */}
             <Card className="tender-shadow border-t-4 border-t-blue-500 bg-blue-50/20">
               <CardHeader className="border-b pb-4 bg-white">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
@@ -738,12 +735,51 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* పాత Visual Stepper Logic UI (Tenders Tracking) ఇక్కడ నుండి స్టార్ట్ అవుతుంది... */}
+            {/* Visual Stepper Logic UI */}
             <Card className="tender-shadow">
               <CardHeader className="border-b pb-4 bg-slate-50">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
               </CardHeader>
-              {/* మిగతా కోడ్... */}
+              <CardContent className="p-5">
+                 {activeBids.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400">
+                      <p className="text-sm font-semibold">No active bids in progress.</p>
+                    </div>
+                 ) : (
+                    activeBids.map((bid, i) => (
+                       <div key={i} className="mb-4 border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col gap-6">
+                          <div>
+                            <Badge variant="outline" className="text-[10px] mb-2 font-mono bg-slate-50">{bid.bid_no}</Badge>
+                            <p className="font-bold text-[#0A2647] text-base leading-tight">{bid.description}</p>
+                          </div>
+                          <div className="relative mt-2 px-2 sm:px-6">
+                             <div className="absolute top-3 left-8 right-8 h-1.5 bg-slate-100 rounded-full z-0"></div>
+                             <div className="absolute top-3 left-8 w-[50%] h-1.5 bg-blue-500 rounded-full z-0"></div>
+                             <div className="relative z-10 flex justify-between">
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Doc Prep</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Submitted</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shadow ring-4 ring-white animate-pulse"><Clock className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-amber-700 uppercase">Evaluating</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                   <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-300 flex items-center justify-center shadow ring-4 ring-white"><Trophy className="w-4 h-4"/></div>
+                                   <span className="text-[10px] font-bold text-slate-400 uppercase">Result</span>
+                                </div>
+                             </div>
+                          </div>
+                       </div>
+                    ))
+                 )}
+              </CardContent>
+            </Card>
+
             {/* Officer Queries Block */}
             {queries.length > 0 && (
               <Card className={`border-t-4 shadow-sm bg-white border-t-red-500`}>
