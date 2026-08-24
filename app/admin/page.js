@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { signIn } from 'next-auth/react'; // 🚀 FIXED: Imported proper authentication
+import { signIn } from 'next-auth/react'; // 🚀 IMPORTED FOR SECURE BYPASS
 import BrandLogo from '@/components/BrandLogo';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
@@ -285,14 +285,30 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
-  // 🚀 FIXED: NextAuth Real Authentication for MD Impersonation
+  // 🚀 ULTIMATE FIX: Secure NextAuth Impersonation (No Lock Screen!)
   const impersonateUser = async (type, email_or_id) => {
     toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
-    await signIn('impersonate', { 
-       email: email_or_id, 
-       adminToken: 'admin_success', 
-       callbackUrl: `/${type}` 
-    });
+    
+    try {
+        // Step 1: Set the authentication cookie in the background (No Redirect)
+        const res = await signIn('impersonate', { 
+           email: email_or_id, 
+           adminToken: 'admin_success', 
+           redirect: false // Do not reload the current MD page
+        });
+
+        if (res?.error) {
+           toast.error("Bypass Authentication Failed!");
+        } else {
+           toast.success("Bypass Successful! Opening Real Dashboard...");
+           // Step 2: Open the new tab after the cookie is securely set
+           setTimeout(() => {
+              window.open(`/${type}`, '_blank');
+           }, 800);
+        }
+    } catch (e) {
+        toast.error("Network Error during authentication.");
+    }
   };
 
   // --- HELPDESK TICKETS ---
@@ -1127,7 +1143,7 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ==================== 6. PUBLISHER (WITH SEARCH & EDIT) ==================== */}
+          {/* ==================== 6. PUBLISHER ==================== */}
           <TabsContent value="publisher" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
