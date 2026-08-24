@@ -12,7 +12,8 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
-  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay
+  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
+  Database, Lock
 } from 'lucide-react';
 
 export default function EmployeeDashboard() {
@@ -25,13 +26,20 @@ export default function EmployeeDashboard() {
   const [mdTasks, setMdTasks] = useState([]);
   const [bids, setBids] = useState([]);
   const [officers, setOfficers] = useState([]);
+  
+  // 🚀 NEW: State for Verified/Approved Clients (For Employee View)
+  const [approvedClients, setApprovedClients] = useState([]);
 
   // Forms
   const [tenderForm, setTenderForm] = useState({
     title: '', department: '', last_date: '', district: 'Hyderabad', category: 'Product', supply_details: ''
   });
   const [publishing, setPublishing] = useState(false);
+  
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
+  
+  // 🚀 NEW: Raise Query Form (Locks Client Dashboard)
+  const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
   
   // Govt Officer Form State
   const [officerForm, setOfficerForm] = useState({ name: '', department: '', phone: '', designation: '', notes: '' });
@@ -57,10 +65,11 @@ export default function EmployeeDashboard() {
 
   const fetchLiveOperationsData = async (userEmail) => {
     try {
-      const [tasksRes, bidsRes, officersRes] = await Promise.all([
+      const [tasksRes, bidsRes, officersRes, clientsRes] = await Promise.all([
         fetch('/api/dispatches'), 
         fetch('/api/bids'),       
-        fetch('/api/gov-officers') // Fetch Govt Officers
+        fetch('/api/gov-officers'),
+        fetch('/api/users/approved') // 🚀 NEW: Fetch Clients for Employee
       ]);
 
       if (tasksRes.ok) {
@@ -75,6 +84,10 @@ export default function EmployeeDashboard() {
       if (officersRes.ok) {
         const oData = await officersRes.json();
         setOfficers(oData.officers || []);
+      }
+      if (clientsRes.ok) {
+        const cData = await clientsRes.json();
+        setApprovedClients(cData.users || []);
       }
     } catch (err) {
       console.error("Failed to fetch live operations data", err);
@@ -96,7 +109,6 @@ export default function EmployeeDashboard() {
       if(r.ok) {
         toast.success('Tender published manually and synced with portal calendar!');
         setTenderForm({ title: '', department: '', last_date: '', district: 'Hyderabad', category: 'Product', supply_details: '' });
-        // Log Activity
         logActivity('PUBLISHED_TENDER', `Published tender: ${tenderForm.title}`);
       } else {
         toast.error('Failed to publish tender');
@@ -123,6 +135,28 @@ export default function EmployeeDashboard() {
       }
     } catch (err) {
       toast.error('Network Error while pushing alert.');
+    }
+  };
+
+  // 🚀 NEW: Raise Query Function (Locks Client Dashboard)
+  const handleRaiseQuery = async (e) => {
+    e.preventDefault();
+    if(!queryForm.client_email || !queryForm.subject || !queryForm.message) return toast.error('Fill all fields');
+    try {
+      const res = await fetch('/api/queries/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(queryForm)
+      });
+      if (res.ok) {
+        toast.success(`Query Raised! Client's dashboard is now locked until they reply.`);
+        logActivity('RAISED_QUERY', `Locked client ${queryForm.client_email} for document request.`);
+        setQueryForm({ client_email: '', subject: '', message: '' });
+      } else {
+        toast.error('Failed to raise query.');
+      }
+    } catch (err) {
+      toast.error('Network Error while raising query.');
     }
   };
 
@@ -164,7 +198,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 NEW: Save Govt Officer Function
   const handleSaveOfficer = async (e) => {
     e.preventDefault();
     if(!officerForm.name || !officerForm.department || !officerForm.phone) return toast.error('Name, Dept and Phone are required');
@@ -179,7 +212,7 @@ export default function EmployeeDashboard() {
         toast.success('Govt Officer added to Central Directory!');
         logActivity('ADDED_OFFICER', `Added officer: ${officerForm.name}`);
         setOfficerForm({ name: '', department: '', phone: '', designation: '', notes: '' });
-        fetchLiveOperationsData(email); // Refresh list
+        fetchLiveOperationsData(email); 
       }
     } catch (err) {
       toast.error('Failed to save officer data');
@@ -187,7 +220,6 @@ export default function EmployeeDashboard() {
     setSavingOfficer(false);
   };
 
-  // Helper function to log activity
   const logActivity = (action, details) => {
     fetch('/api/employee/activity', {
         method: 'POST',
@@ -200,17 +232,18 @@ export default function EmployeeDashboard() {
     toast.info('Item escalated to Managing Director successfully.');
     logActivity('ESCALATED_TICKET', 'Escalated a ticket to MD');
   };
-  const [impersonateEmail, setImpersonateEmail] = useState('');
 
+  // 🚀 Login Bypass Logic
   const handleImpersonate = async (targetEmail) => {
     if (!targetEmail) return toast.error('Enter a valid client email');
     toast.loading(`Connecting to ${targetEmail}'s portal...`);
     await signIn('impersonate', {
       email: targetEmail,
       adminToken: 'admin_success',
-      callbackUrl: '/account' // Redirects straight to their account
+      callbackUrl: '/account' 
     });
   };
+
   if (!isMounted) return null;
 
   return (
@@ -261,7 +294,6 @@ export default function EmployeeDashboard() {
         </div>
 
         <Tabs defaultValue="kanban" className="w-full">
-          {/* UPDATED: Added Officers Tab */}
           <TabsList className="grid w-full lg:w-[1000px] grid-cols-5 bg-slate-200 h-auto p-1 mb-6 rounded-lg overflow-x-auto">
             <TabsTrigger value="kanban" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Bids
@@ -270,7 +302,7 @@ export default function EmployeeDashboard() {
               <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
             </TabsTrigger>
             <TabsTrigger value="clients" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <AlertCircle className="w-4 h-4 mr-2 hidden sm:block"/> Alerts
+              <AlertCircle className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Clients
             </TabsTrigger>
             <TabsTrigger value="publisher" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Data
@@ -328,7 +360,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 NEW TAB 2: GOVT OFFICERS DIRECTORY */}
+          {/* TAB 2: GOVT OFFICERS DIRECTORY */}
           <TabsContent value="officers" className="space-y-6">
             <div className="grid md:grid-cols-3 gap-6">
               {/* Form Section */}
@@ -395,51 +427,122 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 3: CLIENT ACTION ALERTS */}
+          {/* TAB 3: ALERTS, QUERIES & CLIENT LIST */}
           <TabsContent value="clients" className="space-y-6">
-            <Card className="shadow-sm max-w-2xl mx-auto border-t-4 border-t-red-500">
-              <CardHeader className="bg-red-50/50 pb-4 border-b">
-                <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request to Client</CardTitle>
-                <CardDescription>Bypass email. Send a direct red-alert to the client's portal screen for immediate action.</CardDescription>
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* Push Action Request */}
+              <Card className="shadow-sm border-t-4 border-t-red-500">
+                <CardHeader className="bg-red-50/50 pb-4 border-b">
+                  <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
+                  <CardDescription>Send a direct red-alert banner to the client's portal screen.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={sendActionAlert} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600">Client ID / Email</Label>
+                      <Input required placeholder="client@example.com" value={alertForm.client_id} onChange={e=>setAlertForm({...alertForm, client_id: e.target.value})} className="mt-1 font-mono bg-white"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Requirement / Message</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please check email..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-11">
+                      <Send className="w-4 h-4 mr-2"/> Push Alert
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* 🚀 NEW: Raise Document Query (Locks Client Dashboard) */}
+              <Card className="shadow-sm border-t-4 border-t-orange-500">
+                <CardHeader className="bg-orange-50/50 pb-4 border-b">
+                  <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
+                  <CardDescription>Missing documents? This will lock the client's screen until they reply.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleRaiseQuery} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600">Client Email *</Label>
+                      <Input required placeholder="client@example.com" value={queryForm.client_email} onChange={e=>setQueryForm({...queryForm, client_email: e.target.value})} className="mt-1 font-mono bg-white"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Query Subject *</Label>
+                      <Input required placeholder="e.g., PAN Card Missing" value={queryForm.subject} onChange={e=>setQueryForm({...queryForm, subject: e.target.value})} className="mt-1 bg-white"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600">Detailed Description *</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-[68px] text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Explain what document is needed..." value={queryForm.message} onChange={e=>setQueryForm({...queryForm, message: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-11">
+                      <Lock className="w-4 h-4 mr-2"/> Lock Client & Send Query
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 🚀 NEW: ACTIVE VERIFIED CLIENTS DIRECTORY (Employee View - No Delete Button) */}
+            <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6">
+              <CardHeader className="bg-blue-50/50 border-b pb-4">
+                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+                    <Briefcase className="w-5 h-5 text-blue-600" /> Active Clients Directory
+                 </CardTitle>
+                 <CardDescription>View client details, access their Google Drive vault, or login to troubleshoot.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-4">
-                <form onSubmit={sendActionAlert} className="space-y-4">
-                  <div>
-                    <Label className="text-slate-600">Client ID / Email</Label>
-                    <Input required placeholder="client@example.com" value={alertForm.client_id} onChange={e=>setAlertForm({...alertForm, client_id: e.target.value})} className="mt-1 font-mono bg-white"/>
-                  </div>
-                  <div>
-                    <Label className="text-slate-600">Requirement / Message</Label>
-                    <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please upload your updated GST certificate for the ongoing bid..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
-                  </div>
-                  <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-11">
-                    <Send className="w-4 h-4 mr-2"/> Push Alert to Client Dashboard
-                  </Button>
-                </form>
+              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+                 {approvedClients.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">
+                       <Users className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                       <p className="text-sm font-semibold">No active verified clients found.</p>
+                    </div>
+                 ) : (
+                    <div className="grid xl:grid-cols-2 gap-4">
+                       {approvedClients.map(client => {
+                          const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
+                          return (
+                          <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
+                             <div>
+                                <div className="flex justify-between items-start mb-2">
+                                   <div>
+                                      <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
+                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                                   </div>
+                                   <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
+                                   <div>
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Contact Number</span>
+                                      <span className="font-semibold text-slate-700">{client.phone || '--'}</span>
+                                   </div>
+                                   <div>
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">GSTIN</span>
+                                      <span className="font-semibold text-slate-700 uppercase">{client.gstin || '--'}</span>
+                                   </div>
+                                   <div className="col-span-2 mt-1">
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Services / Interest</span>
+                                      <span className="font-semibold text-blue-700 text-sm truncate">{client.tender_interest || client.service_category || 'All Categories'}</span>
+                                   </div>
+                                </div>
+                             </div>
+                             
+                             {/* ONLY DRIVE & LOGIN BUTTONS FOR EMPLOYEE (NO DELETE/REVOKE) */}
+                             <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                                <Button size="sm" onClick={() => { if(client.drive_link) window.open(client.drive_link, '_blank'); else toast.info("Drive folder is not synced yet."); }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                   <Database className="w-4 h-4 mr-2" /> View Documents (Drive)
+                                </Button>
+                                <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9">
+                                   <LogIn className="w-4 h-4 mr-2" /> Login as Client
+                                </Button>
+                             </div>
+                          </div>
+                       )})}
+                    </div>
+                 )}
               </CardContent>
             </Card>
-
-            {/* 👇👇👇 STEP 3: PASTE IMPERSONATION CARD HERE 👇👇👇 */}
-            <Card className="shadow-sm max-w-2xl mx-auto border-t-4 border-t-blue-500 mt-6">
-              <CardHeader className="bg-blue-50/50 pb-4 border-b">
-                <CardTitle className="text-blue-900 flex items-center gap-2"><MonitorPlay className="w-5 h-5 text-blue-600"/> Client Troubleshooting</CardTitle>
-                <CardDescription>Login as a client directly to resolve issues without their password.</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-slate-600">Client Email to Access</Label>
-                    <Input placeholder="client@example.com" value={impersonateEmail} onChange={e=>setImpersonateEmail(e.target.value)} className="mt-1 font-mono bg-white"/>
-                  </div>
-                  <Button onClick={() => handleImpersonate(impersonateEmail)} className="w-full bg-[#0A2647] hover:bg-[#144272] h-11">
-                    <MonitorPlay className="w-4 h-4 mr-2"/> Login to Client Dashboard
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-            {/* 👆👆👆 END OF STEP 3 👆👆👆 */}
-
           </TabsContent>
+
           {/* TAB 4: FULL MANUAL TENDER PUBLISHER */}
           <TabsContent value="publisher" className="space-y-6">
             <Card className="border-t-4 border-t-[#16a34a] shadow-sm max-w-3xl mx-auto">
@@ -510,7 +613,6 @@ export default function EmployeeDashboard() {
                        <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500" />
                        <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0">Resolve</Button>
                        
-                       {/* 🚀 NEW: Quick Login & Fix Button */}
                        <Button onClick={() => handleImpersonate('client@example.com')} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
                        
                        <Button onClick={escalateToMD} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
