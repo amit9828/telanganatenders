@@ -58,6 +58,7 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
 
   try {
+    // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
@@ -67,11 +68,13 @@ export async function GET(request, { params }) {
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
 
+    // 2. BRAND SETTINGS
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
       return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
     }
 
+    // 3. TENDERS
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
       const month = searchParams.get('month');
@@ -99,6 +102,7 @@ export async function GET(request, { params }) {
       return json({ tenders });
     }
 
+    // 4. CALENDAR
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
@@ -117,6 +121,7 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
+    // 5. ACCESS CHECK
     if (path === 'access' || path === 'api/access') {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
@@ -134,7 +139,7 @@ export async function GET(request, { params }) {
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
-      const role = searchParams.get('role');
+      const role = searchParams.get('role'); // 🚀 NEW: Role checking
       if (!email) return json({ error: 'Email required' }, 400);
 
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
@@ -148,9 +153,9 @@ export async function GET(request, { params }) {
       
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
 
-      // Bypass for staff/employee
+      // 🚀 NEW FIX: BYPASS PAYWALL FOR EMPLOYEE & MD
       if (role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL) {
-          hasSubscription = true;
+          hasSubscription = true; 
       }
 
       if (!hasSubscription && !hasBoughtSingle) return json({ error: 'Payment required' }, 402);
@@ -166,6 +171,7 @@ export async function GET(request, { params }) {
       });
     }
 
+    // 7. GET TICKETS
     if (path === 'tickets' || path === 'api/tickets') {
       const email = searchParams.get('email');
       const role = searchParams.get('role');
@@ -176,6 +182,7 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
+    // 8. GET PENDING USERS
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
          .find({ is_approved: { $ne: true }, onboarding_complete: true })
@@ -192,6 +199,7 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
+    // 9. CLIENT REQUESTS
     if (path === 'client-requests' || path === 'api/client-requests') {
       const email = searchParams.get('email');
       let query = {};
@@ -200,6 +208,7 @@ export async function GET(request, { params }) {
       return json({ requests });
     }
 
+    // 10. MD DISPATCHES
     if (path === 'dispatches' || path === 'api/dispatches') {
       const targetId = searchParams.get('target_id');
       let query = {};
@@ -208,11 +217,13 @@ export async function GET(request, { params }) {
       return json({ dispatches });
     }
 
+    // 11. GOVT OFFICERS
     if (path === 'gov-officers' || path === 'api/gov-officers') {
       const officers = await db.collection('gov_officers').find({}).sort({ created_at: -1 }).toArray();
       return json({ officers });
     }
 
+    // 12. ACTIVE BIDS
     if (path === 'bids' || path === 'api/bids') {
       const clientEmail = searchParams.get('client_email');
       let query = {};
@@ -221,6 +232,7 @@ export async function GET(request, { params }) {
       return json({ bids });
     }
 
+    // 13. MY ACCOUNT DATA (/api/me)
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
@@ -732,7 +744,7 @@ export async function POST(request, { params }) {
                  const days = paymentRecord.plan === 'year' ? 365 : 30;
                  const expireDate = new Date();
                  expireDate.setDate(expireDate.getDate() + days);
-                 await db.location('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true });
+                 await db.collection('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true }); // 🚀 Silent fix applied here
                }
             }
          }
