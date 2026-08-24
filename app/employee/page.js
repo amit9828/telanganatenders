@@ -27,6 +27,7 @@ const DISTRICTS = [
   'Srikakulam', 'Vizianagaram', 'Prakasam'
 ];
 
+// Array of border colors to dynamically assign to different clients
 const BORDER_COLORS = [
   'border-blue-500', 'border-purple-500', 'border-emerald-500', 
   'border-orange-500', 'border-indigo-500', 'border-rose-500'
@@ -63,7 +64,7 @@ export default function EmployeeDashboard() {
     state: '', district: '', address: '', pincode: '', notes: '' 
   });
   const [savingOfficer, setSavingOfficer] = useState(false);
-  const [officerSearch, setOfficerSearch] = useState('');
+  const [officerSearch, setOfficerSearch] = useState(''); 
 
   const [showAddBid, setShowAddBid] = useState(false);
   const [newBidForm, setNewBidForm] = useState({ 
@@ -175,7 +176,6 @@ export default function EmployeeDashboard() {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
     
-    // 🚀 DUPLICATE SUGGESTION PREVENTION
     const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === tenderTitle);
     if(isDuplicate) {
       return toast.error("Action Denied: You have already suggested this tender to the selected client.");
@@ -206,12 +206,6 @@ export default function EmployeeDashboard() {
   const handleSuggestionResponse = async (suggestion, action) => {
     try {
       if (action === 'Accepted') {
-         // 🚀 PREVENT DUPLICATE ENTRY TO ACTIVE BIDS
-         const isDuplicate = bids.some(b => b.client_email === suggestion.target_id && b.description === suggestion.message);
-         if(isDuplicate) {
-            return toast.error("Action Denied: This tender is already actively tracked for this client.");
-         }
-
          const res = await fetch('/api/bids', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -276,28 +270,6 @@ export default function EmployeeDashboard() {
           toast.error("Failed to remove. Backend route might need update.");
        }
      } catch(e) { toast.error("Network error"); }
-  }
-
-  // 🚀 NEW: CREATE DRIVE FOLDER BRIDGE API CALL
-  const handleCreateDriveFolder = async (clientEmail, companyName) => {
-      toast.info("Generating secure Google Drive Workspace...");
-      try {
-          const res = await fetch('/api/drive/create-folder', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: clientEmail, folderName: `Client - ${companyName}` })
-          });
-          const data = await res.json();
-          if(res.ok && data.folderLink) {
-              toast.success("Drive Workspace Synced!");
-              fetchLiveOperationsData(email);
-              window.open(data.folderLink, '_blank');
-          } else {
-              toast.error(data.error || "Failed to create drive.");
-          }
-      } catch(e) {
-          toast.error("Network Error.");
-      }
   }
 
   const sendActionAlert = async (e) => {
@@ -482,7 +454,6 @@ export default function EmployeeDashboard() {
         </div>
       </header>
 
-      {/* 🚀 FULL PAGE WIDTH CONTAINER */}
       <main className="w-full px-4 sm:px-8 py-6">
         
         <div className="mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
@@ -511,7 +482,6 @@ export default function EmployeeDashboard() {
         </div>
 
         <Tabs defaultValue="kanban" className="w-full">
-          {/* 🚀 FULL WIDTH TABS LIST */}
           <TabsList className="flex flex-wrap w-full bg-slate-200 h-auto p-1 mb-6 rounded-lg gap-1">
             <TabsTrigger value="kanban" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Active Bids
@@ -533,7 +503,7 @@ export default function EmployeeDashboard() {
             </TabsTrigger>
           </TabsList>
 
-          {/* 🚀 TAB 1: KANBAN BID WORKFLOW (GROUPED BY CLIENT WITH NEW COLORS & STATUS) */}
+          {/* 🚀 TAB 1: KANBAN BID WORKFLOW */}
           <TabsContent value="kanban" className="w-full space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -547,7 +517,6 @@ export default function EmployeeDashboard() {
               </CardHeader>
               <CardContent className="pt-4">
                 
-                {/* ADD NEW BID FORM */}
                 {showAddBid && (
                    <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner animate-in fade-in slide-in-from-top-4">
                       <h4 className="font-bold text-blue-900 mb-4 flex items-center"><Target className="w-4 h-4 mr-2"/> Create New Bid Tracking Row</h4>
@@ -565,7 +534,6 @@ export default function EmployeeDashboard() {
                             <Label className="text-xs font-bold text-slate-600">Bid Number / ID *</Label>
                             <Input required placeholder="e.g. GEM/2026/B/..." value={newBidForm.bid_no} onChange={e=>setNewBidForm({...newBidForm, bid_no: e.target.value})} className="mt-1 bg-white h-9" />
                          </div>
-                         {/* 🚀 NEW: STATUS DROPDOWN FOR NEW BIDS */}
                          <div>
                             <Label className="text-xs font-bold text-slate-600">Initial Status *</Label>
                             <Select required value={newBidForm.status} onValueChange={v => setNewBidForm({...newBidForm, status: v})}>
@@ -605,7 +573,6 @@ export default function EmployeeDashboard() {
                   <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
                 ) : (
                   <div className="space-y-6">
-                    {/* 🚀 GROUPED BIDS BY CLIENT */}
                     {Object.entries(groupedBids).map(([clientEmail, clientBids], index) => {
                         const clientInfo = approvedClients.find(c => c.email === clientEmail);
                         const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
@@ -627,7 +594,10 @@ export default function EmployeeDashboard() {
                                 <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
                                   <div>
                                     <div className="flex justify-between items-start mb-2">
-                                      <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] border border-slate-200">{b.bid_no || b.id}</Badge>
+                                      {/* 🚀 FIX: CLEARLY DISPLAY BID NUMBER HERE */}
+                                      <Badge className="bg-slate-100 text-slate-800 font-bold font-mono text-[11px] border border-slate-300 shadow-sm px-2 py-0.5">
+                                        Bid No: {b.bid_no || 'N/A'}
+                                      </Badge>
                                       <div className="flex gap-2 items-center">
                                          <Badge className="bg-blue-50 text-blue-700 border-blue-200 shadow-sm">{b.status}</Badge>
                                          <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-5 w-5 p-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3"/></Button>
@@ -636,7 +606,6 @@ export default function EmployeeDashboard() {
                                     <h4 className="font-bold text-[#0A2647] mt-1 text-sm leading-tight">{b.description || b.title}</h4>
                                   </div>
                                   
-                                  {/* STATUS DROPDOWN SELECTION */}
                                   <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
                                     <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
                                     <select 
@@ -659,13 +628,11 @@ export default function EmployeeDashboard() {
                                     </select>
                                   </div>
 
-                                  {/* 🚀 WINNING REDIRECT / NOTIFICATION */}
                                   {b.status === 'Won' && (
                                      <Button size="sm" onClick={() => toast.success("Winning Bid Published to Client Ledger!")} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2 h-8 text-xs font-bold animate-in fade-in shadow-md">
                                         <Trophy className="w-4 h-4 mr-2" /> Publish Win to Client
                                      </Button>
                                   )}
-
                                 </div>
                               ))}
                            </CardContent>
@@ -738,7 +705,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 TAB 3: GOVT OFFICERS DIRECTORY (UPDATED SEARCH ALIGNMENT) */}
+          {/* TAB 3: GOVT OFFICERS DIRECTORY */}
           <TabsContent value="officers" className="w-full space-y-6">
             <div className="grid lg:grid-cols-3 gap-6">
               <Card className="shadow-sm border-t-4 border-t-purple-600 lg:col-span-1 h-fit">
@@ -794,7 +761,6 @@ export default function EmployeeDashboard() {
                       <Label className="text-xs font-bold text-slate-600">Pincode</Label>
                       <Input type="text" placeholder="e.g. 500001" value={officerForm.pincode} onChange={e=>setOfficerForm({...officerForm, pincode: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
                     </div>
-
                     <div>
                       <Label className="text-xs font-bold text-slate-600">Follow-up Notes</Label>
                       <textarea className="w-full border rounded-md p-2 mt-1 h-16 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-500" value={officerForm.notes} onChange={e=>setOfficerForm({...officerForm, notes: e.target.value})}></textarea>
@@ -806,14 +772,12 @@ export default function EmployeeDashboard() {
                 </CardContent>
               </Card>
 
-              {/* Directory List Section */}
               <Card className="shadow-sm lg:col-span-2 w-full">
                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                   <div>
                      <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
                      <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
                   </div>
-                  {/* 🚀 SEARCH BAR ALIGNED RIGHT */}
                   <div className="relative shrink-0">
                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                      <Input placeholder="Search officers..." value={officerSearch} onChange={e=>setOfficerSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
@@ -942,16 +906,13 @@ export default function EmployeeDashboard() {
                              </div>
                              
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
-                                {/* 🚀 NEW: SAFE DRIVE FOLDER CREATION & LINK BRIDGE */}
-                                {client.drive_folder_link || client.drive_link ? (
-                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> Open Drive
-                                   </Button>
-                                ) : (
-                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> Sync Drive Space
-                                   </Button>
-                                )}
+                                <Button size="sm" onClick={() => { 
+                                   const link = client.drive_folder_link || client.drive_link;
+                                   if(link) window.open(link, '_blank'); 
+                                   else toast.info("Drive folder is not synced yet."); 
+                                }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                   <Database className="w-4 h-4 mr-2" /> View Documents (Drive)
+                                </Button>
                                 <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -964,11 +925,10 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 TAB 5: PUBLISHER & LIVE TENDERS SUGGESTION (EXACT UI FROM SCREENSHOT) */}
+          {/* 🚀 TAB 5: PUBLISHER & LIVE TENDERS SUGGESTION */}
           <TabsContent value="publisher" className="w-full space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
-               {/* Left: Upload Form MATCHING SCREENSHOT EXACTLY */}
                <Card className="border-0 shadow-md lg:col-span-2 h-fit">
                  <CardHeader className="pb-4 border-b border-slate-100">
                    <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><PlusCircle className="w-5 h-5"/> Publish New Tender</CardTitle>
@@ -1082,7 +1042,7 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* 🚀 TAB 6: FULL SLA HELPDESK (UPDATED WITH COMPACT RESOLVED TICKET ROW) */}
+          {/* 🚀 TAB 6: FULL SLA HELPDESK */}
           <TabsContent value="sla" className="w-full space-y-6">
             <Card className="shadow-sm w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
@@ -1091,7 +1051,6 @@ export default function EmployeeDashboard() {
               </CardHeader>
               <CardContent className="pt-6 max-h-[800px] overflow-y-auto">
                  
-                 {/* ACTIVE TICKETS */}
                  {activeTickets.length > 0 && (
                     <div className="mb-8 space-y-4">
                        <h3 className="font-bold text-slate-700 mb-2 border-b pb-2">Active Action Required</h3>
@@ -1125,7 +1084,6 @@ export default function EmployeeDashboard() {
                     </div>
                  )}
 
-                 {/* 🚀 RESOLVED TICKETS - EXTREMELY COMPACT HORIZONTAL ROW */}
                  <div>
                     <h3 className="font-bold text-emerald-700 mb-3 border-b pb-2">Resolved Tickets History</h3>
                     {resolvedTickets.length === 0 ? (
