@@ -27,7 +27,7 @@ const handler = NextAuth({
       },
     }),
     
-    // 🚀 NEW: EMPLOYEE LOGIN PROVIDER (For employees to login with MD given credentials)
+    // 🚀 EMPLOYEE LOGIN PROVIDER
     CredentialsProvider({
       id: 'employee-login',
       name: 'Employee Login',
@@ -55,7 +55,7 @@ const handler = NextAuth({
       }
     }),
 
-    // 🚀 UPDATED: IMPERSONATE LOGIN PROVIDER (MD Bypass to Client OR Employee)
+    // 🚀 UPDATED: IMPERSONATE LOGIN PROVIDER (MD Bypass)
     CredentialsProvider({
       id: 'impersonate',
       name: 'Impersonate',
@@ -71,17 +71,33 @@ const handler = NextAuth({
            // 1. First check if it's a Client
            const user = await db.collection('users').findOne({ email: searchEmail });
            if (user) {
-              return { id: user._id.toString(), email: user.email, name: user.name, client_id: user.client_id, role: 'Client' };
+              return { 
+                 id: user._id.toString(), 
+                 email: user.email, 
+                 name: user.name, 
+                 client_id: user.client_id, 
+                 role: 'Client',
+                 // 🚀 BUG FIX: Force bypass and approval flag to skip verification lock screen
+                 is_approved: true,
+                 is_bypass: true
+              };
            }
 
-           // 2. 🚀 If not client, check if it's an Employee (MD bypassing into employee account)
+           // 2. If not client, check if it's an Employee (MD bypassing into employee account)
            const emp = await db.collection('employees').findOne({ email: searchEmail });
            if (emp) {
-              return { id: emp._id.toString(), email: emp.email, name: emp.name, emp_id: emp.emp_id, role: emp.role || 'Employee' };
+              return { 
+                 id: emp._id.toString(), 
+                 email: emp.email, 
+                 name: emp.name, 
+                 emp_id: emp.emp_id, 
+                 role: emp.role || 'Employee',
+                 is_bypass: true
+              };
            }
 
            // 3. Fallback for unsaved users
-           return { id: credentials.email, email: credentials.email, role: 'Client' };
+           return { id: credentials.email, email: credentials.email, role: 'Client', is_approved: true, is_bypass: true };
         }
         return null;
       }
@@ -126,8 +142,12 @@ const handler = NextAuth({
       if (user) {
          token.email = user.email?.toLowerCase();
          if (user.client_id) token.client_id = user.client_id;
-         if (user.emp_id) token.emp_id = user.emp_id; // 🚀 Save Emp ID
-         if (user.role) token.role = user.role; // 🚀 Save Role (Employee/Client)
+         if (user.emp_id) token.emp_id = user.emp_id; 
+         if (user.role) token.role = user.role;
+         
+         // 🚀 BUG FIX: Map Bypass Flags to Token
+         if (user.is_approved !== undefined) token.is_approved = user.is_approved;
+         if (user.is_bypass) token.is_bypass = user.is_bypass;
       }
       return token;
     },
@@ -135,8 +155,12 @@ const handler = NextAuth({
       if (token?.email) {
          session.user.email = token.email;
          if (token.client_id) session.user.client_id = token.client_id;
-         if (token.emp_id) session.user.emp_id = token.emp_id; // 🚀 Pass to frontend
-         if (token.role) session.user.role = token.role; // 🚀 Pass to frontend
+         if (token.emp_id) session.user.emp_id = token.emp_id; 
+         if (token.role) session.user.role = token.role; 
+         
+         // 🚀 BUG FIX: Pass Bypass Flags to Frontend Session
+         if (token.is_approved !== undefined) session.user.is_approved = token.is_approved;
+         if (token.is_bypass) session.user.is_bypass = token.is_bypass;
       }
       return session;
     },
