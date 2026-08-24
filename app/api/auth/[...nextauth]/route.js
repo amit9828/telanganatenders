@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import CredentialsProvider from 'next-auth/providers/credentials'; // 🚀 NEW: Added for Impersonation (Bypass)
+import CredentialsProvider from 'next-auth/providers/credentials'; 
 import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -19,7 +19,6 @@ const handler = NextAuth({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       authorization: {
-        // 🔴 FIX: Added 'consent' to strictly force Google to ask for account selection every time
         params: { 
           prompt: 'consent select_account', 
           access_type: 'offline',
@@ -27,7 +26,36 @@ const handler = NextAuth({
         },
       },
     }),
-    // 🚀 NEW: IMPERSONATE LOGIN PROVIDER (MD / Employee Bypass Client Login)
+    
+    // 🚀 NEW: EMPLOYEE LOGIN PROVIDER (For employees to login with MD given credentials)
+    CredentialsProvider({
+      id: 'employee-login',
+      name: 'Employee Login',
+      credentials: {
+        email: { label: "Email", type: "text" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        const db = await getDb();
+        const employee = await db.collection('employees').findOne({ 
+           email: credentials.email.toLowerCase(), 
+           password: credentials.password 
+        });
+        
+        if (employee) {
+          return { 
+             id: employee._id.toString(), 
+             email: employee.email, 
+             name: employee.name, 
+             emp_id: employee.emp_id, 
+             role: employee.role || 'Employee' 
+          };
+        }
+        return null; // Invalid credentials
+      }
+    }),
+
+    // 🚀 UPDATED: IMPERSONATE LOGIN PROVIDER (MD Bypass to Client OR Employee)
     CredentialsProvider({
       id: 'impersonate',
       name: 'Impersonate',
@@ -36,16 +64,24 @@ const handler = NextAuth({
         adminToken: { label: "Token", type: "text" }
       },
       async authorize(credentials) {
-        // పాస్‌వర్డ్ అడగకుండా, టోకెన్ తో చెక్ చేసి కచ్చితమైన క్లయింట్ డేటాను డేటాబేస్ నుండి తెచ్చుకోవడం
         if (credentials.adminToken === 'admin_success' || credentials.adminToken === process.env.ADMIN_TOKEN) {
            const db = await getDb();
-           const user = await db.collection('users').findOne({ email: credentials.email.toLowerCase() });
+           const searchEmail = credentials.email.toLowerCase();
            
+           // 1. First check if it's a Client
+           const user = await db.collection('users').findOne({ email: searchEmail });
            if (user) {
-              return { id: user._id.toString(), email: user.email, name: user.name, client_id: user.client_id };
+              return { id: user._id.toString(), email: user.email, name: user.name, client_id: user.client_id, role: 'Client' };
            }
-           // ఒకవేళ యూజర్ ఇంకా పూర్తిగా సేవ్ అవ్వకపోయినా ఈమెయిల్ తో లాగిన్ అవ్వడానికి
-           return { id: credentials.email, email: credentials.email };
+
+           // 2. 🚀 If not client, check if it's an Employee (MD bypassing into employee account)
+           const emp = await db.collection('employees').findOne({ email: searchEmail });
+           if (emp) {
+              return { id: emp._id.toString(), email: emp.email, name: emp.name, emp_id: emp.emp_id, role: emp.role || 'Employee' };
+           }
+
+           // 3. Fallback for unsaved users
+           return { id: credentials.email, email: credentials.email, role: 'Client' };
         }
         return null;
       }
@@ -55,8 +91,8 @@ const handler = NextAuth({
   session: { strategy: 'jwt' },
   callbacks: {
     async signIn({ user, account }) {
-      // 🚀 NEW FIX: ఎంప్లాయీ/ఎండీ బైపాస్ లాగిన్ ద్వారా వెళ్లినప్పుడు క్లయింట్ ప్రొఫైల్ సేఫ్ గా ఉంచడానికి
-      if (account?.provider === 'impersonate') {
+      // 🚀 SAFEGUARD: Bypass login & Employee login doesn't override Google Profile
+      if (account?.provider === 'impersonate' || account?.provider === 'employee-login') {
         return true; 
       }
 
@@ -87,10 +123,11 @@ const handler = NextAuth({
       return true;
     },
     async jwt({ token, user }) {
-      if (user?.email) {
-         token.email = user.email.toLowerCase();
-         // 🚀 NEW FIX: టోకెన్ లోనే క్లయింట్ ఐడీ సేవ్ చేయడం వల్ల ఏ అకౌంట్ తారుమారు అవ్వదు
+      if (user) {
+         token.email = user.email?.toLowerCase();
          if (user.client_id) token.client_id = user.client_id;
+         if (user.emp_id) token.emp_id = user.emp_id; // 🚀 Save Emp ID
+         if (user.role) token.role = user.role; // 🚀 Save Role (Employee/Client)
       }
       return token;
     },
@@ -98,6 +135,8 @@ const handler = NextAuth({
       if (token?.email) {
          session.user.email = token.email;
          if (token.client_id) session.user.client_id = token.client_id;
+         if (token.emp_id) session.user.emp_id = token.emp_id; // 🚀 Pass to frontend
+         if (token.role) session.user.role = token.role; // 🚀 Pass to frontend
       }
       return session;
     },
