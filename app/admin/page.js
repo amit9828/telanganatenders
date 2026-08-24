@@ -17,7 +17,7 @@ import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, 
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
-  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, Building2, UploadCloud, PhoneCall, AlertTriangle
+  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, Building2, UploadCloud, PhoneCall, AlertTriangle, Database
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -42,35 +42,26 @@ export default function AdminPage() {
   const [ticketReply, setTicketReply] = useState({}); 
   const [l1Data, setL1Data] = useState({}); 
   const [pendingUsers, setPendingUsers] = useState([]);
+  
+  // NEW: State for Verified/Approved Clients
+  const [approvedClients, setApprovedClients] = useState([]);
 
   // MD Impersonation
   const [selectedClient, setSelectedClient] = useState(null);
 
-  // Reports Filter & Hardcoded Demo Arrays for UI Structure (As requested to keep interface intact)
+  // Reports Filter & Real Data Arrays (Removed Fake Data)
   const [timeRange, setTimeRange] = useState('monthly'); 
-  const [clientReports, setClientReports] = useState([
-    { id: 'CLI-1049', name: 'Balaji Enterprises', total: 10, ongoing: 4, awaiting_result: 2, won: 3, lost: 1, status: 'Active' },
-    { id: 'CLI-2201', name: 'RR Constructions', total: 5, ongoing: 5, awaiting_result: 0, won: 0, lost: 0, status: 'Active' },
-    { id: 'CLI-9921', name: 'Apex Infra', total: 2, ongoing: 0, awaiting_result: 0, won: 0, lost: 2, status: 'Dull' }
-  ]);
-  const [employeeReports, setEmployeeReports] = useState([
-    { id: 'EMP-802', name: 'Ramesh Kumar', login: '09:14 AM', logout: 'In Shift', hours: '6h 20m', efficiency: 92, tasks_done: 14, role: 'Data Entry' },
-    { id: 'OFF-105', name: 'Suresh Officer', login: '10:05 AM', logout: 'In Shift', hours: '5h 10m', efficiency: 64, tasks_done: 2, role: 'Tender Officer' }
-  ]);
+  const [clientReports, setClientReports] = useState([]);
+  const [employeeReports, setEmployeeReports] = useState([]);
 
   // Team & Credentials
   const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'officer' });
-  const [teamMembers, setTeamMembers] = useState([
-    { id: 'EMP-802', name: 'Ramesh Kumar', email: 'ramesh@tgtenders.in', password: 'Pass@123', role: 'employee', status: 'Active' },
-    { id: 'OFF-105', name: 'Suresh Officer', email: 'suresh@tgtenders.in', password: 'Sec@2026', role: 'officer', status: 'Active' }
-  ]); 
+  const [teamMembers, setTeamMembers] = useState([]); 
   const [showPwdId, setShowPwdId] = useState(null); 
 
   // Financial Progress Bar State
   const [paymentRequestForm, setPaymentRequestForm] = useState({ client_id: '', amount: '', reason: '' });
-  const [financialRequests, setFinancialRequests] = useState([
-    { id: 'REQ-9281', client_id: 'CLI-1049', client_name: 'Balaji Ent', amount: '1499', reason: 'Yearly Subscription', status: 'paid', sent_time: '09:00 AM', open_time: '09:15 AM', paid_time: '09:20 AM' }
-  ]);
+  const [financialRequests, setFinancialRequests] = useState([]);
 
   // --- PERMANENT BACKEND STATES ---
   const [govOfficers, setGovOfficers] = useState([]);
@@ -103,14 +94,15 @@ export default function AdminPage() {
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [tRes, sRes, tkRes, uRes, reqRes, dispRes, govRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, govRes] = await Promise.all([
         fetch(`/api/tenders?t=${Date.now()}`, { headers }),
         fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
         fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
         fetch(`/api/users/pending?t=${Date.now()}`, { headers }),
-        fetch(`/api/client-requests?t=${Date.now()}`, { headers }), // Fetch Live Client Bids
-        fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       // Fetch Live MD Tasks
-        fetch(`/api/gov-officers?t=${Date.now()}`, { headers })      // Fetch Live Gov Officers
+        fetch(`/api/users/approved?t=${Date.now()}`, { headers }), // NEW: Fetching Approved Users
+        fetch(`/api/client-requests?t=${Date.now()}`, { headers }),
+        fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
+        fetch(`/api/gov-officers?t=${Date.now()}`, { headers })      
       ]);
       
       if (tRes.status === 401) return logout();
@@ -119,6 +111,7 @@ export default function AdminPage() {
       const sJson = await sRes.json();
       const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
       const uJson = uRes.ok ? await uRes.json() : { users: [] };
+      const aJson = aRes.ok ? await aRes.json() : { users: [] }; // Parsing Approved Users
 
       // Parse new data connections safely
       const reqJson = reqRes.ok ? await reqRes.json() : { requests: [] };
@@ -129,11 +122,15 @@ export default function AdminPage() {
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
       setPendingUsers(uJson.users || []);
+      setApprovedClients(aJson.users || []); // Real Approved Clients
       
       // Update Live Operations Desks
       setBidRequests(reqJson.requests || []);
       setDispatches(dispJson.dispatches || []);
       setGovOfficers(govJson.officers || []);
+
+      // If backend provides real reports/teams/financials, they would be set here.
+      // e.g., setClientReports(sJson.clientReports || []);
 
     } catch (err) {
       console.error('Refresh failed:', err);
@@ -250,10 +247,6 @@ export default function AdminPage() {
   // ============================================================================
   const approveClient = async (email) => {
     try {
-      // Optimistic Update
-      setPendingUsers(prev => prev.filter(u => u.email !== email));
-      setSelectedClient(null); 
-      
       toast.success('✅ Client Verified & Portal Unlocked!');
       toast.info('📁 Google Drive Workspace Created automatically for this client.');
 
@@ -428,48 +421,56 @@ export default function AdminPage() {
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Timesheets</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     <table className="w-full text-sm text-left border-collapse">
-                        <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
-                           <tr><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Login</th><th className="px-3 py-2">Efficiency</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                           {employeeReports.map(emp => (
-                              <tr key={emp.id} className="hover:bg-slate-50">
-                                 <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
-                                 <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
-                                 <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
-                              </tr>
-                           ))}
-                        </tbody>
-                     </table>
+                     {employeeReports.length === 0 ? (
+                       <p className="text-center text-sm text-slate-400 py-6">Real-time data pending from server.</p>
+                     ) : (
+                       <table className="w-full text-sm text-left border-collapse">
+                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
+                             <tr><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Login</th><th className="px-3 py-2">Efficiency</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                             {employeeReports.map(emp => (
+                                <tr key={emp.id} className="hover:bg-slate-50">
+                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
+                                   <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
+                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
+                                </tr>
+                             ))}
+                          </tbody>
+                       </table>
+                     )}
                   </CardContent>
                </Card>
 
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                   <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Consultancy Funnel (Business Conversion)</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     <table className="w-full text-sm text-left border-collapse">
-                        <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
-                           <tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Applied</th><th className="px-3 py-2 text-emerald-600">Won</th><th className="px-3 py-2 text-red-600">Lost</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                           {clientReports.map(cr => (
-                              <tr key={cr.id} className="hover:bg-slate-50">
-                                 <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
-                                 <td className="px-3 py-2 font-bold text-slate-700">{cr.total}</td>
-                                 <td className="px-3 py-2 font-black text-emerald-600">{cr.won}</td>
-                                 <td className="px-3 py-2 font-bold text-red-500">{cr.lost}</td>
-                              </tr>
-                           ))}
-                        </tbody>
-                     </table>
+                     {clientReports.length === 0 ? (
+                       <p className="text-center text-sm text-slate-400 py-6">Real-time data pending from server.</p>
+                     ) : (
+                       <table className="w-full text-sm text-left border-collapse">
+                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
+                             <tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Applied</th><th className="px-3 py-2 text-emerald-600">Won</th><th className="px-3 py-2 text-red-600">Lost</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                             {clientReports.map(cr => (
+                                <tr key={cr.id} className="hover:bg-slate-50">
+                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
+                                   <td className="px-3 py-2 font-bold text-slate-700">{cr.total}</td>
+                                   <td className="px-3 py-2 font-black text-emerald-600">{cr.won}</td>
+                                   <td className="px-3 py-2 font-bold text-red-500">{cr.lost}</td>
+                                </tr>
+                             ))}
+                          </tbody>
+                       </table>
+                     )}
                   </CardContent>
                </Card>
             </div>
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 2: CLIENT CRM & APPROVALS */}
+          {/* TAB 2: CLIENT CRM & APPROVALS (UPDATED WITH APPROVED CLIENTS DIRECTORY) */}
           {/* ============================================================================== */}
           <TabsContent value="clients" className="mt-4">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
@@ -539,6 +540,72 @@ export default function AdminPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* NEW DIRECTORY FOR APPROVED/VERIFIED CLIENTS */}
+            <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6">
+              <CardHeader className="bg-blue-50/50 border-b pb-4">
+                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+                    <Briefcase className="w-5 h-5 text-blue-600" /> Active Verified Clients
+                 </CardTitle>
+                 <CardDescription>Directory of all approved enterprise clients, their stats, and direct portal/drive access.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+                 {approvedClients.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">
+                       <Users className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                       <p className="text-sm font-semibold">No active verified clients found.</p>
+                    </div>
+                 ) : (
+                    <div className="grid xl:grid-cols-2 gap-4">
+                       {approvedClients.map(client => {
+                          const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
+                          return (
+                          <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
+                             <div>
+                                <div className="flex justify-between items-start mb-2">
+                                   <div>
+                                      <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
+                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                                   </div>
+                                   <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Verified</Badge>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
+                                   <div>
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Registered Date</span>
+                                      <span className="font-semibold text-slate-700">{client.created_at ? new Date(client.created_at).toLocaleDateString() : '--'}</span>
+                                   </div>
+                                   <div>
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span>
+                                      <span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span>
+                                   </div>
+                                   <div className="mt-2">
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Bids Participated</span>
+                                      <span className="font-black text-blue-700 text-sm">{client.stats?.participated || 0}</span>
+                                   </div>
+                                   <div className="mt-2">
+                                      <span className="text-slate-400 block text-[9px] uppercase font-bold">Bids Won</span>
+                                      <span className="font-black text-emerald-600 text-sm">{client.stats?.won || 0}</span>
+                                   </div>
+                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center">
+                                      <span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue from Client</span>
+                                      <span className="font-black text-emerald-700 text-lg">₹{(client.stats?.total_paid || 0).toLocaleString()}</span>
+                                   </div>
+                                </div>
+                             </div>
+                             <div className="flex flex-col sm:flex-row gap-3 mt-1">
+                                <Button size="sm" onClick={() => window.open(client.drive_link || '#', '_blank')} variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                   <Database className="w-4 h-4 mr-2" /> Google Drive Folder
+                                </Button>
+                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="w-full bg-[#0A2647] hover:bg-[#144272] h-9">
+                                   <LogIn className="w-4 h-4 mr-2" /> Direct MD Access
+                                </Button>
+                             </div>
+                          </div>
+                       )})}
+                    </div>
+                 )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ============================================================================== */}
@@ -590,7 +657,7 @@ export default function AdminPage() {
                      {financialRequests.length === 0 ? (
                         <div className="text-center py-12 text-slate-400">
                            <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                           <p className="text-sm font-semibold">No payment links dispatched yet.</p>
+                           <p className="text-sm font-semibold">No real payment links dispatched yet.</p>
                         </div>
                      ) : (
                         <div className="space-y-6">
@@ -803,6 +870,13 @@ export default function AdminPage() {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
+                                 {/* NEW: VIEW DOCUMENT BUTTON */}
+                                 {(req.file_url || req.document_url) && (
+                                    <Button variant="outline" size="sm" onClick={() => window.open(req.file_url || req.document_url, '_blank')} className="mb-4 w-full sm:w-auto h-8 text-xs border-blue-200 text-blue-700 hover:bg-blue-50">
+                                       <FileText className="w-3.5 h-3.5 mr-1" /> View Uploaded Document
+                                    </Button>
+                                 )}
+
                                  {req.status === 'Pending Officer Review' ? (
                                     <div className="flex flex-col gap-2 border-t pt-3">
                                        <Input placeholder="MD / Officer Reply or Instructions..." className="h-9 text-xs bg-white" value={bidReply[req._id] || ''} onChange={e => setBidReply({...bidReply, [req._id]: e.target.value})} />
