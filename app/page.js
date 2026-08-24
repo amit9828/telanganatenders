@@ -705,36 +705,47 @@ export default function App() {
  // ==============================================================================
   // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
   // ==============================================================================
-  // 🚀 FIX: ఇక్కడ లాజిక్ క్లియర్ చేసాం. అప్రూవ్ 'కాని' వాడికి మాత్రమే ఈ స్క్రీన్ వస్తుంది.
-  // అప్రూవ్ అయిన వాడిని పైనున్న useEffect చూసుకుంటుంది (వాడిని డైరెక్ట్ గా /client కి తోసేస్తుంది).
-  if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete && !userData.is_approved) {
-    return (
-      <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
-        <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl relative overflow-hidden border-0">
-          <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
-            <ShieldCheck className="w-6 h-6 text-amber-600" />
-          </div>
-          <h2 className="text-2xl font-extrabold text-[#0A2647] mb-1">Account Under Verification</h2>
-          <p className="text-slate-500 text-sm mb-6">Welcome to TenderNexus Enterprise Portal.</p>
-          
-          <p className="text-slate-700 text-sm mb-6 leading-relaxed">
-            Your registration was successful. As part of our strict MNC compliance, your dashboard access is currently locked pending <strong className="text-red-600">MD Approval</strong>.
-          </p>
-          
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
-            <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
-          </div>
-          
-          {/* 🚀 FIX: Removed the Bypass button, keeping only Log Out */}
-          <div className="flex items-center justify-center mt-4">
-            <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
-              <LogOut className="w-4 h-4 mr-2" /> Log Out
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
+  if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
+    // 🚀 FIX: ఎండీ ఇంకా అప్రూవ్ చేయకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ వస్తుంది.
+    if (!userData.is_approved) {
+      return (
+        <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
+          <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl relative overflow-hidden border-0">
+            <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+              <ShieldCheck className="w-6 h-6 text-amber-600" />
+            </div>
+            <h2 className="text-2xl font-extrabold text-[#0A2647] mb-1">Account Under Verification</h2>
+            <p className="text-slate-500 text-sm mb-6">Welcome to TenderNexus Enterprise Portal.</p>
+            
+            <p className="text-slate-700 text-sm mb-6 leading-relaxed">
+              Your registration was successful. As part of our strict MNC compliance, your dashboard access is currently locked pending <strong className="text-red-600">MD Approval</strong>.
+            </p>
+            
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
+              <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
+            </div>
+            
+            {/* 🚀 FIX: Removed the Bypass button, keeping only Log Out */}
+            <div className="flex items-center justify-center mt-4">
+              <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
+                <LogOut className="w-4 h-4 mr-2" /> Log Out
+              </Button>
+            </div>
+          </Card>
+        </div>
+      );
+    } 
+    // 🚀 NEW: ఎండీ అప్రూవ్ చేసేస్తే, పైనున్న useEffect వాడిని /client కి జంప్ చేయించే లోపు ఈ లోడర్ వస్తుంది.
+    else {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+          <Loader2 className="w-12 h-12 animate-spin text-[#16a34a] mb-4" />
+          <h2 className="text-xl font-bold text-[#0A2647]">Authentication Successful</h2>
+          <p className="text-slate-500 mt-2">Redirecting to your Dashboard...</p>
+        </div>
+      );
+    }
   }
         
   // ==============================================================================
