@@ -714,9 +714,6 @@ export default function App() {
  // ==============================================================================
   // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
   // ==============================================================================
-  // ==============================================================================
-  // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
-  // ==============================================================================
   if (status === 'authenticated' && (intent === 'client' || (userData && userData.onboarding_complete))) {
     
     // 🚀 FIX 1: ఒకవేళ వాడు ఇంకా అప్రూవ్ కాకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ రావాలి
@@ -739,6 +736,7 @@ export default function App() {
               <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
             </div>
             
+            {/* 🚀 FIX: Removed the Bypass button completely. Only Log Out is available. */}
             <div className="flex items-center justify-center mt-4">
               <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
                 <LogOut className="w-4 h-4 mr-2" /> Log Out
@@ -748,7 +746,7 @@ export default function App() {
         </div>
       );
     } 
-    // 🚀 FIX 2: ఒకవేళ అప్రూవ్ అయ్యుంటే, పైనున్న useEffect వాడిని /client కి తన్నే లోపు ఈ లోడర్ వస్తుంది
+    // 🚀 FIX 2: ఒకవేళ అప్రూవ్ అయ్యుంటే, పైనున్న useEffect వాడిని /client కి జంప్ చేయించే లోపు ఈ లోడర్ వస్తుంది
     else if (userData && userData.is_approved) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -759,29 +757,7 @@ export default function App() {
       );
     }
   }
-            
-            {/* 🚀 FIX: Removed the Bypass button, keeping only Log Out */}
-            <div className="flex items-center justify-center mt-4">
-              <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
-                <LogOut className="w-4 h-4 mr-2" /> Log Out
-              </Button>
-            </div>
-          </Card>
-        </div>
-      );
-    } 
-    // 🚀 NEW: ఎండీ అప్రూవ్ చేసేస్తే, పైనున్న useEffect వాడిని /client కి జంప్ చేయించే లోపు ఈ లోడర్ వస్తుంది.
-    else {
-      return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
-          <Loader2 className="w-12 h-12 animate-spin text-[#16a34a] mb-4" />
-          <h2 className="text-xl font-bold text-[#0A2647]">Authentication Successful</h2>
-          <p className="text-slate-500 mt-2">Redirecting to your Dashboard...</p>
-        </div>
-      );
-    }
-  }
-        
+
   // ==============================================================================
   // SCREEN 4: MAIN PORTAL (Guests & Approved Browsers reach here)
   // ==============================================================================
