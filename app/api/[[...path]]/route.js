@@ -135,11 +135,13 @@ export async function GET(request, { params }) {
       return json({ subscription: user?.subscription || null });
     }
 
-    // 6. PDF FETCH (🚀 UPDATED TO BYPASS PAYWALL FOR EMPLOYEES/MD)
+    // 6. PDF FETCH (🚀 UPDATED: DIRECT PDF FILE RENDERING + PAYWALL BYPASS)
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
       const role = searchParams.get('role'); // 🚀 NEW: Role checking
+      const format = searchParams.get('format'); // Support fallback if needed
+
       if (!email) return json({ error: 'Email required' }, 400);
 
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
@@ -153,7 +155,7 @@ export async function GET(request, { params }) {
       
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
 
-      // 🚀 NEW FIX: BYPASS PAYWALL FOR EMPLOYEE & MD
+      // 🚀 FIX: BYPASS PAYWALL FOR EMPLOYEE & MD
       if (role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL) {
           hasSubscription = true; 
       }
@@ -163,12 +165,30 @@ export async function GET(request, { params }) {
       const tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) });
       if (!tender || !tender.pdf_base64) return json({ error: 'PDF not found' }, 404);
 
-      return json({
-         pdf_base64: tender.pdf_base64,
-         pdf_filename: tender.pdf_filename || 'tender_document.pdf',
-         title: tender.title,
-         watermarked: true
-      });
+      // 🚀 NEW: బ్రౌజర్‌లో window.open() చేసినప్పుడు డైరెక్ట్‌గా PDF ఓపెన్ అవ్వడానికి ఈ లాజిక్ వాడతాం!
+      if (format === 'json') {
+          return json({
+             pdf_base64: tender.pdf_base64,
+             pdf_filename: tender.pdf_filename || 'tender_document.pdf',
+             title: tender.title,
+             watermarked: true
+          });
+      } else {
+          try {
+             // Base64 స్ట్రింగ్‌ని రియల్ PDF File (Buffer) లాగా మార్చి పంపడం
+             const pdfBuffer = Buffer.from(tender.pdf_base64, 'base64');
+             return new NextResponse(pdfBuffer, {
+                 status: 200,
+                 headers: {
+                     'Content-Type': 'application/pdf',
+                     'Content-Disposition': `inline; filename="${tender.pdf_filename || 'tender_document.pdf'}"`,
+                     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+                 }
+             });
+          } catch(err) {
+             return json({ error: 'Failed to parse PDF Data' }, 500);
+          }
+      }
     }
 
     // 7. GET TICKETS
@@ -744,7 +764,7 @@ export async function POST(request, { params }) {
                  const days = paymentRecord.plan === 'year' ? 365 : 30;
                  const expireDate = new Date();
                  expireDate.setDate(expireDate.getDate() + days);
-                 await db.collection('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true }); // 🚀 Silent fix applied here
+                 await db.collection('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true });
                }
             }
          }
