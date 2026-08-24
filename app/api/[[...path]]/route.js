@@ -415,7 +415,16 @@ export async function PUT(request, { params }) {
         return json({ success: true });
      }
 
-     // 🚀 NEW: FINANCE LEDGER EDIT
+     // 🚀 NEW: UPDATE DISPATCH STATUS (For Warnings & SLA Breaches)
+     if (path === 'dispatches/update' || path === 'api/dispatches/update') {
+        const { task_id, status } = body;
+        await db.collection('dispatches').updateOne(
+           { _id: new ObjectId(task_id) },
+           { $set: { status: status, updated_at: new Date() } }
+        );
+        return json({ success: true, message: `Dispatch status updated to ${status}` });
+     }
+
      if (path === 'finance/ledger' || path === 'api/finance/ledger') {
         const { id, ...updateFields } = body;
         if (!id) return json({ error: 'Missing Transaction ID' }, 400);
@@ -426,7 +435,6 @@ export async function PUT(request, { params }) {
         return json({ success: true, message: 'Ledger Entry Updated' });
      }
 
-     // 🚀 NEW: MANUAL OFFLINE PAYMENT COMPLETION
      if (path === 'payments/offline' || path === 'api/payments/offline') {
         const { id, amount, reason, client_id } = body;
         
@@ -437,7 +445,6 @@ export async function PUT(request, { params }) {
             );
         }
         
-        // Add to offline ledger automatically
         await db.collection('finance_ledger').insertOne({
             type: 'CREDIT',
             amount: Number(amount),
@@ -525,7 +532,6 @@ export async function DELETE(request, { params }) {
       return json({ success: true, message: 'Employee Deleted' });
     }
 
-    // 🚀 NEW: DELETE FINANCE LEDGER ENTRY
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Transaction ID' }, 400);
@@ -533,7 +539,6 @@ export async function DELETE(request, { params }) {
        return json({ success: true, message: 'Transaction Deleted' });
     }
 
-    // 🚀 NEW: DELETE CLIENT REQUEST PERMANENTLY
     if (path === 'client-requests' || path === 'api/client-requests') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Request ID' }, 400);
@@ -541,7 +546,6 @@ export async function DELETE(request, { params }) {
        return json({ success: true, message: 'Request Deleted Permanently' });
     }
 
-    // 🚀 NEW: DELETE DISPATCH TASK PERMANENTLY
     if (path === 'dispatches' || path === 'api/dispatches') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Dispatch ID' }, 400);
