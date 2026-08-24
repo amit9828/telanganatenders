@@ -180,7 +180,6 @@ export default function App() {
       if (urlIntent) {
         localStorage.setItem('tt_intent', urlIntent);
         setIntent(urlIntent);
-        // Clean up URL safely
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.delete('intent');
         window.history.replaceState({}, document.title, newUrl.pathname + newUrl.search);
@@ -227,22 +226,24 @@ export default function App() {
       setLoadingUser(false);
     }
   }, [session, status]);
-// Client & Guest Redirect Hook (🚀 FIXED LOGIC: Strict routing to prevent crossing)
+
+  // ==============================================================================
+  // 🚀 BULLETPROOF AUTO-REDIRECT: Database is the absolute source of truth
+  // ==============================================================================
   useEffect(() => {
-    if (status === 'authenticated' && userData) {
-      // 🚀 THE FIX: ఇక్కడ "intent === 'client'" అనే కండిషన్ ని పీకేశాం. 
-      // డేటాబేస్ లో వాడు అప్రూవ్డ్ క్లయింట్ అని ఉంటే చాలు, బ్రౌజర్‌తో పనిలేకుండా వాడిని /client కి తన్నేస్తుంది!
+    if (status === 'authenticated' && userData !== null && !loadingUser) {
+      // ఒకసారి క్లయింట్ అప్రూవ్ అయ్యాక ఎప్పుడు లాగిన్ అయినా డైరెక్ట్ గా క్లయింట్ బోర్డ్ కి వెళ్తాడు
       if (userData.onboarding_complete && userData.is_approved) {
-        if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
-        setIntent('client');
-        router.push('/client');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('tt_intent', 'client');
+          window.location.href = '/client';
+        }
       }
-      // 2. If intent is guest, strictly keep them as guest
       else if (intent === 'guest' && (!userData.onboarding_complete || !userData.is_approved)) {
         setIsGuest(true);
       }
     }
-  }, [status, intent, userData, router]);
+  }, [status, intent, userData, loadingUser]);
   
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
@@ -602,7 +603,7 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 2: CLIENT ONBOARDING (For Client intent that has not completed registration)
+  // SCREEN 2: CLIENT ONBOARDING
   // ==============================================================================
   if (status === 'authenticated' && intent === 'client' && (!userData || !userData.onboarding_complete)) {
     return (
@@ -615,7 +616,6 @@ export default function App() {
           </CardHeader>
           <CardContent className="p-6 bg-slate-50/50">
             <form onSubmit={submitOnboarding} className="space-y-6">
-              
               <div className="grid sm:grid-cols-2 gap-4">
                  <div>
                     <Label className="text-[#0A2647] font-semibold">Client Name *</Label>
@@ -703,12 +703,13 @@ export default function App() {
       </div>
     );
   }
-// ==============================================================================
+
+  // ==============================================================================
   // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
   // ==============================================================================
   if (status === 'authenticated' && (intent === 'client' || (userData && userData.onboarding_complete))) {
     
-    // 🚀 THE FIX: ఒకవేళ వాడు ఇంకా అప్రూవ్ కాకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ రావాలి
+    // వాడు ఇంకా అప్రూవ్ కాకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ రావాలి
     if (userData && !userData.is_approved) {
       return (
         <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
@@ -728,7 +729,6 @@ export default function App() {
               <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
             </div>
             
-            {/* Bypass బటన్ పూర్తిగా రిమూవ్ చేశాం, కేవలం Log Out మాత్రమే ఉంటుంది */}
             <div className="flex items-center justify-center mt-4">
               <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
                 <LogOut className="w-4 h-4 mr-2" /> Log Out
@@ -737,8 +737,8 @@ export default function App() {
           </Card>
         </div>
       );
-    }
-    // 🚀 THE FIX: ఒకవేళ అప్రూవ్ అయ్యుంటే, పైనున్న useEffect వాడిని /client కి పంపించే లోపు (1 సెకను పాటు) ఈ లోడర్ వస్తుంది
+    } 
+    // అప్రూవ్ అయ్యుంటే, పైనున్న useEffect వాడిని /client కి జంప్ చేయించే లోపు ఈ లోడర్ వస్తుంది
     else if (userData && userData.is_approved) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -752,6 +752,7 @@ export default function App() {
 
   // ==============================================================================
   // SCREEN 4: MAIN PORTAL (Guests & Approved Browsers reach here)
+  // ==============================================================================
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <header className="border-b bg-white sticky top-0 z-30">
