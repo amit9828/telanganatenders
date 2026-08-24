@@ -58,7 +58,6 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
 
   try {
-    // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
@@ -68,13 +67,11 @@ export async function GET(request, { params }) {
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
 
-    // 2. BRAND SETTINGS
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
       return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
     }
 
-    // 3. TENDERS
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
       const month = searchParams.get('month');
@@ -102,7 +99,6 @@ export async function GET(request, { params }) {
       return json({ tenders });
     }
 
-    // 4. CALENDAR
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
@@ -121,7 +117,6 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
-    // 5. ACCESS CHECK
     if (path === 'access' || path === 'api/access') {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
@@ -135,7 +130,6 @@ export async function GET(request, { params }) {
       return json({ subscription: user?.subscription || null });
     }
 
-    // 6. PDF FETCH
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
@@ -188,7 +182,6 @@ export async function GET(request, { params }) {
       }
     }
 
-    // 7. GET TICKETS
     if (path === 'tickets' || path === 'api/tickets') {
       const email = searchParams.get('email');
       const role = searchParams.get('role');
@@ -199,7 +192,6 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
-    // 8. GET PENDING USERS
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
          .find({ is_approved: { $ne: true }, onboarding_complete: true })
@@ -216,7 +208,6 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
-    // 9. CLIENT REQUESTS
     if (path === 'client-requests' || path === 'api/client-requests') {
       const email = searchParams.get('email');
       let query = {};
@@ -225,7 +216,6 @@ export async function GET(request, { params }) {
       return json({ requests });
     }
 
-    // 10. MD DISPATCHES
     if (path === 'dispatches' || path === 'api/dispatches') {
       const targetId = searchParams.get('target_id');
       let query = {};
@@ -234,13 +224,11 @@ export async function GET(request, { params }) {
       return json({ dispatches });
     }
 
-    // 11. GOVT OFFICERS
     if (path === 'gov-officers' || path === 'api/gov-officers') {
       const officers = await db.collection('gov_officers').find({}).sort({ created_at: -1 }).toArray();
       return json({ officers });
     }
 
-    // 12. ACTIVE BIDS
     if (path === 'bids' || path === 'api/bids') {
       const clientEmail = searchParams.get('client_email');
       let query = {};
@@ -249,13 +237,11 @@ export async function GET(request, { params }) {
       return json({ bids });
     }
 
-    // 13. EMPLOYEES
     if (path === 'employees' || path === 'api/employees') {
       const team = await db.collection('employees').find({}).sort({ created_at: -1 }).toArray();
       return json({ team });
     }
 
-    // 14. FINANCE LEDGER
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
       const transactions = await db.collection('finance_ledger').find({}).sort({ created_at: -1 }).toArray();
       const totalCredit = transactions.filter(t => t.type === 'CREDIT').reduce((sum, t) => sum + Number(t.amount), 0);
@@ -263,7 +249,6 @@ export async function GET(request, { params }) {
       return json({ transactions, balance: totalCredit - totalDebit });
     }
 
-    // 15. MY ACCOUNT DATA (/api/me)
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
@@ -473,6 +458,27 @@ export async function DELETE(request, { params }) {
   const { searchParams } = new URL(request.url);
   
   try {
+    // 🚀 NEW: CASCADING DELETE FOR ENTIRE CLIENT DATA (WIPE OUT)
+    if (path === 'users' || path === 'api/users') {
+       const email = searchParams.get('email');
+       if (!email) return json({ error: 'Missing Client Email' }, 400);
+
+       const targetEmail = email.toLowerCase();
+
+       // 1. Delete Client Profile & Login Access
+       await db.collection('users').deleteOne({ email: targetEmail });
+
+       // 2. Delete all their related data to force a fresh start later
+       await db.collection('bids').deleteMany({ client_email: targetEmail });
+       await db.collection('client_requests').deleteMany({ client_email: targetEmail });
+       await db.collection('tickets').deleteMany({ client_email: targetEmail });
+       await db.collection('dispatches').deleteMany({ target_id: targetEmail });
+       
+       // (Finance Ledger is kept safely as standard accounting practice requires preserving revenue logs)
+
+       return json({ success: true, message: 'Client and all associated data permanently wiped out.' });
+    }
+
     if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
       const id = pathArray[1];
       if (!id) return json({ error: 'Missing Tender ID' }, 400);
@@ -480,21 +486,12 @@ export async function DELETE(request, { params }) {
       const collection = db.collection('tenders');
       let result = null;
 
-      if (ObjectId.isValid(id)) {
-        result = await collection.deleteOne({ _id: new ObjectId(id) });
-      }
-      if (!result || result.deletedCount === 0) {
-        result = await collection.deleteOne({ _id: id });
-      }
-      if (!result || result.deletedCount === 0) {
-        result = await collection.deleteOne({ id: id });
-      }
+      if (ObjectId.isValid(id)) result = await collection.deleteOne({ _id: new ObjectId(id) });
+      if (!result || result.deletedCount === 0) result = await collection.deleteOne({ _id: id });
+      if (!result || result.deletedCount === 0) result = await collection.deleteOne({ id: id });
 
-      if (result && result.deletedCount > 0) {
-        return json({ success: true, message: 'Tender deleted successfully' });
-      } else {
-        return json({ error: 'Tender not found in database' }, 404);
-      }
+      if (result && result.deletedCount > 0) return json({ success: true, message: 'Tender deleted successfully' });
+      else return json({ error: 'Tender not found in database' }, 404);
     }
 
     if (path === 'bids' || path === 'api/bids') {
@@ -607,14 +604,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    if (path === 'users/revoke' || path === 'api/users/revoke') {
-       await db.collection('users').updateOne(
-         { email: body.email.toLowerCase() },
-         { $set: { is_approved: false, status: 'revoked' } }
-       );
-       return json({ success: true });
-    }
-
     if (path === 'subscription/cancel' || path === 'api/subscription/cancel') {
       if (!body.email) return json({ error: 'Email required' }, 400);
       await db.collection('users').updateOne(
@@ -666,12 +655,10 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 🚀 FIXED: Generating and saving Permanent CLI-XXXX ID on Client Approval
     if (path === 'users/approve' || path === 'api/users/approve') {
       const { email } = body;
       const userEmail = email.toLowerCase();
       
-      // Check if user already has a client_id to prevent overwriting
       const existingUser = await db.collection('users').findOne({ email: userEmail });
       let finalClientId = existingUser?.client_id;
       
