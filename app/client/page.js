@@ -58,6 +58,14 @@ export default function ClientDashboard() {
     fetchClientData(e); // 🚀 Permanent Database Fetch
   }, []);
 
+  // --- Real-time Stats, Vault & Wins State ---
+  const [vaultDocs, setVaultDocs] = useState([]);
+  const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
+  const [wonBids, setWonBids] = useState([]);
+  
+  // 🟢 క్రొత్తగా యాడ్ చేసిన State (Recommended Tenders కోసం)
+  const [recommendedTenders, setRecommendedTenders] = useState([]);
+
   // ============================================================================
   // 🚀 PERMANENT BACKEND LOGIC: Fetch User Data from DB
   // ============================================================================
@@ -68,10 +76,13 @@ export default function ClientDashboard() {
         const d = await r.json();
         setUserData(d);
 
-        // 1. LIVE TRACKING: Map real stats, won bids, and vault docs from your DB
+        // 1. LIVE TRACKING
         if(d.stats) setClientStats(d.stats);
         if(d.won_bids) setWonBids(d.won_bids);
         if(d.vault_docs) setVaultDocs(d.vault_docs);
+        
+        // 🟢 క్రొత్త కనెక్షన్: బ్యాకెండ్ నుండి recommended_tenders వస్తే దాన్ని సెట్ చేయడం
+        if(d.recommended_tenders) setRecommendedTenders(d.recommended_tenders);
 
         // Pre-fill editable profile from Database
         if(d.profile) {
@@ -386,15 +397,17 @@ export default function ClientDashboard() {
           </div>
         )}
 
-        {/* --- TOP FUNNEL METRICS (Clickable Links to Tabs) --- */}
+        {/* --- TOP FUNNEL METRICS --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-           <Card onClick={() => setActiveTab('live_tenders')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
+           {/* 🟢 ఇక్కడ 'live_tenders' తీసేసి 'dashboard' అని పెట్టాను */}
+           <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recommended</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
+           {/* మిగతా కార్డ్స్ సేమ్ అలాగే ఉంచండి... */}
            <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <FileText className="w-5 h-5 text-slate-500 mb-2"/>
@@ -684,55 +697,53 @@ export default function ClientDashboard() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 4: ACTIVE DASHBOARD (Officer Queries, Visual Stepper, Custom Request) */}
+          {/* TAB 4: ACTIVE DASHBOARD */}
           {/* ============================================================================== */}
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* Visual Stepper Logic UI */}
-            <Card className="tender-shadow">
-              <CardHeader className="border-b pb-4 bg-slate-50">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
+            {/* 🟢 క్రొత్తగా యాడ్ చేసిన RECOMMENDED TENDERS బ్లాక్ */}
+            <Card className="tender-shadow border-t-4 border-t-blue-500 bg-blue-50/20">
+              <CardHeader className="border-b pb-4 bg-white">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
+                  <Target className="w-5 h-5 text-blue-600"/> Recommended For You
+                </CardTitle>
+                <CardDescription>Handpicked high-probability tenders assigned by your MD/Operations Officer.</CardDescription>
               </CardHeader>
               <CardContent className="p-5">
-                 {activeBids.length === 0 ? (
-                    <div className="text-center py-6 text-slate-400">
-                      <p className="text-sm font-semibold">No active bids in progress.</p>
+                 {recommendedTenders.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 border-2 border-dashed rounded-xl border-blue-200 bg-white">
+                      <Target className="w-8 h-8 mx-auto text-blue-200 mb-2" />
+                      <p className="text-sm font-semibold">No new recommendations right now.</p>
                     </div>
                  ) : (
-                    activeBids.map((bid, i) => (
-                       <div key={i} className="mb-4 border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col gap-6">
-                          <div>
-                            <Badge variant="outline" className="text-[10px] mb-2 font-mono bg-slate-50">{bid.bid_no}</Badge>
-                            <p className="font-bold text-[#0A2647] text-base leading-tight">{bid.description}</p>
-                          </div>
-                          <div className="relative mt-2 px-2 sm:px-6">
-                             <div className="absolute top-3 left-8 right-8 h-1.5 bg-slate-100 rounded-full z-0"></div>
-                             <div className="absolute top-3 left-8 w-[50%] h-1.5 bg-blue-500 rounded-full z-0"></div>
-                             <div className="relative z-10 flex justify-between">
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
-                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Doc Prep</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
-                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Submitted</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shadow ring-4 ring-white animate-pulse"><Clock className="w-4 h-4"/></div>
-                                   <span className="text-[10px] font-bold text-amber-700 uppercase">Evaluating</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-300 flex items-center justify-center shadow ring-4 ring-white"><Trophy className="w-4 h-4"/></div>
-                                   <span className="text-[10px] font-bold text-slate-400 uppercase">Result</span>
-                                </div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                       {recommendedTenders.map((tender, i) => (
+                          <div key={i} className="border border-blue-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition">
+                             <div>
+                               <div className="flex justify-between items-start mb-2">
+                                 <Badge variant="outline" className="text-[10px] font-mono bg-slate-50">{tender.id || tender.bid_no}</Badge>
+                                 <Badge className="bg-blue-100 text-blue-800 border-0 text-[10px] uppercase font-bold tracking-wider">High Match</Badge>
+                               </div>
+                               <h4 className="font-bold text-[#0A2647] text-sm leading-tight mb-2">{tender.title || tender.description}</h4>
+                               <p className="text-xs text-slate-500 font-semibold">{tender.department} • {tender.district}</p>
+                             </div>
+                             <div className="pt-3 mt-2 border-t border-slate-100 flex justify-between items-center">
+                                <span className="text-xs text-red-600 font-bold flex items-center gap-1"><Clock className="w-3 h-3"/> Due: {tender.last_date}</span>
+                                <Button size="sm" className="bg-[#0A2647] hover:bg-[#144272] h-8 text-xs px-3">Review & Apply</Button>
                              </div>
                           </div>
-                       </div>
-                    ))
+                       ))}
+                    </div>
                  )}
               </CardContent>
             </Card>
 
+            {/* పాత Visual Stepper Logic UI (Tenders Tracking) ఇక్కడ నుండి స్టార్ట్ అవుతుంది... */}
+            <Card className="tender-shadow">
+              <CardHeader className="border-b pb-4 bg-slate-50">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
+              </CardHeader>
+              {/* మిగతా కోడ్... */}
             {/* Officer Queries Block */}
             {queries.length > 0 && (
               <Card className={`border-t-4 shadow-sm bg-white border-t-red-500`}>
