@@ -415,7 +415,6 @@ export async function PUT(request, { params }) {
         return json({ success: true });
      }
 
-     // 🚀 NEW: UPDATE DISPATCH STATUS (For Warnings & SLA Breaches)
      if (path === 'dispatches/update' || path === 'api/dispatches/update') {
         const { task_id, status } = body;
         await db.collection('dispatches').updateOne(
@@ -667,13 +666,25 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
+    // 🚀 FIXED: Generating and saving Permanent CLI-XXXX ID on Client Approval
     if (path === 'users/approve' || path === 'api/users/approve') {
       const { email } = body;
+      const userEmail = email.toLowerCase();
+      
+      // Check if user already has a client_id to prevent overwriting
+      const existingUser = await db.collection('users').findOne({ email: userEmail });
+      let finalClientId = existingUser?.client_id;
+      
+      if (!finalClientId) {
+          const count = await db.collection('users').countDocuments({ client_id: { $exists: true } });
+          finalClientId = `CLI-${1000 + count + 1}`;
+      }
+
       await db.collection('users').updateOne(
-        { email: email.toLowerCase() },
-        { $set: { is_approved: true, status: 'approved' } }
+        { email: userEmail },
+        { $set: { is_approved: true, status: 'approved', client_id: finalClientId } }
       );
-      return json({ success: true });
+      return json({ success: true, client_id: finalClientId });
     }
 
     if (path === 'users/request-payment' || path === 'api/users/request-payment') {
