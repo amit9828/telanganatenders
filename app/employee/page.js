@@ -50,7 +50,7 @@ export default function EmployeeDashboard() {
     bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
   });
   const [publishing, setPublishing] = useState(false);
-  const [isEditingTender, setIsEditingTender] = useState(null); // 🚀 NEW: Tender Edit State
+  const [isEditingTender, setIsEditingTender] = useState(null); 
   const [pdfName, setPdfName] = useState('');
   const [pdfBase64, setPdfBase64] = useState('');
   
@@ -68,7 +68,7 @@ export default function EmployeeDashboard() {
   const [newBidForm, setNewBidForm] = useState({ 
     bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
   });
-  const [editingBid, setEditingBid] = useState(null); // 🚀 NEW: Active Bid Edit State
+  const [editingBid, setEditingBid] = useState(null); 
 
   const [suggestForm, setSuggestForm] = useState({}); 
 
@@ -139,7 +139,38 @@ export default function EmployeeDashboard() {
     reader.readAsDataURL(file);
   };
 
-  // 🚀 TENDER PUBLISH & UPDATE LOGIC (Now Supports Editing)
+  // 🚀 FIX: PROPERLY CONVERT BASE64 JSON TO PDF BLOB
+  const handleViewPDF = async (tenderId) => {
+    const toastId = toast.loading('Opening PDF Document...');
+    try {
+      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to load PDF', { id: toastId });
+        return;
+      }
+
+      if (data.pdf_base64) {
+        const byteCharacters = atob(data.pdf_base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'application/pdf'});
+        
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+        toast.success('PDF Opened Successfully', { id: toastId });
+      } else {
+        toast.error('PDF data not found', { id: toastId });
+      }
+    } catch (err) {
+      toast.error('Network Error while opening PDF', { id: toastId });
+    }
+  };
+
   const handlePublishTender = async (e) => {
     e.preventDefault();
     if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
@@ -168,7 +199,6 @@ export default function EmployeeDashboard() {
     setPublishing(false);
   };
 
-  // 🚀 TENDER DELETE LOGIC
   const handleDeleteTenderDB = async (id) => {
     if(!confirm("Are you sure you want to permanently delete this tender from the Live Portal?")) return;
     try {
@@ -178,12 +208,10 @@ export default function EmployeeDashboard() {
     } catch(e) { toast.error("Network error"); }
   };
 
-  // 🚀 REAL DATA EXTRACTION FOR SUGGESTIONS
   const handleSuggestTender = async (tenderId, tenderTitle, tenderBidNo) => {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
     
-    // 🚀 Exact formatting to extract later
     const formattedMessage = `[BID: ${tenderBidNo || 'N/A'}] ${tenderTitle}`;
     
     const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === formattedMessage);
@@ -213,7 +241,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 REPLACING "WAITING FOR BID NO" WITH REAL EXTRACTED DATA
   const handleSuggestionResponse = async (suggestion, action) => {
     try {
       if (action === 'Accepted') {
@@ -284,7 +311,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 ACTIVE BID EDIT SAVE LOGIC
   const handleSaveEditBid = async (e) => {
      e.preventDefault();
      if(!editingBid) return;
@@ -292,7 +318,6 @@ export default function EmployeeDashboard() {
         const res = await fetch('/api/bids/update', {
            method: 'PUT',
            headers: { 'Content-Type': 'application/json' },
-           // Assuming backend update route handles bid_no & description updates if passed
            body: JSON.stringify({ bid_id: editingBid._id || editingBid.id, status: editingBid.status, bid_no: editingBid.bid_no, description: editingBid.description })
         });
         if(res.ok) {
@@ -383,7 +408,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 CLOSE QUERY (Unlocks Client Screen)
   const handleCloseQuery = async (queryId, clientEmail) => {
     if(!confirm("Are you sure you want to close this query?")) return;
     try {
@@ -431,14 +455,13 @@ export default function EmployeeDashboard() {
       if (res.ok) {
         toast.success('Task marked completed & removed.');
         logActivity('COMPLETED_TASK', `Task ${taskId} marked as done`);
-        fetchLiveOperationsData(email); // Refresh to remove from view
+        fetchLiveOperationsData(email); 
       }
     } catch (err) {
       toast.error('Network Error while updating task.');
     }
   };
 
-  // 🚀 DELETE HELPDESK TICKET
   const handleDeleteTicket = async (ticketId) => {
     if(!confirm("Permanently delete this helpdesk conversation?")) return;
     try {
@@ -596,7 +619,6 @@ export default function EmployeeDashboard() {
             <TabsTrigger value="officers" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
             </TabsTrigger>
-            {/* 🚀 NEW MODULE SEPARATION: Clients vs Alerts */}
             <TabsTrigger value="clients" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Users className="w-4 h-4 mr-2 hidden sm:block"/> Clients DB
             </TabsTrigger>
@@ -700,7 +722,6 @@ export default function EmployeeDashboard() {
                               {clientBids.map(b => (
                                 <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
                                   
-                                  {/* 🚀 NEW: INLINE EDIT MODE FOR ACTIVE BIDS */}
                                   {editingBid && (editingBid._id === b._id || editingBid.id === b.id) ? (
                                      <form onSubmit={handleSaveEditBid} className="space-y-3 animate-in fade-in">
                                         <div>
@@ -725,7 +746,6 @@ export default function EmployeeDashboard() {
                                          </div>
                                          <div className="flex gap-1 items-center">
                                             <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm mr-1">{b.status}</Badge>
-                                            {/* 🚀 EDIT BUTTON */}
                                             <Button variant="ghost" size="icon" onClick={() => setEditingBid(b)} className="h-6 w-6 p-0 text-slate-400 hover:text-blue-600 bg-slate-50 border"><Pencil className="w-3 h-3"/></Button>
                                             <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-slate-50 border"><Trash2 className="w-3 h-3"/></Button>
                                          </div>
@@ -806,7 +826,6 @@ export default function EmployeeDashboard() {
                               </CardHeader>
                               <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                                  {clientSuggestions.map(sug => {
-                                    // 🚀 Parse the extracted data if available
                                     let displayBid = 'N/A';
                                     let displayDesc = sug.message;
                                     const match = sug.message.match(/\[BID: (.*?)\] (.*)/);
@@ -865,7 +884,6 @@ export default function EmployeeDashboard() {
                        </div>
                     </div>
                     <div>
-                      {/* 🚀 FIX: Removed 'required' from Phone Number */}
                       <Label className="text-xs font-bold text-slate-600">Phone Number</Label>
                       <Input type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
                     </div>
@@ -951,7 +969,6 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* 🚀 NEW: MODULE SEPARATED - ONLY CLIENTS DIRECTORY */}
           <TabsContent value="clients" className="w-full space-y-6">
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6 w-full">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
@@ -1004,7 +1021,6 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 NEW: MODULE SEPARATED - ALERTS & QUERIES (CHAT UI) */}
           <TabsContent value="alerts" className="w-full space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
               <Card className="shadow-sm border-t-4 border-t-red-500">
@@ -1032,7 +1048,6 @@ export default function EmployeeDashboard() {
                     </Button>
                   </form>
 
-                  {/* 🚀 CHAT UI FOR ALERTS (AUTO DELETE ON CLOSE) */}
                   <div className="mt-8">
                      <h4 className="font-bold text-slate-700 text-sm mb-3">Pending Action Alerts</h4>
                      {mdTasks.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').length === 0 ? (
@@ -1083,7 +1098,6 @@ export default function EmployeeDashboard() {
                     </Button>
                   </form>
 
-                  {/* 🚀 CHAT UI FOR QUERIES & VIEW DOCUMENT */}
                   <div className="mt-8">
                      <h4 className="font-bold text-slate-700 text-sm mb-3">Active Client Queries</h4>
                      <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
@@ -1123,7 +1137,6 @@ export default function EmployeeDashboard() {
           <TabsContent value="publisher" className="w-full space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
-               {/* LEFT: FORM (Updates conditionally if Edit mode is active) */}
                <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
                  <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
                    <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
@@ -1216,7 +1229,6 @@ export default function EmployeeDashboard() {
                                     <p className="text-xs text-slate-500 mt-1">{t.department} {t.bid_no && <span className="ml-2 font-mono bg-slate-100 px-1 rounded">Bid No: {t.bid_no}</span>}</p>
                                  </div>
                                  
-                                 {/* 🚀 NEW: EDIT & DELETE BUTTONS FOR LIVE TENDERS */}
                                  <div className="flex gap-1 items-center shrink-0">
                                     <Button variant="outline" size="icon" onClick={() => {
                                         setIsEditingTender(t._id);
@@ -1232,7 +1244,8 @@ export default function EmployeeDashboard() {
                               </div>
                               
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                                 <Button size="sm" onClick={() => window.open(`/api/tenders/${t._id}/pdf?email=${email}&role=employee`, '_blank')} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
+                                 {/* 🚀 FIX: CALLING NEW PDF BLOB RENDERER FUNCTION INSTEAD OF DIRECT LINK */}
+                                 <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                                     <FileText className="w-3 h-3 mr-1.5"/> View PDF
                                  </Button>
                                  <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
@@ -1246,7 +1259,6 @@ export default function EmployeeDashboard() {
                                        })}
                                     </SelectContent>
                                  </Select>
-                                 {/* 🚀 REAL EXTRACTION LOGIC IN SUGGESTION */}
                                  <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
                                     <Send className="w-3 h-3 mr-1.5"/> Suggest
                                  </Button>
@@ -1283,12 +1295,10 @@ export default function EmployeeDashboard() {
                                    </div>
                                    <div className="flex gap-2 items-center">
                                       <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse shrink-0">Action Required</Badge>
-                                      {/* 🚀 NEW: DELETE TICKET BUTTON */}
                                       <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white"><Trash2 className="w-3 h-3"/></Button>
                                    </div>
                                 </div>
 
-                                {/* 🚀 CHAT BUBBLE UI FOR HELPDESK */}
                                 <div className="bg-amber-50 border border-amber-100 p-3 rounded-tr-xl rounded-br-xl rounded-bl-xl shadow-inner mb-4 mt-2">
                                    <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">{new Date(ticket.created_at).toLocaleString()}</p>
                                    <h4 className="font-bold text-[#0A2647] text-sm mb-1">{ticket.subject}</h4>
