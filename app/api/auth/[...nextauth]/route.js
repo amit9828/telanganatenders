@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials'; // 🚀 NEW: Added for Impersonation (Bypass)
 import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,6 +27,22 @@ const handler = NextAuth({
         },
       },
     }),
+    // 🚀 NEW: IMPERSONATE LOGIN PROVIDER (MD / Employee Bypass Client Login)
+    CredentialsProvider({
+      id: 'impersonate',
+      name: 'Impersonate',
+      credentials: {
+        email: { label: "Email", type: "text" },
+        adminToken: { label: "Token", type: "text" }
+      },
+      async authorize(credentials) {
+        // పాస్‌వర్డ్ అడగకుండా, సిస్టమ్ జనరేట్ చేసిన టోకెన్ తో క్లయింట్ అకౌంట్ లోకి లాగిన్ అవ్వడానికి
+        if (credentials.adminToken === 'admin_success' || credentials.adminToken === process.env.ADMIN_TOKEN) {
+           return { id: credentials.email, email: credentials.email };
+        }
+        return null;
+      }
+    })
   ],
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: 'jwt' },
