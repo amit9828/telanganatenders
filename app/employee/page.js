@@ -15,7 +15,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star
 } from 'lucide-react';
 const DISTRICTS = [
   'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
