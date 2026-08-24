@@ -16,6 +16,7 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck
+} from 'lucide-react';
 
 export default function ClientDashboard() {
   const [isMounted, setIsMounted] = useState(false);
