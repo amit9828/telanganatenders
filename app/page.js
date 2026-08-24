@@ -228,19 +228,28 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Client & Guest Redirect Hook (🚀 FIXED LOGIC: Strict routing to prevent crossing)
+  // ==============================================================================
+  // 🚀 BULLETPROOF REDIRECT LOGIC
+  // ==============================================================================
   useEffect(() => {
-    if (status === 'authenticated' && userData) {
-      // 1. If intent is client AND they are approved, send to dashboard
-      if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
+    // మనం యూజర్ డేటాని ఫెచ్ చేయడం పూర్తయ్యాక మాత్రమే నిర్ణయం తీసుకుంటాం
+    if (status === 'authenticated' && userData !== null && !loadingUser) {
+      
+      // 1. అప్రూవ్ అయిన క్లయింట్ అయితే (అతని ఇంటెంట్ ఏదైనా సరే డేటాబేస్ ని బట్టే వెళ్తాం)
+      if (userData.onboarding_complete && userData.is_approved) {
+        // ఇంటెంట్ ని ఫోర్స్ గా క్లయింట్ కింద మారుస్తున్నాం
+        if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
+        setIntent('client');
+        
+        // డాష్‌బోర్డ్ కి స్ట్రాంగ్ పుష్ (Push)
         router.push('/client');
-      }
-      // 2. If intent is guest, strictly keep them as guest
-      else if (intent === 'guest') {
+      } 
+      // 2. ఒకవేళ వాడు పక్కాగా గెస్ట్ అని సెలెక్ట్ చేస్కుంటే
+      else if (intent === 'guest' && (!userData.onboarding_complete || !userData.is_approved)) {
         setIsGuest(true);
       }
     }
-  }, [status, intent, userData, router]);
+  }, [status, intent, userData, loadingUser, router]);
   
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
@@ -705,9 +714,13 @@ export default function App() {
  // ==============================================================================
   // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
   // ==============================================================================
-  if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
-    // 🚀 FIX: ఎండీ ఇంకా అప్రూవ్ చేయకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ వస్తుంది.
-    if (!userData.is_approved) {
+  // ==============================================================================
+  // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
+  // ==============================================================================
+  if (status === 'authenticated' && (intent === 'client' || (userData && userData.onboarding_complete))) {
+    
+    // 🚀 FIX 1: ఒకవేళ వాడు ఇంకా అప్రూవ్ కాకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ రావాలి
+    if (userData && !userData.is_approved) {
       return (
         <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
           <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl relative overflow-hidden border-0">
@@ -725,6 +738,27 @@ export default function App() {
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
               <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
             </div>
+            
+            <div className="flex items-center justify-center mt-4">
+              <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
+                <LogOut className="w-4 h-4 mr-2" /> Log Out
+              </Button>
+            </div>
+          </Card>
+        </div>
+      );
+    } 
+    // 🚀 FIX 2: ఒకవేళ అప్రూవ్ అయ్యుంటే, పైనున్న useEffect వాడిని /client కి తన్నే లోపు ఈ లోడర్ వస్తుంది
+    else if (userData && userData.is_approved) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+          <Loader2 className="w-12 h-12 animate-spin text-[#16a34a] mb-4" />
+          <h2 className="text-xl font-bold text-[#0A2647]">Authentication Successful</h2>
+          <p className="text-slate-500 mt-2">Redirecting to your Dashboard...</p>
+        </div>
+      );
+    }
+  }
             
             {/* 🚀 FIX: Removed the Bypass button, keeping only Log Out */}
             <div className="flex items-center justify-center mt-4">
