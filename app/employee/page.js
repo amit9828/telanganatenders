@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { UploadCloud } from '@/components/ui/UploadCloud';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea'; 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,7 +15,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target
+  Database, Lock, Globe, MapPin, Target, UploadCloud
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -39,7 +38,7 @@ export default function EmployeeDashboard() {
   const [bids, setBids] = useState([]);
   const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
-  const [publicTenders, setPublicTenders] = useState([]); // NEW: Live Tenders State
+  const [publicTenders, setPublicTenders] = useState([]); 
 
   // Forms
   const [tenderForm, setTenderForm] = useState({
@@ -50,20 +49,20 @@ export default function EmployeeDashboard() {
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
   const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
   
-  // Govt Officer Form State (UPDATED WITH STATE, ADDRESS, PINCODE)
+  // Govt Officer Form State 
   const [officerForm, setOfficerForm] = useState({ 
     name: '', department: '', designation: '', phone: '', 
     state: '', district: '', address: '', pincode: '', notes: '' 
   });
   const [savingOfficer, setSavingOfficer] = useState(false);
 
-  // NEW: Active Bid Row State
+  // Active Bid Row State
   const [showAddBid, setShowAddBid] = useState(false);
   const [newBidForm, setNewBidForm] = useState({ 
     bid_no: '', description: '', submitted_date: '', status: 'Under Suggestion', client_email: '' 
   });
 
-  // NEW: Suggest Tender State
+  // Suggest Tender State
   const [suggestForm, setSuggestForm] = useState({}); 
 
   useEffect(() => {
@@ -89,7 +88,7 @@ export default function EmployeeDashboard() {
         fetch('/api/bids'),       
         fetch('/api/gov-officers'),
         fetch('/api/users/approved'),
-        fetch('/api/tenders') // Fetch public tenders
+        fetch('/api/tenders')
       ]);
 
       if (tasksRes.ok) {
@@ -134,7 +133,7 @@ export default function EmployeeDashboard() {
         toast.success('Tender published manually and synced with portal calendar!');
         setTenderForm({ title: '', department: '', last_date: '', district: 'Hyderabad', category: 'Product', supply_details: '' });
         logActivity('PUBLISHED_TENDER', `Published tender: ${tenderForm.title}`);
-        fetchLiveOperationsData(email); // Refresh live tenders list
+        fetchLiveOperationsData(email); 
       } else {
         toast.error('Failed to publish tender');
       }
@@ -144,7 +143,6 @@ export default function EmployeeDashboard() {
     setPublishing(false);
   };
 
-  // 🚀 NEW: Suggest Tender to Client
   const handleSuggestTender = async (tenderId, tenderTitle) => {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
@@ -170,7 +168,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 NEW: Add Manual Bid Tracker Row
   const handleAddBidRow = async (e) => {
     e.preventDefault();
     if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
@@ -477,7 +474,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 2: GOVT OFFICERS DIRECTORY (UPDATED WITH STATE/DISTRICT/ADDRESS) */}
+          {/* TAB 2: GOVT OFFICERS DIRECTORY (UPDATED) */}
           <TabsContent value="officers" className="space-y-6">
             <div className="grid md:grid-cols-3 gap-6">
               {/* Form Section */}
@@ -565,7 +562,6 @@ export default function EmployeeDashboard() {
                             <h4 className="font-bold text-[#0A2647] text-base">{officer.name}</h4>
                             <p className="text-sm font-semibold text-purple-700">{officer.designation} - {officer.department}</p>
                             
-                            {/* Display new location data if available */}
                             {(officer.state || officer.district) && (
                                <p className="text-[10px] text-slate-500 font-bold mt-1 flex items-center gap-1">
                                   <MapPin className="w-3 h-3"/> {officer.district}{officer.district && officer.state ? ', ' : ''}{officer.state} {officer.pincode ? `- ${officer.pincode}` : ''}
@@ -586,7 +582,7 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 3: ALERTS, QUERIES & CLIENT LIST (UPDATED) */}
+          {/* TAB 3: ALERTS, QUERIES & CLIENT LIST */}
           <TabsContent value="clients" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
               {/* Push Action Request */}
@@ -640,7 +636,7 @@ export default function EmployeeDashboard() {
               </Card>
             </div>
 
-            {/* ACTIVE VERIFIED CLIENTS DIRECTORY (Dynamic Fetch from Bids Array) */}
+            {/* ACTIVE VERIFIED CLIENTS DIRECTORY */}
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
@@ -659,7 +655,7 @@ export default function EmployeeDashboard() {
                        {approvedClients.map(client => {
                           const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
                           
-                          // 🔥 DYNAMIC BID CALCULATIONS FROM KANBAN ROW ENTRIES 🔥
+                          // DYNAMIC BID CALCULATIONS FROM KANBAN ROW ENTRIES
                           const cBids = bids.filter(b => b.client_email === client.email || b.client === client.email);
                           const totalBids = cBids.length;
                           const wonBids = cBids.filter(b => b.status === 'Won').length;
@@ -694,7 +690,6 @@ export default function EmployeeDashboard() {
                                       <span className="font-black text-emerald-600 text-sm">{wonBids}</span>
                                    </div>
                                    
-                                   {/* Status of Ongoing Bids (if any) */}
                                    <div className="col-span-2 border-t border-slate-200 pt-2 mt-1">
                                       <span className="text-slate-500 uppercase font-bold text-[10px] block mb-1">Current Ongoing Bid Status</span>
                                       {ongoingBids.length > 0 ? (
@@ -728,7 +723,7 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 4: PUBLISHER & LIVE TENDERS SUGGESTION (UPDATED) */}
+          {/* TAB 4: PUBLISHER & LIVE TENDERS SUGGESTION */}
           <TabsContent value="publisher" className="space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
@@ -811,7 +806,6 @@ export default function EmployeeDashboard() {
                                  </div>
                               </div>
                               
-                              {/* 🚀 SUGGEST TO CLIENT BOX */}
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
                                  <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">Suggest To:</span>
                                  <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
