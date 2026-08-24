@@ -11,6 +11,7 @@ import {
   Building2,
   Clock,
   ArrowLeft,
+  Eye,
 } from 'lucide-react';
 
 const DISTRICTS = [
