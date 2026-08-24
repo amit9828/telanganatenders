@@ -11,13 +11,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-// 🚀 FIX: UploadCloud, Clock అన్నీ ఇక్కడినుండే రావాలి
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb
 } from 'lucide-react';
+
 const DISTRICTS = [
   'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
   'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
@@ -39,12 +39,16 @@ export default function EmployeeDashboard() {
   const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
   const [publicTenders, setPublicTenders] = useState([]); 
+  const [suggestions, setSuggestions] = useState([]); // 🚀 NEW: Suggestions State
+  const [tickets, setTickets] = useState([]); 
 
   // Forms
   const [tenderForm, setTenderForm] = useState({
-    title: '', department: '', last_date: '', district: 'Hyderabad', category: 'Product', supply_details: ''
+    title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
   });
   const [publishing, setPublishing] = useState(false);
+  const [pdfName, setPdfName] = useState('');
+  const [pdfBase64, setPdfBase64] = useState('');
   
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
   const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
@@ -59,7 +63,7 @@ export default function EmployeeDashboard() {
   // Active Bid Row State
   const [showAddBid, setShowAddBid] = useState(false);
   const [newBidForm, setNewBidForm] = useState({ 
-    bid_no: '', description: '', submitted_date: '', status: 'Under Suggestion', client_email: '' 
+    bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
   });
 
   // Suggest Tender State
@@ -83,18 +87,22 @@ export default function EmployeeDashboard() {
 
   const fetchLiveOperationsData = async (userEmail) => {
     try {
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes] = await Promise.all([
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes] = await Promise.all([
         fetch('/api/dispatches'), 
         fetch('/api/bids'),       
         fetch('/api/gov-officers'),
         fetch('/api/users/approved'),
-        fetch('/api/tenders')
+        fetch('/api/tenders'),
+        fetch('/api/tickets')
       ]);
 
       if (tasksRes.ok) {
         const tData = await tasksRes.json();
-        const employeeTasks = (tData.dispatches || []).filter(d => d.target_type === 'employee_task');
-        setMdTasks(employeeTasks);
+        const allDispatches = tData.dispatches || [];
+        setMdTasks(allDispatches.filter(d => d.target_type === 'employee_task'));
+        
+        // 🚀 NEW: Filter Suggestions (Sent to Clients)
+        setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed'));
       }
       if (bidsRes.ok) {
         const bData = await bidsRes.json();
@@ -112,11 +120,29 @@ export default function EmployeeDashboard() {
         const pData = await tendersRes.json();
         setPublicTenders(pData.tenders || []);
       }
+      if (ticketsRes.ok) {
+        const tkData = await ticketsRes.json();
+        setTickets(tkData.tickets || []);
+      }
     } catch (err) {
       console.error("Failed to fetch live operations data", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const onPdfChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
+    if (file.size > 4 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 4MB.');
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPdfBase64(reader.result?.toString().split(',')[1] || '');
+      setPdfName(file.name);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handlePublishTender = async (e) => {
@@ -127,11 +153,12 @@ export default function EmployeeDashboard() {
       const r = await fetch('/api/tenders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tenderForm)
+        body: JSON.stringify({ ...tenderForm, pdf_base64: pdfBase64, pdf_filename: pdfName || 'tender.pdf' })
       });
       if(r.ok) {
-        toast.success('Tender published manually and synced with portal calendar!');
-        setTenderForm({ title: '', department: '', last_date: '', district: 'Hyderabad', category: 'Product', supply_details: '' });
+        toast.success('Tender published manually and synced with portal!');
+        setTenderForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
+        setPdfBase64(''); setPdfName('');
         logActivity('PUBLISHED_TENDER', `Published tender: ${tenderForm.title}`);
         fetchLiveOperationsData(email); 
       } else {
@@ -143,6 +170,7 @@ export default function EmployeeDashboard() {
     setPublishing(false);
   };
 
+  // 🚀 NEW: Suggest Tender to Client
   const handleSuggestTender = async (tenderId, tenderTitle) => {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
@@ -155,19 +183,54 @@ export default function EmployeeDashboard() {
           target_type: 'client_alert', 
           target_id: selectedClientEmail, 
           subject: 'New Tender Suggestion from Officer', 
-          message: `We highly recommend you participate in this tender: ${tenderTitle}. Please review and confirm to proceed.` 
+          message: `${tenderTitle}` // Only storing title in message for easy parsing
         })
       });
       if (res.ok) {
         toast.success(`Tender suggestion sent successfully to client!`);
         logActivity('SUGGESTED_TENDER', `Suggested tender to ${selectedClientEmail}`);
         setSuggestForm({...suggestForm, [tenderId]: ''});
+        fetchLiveOperationsData(email);
       }
     } catch (err) {
       toast.error('Network Error while sending suggestion.');
     }
   };
 
+  // 🚀 NEW: Handle Client Suggestion Response (Accept/Reject)
+  const handleSuggestionResponse = async (suggestion, action) => {
+    try {
+      if (action === 'Accepted') {
+         // Create new bid
+         const res = await fetch('/api/bids', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+               bid_no: 'AWAITING DOCS', // Default 
+               description: suggestion.message, // The tender title
+               status: 'Client Approved',
+               client_email: suggestion.target_id,
+               submitted_date: ''
+            })
+         });
+         if (res.ok) toast.success("Suggestion Accepted! Moved to Active Bids Tracker.");
+      } else {
+         toast.info("Suggestion Rejected and removed from list.");
+      }
+
+      // Mark suggestion dispatch as completed to hide it
+      await fetch('/api/dispatches/complete', {
+         method: 'PUT',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ task_id: suggestion._id })
+      });
+      fetchLiveOperationsData(email);
+    } catch (err) {
+      toast.error("Error processing suggestion.");
+    }
+  };
+
+  // 🚀 NEW: Add Manual Bid Tracker Row
   const handleAddBidRow = async (e) => {
     e.preventDefault();
     if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
@@ -180,7 +243,7 @@ export default function EmployeeDashboard() {
       });
       if(res.ok) {
         toast.success("New Bid Event Row Added Successfully!");
-        setNewBidForm({ bid_no: '', description: '', submitted_date: '', status: 'Under Suggestion', client_email: '' });
+        setNewBidForm({ bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' });
         setShowAddBid(false);
         fetchLiveOperationsData(email);
       } else {
@@ -193,7 +256,7 @@ export default function EmployeeDashboard() {
 
   const sendActionAlert = async (e) => {
     e.preventDefault();
-    if(!alertForm.client_id || !alertForm.message) return toast.error('Fill all fields');
+    if(!alertForm.client_id || !alertForm.message) return toast.error('Please select client and fill message');
     try {
       const res = await fetch('/api/dispatches', {
         method: 'POST',
@@ -201,7 +264,7 @@ export default function EmployeeDashboard() {
         body: JSON.stringify({ target_type: 'client_alert', target_id: alertForm.client_id, subject: 'ACTION REQUIRED: Operations Update', message: alertForm.message })
       });
       if (res.ok) {
-        toast.success(`CRITICAL ALERT pushed to Client Dashboard (${alertForm.client_id})!`);
+        toast.success(`CRITICAL ALERT pushed to Client Dashboard!`);
         logActivity('SENT_ALERT', `Alert to ${alertForm.client_id}`);
         setAlertForm({ client_id: '', message: '' });
       }
@@ -212,7 +275,7 @@ export default function EmployeeDashboard() {
 
   const handleRaiseQuery = async (e) => {
     e.preventDefault();
-    if(!queryForm.client_email || !queryForm.subject || !queryForm.message) return toast.error('Fill all fields');
+    if(!queryForm.client_email || !queryForm.subject || !queryForm.message) return toast.error('Please select client and fill query');
     try {
       const res = await fetch('/api/queries/send', {
         method: 'POST',
@@ -291,27 +354,44 @@ export default function EmployeeDashboard() {
     setSavingOfficer(false);
   };
 
+  const escalateToMD = async (ticket) => {
+    try {
+      const res = await fetch('/api/dispatches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+           target_type: 'employee_task', 
+           target_id: 'MD', // Sending to MD
+           subject: `ESCALATION: ${ticket.subject}`, 
+           message: `Client ${ticket.client_email} is facing an issue that needs MD attention.\n\nIssue: ${ticket.message}` 
+        })
+      });
+      if (res.ok) {
+         toast.success('Ticket escalated to Managing Director successfully.');
+         logActivity('ESCALATED_TICKET', `Escalated ticket ${ticket._id} to MD`);
+      }
+    } catch (e) {
+      toast.error("Failed to escalate.");
+    }
+  };
+
+  const handleImpersonate = async (targetEmail) => {
+    if (!targetEmail) return toast.error('Enter a valid client email');
+    toast.loading(`Connecting to ${targetEmail}'s portal...`);
+    // Note: Ensure NextAuth config allows impersonate provider.
+    await signIn('impersonate', {
+      email: targetEmail,
+      adminToken: 'admin_success',
+      callbackUrl: '/account' 
+    });
+  };
+
   const logActivity = (action, details) => {
     fetch('/api/employee/activity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, action, details })
     }).catch(err => console.log('Activity log failed', err));
-  };
-
-  const escalateToMD = () => {
-    toast.info('Item escalated to Managing Director successfully.');
-    logActivity('ESCALATED_TICKET', 'Escalated a ticket to MD');
-  };
-
-  const handleImpersonate = async (targetEmail) => {
-    if (!targetEmail) return toast.error('Enter a valid client email');
-    toast.loading(`Connecting to ${targetEmail}'s portal...`);
-    await signIn('impersonate', {
-      email: targetEmail,
-      adminToken: 'admin_success',
-      callbackUrl: '/account' 
-    });
   };
 
   if (!isMounted) return null;
@@ -364,9 +444,12 @@ export default function EmployeeDashboard() {
         </div>
 
         <Tabs defaultValue="kanban" className="w-full">
-          <TabsList className="grid w-full lg:w-[1000px] grid-cols-5 bg-slate-200 h-auto p-1 mb-6 rounded-lg overflow-x-auto">
+          <TabsList className="grid w-full lg:w-[1200px] grid-cols-6 bg-slate-200 h-auto p-1 mb-6 rounded-lg overflow-x-auto">
             <TabsTrigger value="kanban" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Active Bids
+            </TabsTrigger>
+            <TabsTrigger value="suggestions" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Lightbulb className="w-4 h-4 mr-2 hidden sm:block"/> Suggestions
             </TabsTrigger>
             <TabsTrigger value="officers" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
@@ -375,14 +458,14 @@ export default function EmployeeDashboard() {
               <AlertCircle className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Clients
             </TabsTrigger>
             <TabsTrigger value="publisher" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders & Suggestions
+              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders DB
             </TabsTrigger>
             <TabsTrigger value="sla" className="py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: KANBAN BID WORKFLOW (UPDATED) */}
+          {/* TAB 1: KANBAN BID WORKFLOW (UPDATED STATUSES) */}
           <TabsContent value="kanban" className="space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -447,6 +530,7 @@ export default function EmployeeDashboard() {
                           </p>
                         </div>
                         
+                        {/* 🚀 NEW STATUS DROPDOWN OPTIONS AS REQUESTED */}
                         <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
                           <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
                           <select 
@@ -454,11 +538,13 @@ export default function EmployeeDashboard() {
                             value={b.status}
                             onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
                           >
-                            <option value="Under Suggestion">Under Suggestion</option>
-                            <option value="Awaiting Approval">Awaiting Approval (Client)</option>
-                            <option value="Preparing Documents">Preparing Documents</option>
-                            <option value="Bid Submitted">Bid Submitted</option>
-                            <option value="Under Evaluation">Under Evaluation</option>
+                            <option value="Bid Allocated">Bid Allocated</option>
+                            <option value="Client Approved">Client Approved</option>
+                            <option value="Client Cancelled">Client Cancelled</option>
+                            <option value="ADC Check">ADC Check</option>
+                            <option value="Documents Asking">Documents Asking</option>
+                            <option value="Documents Preparing">Documents Preparing</option>
+                            <option value="Bid Participated">Bid Participated</option>
                             <option value="Technical Evaluation">Technical Evaluation</option>
                             <option value="Technical Qualification">Technical Qualification</option>
                             <option value="Financial Evaluation">Financial Evaluation</option>
@@ -471,6 +557,52 @@ export default function EmployeeDashboard() {
                   </div>
                 )}
               </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* 🚀 NEW TAB: SUGGESTIONS MODULE */}
+          <TabsContent value="suggestions" className="space-y-6">
+            <Card className="shadow-sm border-t-4 border-t-indigo-500">
+               <CardHeader className="bg-indigo-50/30 border-b pb-4">
+                  <CardTitle className="text-indigo-900 flex items-center gap-2"><Lightbulb className="w-5 h-5 text-indigo-600"/> Tenders Suggested to Clients</CardTitle>
+                  <CardDescription>Track all tenders you have suggested. If a client accepts, convert it to an Active Bid.</CardDescription>
+               </CardHeader>
+               <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+                  {suggestions.length === 0 ? (
+                     <div className="text-center py-10 text-slate-400">
+                        <Lightbulb className="w-12 h-12 mx-auto mb-3 opacity-20"/>
+                        <p className="text-sm font-semibold">No pending suggestions.</p>
+                     </div>
+                  ) : (
+                     <div className="grid md:grid-cols-2 gap-4">
+                        {suggestions.map(sug => {
+                           const clientObj = approvedClients.find(c => c.email === sug.target_id);
+                           const cName = clientObj ? clientObj.company_name || clientObj.name : sug.target_id;
+                           return (
+                           <div key={sug._id} className="border border-indigo-100 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:border-indigo-300 transition relative overflow-hidden">
+                              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                              <div>
+                                 <div className="flex justify-between items-start mb-2">
+                                    <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px]">{cName}</Badge>
+                                    <span className="text-[10px] text-slate-400 font-mono">{new Date(sug.created_at).toLocaleDateString()}</span>
+                                 </div>
+                                 <h4 className="font-bold text-[#0A2647] mt-2 mb-4 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
+                                    {sug.message}
+                                 </h4>
+                              </div>
+                              <div className="flex gap-2 border-t border-slate-100 pt-3">
+                                 <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Accepted')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-9 text-xs">
+                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Client Accepted
+                                 </Button>
+                                 <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-9 text-xs">
+                                    <XCircle className="w-3.5 h-3.5 mr-1.5"/> Rejected
+                                 </Button>
+                              </div>
+                           </div>
+                        )})}
+                     </div>
+                  )}
+               </CardContent>
             </Card>
           </TabsContent>
 
@@ -562,6 +694,7 @@ export default function EmployeeDashboard() {
                             <h4 className="font-bold text-[#0A2647] text-base">{officer.name}</h4>
                             <p className="text-sm font-semibold text-purple-700">{officer.designation} - {officer.department}</p>
                             
+                            {/* Display new location data if available */}
                             {(officer.state || officer.district) && (
                                <p className="text-[10px] text-slate-500 font-bold mt-1 flex items-center gap-1">
                                   <MapPin className="w-3 h-3"/> {officer.district}{officer.district && officer.state ? ', ' : ''}{officer.state} {officer.pincode ? `- ${officer.pincode}` : ''}
@@ -582,7 +715,7 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 3: ALERTS, QUERIES & CLIENT LIST */}
+          {/* TAB 3: ALERTS, QUERIES & CLIENT LIST (UPDATED WITH DROPDOWNS) */}
           <TabsContent value="clients" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
               {/* Push Action Request */}
@@ -594,14 +727,19 @@ export default function EmployeeDashboard() {
                 <CardContent className="pt-4">
                   <form onSubmit={sendActionAlert} className="space-y-4">
                     <div>
-                      <Label className="text-slate-600">Client ID / Email</Label>
-                      <Input required placeholder="client@example.com" value={alertForm.client_id} onChange={e=>setAlertForm({...alertForm, client_id: e.target.value})} className="mt-1 font-mono bg-white"/>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client ID *</Label>
+                      <Select required value={alertForm.client_id} onValueChange={v => setAlertForm({...alertForm, client_id: v})}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
                     </div>
                     <div>
-                      <Label className="text-slate-600">Requirement / Message</Label>
+                      <Label className="text-slate-600 text-xs font-bold">Requirement / Message *</Label>
                       <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please check email..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
                     </div>
-                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-11 shadow-sm">
+                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-10 shadow-sm">
                       <Send className="w-4 h-4 mr-2"/> Push Alert
                     </Button>
                   </form>
@@ -617,18 +755,23 @@ export default function EmployeeDashboard() {
                 <CardContent className="pt-4">
                   <form onSubmit={handleRaiseQuery} className="space-y-4">
                     <div>
-                      <Label className="text-slate-600">Client Email *</Label>
-                      <Input required placeholder="client@example.com" value={queryForm.client_email} onChange={e=>setQueryForm({...queryForm, client_email: e.target.value})} className="mt-1 font-mono bg-white"/>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client *</Label>
+                      <Select required value={queryForm.client_email} onValueChange={v => setQueryForm({...queryForm, client_email: v})}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
                     </div>
                     <div>
-                      <Label className="text-slate-600">Query Subject *</Label>
-                      <Input required placeholder="e.g., PAN Card Missing" value={queryForm.subject} onChange={e=>setQueryForm({...queryForm, subject: e.target.value})} className="mt-1 bg-white"/>
+                      <Label className="text-slate-600 text-xs font-bold">Query Subject *</Label>
+                      <Input required placeholder="e.g., PAN Card Missing" value={queryForm.subject} onChange={e=>setQueryForm({...queryForm, subject: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
                     </div>
                     <div>
-                      <Label className="text-slate-600">Detailed Description *</Label>
+                      <Label className="text-slate-600 text-xs font-bold">Detailed Description *</Label>
                       <textarea required className="w-full border rounded-md p-2 mt-1 h-[68px] text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Explain what document is needed..." value={queryForm.message} onChange={e=>setQueryForm({...queryForm, message: e.target.value})}></textarea>
                     </div>
-                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-11 shadow-sm">
+                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-10 shadow-sm">
                       <Lock className="w-4 h-4 mr-2"/> Lock Client & Send Query
                     </Button>
                   </form>
@@ -636,7 +779,7 @@ export default function EmployeeDashboard() {
               </Card>
             </div>
 
-            {/* ACTIVE VERIFIED CLIENTS DIRECTORY */}
+            {/* ACTIVE VERIFIED CLIENTS DIRECTORY (Dynamic Fetch from Bids Array) */}
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
@@ -690,6 +833,7 @@ export default function EmployeeDashboard() {
                                       <span className="font-black text-emerald-600 text-sm">{wonBids}</span>
                                    </div>
                                    
+                                   {/* Status of Ongoing Bids (if any) */}
                                    <div className="col-span-2 border-t border-slate-200 pt-2 mt-1">
                                       <span className="text-slate-500 uppercase font-bold text-[10px] block mb-1">Current Ongoing Bid Status</span>
                                       {ongoingBids.length > 0 ? (
@@ -723,44 +867,34 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 4: PUBLISHER & LIVE TENDERS SUGGESTION */}
+          {/* 🚀 TAB 4: PUBLISHER & LIVE TENDERS SUGGESTION (UPDATED UI) */}
           <TabsContent value="publisher" className="space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
-               {/* Left: Upload Form */}
-               <Card className="border-t-4 border-t-[#16a34a] shadow-sm lg:col-span-2 h-fit">
-                 <CardHeader className="bg-slate-50/50 pb-4 border-b">
-                   <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><UploadCloud className="w-5 h-5 text-[#16a34a]"/> Publish New Tender</CardTitle>
-                   <CardDescription>Manually enter tender data to display on public site.</CardDescription>
+               {/* Left: Upload Form MATCHING SCREENSHOT EXACTLY */}
+               <Card className="border-0 shadow-md lg:col-span-2 h-fit">
+                 <CardHeader className="pb-4 border-b border-slate-100">
+                   <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><PlusCircle className="w-5 h-5"/> Publish New Tender</CardTitle>
                  </CardHeader>
                  <CardContent className="pt-5">
                    <form onSubmit={handlePublishTender} className="space-y-4">
                      <div>
-                       <Label className="text-xs font-bold text-slate-600">Tender Title / Work Description *</Label>
-                       <Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} placeholder="e.g. Supply of IT Equipment..." className="mt-1 bg-white h-9 text-sm"/>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
+                       <Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/>
                      </div>
-                     <div className="grid grid-cols-2 gap-3">
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label>
+                       <Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} className="bg-white h-10"/>
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
                        <div>
-                         <Label className="text-xs font-bold text-slate-600">Department *</Label>
-                         <Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} placeholder="e.g. R&B" className="mt-1 bg-white h-9 text-sm"/>
+                         <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label>
+                         <Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="bg-white h-10 text-sm"/>
                        </div>
                        <div>
-                         <Label className="text-xs font-bold text-slate-600">Last Date *</Label>
-                         <Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
-                       </div>
-                       <div>
-                         <Label className="text-xs font-bold text-slate-600">District *</Label>
-                         <Select value={tenderForm.district} onValueChange={v=>setTenderForm({...tenderForm, district: v})}>
-                            <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select" /></SelectTrigger>
-                            <SelectContent>
-                               {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                            </SelectContent>
-                         </Select>
-                       </div>
-                       <div>
-                         <Label className="text-xs font-bold text-slate-600">Category *</Label>
+                         <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
                          <Select value={tenderForm.category} onValueChange={v=>setTenderForm({...tenderForm, category: v})}>
-                            <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select" /></SelectTrigger>
+                            <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
                             <SelectContent>
                                <SelectItem value="Product">Product</SelectItem>
                                <SelectItem value="Service">Service</SelectItem>
@@ -769,10 +903,27 @@ export default function EmployeeDashboard() {
                        </div>
                      </div>
                      <div>
-                       <Label className="text-xs font-bold text-slate-600">Technical Details</Label>
-                       <textarea className="w-full border rounded-md p-2 mt-1 h-20 text-sm bg-white outline-none focus:ring-2 focus:ring-green-500" placeholder="Enter specifications..." value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
+                       <Select value={tenderForm.district} onValueChange={v=>setTenderForm({...tenderForm, district: v})}>
+                          <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
+                          <SelectContent>
+                             {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                          </SelectContent>
+                       </Select>
                      </div>
-                     <Button type="submit" disabled={publishing} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-10 shadow-md">
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label>
+                       <textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea>
+                     </div>
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document (Keep under 4 MB)</Label>
+                       <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
+                          <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                          <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                          <span className="text-sm font-bold text-[#0A2647]">{pdfName || 'Click to upload PDF'}</span>
+                       </div>
+                     </div>
+                     <Button type="submit" disabled={publishing} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-11 text-base font-bold shadow-md">
                        {publishing ? 'Publishing...' : 'Publish Tender'}
                      </Button>
                    </form>
@@ -788,7 +939,7 @@ export default function EmployeeDashboard() {
                      </CardTitle>
                      <CardDescription>View all tenders uploaded by you or MD. Select a tender to suggest it directly to a client.</CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-4 max-h-[600px] overflow-y-auto space-y-4 pr-2">
+                  <CardContent className="pt-4 max-h-[700px] overflow-y-auto space-y-4 pr-2">
                      {publicTenders.length === 0 ? (
                         <p className="text-center text-sm text-slate-500 py-10">No public tenders live on site right now.</p>
                      ) : (
@@ -806,6 +957,7 @@ export default function EmployeeDashboard() {
                                  </div>
                               </div>
                               
+                              {/* 🚀 SUGGEST TO CLIENT BOX (DROPDOWN INSTEAD OF TEXT) */}
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
                                  <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">Suggest To:</span>
                                  <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
@@ -831,35 +983,51 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 5: FULL SLA HELPDESK */}
+          {/* TAB 5: FULL SLA HELPDESK (UPDATED ESCALATION) */}
           <TabsContent value="sla" className="space-y-6">
             <Card className="shadow-sm max-w-3xl mx-auto">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2"><MessageSquare className="w-5 h-5 text-amber-500"/> Client Helpdesk & SLA Tracker</CardTitle>
                 <CardDescription>Resolve queries within 24 hours or escalate to MD.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-4">
-                 <div className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                    <div className="flex justify-between items-start mb-2">
-                       <div>
-                         <Badge variant="outline" className="mb-1 bg-slate-100">Operations</Badge>
-                         <h4 className="font-bold text-[#0A2647]">DSC Mapping Assistance</h4>
-                         <p className="text-xs text-muted-foreground">client@example.com • 4 hours ago</p>
+              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+                 {tickets.length === 0 ? (
+                    <p className="text-center text-sm text-slate-500 py-10">No pending helpdesk tickets right now.</p>
+                 ) : (
+                    tickets.map(ticket => (
+                       <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition mb-4">
+                          <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+                          <div className="flex justify-between items-start mb-2">
+                             <div>
+                               <Badge variant="outline" className="mb-1 bg-slate-100">{ticket.department}</Badge>
+                               <h4 className="font-bold text-[#0A2647]">{ticket.subject}</h4>
+                               <p className="text-xs text-muted-foreground">{ticket.client_email} • {new Date(ticket.created_at).toLocaleDateString()}</p>
+                             </div>
+                             <Badge className={ticket.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-amber-100 text-amber-800 border-0 animate-pulse'}>
+                                {ticket.status === 'OPEN' ? 'Action Required' : 'Resolved'}
+                             </Badge>
+                          </div>
+                          <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"{ticket.message}"</p>
+                          
+                          {ticket.status === 'OPEN' ? (
+                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-3 border-t">
+                                <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
+                                <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
+                                
+                                <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                                
+                                {/* 🚀 NEW: Escalate to MD API Call */}
+                                <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
+                             </div>
+                          ) : (
+                             <div className="bg-emerald-50/50 p-3 rounded-lg text-sm border border-emerald-100 border-l-4 border-l-emerald-500 mt-2">
+                                <span className="font-bold text-emerald-800 text-xs uppercase block mb-1">Official Resolution:</span>
+                                <span className="text-emerald-900">{ticket.reply || 'Resolved by Support Team'}</span>
+                             </div>
+                          )}
                        </div>
-                       <Badge className="bg-amber-100 text-amber-800 border-0">20 hrs remaining</Badge>
-                    </div>
-                    <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mb-3 border border-slate-100 shadow-inner">"Need help linking my Class 3 DSC token to the GeM vendor profile."</p>
-                    
-                    <div className="flex flex-col sm:flex-row gap-2">
-                       <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
-                       <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
-                       
-                       <Button onClick={() => handleImpersonate('client@example.com')} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 shrink-0 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
-                       
-                       <Button onClick={escalateToMD} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 shrink-0 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
-                    </div>
-                 </div>
+                    ))
+                 )}
               </CardContent>
             </Card>
           </TabsContent>
