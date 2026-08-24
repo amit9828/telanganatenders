@@ -702,12 +702,40 @@ export default function App() {
     );
   }
 
-  // ==============================================================================
+ // ==============================================================================
   // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
   // ==============================================================================
-  if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete) {
-    if (!userData.is_approved) {
-      return (
+  // 🚀 FIX: ఇక్కడ లాజిక్ క్లియర్ చేసాం. అప్రూవ్ 'కాని' వాడికి మాత్రమే ఈ స్క్రీన్ వస్తుంది.
+  // అప్రూవ్ అయిన వాడిని పైనున్న useEffect చూసుకుంటుంది (వాడిని డైరెక్ట్ గా /client కి తోసేస్తుంది).
+  if (status === 'authenticated' && intent === 'client' && userData?.onboarding_complete && !userData.is_approved) {
+    return (
+      <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
+        <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl relative overflow-hidden border-0">
+          <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+            <ShieldCheck className="w-6 h-6 text-amber-600" />
+          </div>
+          <h2 className="text-2xl font-extrabold text-[#0A2647] mb-1">Account Under Verification</h2>
+          <p className="text-slate-500 text-sm mb-6">Welcome to TenderNexus Enterprise Portal.</p>
+          
+          <p className="text-slate-700 text-sm mb-6 leading-relaxed">
+            Your registration was successful. As part of our strict MNC compliance, your dashboard access is currently locked pending <strong className="text-red-600">MD Approval</strong>.
+          </p>
+          
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
+            <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
+          </div>
+          
+          {/* 🚀 FIX: Removed the Bypass button, keeping only Log Out */}
+          <div className="flex items-center justify-center mt-4">
+            <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
+              <LogOut className="w-4 h-4 mr-2" /> Log Out
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
         <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
           <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl relative overflow-hidden border-0">
             <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
