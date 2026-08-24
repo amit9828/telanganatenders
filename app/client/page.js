@@ -51,6 +51,10 @@ export default function ClientDashboard() {
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
 
+  // --- Query Reply State --- 
+  const [queryForm, setQueryForm] = useState({ description: '', file: null });
+  const [submittingQuery, setSubmittingQuery] = useState(false);
+
   // --- Dynamic Business Profile State (Empty Default) ---
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -89,7 +93,7 @@ export default function ClientDashboard() {
         if(d.won_bids) setWonBids(d.won_bids);
         if(d.recommended_tenders) setRecommendedTenders(d.recommended_tenders);
         
-        // 2. VAULT DOCS MERGE (డిఫాల్ట్ డాక్యుమెంట్స్ + బ్యాకెండ్ నుండి వచ్చినవి కలపడం)
+        // 2. VAULT DOCS MERGE 
         if (d.vault_docs && d.vault_docs.length > 0) {
             const mergedDocs = DEFAULT_VAULT_DOCS.map(defaultDoc => {
                 const found = d.vault_docs.find(bd => bd.id === defaultDoc.id);
@@ -266,6 +270,53 @@ export default function ClientDashboard() {
 
   const handleQueryResponse = (id) => { toast.success('Response submitted to Officer.'); };
   
+  // ============================================================================
+  // 🚀 OFFICER QUERY SUBMISSION & FILE UPLOAD LOGIC 
+  // ============================================================================
+  const handleQuerySubmit = async (e, queryId) => {
+    e.preventDefault();
+    if(!queryForm.description) return toast.error("Please provide an explanation.");
+    setSubmittingQuery(true);
+    
+    try {
+      let uploadedFileName = '';
+      
+      if (queryForm.file) {
+        toast.info("Uploading document...");
+        const formData = new FormData();
+        formData.append('file', queryForm.file);
+        formData.append('queryId', queryId);
+        formData.append('email', email);
+        formData.append('clientName', profileForm.companyName || profileForm.clientName); 
+        
+        const res = await fetch('/api/vault/upload', { method: 'POST', body: formData });
+        if(res.ok) uploadedFileName = queryForm.file.name;
+      }
+
+      const r = await fetch('/api/queries/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          queryId,
+          email,
+          description: queryForm.description,
+          fileName: uploadedFileName
+        })
+      });
+
+      if(r.ok) {
+        toast.success("Reply & Document submitted to the Officer successfully!");
+        setQueryForm({ description: '', file: null });
+        fetchClientData(email); 
+      } else {
+        toast.error("Failed to submit reply.");
+      }
+    } catch(err) {
+      toast.error("Network error.");
+    }
+    setSubmittingQuery(false);
+  };
+
   const handleSignOut = async () => {
     if (typeof window !== 'undefined') localStorage.clear();
     await signOut({ redirect: false });
@@ -309,10 +360,78 @@ export default function ClientDashboard() {
     );
   }
 
+  const queries = userData?.officer_queries || [];
+
+  // ============================================================================
+  // 🔒 STRICT GATE: UNANSWERED OFFICER QUERIES (రెడ్ కలర్ క్వెరీ స్క్రీన్) 
+  // ============================================================================
+  if (userData && userData.is_approved && queries.length > 0) {
+    const q = queries[0]; 
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
+        <Card className="max-w-2xl w-full shadow-2xl border-t-8 border-t-red-600 bg-white">
+           <CardHeader className="border-b bg-red-50/50">
+             <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center ring-4 ring-red-50 shrink-0">
+                   <AlertTriangle className="w-7 h-7 text-red-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl font-black text-[#0A2647]">Action Required: Officer Query</CardTitle>
+                  <CardDescription className="text-sm mt-1 text-red-600 font-semibold">You must resolve this query to unlock your dashboard.</CardDescription>
+                </div>
+             </div>
+           </CardHeader>
+           <CardContent className="pt-6 space-y-6">
+             <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-inner">
+               <div className="flex justify-between items-start mb-3">
+                  <p className="font-bold text-slate-800 text-lg">{q.subject}</p>
+                  <Badge className="bg-red-100 text-red-800 border border-red-300 animate-pulse"><Clock className="w-3 h-3 mr-1"/> Action Needed</Badge>
+               </div>
+               <p className="text-sm text-slate-700 leading-relaxed">{q.message}</p>
+             </div>
+             
+             <form onSubmit={(e) => handleQuerySubmit(e, q.id)} className="space-y-5">
+                <div>
+                  <Label className="text-sm font-bold text-[#0A2647]">Your Explanation / Description *</Label>
+                  <Textarea 
+                     required 
+                     rows={4} 
+                     placeholder="Please explain or clarify the issue here..." 
+                     className="mt-2 bg-white focus:ring-2 focus:ring-red-500"
+                     value={queryForm.description}
+                     onChange={e => setQueryForm({...queryForm, description: e.target.value})}
+                  />
+                </div>
+                <div>
+                   <Label className="text-sm font-bold text-[#0A2647] mb-2 block">Upload Supporting Document (If any)</Label>
+                   <div className="border-2 border-dashed border-slate-300 rounded-xl p-5 text-center bg-slate-50 hover:bg-slate-100 transition cursor-pointer relative">
+                      <Input 
+                         type="file" 
+                         accept=".pdf,.jpg,.png,.zip" 
+                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                         onChange={e => setQueryForm({...queryForm, file: e.target.files[0]})} 
+                      />
+                      <div className="flex flex-col items-center pointer-events-none">
+                         <UploadCloud className="w-6 h-6 text-slate-400 mb-2" />
+                         <span className="text-sm font-semibold text-[#0A2647]">{queryForm.file ? queryForm.file.name : "Click to upload document"}</span>
+                         <span className="text-[10px] text-slate-500 mt-1">PDF, JPG or ZIP (Max 10MB)</span>
+                      </div>
+                   </div>
+                </div>
+                <Button type="submit" disabled={submittingQuery} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-2 shadow-md">
+                  {submittingQuery ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <Send className="w-5 h-5 mr-2"/>} 
+                  {submittingQuery ? 'Uploading & Submitting...' : 'Submit Reply & Unlock Dashboard'}
+                </Button>
+             </form>
+           </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // ============================================================================
   // 🟢 APPROVED CLIENT DASHBOARD
   // ============================================================================
-  const queries = userData?.officer_queries || [];
   const activeBids = userData?.active_bids || [];
   const customRequests = userData?.custom_requests || [];
   const criticalAlerts = userData?.action_alerts || [];
@@ -796,39 +915,6 @@ export default function ClientDashboard() {
                  )}
               </CardContent>
             </Card>
-
-            {/* Officer Queries Block */}
-            {queries.length > 0 && (
-              <Card className={`border-t-4 shadow-sm bg-white border-t-red-500`}>
-                <CardHeader className="pb-3 border-b">
-                  <CardTitle className="flex items-center gap-2 text-base text-[#0A2647]">
-                     <AlertTriangle className={`w-5 h-5 text-red-600`}/> Officer Query & Undertakings Block
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4">
-                   {queries.map((q, idx) => (
-                      <div key={idx} className="bg-red-50/50 p-4 rounded-md border border-red-100 grid md:grid-cols-2 gap-6 mb-4">
-                         <div>
-                            <div className="flex justify-between">
-                               <p className="font-bold text-slate-800 mb-2">{q.subject}</p>
-                               <Badge className="bg-red-100 text-red-800 border border-red-300 animate-pulse h-fit"><Clock className="w-3 h-3 mr-1"/> 24 Hrs</Badge>
-                            </div>
-                            <p className="text-sm text-slate-600 bg-white p-3 rounded-md border border-slate-200">{q.message}</p>
-                         </div>
-                         <div className="bg-white p-4 rounded-md border border-slate-200 flex flex-col gap-3">
-                            <Button variant="outline" size="sm" className="w-full justify-start text-[#0A2647] border-slate-300">
-                              <Download className="w-4 h-4 mr-2"/> Download Officer Format
-                            </Button>
-                            <div className="flex items-center gap-2 mt-2">
-                              <Input type="file" onChange={(e) => handleFileUpload('Undertaking', e)} accept=".pdf,.jpg" className="text-xs h-9 cursor-pointer file:text-xs file:bg-slate-100 file:border-0 file:rounded file:px-2" />
-                              <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d]" onClick={() => handleQueryResponse(q.id)}>Submit</Button>
-                            </div>
-                         </div>
-                      </div>
-                   ))}
-                </CardContent>
-              </Card>
-            )}
 
             {/* Custom Tender Request */}
             <Card className="tender-shadow border-t-4 border-t-blue-500">
