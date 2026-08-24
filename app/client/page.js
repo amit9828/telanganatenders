@@ -15,7 +15,7 @@ import {
   Briefcase, CheckCircle2, AlertTriangle, FileText, Clock, ShieldAlert, Send, 
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
-  Globe, Database, PhoneCall, Plus, Trash2, Trophy
+  Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye
 } from 'lucide-react';
 
 export default function ClientDashboard() {
