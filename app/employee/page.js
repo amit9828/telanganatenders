@@ -27,7 +27,6 @@ const DISTRICTS = [
   'Srikakulam', 'Vizianagaram', 'Prakasam'
 ];
 
-// Array of border colors to dynamically assign to different clients
 const BORDER_COLORS = [
   'border-blue-500', 'border-purple-500', 'border-emerald-500', 
   'border-orange-500', 'border-indigo-500', 'border-rose-500'
@@ -39,7 +38,6 @@ export default function EmployeeDashboard() {
   const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
   const [loading, setLoading] = useState(true);
 
-  // --- PERMANENT BACKEND STATES ---
   const [mdTasks, setMdTasks] = useState([]);
   const [bids, setBids] = useState([]);
   const [officers, setOfficers] = useState([]);
@@ -48,7 +46,6 @@ export default function EmployeeDashboard() {
   const [suggestions, setSuggestions] = useState([]); 
   const [tickets, setTickets] = useState([]); 
 
-  // Forms
   const [tenderForm, setTenderForm] = useState({
     bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
   });
@@ -64,7 +61,7 @@ export default function EmployeeDashboard() {
     state: '', district: '', address: '', pincode: '', notes: '' 
   });
   const [savingOfficer, setSavingOfficer] = useState(false);
-  const [officerSearch, setOfficerSearch] = useState(''); 
+  const [officerSearch, setOfficerSearch] = useState('');
 
   const [showAddBid, setShowAddBid] = useState(false);
   const [newBidForm, setNewBidForm] = useState({ 
@@ -78,26 +75,19 @@ export default function EmployeeDashboard() {
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_emp_email') : 'employee@tgtenders.in';
     const finalEmail = e || 'employee@tgtenders.in';
     setEmail(finalEmail);
-    
     fetchLiveOperationsData(finalEmail);
-
     fetch('/api/employee/activity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: finalEmail, action: 'LOGIN', details: 'Employee started session on portal.' })
     }).catch(err => console.log('Attendance log failed', err));
-    
   }, []);
 
   const fetchLiveOperationsData = async (userEmail) => {
     try {
       const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes] = await Promise.all([
-        fetch('/api/dispatches'), 
-        fetch('/api/bids'),       
-        fetch('/api/gov-officers'),
-        fetch('/api/users/approved'),
-        fetch('/api/tenders'),
-        fetch('/api/tickets')
+        fetch('/api/dispatches'), fetch('/api/bids'), fetch('/api/gov-officers'),
+        fetch('/api/users/approved'), fetch('/api/tenders'), fetch('/api/tickets')
       ]);
 
       if (tasksRes.ok) {
@@ -206,6 +196,11 @@ export default function EmployeeDashboard() {
   const handleSuggestionResponse = async (suggestion, action) => {
     try {
       if (action === 'Accepted') {
+         const isDuplicate = bids.some(b => b.client_email === suggestion.target_id && b.description === suggestion.message);
+         if(isDuplicate) {
+            return toast.error("Action Denied: This tender is already actively tracked for this client.");
+         }
+
          const res = await fetch('/api/bids', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -270,6 +265,27 @@ export default function EmployeeDashboard() {
           toast.error("Failed to remove. Backend route might need update.");
        }
      } catch(e) { toast.error("Network error"); }
+  }
+
+  const handleCreateDriveFolder = async (clientEmail, companyName) => {
+      toast.info("Generating secure Google Drive Workspace...");
+      try {
+          const res = await fetch('/api/drive/create-folder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: clientEmail, folderName: `Client - ${companyName}` })
+          });
+          const data = await res.json();
+          if(res.ok && data.folderLink) {
+              toast.success("Drive Workspace Synced!");
+              fetchLiveOperationsData(email);
+              window.open(data.folderLink, '_blank');
+          } else {
+              toast.error(data.error || "Failed to create drive.");
+          }
+      } catch(e) {
+          toast.error("Network Error.");
+      }
   }
 
   const sendActionAlert = async (e) => {
@@ -393,13 +409,14 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // 🚀 FIX: redirecting to /client directly
   const handleImpersonate = async (targetEmail) => {
     if (!targetEmail) return toast.error('Enter a valid client email');
     toast.loading(`Connecting to ${targetEmail}'s portal...`);
     await signIn('impersonate', {
       email: targetEmail,
       adminToken: 'admin_success',
-      callbackUrl: '/account' 
+      callbackUrl: '/client' 
     });
   };
 
@@ -503,7 +520,6 @@ export default function EmployeeDashboard() {
             </TabsTrigger>
           </TabsList>
 
-          {/* 🚀 TAB 1: KANBAN BID WORKFLOW */}
           <TabsContent value="kanban" className="w-full space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -594,16 +610,17 @@ export default function EmployeeDashboard() {
                                 <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
                                   <div>
                                     <div className="flex justify-between items-start mb-2">
-                                      {/* 🚀 FIX: CLEARLY DISPLAY BID NUMBER HERE */}
-                                      <Badge className="bg-slate-100 text-slate-800 font-bold font-mono text-[11px] border border-slate-300 shadow-sm px-2 py-0.5">
-                                        Bid No: {b.bid_no || 'N/A'}
-                                      </Badge>
+                                      {/* 🚀 FIX: High visibility for BID NUMBER */}
+                                      <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
+                                         <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
+                                         <span className="text-xs font-black font-mono">{b.bid_no || b.id || 'N/A'}</span>
+                                      </div>
                                       <div className="flex gap-2 items-center">
-                                         <Badge className="bg-blue-50 text-blue-700 border-blue-200 shadow-sm">{b.status}</Badge>
+                                         <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{b.status}</Badge>
                                          <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-5 w-5 p-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3"/></Button>
                                       </div>
                                     </div>
-                                    <h4 className="font-bold text-[#0A2647] mt-1 text-sm leading-tight">{b.description || b.title}</h4>
+                                    <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight">{b.description || b.title}</h4>
                                   </div>
                                   
                                   <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -644,7 +661,6 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 TAB 2: SUGGESTIONS MODULE */}
           <TabsContent value="suggestions" className="w-full space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200">
                <CardHeader className="bg-slate-50/50 border-b pb-4">
@@ -705,7 +721,6 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* TAB 3: GOVT OFFICERS DIRECTORY */}
           <TabsContent value="officers" className="w-full space-y-6">
             <div className="grid lg:grid-cols-3 gap-6">
               <Card className="shadow-sm border-t-4 border-t-purple-600 lg:col-span-1 h-fit">
@@ -814,7 +829,6 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* TAB 4: ALERTS, QUERIES & CLIENT LIST */}
           <TabsContent value="clients" className="w-full space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
               <Card className="shadow-sm border-t-4 border-t-red-500">
@@ -906,13 +920,15 @@ export default function EmployeeDashboard() {
                              </div>
                              
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
-                                <Button size="sm" onClick={() => { 
-                                   const link = client.drive_folder_link || client.drive_link;
-                                   if(link) window.open(link, '_blank'); 
-                                   else toast.info("Drive folder is not synced yet."); 
-                                }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
-                                   <Database className="w-4 h-4 mr-2" /> View Documents (Drive)
-                                </Button>
+                                {client.drive_folder_link || client.drive_link ? (
+                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                      <Database className="w-4 h-4 mr-2" /> Open Drive
+                                   </Button>
+                                ) : (
+                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                                      <Database className="w-4 h-4 mr-2" /> Sync Drive Space
+                                   </Button>
+                                )}
                                 <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -925,7 +941,6 @@ export default function EmployeeDashboard() {
             </Card>
           </TabsContent>
 
-          {/* 🚀 TAB 5: PUBLISHER & LIVE TENDERS SUGGESTION */}
           <TabsContent value="publisher" className="w-full space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
@@ -1018,10 +1033,13 @@ export default function EmployeeDashboard() {
                               </div>
                               
                               <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                                 <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">Suggest To:</span>
+                                 {/* 🚀 NEW: VIEW PDF BUTTON FOR EMPLOYEES TO PREVIEW DOCUMENTS WITHOUT PAYWALL */}
+                                 <Button size="sm" onClick={() => window.open(`/api/tenders/${t._id}/pdf?email=${email}&role=employee`, '_blank')} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
+                                    <FileText className="w-3 h-3 mr-1.5"/> View PDF
+                                 </Button>
                                  <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
                                     <SelectTrigger className="h-8 bg-slate-50 border-blue-200 text-xs font-semibold focus:ring-blue-500 w-full">
-                                       <SelectValue placeholder="Select Client ID (Name)" />
+                                       <SelectValue placeholder="Select Client ID to Suggest" />
                                     </SelectTrigger>
                                     <SelectContent>
                                        {approvedClients.map(c => {
@@ -1042,7 +1060,6 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* 🚀 TAB 6: FULL SLA HELPDESK */}
           <TabsContent value="sla" className="w-full space-y-6">
             <Card className="shadow-sm w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b">
