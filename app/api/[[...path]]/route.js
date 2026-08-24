@@ -36,7 +36,7 @@ function json(data, status = 200) {
   });
 }
 
-// 🚀 FIX: CORS మరియు Preflight ఇష్యూస్ ని బ్లాక్ చేయడానికి OPTIONS మెథడ్ యాడ్ చేసాం
+// 🚀 FIX: CORS మరియు Preflight ఇష్యూస్ ని బ్లాక్ చేయడానికి OPTIONS మెథడ్
 export async function OPTIONS(request) {
   return new NextResponse(null, {
     status: 204,
@@ -249,13 +249,13 @@ export async function GET(request, { params }) {
       return json({ bids });
     }
 
-    // 🚀 NEW: EMPLOYEES (TEAM DIRECTORY) FETCH
+    // 13. EMPLOYEES
     if (path === 'employees' || path === 'api/employees') {
       const team = await db.collection('employees').find({}).sort({ created_at: -1 }).toArray();
       return json({ team });
     }
 
-    // 🚀 NEW: FINANCE LEDGER BALANCE SHEET FETCH
+    // 14. FINANCE LEDGER
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
       const transactions = await db.collection('finance_ledger').find({}).sort({ created_at: -1 }).toArray();
       const totalCredit = transactions.filter(t => t.type === 'CREDIT').reduce((sum, t) => sum + Number(t.amount), 0);
@@ -263,7 +263,7 @@ export async function GET(request, { params }) {
       return json({ transactions, balance: totalCredit - totalDebit });
     }
 
-    // 13. MY ACCOUNT DATA (/api/me)
+    // 15. MY ACCOUNT DATA (/api/me)
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
@@ -348,11 +348,10 @@ export async function PUT(request, { params }) {
      const body = await request.json().catch(() => null);
      if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
-     // 🚀 FIX: ALLOW FULL EDIT OF TENDERS INSTEAD OF JUST L1 PRICE
      if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
         const tenderId = pathArray[1];
         let updateFields = { ...body, updated_at: new Date() };
-        delete updateFields._id; // Prevent MongoDB error of overwriting _id
+        delete updateFields._id; 
 
         await db.collection('tenders').updateOne(
            { _id: new ObjectId(tenderId) },
@@ -370,7 +369,6 @@ export async function PUT(request, { params }) {
         return json({ success: true, message: 'Request Updated' });
      }
 
-     // 🚀 NEW: ASSIGN CLIENT REQUEST TASK TO EMPLOYEE (MD Operations)
      if (path === 'client-requests/assign' || path === 'api/client-requests/assign') {
         const { req_id, emp_id, emp_name, status, reply } = body;
         
@@ -379,7 +377,6 @@ export async function PUT(request, { params }) {
            { $set: { status: `Assigned to ${emp_name} (${emp_id})`, reply, updated_at: new Date() } }
         );
 
-        // 🚀 Create Dispatch / Tracker for Employee Automatically
         const reqData = await db.collection('client_requests').findOne({ _id: new ObjectId(req_id) });
         if (reqData) {
             await db.collection('dispatches').insertOne({
@@ -416,6 +413,42 @@ export async function PUT(request, { params }) {
            { $set: { status: 'Completed', completed_at: new Date() } }
         );
         return json({ success: true });
+     }
+
+     // 🚀 NEW: FINANCE LEDGER EDIT
+     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
+        const { id, ...updateFields } = body;
+        if (!id) return json({ error: 'Missing Transaction ID' }, 400);
+        await db.collection('finance_ledger').updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { ...updateFields, updated_at: new Date() } }
+        );
+        return json({ success: true, message: 'Ledger Entry Updated' });
+     }
+
+     // 🚀 NEW: MANUAL OFFLINE PAYMENT COMPLETION
+     if (path === 'payments/offline' || path === 'api/payments/offline') {
+        const { id, amount, reason, client_id } = body;
+        
+        if (id) {
+            await db.collection('payments').updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status: 'SUCCESS_OFFLINE', paid_at: new Date() } }
+            );
+        }
+        
+        // Add to offline ledger automatically
+        await db.collection('finance_ledger').insertOne({
+            type: 'CREDIT',
+            amount: Number(amount),
+            reason: reason || 'Offline Payment Collected',
+            client_id: client_id || 'N/A',
+            payment_mode: 'OFFLINE',
+            proof_base64: null,
+            created_at: new Date()
+        });
+        
+        return json({ success: true, message: 'Marked as Paid Offline and Added to Ledger' });
      }
 
      return json({ error: 'PUT endpoint not found' }, 404);
@@ -473,7 +506,6 @@ export async function DELETE(request, { params }) {
       else return json({ error: 'Bid not found' }, 404);
     }
 
-    // 🚀 NEW: DELETE TICKETS PERMANENTLY
     if (path === 'tickets' || path === 'api/tickets') {
       const id = searchParams.get('id');
       if (!id) return json({ error: 'Missing Ticket ID' }, 400);
@@ -484,7 +516,6 @@ export async function DELETE(request, { params }) {
       return json({ error: 'Ticket not found' }, 404);
     }
 
-    // 🚀 NEW: DELETE EMPLOYEES
     if (path === 'employees' || path === 'api/employees') {
       const id = searchParams.get('id');
       if (!id) return json({ error: 'Missing Employee ID' }, 400);
@@ -492,6 +523,30 @@ export async function DELETE(request, { params }) {
       if (ObjectId.isValid(id)) result = await db.collection('employees').deleteOne({ _id: new ObjectId(id) });
       if (!result || result.deletedCount === 0) result = await db.collection('employees').deleteOne({ _id: id });
       return json({ success: true, message: 'Employee Deleted' });
+    }
+
+    // 🚀 NEW: DELETE FINANCE LEDGER ENTRY
+    if (path === 'finance/ledger' || path === 'api/finance/ledger') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing Transaction ID' }, 400);
+       await db.collection('finance_ledger').deleteOne({ _id: new ObjectId(id) });
+       return json({ success: true, message: 'Transaction Deleted' });
+    }
+
+    // 🚀 NEW: DELETE CLIENT REQUEST PERMANENTLY
+    if (path === 'client-requests' || path === 'api/client-requests') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing Request ID' }, 400);
+       await db.collection('client_requests').deleteOne({ _id: new ObjectId(id) });
+       return json({ success: true, message: 'Request Deleted Permanently' });
+    }
+
+    // 🚀 NEW: DELETE DISPATCH TASK PERMANENTLY
+    if (path === 'dispatches' || path === 'api/dispatches') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing Dispatch ID' }, 400);
+       await db.collection('dispatches').deleteOne({ _id: new ObjectId(id) });
+       return json({ success: true, message: 'Dispatch Task Deleted' });
     }
     
     return json({ error: 'DELETE endpoint not found' }, 404);
@@ -688,10 +743,9 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 🚀 NEW: ADD FINANCE LEDGER TRANSACTION
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
         const newTxn = {
-            type: body.type, // CREDIT or DEBIT
+            type: body.type, 
             amount: Number(body.amount),
             reason: body.reason,
             client_id: body.client_id || 'N/A',
@@ -703,15 +757,14 @@ export async function POST(request, { params }) {
         return json({ success: true, message: 'Transaction Added' });
     }
 
-    // 🚀 NEW: CREATE EMPLOYEE
     if (path === 'employees' || path === 'api/employees') {
         const count = await db.collection('employees').countDocuments();
-        const newEmpId = `EMP-${1000 + count + 1}`; // Auto generate ID
+        const newEmpId = `EMP-${1000 + count + 1}`; 
         const newEmployee = { 
             emp_id: newEmpId, 
             name: body.name, 
             email: body.email.toLowerCase(), 
-            password: body.password, // Saved directly for explicit login
+            password: body.password, 
             role: body.role || 'Employee',
             created_at: new Date() 
         };
