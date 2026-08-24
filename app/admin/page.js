@@ -44,6 +44,9 @@ export default function AdminPage() {
   const [pendingUsers, setPendingUsers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
 
+  // MD Impersonation
+  const [selectedClient, setSelectedClient] = useState(null);
+
   // Reports Filter & Real Data Arrays
   const [timeRange, setTimeRange] = useState('monthly'); 
   const [clientReports, setClientReports] = useState([]);
@@ -76,7 +79,9 @@ export default function AdminPage() {
   });
   const [pdfBase64, setPdfBase64] = useState('');
   const [pdfName, setPdfName] = useState('');
-  const [editingTenderId, setEditingTenderId] = useState(null);
+  
+  // 🚀 FIXED: Renamed to match JSX strictly
+  const [isEditingTender, setIsEditingTender] = useState(null);
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -190,8 +195,9 @@ export default function AdminPage() {
     if (!form.title || !form.department || !form.last_date || !form.district) return toast.error('Fill all required fields');
     setLoading(true);
     try {
-      const endpoint = editingTenderId ? `/api/tenders/${editingTenderId}` : '/api/tenders';
-      const method = editingTenderId ? 'PUT' : 'POST';
+      // 🚀 FIXED: Using isEditingTender instead of editingTenderId
+      const endpoint = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
+      const method = isEditingTender ? 'PUT' : 'POST';
       const payload = { ...form, pdf_filename: pdfName || 'tender.pdf' };
       if (pdfBase64) payload.pdf_base64 = pdfBase64; 
 
@@ -202,9 +208,9 @@ export default function AdminPage() {
       });
       if (!r.ok) return toast.error(`Server Error (${r.status})`);
       
-      toast.success(editingTenderId ? `Tender updated successfully!` : `Tender published successfully!`);
+      toast.success(isEditingTender ? `Tender updated successfully!` : `Tender published successfully!`);
       setForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '', bid_no: '' });
-      setPdfBase64(''); setPdfName(''); setEditingTenderId(null); refresh();
+      setPdfBase64(''); setPdfName(''); setIsEditingTender(null); refresh();
     } catch (err) { toast.error('Network Error.'); } finally { setLoading(false); }
   };
 
@@ -213,7 +219,8 @@ export default function AdminPage() {
       title: t.title || '', department: t.department || '', last_date: t.last_date ? new Date(t.last_date).toISOString().split('T')[0] : '', 
       district: t.district || '', category: t.category || 'Product', supply_details: t.supply_details || '', bid_no: t.bid_no || ''
     });
-    setEditingTenderId(t._id || t.id);
+    // 🚀 FIXED
+    setIsEditingTender(t._id || t.id);
     toast.info("Edit mode active. Update details and click save.");
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -539,7 +546,7 @@ export default function AdminPage() {
                                       <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
                                       <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
                                    </div>
-                                   <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Verified</Badge>
+                                   <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
@@ -548,14 +555,19 @@ export default function AdminPage() {
                                 </div>
                              </div>
                              
-                             <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
                                 {client.drive_folder_link || client.drive_link ? (
-                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9 px-2"><Database className="w-3.5 h-3.5 mr-1" /> Open Drive</Button>
+                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                      <Database className="w-4 h-4 mr-2" /> Open Drive
+                                   </Button>
                                 ) : (
-                                   <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9 px-2"><FolderPlus className="w-3.5 h-3.5 mr-1" /> Sync Drive Space</Button>
+                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                                      <Database className="w-4 h-4 mr-2" /> Sync Drive Space
+                                   </Button>
                                 )}
-                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 px-2"><LogIn className="w-3.5 h-3.5 mr-1" /> Login Bypass</Button>
-                                <Button size="sm" onClick={() => revokeClientAccess(client.email)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-9 px-2"><Trash2 className="w-3.5 h-3.5 mr-1" /> Revoke</Button>
+                                <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
+                                   <LogIn className="w-4 h-4 mr-2" /> Login as Client
+                                </Button>
                              </div>
                           </div>
                        )})}
