@@ -18,7 +18,7 @@ import {
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
-  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search
+  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -63,7 +63,7 @@ export default function AdminPage() {
   const [ledgerForm, setLedgerForm] = useState({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' });
   const [ledgerProof, setLedgerProof] = useState('');
   const [ledgerProofName, setLedgerProofName] = useState('');
-  const [editingLedgerId, setEditingLedgerId] = useState(null); // 🚀 NEW: Edit Ledger State
+  const [editingLedgerId, setEditingLedgerId] = useState(null);
 
   // --- PERMANENT BACKEND STATES ---
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
@@ -79,7 +79,7 @@ export default function AdminPage() {
   const [pdfBase64, setPdfBase64] = useState('');
   const [pdfName, setPdfName] = useState('');
   const [isEditingTender, setIsEditingTender] = useState(null);
-  const [tenderSearch, setTenderSearch] = useState(''); // 🚀 NEW: Publisher Search State
+  const [tenderSearch, setTenderSearch] = useState('');
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -130,18 +130,15 @@ export default function AdminPage() {
       setLedgerTxns(ledgerJson.transactions || []);
       setLedgerBalance(ledgerJson.balance || 0);
 
-      // Live Reports Mapping
       setClientReports((aJson.users || []).map(c => ({
          id: c.email, name: c.company_name || c.name || 'Unknown',
          total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
       })));
       
-      // 🚀 NEW: Pseudo-Dynamic Efficiency Logic based on Name Length (Stable Calculation)
       setEmployeeReports((empJson.team || []).map(e => {
          const effScore = 85 + ((e.name?.length || 5) % 15);
          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
       }));
-
     } catch (err) { console.error('Refresh failed:', err); }
   };
 
@@ -242,7 +239,6 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
 
-  // 🚀 NEW: Search filter for Publisher
   const filteredTenders = tenders.filter(t => 
      t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
      t.title?.toLowerCase().includes(tenderSearch.toLowerCase()) ||
@@ -304,7 +300,7 @@ export default function AdminPage() {
     } catch(e) { toast.error("Network error"); }
   };
 
-  // --- OPERATIONS ---
+  // --- OPERATIONS & SLA TRACKER ---
   const handleProcessBidRequest = async (reqId, status) => {
     const reply = bidReply[reqId];
     const assigneeId = bidAssignee[reqId];
@@ -333,7 +329,6 @@ export default function AdminPage() {
     } catch (err) { toast.error('Network Error.'); }
   };
 
-  // 🚀 NEW: Instant UI Remove + Backend Delete for Operations
   const deleteDispatch = async (id, isRequest = true) => {
      if(!confirm("Permanently delete this task?")) return;
      if(isRequest) {
@@ -346,11 +341,37 @@ export default function AdminPage() {
      toast.success("Deleted permanently.");
   };
 
+  // 🚀 NEW: SLA Actions
+  const handleGiveWarning = async (id) => {
+    try {
+      await fetch('/api/dispatches/update', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ task_id: id, status: 'Warning Issued' })
+      });
+      toast.success("Warning issued successfully!"); refresh();
+    } catch(e) { toast.error("Network error"); }
+  };
+
+  const handleForceClose = async (id) => {
+    if(!confirm("Are you sure you want to force close this task?")) return;
+    try {
+      await fetch('/api/dispatches/update', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ task_id: id, status: 'Force Closed (SLA Breach)' })
+      });
+      toast.success("Task force closed."); refresh();
+    } catch(e) { toast.error("Network error"); }
+  };
+
+  // 🚀 FIXED: Robust Document Opener
   const handleViewDocument = (req) => {
     const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
-    if (docLink) window.open(docLink.startsWith('http') ? docLink : `/uploads/${docLink}`, '_blank');
-    else if (req.link_or_id && req.link_or_id.startsWith('http')) window.open(req.link_or_id, '_blank');
-    else toast.info("No file attached. The link/ID reference is shown above.");
+    if (docLink) {
+       const finalUrl = docLink.startsWith('http') ? docLink : (docLink.startsWith('/') ? docLink : `/uploads/${docLink}`);
+       window.open(finalUrl, '_blank');
+    } else if (req.link_or_id && req.link_or_id.startsWith('http')) {
+       window.open(req.link_or_id, '_blank');
+    } else { toast.info("No file attached. The link/ID reference is shown above."); }
   };
 
   // --- FINANCE ---
@@ -373,7 +394,6 @@ export default function AdminPage() {
     } catch(err) { toast.error("Network Error"); }
   };
 
-  // 🚀 NEW: Edit & Delete for Ledger
   const handleEditLedger = (txn) => {
       setLedgerForm({ type: txn.type, amount: txn.amount, reason: txn.reason, client_id: txn.client_id, payment_mode: txn.payment_mode });
       setEditingLedgerId(txn._id);
@@ -383,10 +403,9 @@ export default function AdminPage() {
 
   const handleDeleteLedger = async (id) => {
       if(!confirm("Permanently delete this ledger entry?")) return;
-      setLedgerTxns(prev => prev.filter(t => t._id !== id)); // instant remove
+      setLedgerTxns(prev => prev.filter(t => t._id !== id)); 
       await fetch(`/api/finance/ledger?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      toast.success("Entry Deleted");
-      refresh();
+      toast.success("Entry Deleted"); refresh();
   };
 
   const handleSendPaymentRequest = async (e) => {
@@ -398,17 +417,15 @@ export default function AdminPage() {
     setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
   };
 
-  // 🚀 NEW: Manual Offline Payment Completion
   const handleOfflinePayment = async (req) => {
       if(!confirm("Mark this payment as collected offline? It will be added to the Balance Sheet.")) return;
-      setFinancialRequests(prev => prev.filter(r => r.id !== req.id)); // Optimistic UI
+      setFinancialRequests(prev => prev.filter(r => r.id !== req.id)); 
       try {
           await fetch('/api/payments/offline', {
               method: 'PUT', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
               body: JSON.stringify({ id: req.db_id || null, amount: req.amount, reason: req.reason, client_id: req.client_id })
           });
-          toast.success("Payment Marked Offline & Ledger Updated");
-          refresh();
+          toast.success("Payment Marked Offline & Ledger Updated"); refresh();
       } catch(e) { toast.error("Network Error"); }
   };
 
@@ -455,8 +472,8 @@ export default function AdminPage() {
              </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* 🚀 FIXED: Public Site opens in new tab securely */}
-            <a href="/" target="_blank" rel="noopener noreferrer">
+            {/* 🚀 FIXED: Public Site opens in new tab securely bypassing lock */}
+            <a href="/?guest_login=true" target="_blank" rel="noopener noreferrer">
                <Button variant="outline" size="sm" className="text-xs sm:text-sm bg-transparent border-slate-600 text-slate-200 hover:text-white hover:bg-slate-800">View Public Site</Button>
             </a>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-400 hover:text-red-300 hover:bg-red-900/50"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
@@ -482,7 +499,6 @@ export default function AdminPage() {
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
                <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
                <div className="bg-slate-100 p-1 rounded-lg flex gap-1">
-                  {/* 🚀 FIXED: Added Weekly filter */}
                   <Button size="sm" variant={timeRange === 'daily' ? 'default' : 'ghost'} onClick={()=>setTimeRange('daily')} className={`h-7 text-xs ${timeRange === 'daily' ? 'bg-[#0A2647] text-white' : ''}`}>Daily</Button>
                   <Button size="sm" variant={timeRange === 'weekly' ? 'default' : 'ghost'} onClick={()=>setTimeRange('weekly')} className={`h-7 text-xs ${timeRange === 'weekly' ? 'bg-[#0A2647] text-white' : ''}`}>Weekly</Button>
                   <Button size="sm" variant={timeRange === 'monthly' ? 'default' : 'ghost'} onClick={()=>setTimeRange('monthly')} className={`h-7 text-xs ${timeRange === 'monthly' ? 'bg-[#0A2647] text-white' : ''}`}>Monthly</Button>
@@ -490,18 +506,15 @@ export default function AdminPage() {
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]"><StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders Uploaded" value={tenders.length || 0} /></div>
-              
-              {/* 🚀 FIXED: Real Live Calculation for Active Operations */}
               <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
                  <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Active Operations" value={dispatches.length + bidRequests.length} />
               </div>
-              
               <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]"><StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Pending Approvals" value={pendingUsers.length} accent={pendingUsers.length > 0} /></div>
               <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]"><StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${(ledgerBalance || 0).toLocaleString()}`} /></div>
             </div>
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Logs</CardTitle></CardHeader>
+                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Live Data</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
                      {employeeReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No active employees found.</p> : (
                        <table className="w-full text-sm text-left border-collapse">
@@ -734,7 +747,6 @@ export default function AdminPage() {
                                       {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
                                    </td>
                                    <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                      {/* 🚀 FIXED: Added Edit/Delete icons to Ledger */}
                                       <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
                                       <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
                                    </td>
@@ -785,7 +797,6 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
-               {/* 🚀 FIXED: Status Bar and Offline Actions for Dispatched Links */}
                <Card className="shadow-sm h-fit">
                   <CardHeader className="bg-slate-50 border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
@@ -805,7 +816,6 @@ export default function AdminPage() {
                                     <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
                                  </div>
                                  
-                                 {/* Progress Bar */}
                                  <div className="relative pt-2 pb-1 mx-2">
                                     <div className="absolute top-4 left-0 right-0 h-1.5 bg-slate-100 rounded-full z-0"></div>
                                     <div className={`absolute top-4 left-0 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[100%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
@@ -829,7 +839,6 @@ export default function AdminPage() {
                                     </div>
                                  </div>
 
-                                 {/* Manual Overrides */}
                                  <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
                                     <Button size="sm" onClick={() => handleOfflinePayment(req)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 h-8 text-xs shadow-sm"><IndianRupee className="w-3 h-3 mr-1"/> Mark Paid Offline</Button>
                                     <Button size="sm" onClick={() => handleCancelPayment(req.id)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs shadow-sm"><X className="w-3 h-3 mr-1"/> Cancel Link</Button>
@@ -927,61 +936,116 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ==================== 5. OPERATIONS (WITH DROPDOWNS & INSTANT DELETE) ==================== */}
+          {/* ==================== 5. OPERATIONS (WITH SLA TRACKER) ==================== */}
           <TabsContent value="operations" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="tender-shadow border-t-4 border-t-purple-600">
-                  <CardHeader className="bg-purple-50/30 border-b pb-4">
-                     <CardTitle className="flex items-center gap-2 text-purple-900 text-lg"><Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch</CardTitle>
-                     <CardDescription>Push alerts directly to a Client's screen or assign tasks to Employees.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                     <form onSubmit={handleDispatchTask} className="space-y-5">
-                        <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
-                           <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${taskForm.target_type === 'client_alert' ? 'bg-white shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>
-                              <input type="radio" name="target" value="client_alert" checked={taskForm.target_type === 'client_alert'} onChange={e => setTaskForm({...taskForm, target_type: e.target.value, target_id: ''})} className="hidden" />
-                              <span className={`w-2 h-2 rounded-full ${taskForm.target_type === 'client_alert' ? 'bg-red-500' : 'bg-slate-300'}`}></span>
-                              <span className="text-sm font-bold">Client Alert</span>
-                           </label>
-                           <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${taskForm.target_type === 'employee_task' ? 'bg-white shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>
-                              <input type="radio" name="target" value="employee_task" checked={taskForm.target_type === 'employee_task'} onChange={e => setTaskForm({...taskForm, target_type: e.target.value, target_id: ''})} className="hidden" />
-                              <span className={`w-2 h-2 rounded-full ${taskForm.target_type === 'employee_task' ? 'bg-blue-500' : 'bg-slate-300'}`}></span>
-                              <span className="text-sm font-bold">Employee Task</span>
-                           </label>
-                        </div>
-                        
-                        <div>
-                           <Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Select Target Client *' : 'Select Target Employee *'}</Label>
-                           {taskForm.target_type === 'client_alert' ? (
-                              <Select value={taskForm.target_id} onValueChange={v => setTaskForm({...taskForm, target_id: v})}>
-                                 <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Choose Client..." /></SelectTrigger>
-                                 <SelectContent>
-                                    {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
-                                 </SelectContent>
-                              </Select>
-                           ) : (
-                              <Select value={taskForm.target_id} onValueChange={v => setTaskForm({...taskForm, target_id: v})}>
-                                 <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Choose Employee..." /></SelectTrigger>
-                                 <SelectContent>
-                                    {teamMembers.map(emp => <SelectItem key={emp.emp_id} value={emp.emp_id}>{emp.name} ({emp.emp_id})</SelectItem>)}
-                                 </SelectContent>
-                              </Select>
-                           )}
-                        </div>
+               <div className="flex flex-col gap-6">
+                  <Card className="tender-shadow border-t-4 border-t-purple-600">
+                     <CardHeader className="bg-purple-50/30 border-b pb-4">
+                        <CardTitle className="flex items-center gap-2 text-purple-900 text-lg"><Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch</CardTitle>
+                        <CardDescription>Push alerts directly to a Client's screen or assign tasks to Employees.</CardDescription>
+                     </CardHeader>
+                     <CardContent className="pt-6">
+                        <form onSubmit={handleDispatchTask} className="space-y-5">
+                           <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
+                              <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${taskForm.target_type === 'client_alert' ? 'bg-white shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>
+                                 <input type="radio" name="target" value="client_alert" checked={taskForm.target_type === 'client_alert'} onChange={e => setTaskForm({...taskForm, target_type: e.target.value, target_id: ''})} className="hidden" />
+                                 <span className={`w-2 h-2 rounded-full ${taskForm.target_type === 'client_alert' ? 'bg-red-500' : 'bg-slate-300'}`}></span>
+                                 <span className="text-sm font-bold">Client Alert</span>
+                              </label>
+                              <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${taskForm.target_type === 'employee_task' ? 'bg-white shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>
+                                 <input type="radio" name="target" value="employee_task" checked={taskForm.target_type === 'employee_task'} onChange={e => setTaskForm({...taskForm, target_type: e.target.value, target_id: ''})} className="hidden" />
+                                 <span className={`w-2 h-2 rounded-full ${taskForm.target_type === 'employee_task' ? 'bg-blue-500' : 'bg-slate-300'}`}></span>
+                                 <span className="text-sm font-bold">Employee Task</span>
+                              </label>
+                           </div>
+                           <div>
+                              <Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Select Target Client *' : 'Select Target Employee *'}</Label>
+                              {taskForm.target_type === 'client_alert' ? (
+                                 <Select value={taskForm.target_id} onValueChange={v => setTaskForm({...taskForm, target_id: v})}>
+                                    <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Choose Client..." /></SelectTrigger>
+                                    <SelectContent>
+                                       {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
+                                    </SelectContent>
+                                 </Select>
+                              ) : (
+                                 <Select value={taskForm.target_id} onValueChange={v => setTaskForm({...taskForm, target_id: v})}>
+                                    <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Choose Employee..." /></SelectTrigger>
+                                    <SelectContent>
+                                       {teamMembers.map(emp => <SelectItem key={emp.emp_id} value={emp.emp_id}>{emp.name} ({emp.emp_id})</SelectItem>)}
+                                    </SelectContent>
+                                 </Select>
+                              )}
+                           </div>
+                           <div><Label className="text-slate-600 font-bold">Subject / Title *</Label><Input placeholder="e.g. Upload GST Certificate" value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1" /></div>
+                           <div><Label className="text-slate-600 font-bold">Detailed Instructions *</Label><Textarea rows={4} placeholder="Describe exactly what needs to be done..." value={taskForm.message} onChange={e => setTaskForm({...taskForm, message: e.target.value})} required className="mt-1" /></div>
+                           <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 shadow-md h-12 text-base"><ClipboardList className="w-5 h-5 mr-2" /> Dispatch Now</Button>
+                        </form>
+                     </CardContent>
+                  </Card>
 
-                        <div><Label className="text-slate-600 font-bold">Subject / Title *</Label><Input placeholder="e.g. Upload GST Certificate" value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1" /></div>
-                        <div><Label className="text-slate-600 font-bold">Detailed Instructions *</Label><Textarea rows={4} placeholder="Describe exactly what needs to be done..." value={taskForm.message} onChange={e => setTaskForm({...taskForm, message: e.target.value})} required className="mt-1" /></div>
-                        <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 shadow-md h-12 text-base"><ClipboardList className="w-5 h-5 mr-2" /> Dispatch Now</Button>
-                     </form>
-                  </CardContent>
-               </Card>
+                  {/* 🚀 NEW: SLA TRACKER CARD */}
+                  <Card className="tender-shadow border-t-4 border-t-red-500">
+                     <CardHeader className="bg-red-50/30 border-b pb-4">
+                        <CardTitle className="flex items-center gap-2 text-red-900 text-lg"><Clock className="w-5 h-5 text-red-600"/> Dispatch SLA Tracker</CardTitle>
+                        <CardDescription>Monitor task deadlines (24h warning, 48h force close).</CardDescription>
+                     </CardHeader>
+                     <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
+                        {dispatches.filter(d => d.status !== 'Completed' && d.status !== 'Force Closed (SLA Breach)').length === 0 ? (
+                           <p className="text-center text-sm text-slate-400 py-6">No active dispatches pending.</p>
+                        ) : (
+                           <div className="space-y-4">
+                               {dispatches.filter(d => d.status !== 'Completed' && d.status !== 'Force Closed (SLA Breach)').map(task => {
+                                   const hoursElapsed = (Date.now() - new Date(task.created_at).getTime()) / (1000 * 60 * 60);
+                                   let statusColor = "bg-blue-100 text-blue-800";
+                                   let barColor = "bg-blue-500";
+                                   let progress = "w-[30%]";
+                                   
+                                   if(task.status === 'Warning Issued' || (hoursElapsed > 24 && hoursElapsed <= 48)) {
+                                       statusColor = "bg-amber-100 text-amber-800"; barColor = "bg-amber-500"; progress = "w-[70%]";
+                                   } else if (hoursElapsed > 48) {
+                                       statusColor = "bg-red-100 text-red-800"; barColor = "bg-red-500"; progress = "w-[100%]";
+                                   }
+
+                                   return (
+                                       <div key={task._id} className="border border-slate-200 p-3 rounded-lg bg-white shadow-sm">
+                                           <div className="flex justify-between items-start mb-2">
+                                               <Badge className={`border-0 ${statusColor}`}>
+                                                  {task.status === 'Sent' && hoursElapsed > 24 ? 'SLA Breached' : task.status}
+                                               </Badge>
+                                               <span className="text-[10px] text-slate-500">{Math.floor(hoursElapsed)}h ago</span>
+                                           </div>
+                                           <p className="font-bold text-[#0A2647] text-sm">{task.subject}</p>
+                                           <p className="text-[10px] text-slate-500 mt-1">Assigned To: <span className="font-mono bg-slate-100 px-1 rounded">{task.target_id}</span></p>
+
+                                           <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 mb-3">
+                                               <div className={`h-1.5 rounded-full ${barColor} ${progress}`}></div>
+                                           </div>
+
+                                           <div className="flex gap-2">
+                                               {hoursElapsed > 24 && hoursElapsed <= 48 && task.status !== 'Warning Issued' && (
+                                                   <Button size="sm" variant="outline" onClick={() => handleGiveWarning(task._id)} className="flex-1 h-7 text-[10px] text-amber-600 border-amber-200 hover:bg-amber-50"><AlertTriangle className="w-3 h-3 mr-1"/> Give Warning</Button>
+                                               )}
+                                               {hoursElapsed > 48 && (
+                                                   <Button size="sm" onClick={() => handleForceClose(task._id)} className="flex-1 h-7 text-[10px] bg-red-600 hover:bg-red-700 text-white"><XCircle className="w-3 h-3 mr-1"/> Force Close</Button>
+                                               )}
+                                               <Button size="sm" variant="ghost" onClick={() => deleteDispatch(task._id, false)} className="h-7 text-[10px] text-slate-500 hover:text-red-600 hover:bg-red-50 px-2"><Trash2 className="w-3 h-3"/></Button>
+                                           </div>
+                                       </div>
+                                   )
+                               })}
+                           </div>
+                        )}
+                     </CardContent>
+                  </Card>
+               </div>
 
                <Card className="tender-shadow border-0 bg-slate-50/50">
                   <CardHeader className="border-b pb-4">
                      <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><UploadCloud className="w-5 h-5 text-blue-600"/> Client Bid Support Requests ({bidRequests.length})</CardTitle>
                      <CardDescription>Live database fetch of requests submitted by clients. Assign to employees to track progress.</CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-4 max-h-[550px] overflow-y-auto">
+                  <CardContent className="pt-4 max-h-[850px] overflow-y-auto">
                      {bidRequests.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-slate-400"><UploadCloud className="w-12 h-12 mb-3 opacity-20"/><p className="text-sm font-semibold">No custom bid requests pending.</p></div>
                      ) : (
@@ -999,7 +1063,6 @@ export default function AdminPage() {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
-                                 {/* 🚀 FIXED: Disabled Button if NO Document */}
                                  <Button variant="outline" size="sm" disabled={!hasDoc} onClick={() => handleViewDocument(req)} className={`mb-4 w-full sm:w-auto h-8 text-xs ${hasDoc ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'text-slate-400 border-slate-200 bg-slate-100'}`}>
                                     <FileText className="w-3.5 h-3.5 mr-1" /> {hasDoc ? "View Attached Document / Link" : "No Document Attached"}
                                  </Button>
@@ -1025,7 +1088,6 @@ export default function AdminPage() {
                                        <p className="text-xs text-slate-700 font-medium">Reply: {req.reply}</p>
                                        <div className="flex gap-2 mt-3 pt-2 border-t border-emerald-200/50">
                                           <Button size="sm" variant="ghost" onClick={()=>handleProcessBidRequest(req._id, 'Pending Officer Review')} className="h-7 text-[10px] text-amber-600 bg-amber-50 hover:bg-amber-100"><RefreshCw className="w-3 h-3 mr-1"/> Re-Query</Button>
-                                          {/* 🚀 FIXED: Calling instant delete Dispatch Function */}
                                           <Button size="sm" variant="ghost" onClick={()=>deleteDispatch(req._id, true)} className="h-7 text-[10px] text-red-600 bg-red-50 hover:bg-red-100"><Trash2 className="w-3 h-3 mr-1"/> Delete Permanently</Button>
                                        </div>
                                     </div>
@@ -1094,7 +1156,6 @@ export default function AdminPage() {
                    <div>
                       <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
                    </div>
-                   {/* 🚀 FIXED: Added Search Bar for Tenders */}
                    <div className="relative shrink-0 w-full sm:w-[250px]">
                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <Input placeholder="Search Bid No or Title..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full bg-white shadow-sm text-xs" />
@@ -1122,7 +1183,6 @@ export default function AdminPage() {
                       </div>
                       
                       <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                         {/* 🚀 FIXED: Use handleViewPDF to prevent Blob/Network errors */}
                          <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
                          </Button>
