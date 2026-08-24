@@ -36,8 +36,15 @@ const handler = NextAuth({
         adminToken: { label: "Token", type: "text" }
       },
       async authorize(credentials) {
-        // పాస్‌వర్డ్ అడగకుండా, సిస్టమ్ జనరేట్ చేసిన టోకెన్ తో క్లయింట్ అకౌంట్ లోకి లాగిన్ అవ్వడానికి
+        // పాస్‌వర్డ్ అడగకుండా, టోకెన్ తో చెక్ చేసి కచ్చితమైన క్లయింట్ డేటాను డేటాబేస్ నుండి తెచ్చుకోవడం
         if (credentials.adminToken === 'admin_success' || credentials.adminToken === process.env.ADMIN_TOKEN) {
+           const db = await getDb();
+           const user = await db.collection('users').findOne({ email: credentials.email.toLowerCase() });
+           
+           if (user) {
+              return { id: user._id.toString(), email: user.email, name: user.name, client_id: user.client_id };
+           }
+           // ఒకవేళ యూజర్ ఇంకా పూర్తిగా సేవ్ అవ్వకపోయినా ఈమెయిల్ తో లాగిన్ అవ్వడానికి
            return { id: credentials.email, email: credentials.email };
         }
         return null;
@@ -47,7 +54,12 @@ const handler = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: 'jwt' },
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
+      // 🚀 NEW FIX: ఎంప్లాయీ/ఎండీ బైపాస్ లాగిన్ ద్వారా వెళ్లినప్పుడు క్లయింట్ ప్రొఫైల్ సేఫ్ గా ఉంచడానికి
+      if (account?.provider === 'impersonate') {
+        return true; 
+      }
+
       try {
         const db = await getDb();
         const email = (user.email || '').toLowerCase();
@@ -75,11 +87,18 @@ const handler = NextAuth({
       return true;
     },
     async jwt({ token, user }) {
-      if (user?.email) token.email = user.email.toLowerCase();
+      if (user?.email) {
+         token.email = user.email.toLowerCase();
+         // 🚀 NEW FIX: టోకెన్ లోనే క్లయింట్ ఐడీ సేవ్ చేయడం వల్ల ఏ అకౌంట్ తారుమారు అవ్వదు
+         if (user.client_id) token.client_id = user.client_id;
+      }
       return token;
     },
     async session({ session, token }) {
-      if (token?.email) session.user.email = token.email;
+      if (token?.email) {
+         session.user.email = token.email;
+         if (token.client_id) session.user.client_id = token.client_id;
+      }
       return session;
     },
   },
