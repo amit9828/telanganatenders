@@ -227,29 +227,22 @@ export default function App() {
       setLoadingUser(false);
     }
   }, [session, status]);
-
-  // ==============================================================================
-  // 🚀 BULLETPROOF REDIRECT LOGIC
-  // ==============================================================================
+// Client & Guest Redirect Hook (🚀 FIXED LOGIC: Strict routing to prevent crossing)
   useEffect(() => {
-    // మనం యూజర్ డేటాని ఫెచ్ చేయడం పూర్తయ్యాక మాత్రమే నిర్ణయం తీసుకుంటాం
-    if (status === 'authenticated' && userData !== null && !loadingUser) {
-      
-      // 1. అప్రూవ్ అయిన క్లయింట్ అయితే (అతని ఇంటెంట్ ఏదైనా సరే డేటాబేస్ ని బట్టే వెళ్తాం)
+    if (status === 'authenticated' && userData) {
+      // 🚀 THE FIX: ఇక్కడ "intent === 'client'" అనే కండిషన్ ని పీకేశాం. 
+      // డేటాబేస్ లో వాడు అప్రూవ్డ్ క్లయింట్ అని ఉంటే చాలు, బ్రౌజర్‌తో పనిలేకుండా వాడిని /client కి తన్నేస్తుంది!
       if (userData.onboarding_complete && userData.is_approved) {
-        // ఇంటెంట్ ని ఫోర్స్ గా క్లయింట్ కింద మారుస్తున్నాం
         if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
         setIntent('client');
-        
-        // డాష్‌బోర్డ్ కి స్ట్రాంగ్ పుష్ (Push)
         router.push('/client');
-      } 
-      // 2. ఒకవేళ వాడు పక్కాగా గెస్ట్ అని సెలెక్ట్ చేస్కుంటే
+      }
+      // 2. If intent is guest, strictly keep them as guest
       else if (intent === 'guest' && (!userData.onboarding_complete || !userData.is_approved)) {
         setIsGuest(true);
       }
     }
-  }, [status, intent, userData, loadingUser, router]);
+  }, [status, intent, userData, router]);
   
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
@@ -710,13 +703,12 @@ export default function App() {
       </div>
     );
   }
-
- // ==============================================================================
+// ==============================================================================
   // SCREEN 3: VERIFICATION WAITING (🚀 STRICT LOCK - NO BYPASS BUTTON)
   // ==============================================================================
   if (status === 'authenticated' && (intent === 'client' || (userData && userData.onboarding_complete))) {
     
-    // 🚀 FIX 1: ఒకవేళ వాడు ఇంకా అప్రూవ్ కాకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ రావాలి
+    // 🚀 THE FIX: ఒకవేళ వాడు ఇంకా అప్రూవ్ కాకపోతే మాత్రమే ఈ వార్నింగ్ స్క్రీన్ రావాలి
     if (userData && !userData.is_approved) {
       return (
         <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
@@ -736,7 +728,7 @@ export default function App() {
               <p className="text-2xl font-black text-[#0A2647]">+91 6304486770</p>
             </div>
             
-            {/* 🚀 FIX: Removed the Bypass button completely. Only Log Out is available. */}
+            {/* Bypass బటన్ పూర్తిగా రిమూవ్ చేశాం, కేవలం Log Out మాత్రమే ఉంటుంది */}
             <div className="flex items-center justify-center mt-4">
               <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2">
                 <LogOut className="w-4 h-4 mr-2" /> Log Out
@@ -745,8 +737,8 @@ export default function App() {
           </Card>
         </div>
       );
-    } 
-    // 🚀 FIX 2: ఒకవేళ అప్రూవ్ అయ్యుంటే, పైనున్న useEffect వాడిని /client కి జంప్ చేయించే లోపు ఈ లోడర్ వస్తుంది
+    }
+    // 🚀 THE FIX: ఒకవేళ అప్రూవ్ అయ్యుంటే, పైనున్న useEffect వాడిని /client కి పంపించే లోపు (1 సెకను పాటు) ఈ లోడర్ వస్తుంది
     else if (userData && userData.is_approved) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -760,7 +752,6 @@ export default function App() {
 
   // ==============================================================================
   // SCREEN 4: MAIN PORTAL (Guests & Approved Browsers reach here)
-  // ==============================================================================
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <header className="border-b bg-white sticky top-0 z-30">
