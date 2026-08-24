@@ -44,6 +44,7 @@ import {
   User,
   Briefcase,
   UserCog,
+  Eye,
   LogOut
 } from 'lucide-react';
 
