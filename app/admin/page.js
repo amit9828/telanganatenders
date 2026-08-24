@@ -99,7 +99,7 @@ export default function AdminPage() {
         fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
         fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
         fetch(`/api/users/pending?t=${Date.now()}`, { headers }),
-        fetch(`/api/users/approved?t=${Date.now()}`, { headers }), // NEW: Fetching Approved Users
+        fetch(`/api/users/approved?t=${Date.now()}`, { headers }), // Fetching Approved Users
         fetch(`/api/client-requests?t=${Date.now()}`, { headers }),
         fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
         fetch(`/api/gov-officers?t=${Date.now()}`, { headers })      
@@ -111,7 +111,7 @@ export default function AdminPage() {
       const sJson = await sRes.json();
       const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
       const uJson = uRes.ok ? await uRes.json() : { users: [] };
-      const aJson = aRes.ok ? await aRes.json() : { users: [] }; // Parsing Approved Users
+      const aJson = aRes.ok ? await aRes.json() : { users: [] }; 
 
       // Parse new data connections safely
       const reqJson = reqRes.ok ? await reqRes.json() : { requests: [] };
@@ -122,15 +122,12 @@ export default function AdminPage() {
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
       setPendingUsers(uJson.users || []);
-      setApprovedClients(aJson.users || []); // Real Approved Clients
+      setApprovedClients(aJson.users || []); 
       
       // Update Live Operations Desks
       setBidRequests(reqJson.requests || []);
       setDispatches(dispJson.dispatches || []);
       setGovOfficers(govJson.officers || []);
-
-      // If backend provides real reports/teams/financials, they would be set here.
-      // e.g., setClientReports(sJson.clientReports || []);
 
     } catch (err) {
       console.error('Refresh failed:', err);
@@ -233,7 +230,7 @@ export default function AdminPage() {
       if(res.ok) {
         toast.success(`Client Bid Request ${status} & Updated in Database!`);
         setBidReply(prev => ({...prev, [reqId]: ''}));
-        refresh(); // Pull fresh data from MongoDB
+        refresh(); 
       } else {
         toast.error("Failed to update status.");
       }
@@ -243,21 +240,59 @@ export default function AdminPage() {
   };
 
   // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: View Uploaded Document / Link
+  // ============================================================================
+  const handleViewDocument = (req) => {
+    const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
+    if (docLink) {
+      const finalUrl = docLink.startsWith('http') ? docLink : `/uploads/${docLink}`;
+      window.open(finalUrl, '_blank');
+    } else if (req.link_or_id && req.link_or_id.startsWith('http')) {
+      window.open(req.link_or_id, '_blank');
+    } else {
+      toast.info("No file attached. The link/ID reference is shown above.");
+    }
+  };
+
+  // ============================================================================
   // 🚀 PERMANENT BACKEND LOGIC: Approve Client
   // ============================================================================
   const approveClient = async (email) => {
     try {
-      toast.success('✅ Client Verified & Portal Unlocked!');
-      toast.info('📁 Google Drive Workspace Created automatically for this client.');
-
-      // API Call
       await fetch('/api/users/approve', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email })
       });
+      toast.success('✅ Client Verified & Portal Unlocked!');
+      toast.info('📁 Google Drive Workspace Created automatically for this client.');
       refresh();
     } catch(e) { 
       toast.error('Network Error while approving.'); 
+    }
+  };
+
+  // ============================================================================
+  // 🚀 PERMANENT BACKEND LOGIC: Revoke/Delete Client Access
+  // ============================================================================
+  const revokeClientAccess = async (email) => {
+    if (!confirm("Are you sure you want to completely REVOKE access for this client? They won't be able to log in.")) return;
+    try {
+      setApprovedClients(prev => prev.filter(c => c.email !== email)); // Optimistic UI update
+      
+      const res = await fetch('/api/users/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email })
+      });
+
+      if (res.ok) {
+         toast.success("Client access revoked successfully!");
+         refresh();
+      } else {
+         toast.error("Failed to revoke client access.");
+      }
+    } catch(e) { 
+      toast.error('Network Error while revoking.'); 
     }
   };
 
@@ -278,7 +313,7 @@ export default function AdminPage() {
       if(res.ok) {
         toast.success(taskForm.target_type === 'client_alert' ? 'CRITICAL ALERT Pushed to Client Dashboard!' : 'WORK ORDER Assigned to Employee!');
         setTaskForm({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
-        refresh(); // Pull fresh radar dispatches from DB
+        refresh(); 
       } else {
         toast.error('Failed to dispatch');
       }
@@ -592,14 +627,20 @@ export default function AdminPage() {
                                    </div>
                                 </div>
                              </div>
-                             <div className="flex flex-col sm:flex-row gap-3 mt-1">
-                                <Button size="sm" onClick={() => window.open(client.drive_link || '#', '_blank')} variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
-                                   <Database className="w-4 h-4 mr-2" /> Google Drive Folder
+                             
+                             {/* UPDATED ACTION BUTTONS: Drive, Login, and REVOKE ACCESS */}
+                             <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                                <Button size="sm" onClick={() => { if(client.drive_link) window.open(client.drive_link, '_blank'); else toast.info("Drive folder is syncing or not added."); }} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9 px-2">
+                                   <Database className="w-3.5 h-3.5 mr-1" /> Drive
                                 </Button>
-                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="w-full bg-[#0A2647] hover:bg-[#144272] h-9">
-                                   <LogIn className="w-4 h-4 mr-2" /> Direct MD Access
+                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 px-2">
+                                   <LogIn className="w-3.5 h-3.5 mr-1" /> Login
+                                </Button>
+                                <Button size="sm" onClick={() => revokeClientAccess(client.email)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-9 px-2">
+                                   <Trash2 className="w-3.5 h-3.5 mr-1" /> Revoke
                                 </Button>
                              </div>
+
                           </div>
                        )})}
                     </div>
@@ -870,12 +911,10 @@ export default function AdminPage() {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
-                                 {/* NEW: VIEW DOCUMENT BUTTON */}
-                                 {(req.file_url || req.document_url) && (
-                                    <Button variant="outline" size="sm" onClick={() => window.open(req.file_url || req.document_url, '_blank')} className="mb-4 w-full sm:w-auto h-8 text-xs border-blue-200 text-blue-700 hover:bg-blue-50">
-                                       <FileText className="w-3.5 h-3.5 mr-1" /> View Uploaded Document
-                                    </Button>
-                                 )}
+                                 {/* NEW: 100% WORKING VIEW DOCUMENT BUTTON */}
+                                 <Button variant="outline" size="sm" onClick={() => handleViewDocument(req)} className="mb-4 w-full sm:w-auto h-8 text-xs border-blue-200 text-blue-700 hover:bg-blue-50">
+                                    <FileText className="w-3.5 h-3.5 mr-1" /> View Document / Link
+                                 </Button>
 
                                  {req.status === 'Pending Officer Review' ? (
                                     <div className="flex flex-col gap-2 border-t pt-3">
