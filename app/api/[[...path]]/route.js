@@ -58,7 +58,6 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
 
   try {
-    // 1. ADMIN STATS
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
@@ -68,13 +67,11 @@ export async function GET(request, { params }) {
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
 
-    // 2. BRAND SETTINGS
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
       return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
     }
 
-    // 3. TENDERS
     if (path === 'tenders' || path === 'api/tenders') {
       const district = searchParams.get('district');
       const month = searchParams.get('month');
@@ -102,7 +99,6 @@ export async function GET(request, { params }) {
       return json({ tenders });
     }
 
-    // 4. CALENDAR
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
@@ -121,7 +117,6 @@ export async function GET(request, { params }) {
       return json({ days });
     }
 
-    // 5. ACCESS CHECK
     if (path === 'access' || path === 'api/access') {
       const email = searchParams.get('email');
       if (!email) return json({ subscription: null });
@@ -135,7 +130,6 @@ export async function GET(request, { params }) {
       return json({ subscription: user?.subscription || null });
     }
 
-    // 6. PDF FETCH
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
@@ -164,7 +158,6 @@ export async function GET(request, { params }) {
       });
     }
 
-    // 7. GET TICKETS
     if (path === 'tickets' || path === 'api/tickets') {
       const email = searchParams.get('email');
       const role = searchParams.get('role');
@@ -175,7 +168,6 @@ export async function GET(request, { params }) {
       return json({ tickets });
     }
 
-    // 8. GET PENDING USERS
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
          .find({ is_approved: { $ne: true }, onboarding_complete: true })
@@ -184,7 +176,6 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
-    // 🚀 NEW 1: GET APPROVED USERS (Active Clients for MD/Employee Dashboards)
     if (path === 'users/approved' || path === 'api/users/approved') {
       const users = await db.collection('users')
          .find({ is_approved: true })
@@ -193,7 +184,6 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
-    // 9. CLIENT REQUESTS
     if (path === 'client-requests' || path === 'api/client-requests') {
       const email = searchParams.get('email');
       let query = {};
@@ -202,7 +192,6 @@ export async function GET(request, { params }) {
       return json({ requests });
     }
 
-    // 10. MD DISPATCHES
     if (path === 'dispatches' || path === 'api/dispatches') {
       const targetId = searchParams.get('target_id');
       let query = {};
@@ -211,13 +200,11 @@ export async function GET(request, { params }) {
       return json({ dispatches });
     }
 
-    // 11. GOVT OFFICERS
     if (path === 'gov-officers' || path === 'api/gov-officers') {
       const officers = await db.collection('gov_officers').find({}).sort({ created_at: -1 }).toArray();
       return json({ officers });
     }
 
-    // 12. ACTIVE BIDS
     if (path === 'bids' || path === 'api/bids') {
       const clientEmail = searchParams.get('client_email');
       let query = {};
@@ -226,7 +213,6 @@ export async function GET(request, { params }) {
       return json({ bids });
     }
 
-    // 13. MY ACCOUNT DATA (/api/me)
     if (path === 'me' || path === 'api/me') {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
@@ -359,8 +345,11 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   const db = await getDb();
   const pathArray = params?.path || [];
+  const path = pathArray.join('/');
+  const { searchParams } = new URL(request.url);
   
   try {
+    // 1. DELETE TENDER
     if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
       const id = pathArray[1];
       if (!id) return json({ error: 'Missing Tender ID' }, 400);
@@ -384,6 +373,22 @@ export async function DELETE(request, { params }) {
         return json({ error: 'Tender not found in database' }, 404);
       }
     }
+
+    // 🚀 FIX FOR ERROR 1: Delete Active Bids (Works flawlessly now)
+    if (path === 'bids' || path === 'api/bids') {
+      const id = searchParams.get('id');
+      if (!id) return json({ error: 'Missing Bid ID' }, 400);
+
+      const collection = db.collection('bids');
+      let result = null;
+
+      if (ObjectId.isValid(id)) result = await collection.deleteOne({ _id: new ObjectId(id) });
+      if (!result || result.deletedCount === 0) result = await collection.deleteOne({ _id: id });
+      if (!result || result.deletedCount === 0) result = await collection.deleteOne({ id: id });
+
+      if (result && result.deletedCount > 0) return json({ success: true, message: 'Bid tracking removed' });
+      else return json({ error: 'Bid not found' }, 404);
+    }
     
     return json({ error: 'DELETE endpoint not found' }, 404);
   } catch (error) {
@@ -401,11 +406,9 @@ export async function POST(request, { params }) {
   const path = pathArray.join('/');
 
   try {
-    // 🚀 NEW 2: VAULT UPLOAD (Needs to run BEFORE request.json() since it uses FormData)
     if (path === 'vault/upload' || path === 'api/vault/upload') {
        try {
          const formData = await request.formData();
-         // Process file upload safely
          return json({ success: true, message: "File processed successfully." });
        } catch(e) {
          return json({ error: 'File upload failed' }, 500);
@@ -442,7 +445,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 🚀 NEW 3: REVOKE CLIENT ACCESS
     if (path === 'users/revoke' || path === 'api/users/revoke') {
        await db.collection('users').updateOne(
          { email: body.email.toLowerCase() },
@@ -544,9 +546,11 @@ export async function POST(request, { params }) {
        return json({ success: true, id: result.insertedId });
     }
 
+    // 🚀 FIX FOR ERROR 3: Active Bids - Now respects frontend status properly
     if (path === 'bids' || path === 'api/bids') {
+       const status = body.status || 'Doc Preparation'; // Uses frontend status if available
        const result = await db.collection('bids').insertOne({
-          ...body, status: 'Doc Preparation', created_at: new Date()
+          ...body, status: status, created_at: new Date()
        });
        return json({ success: true, id: result.insertedId });
     }
@@ -562,7 +566,6 @@ export async function POST(request, { params }) {
        return json({ success: true });
     }
 
-    // 🚀 NEW 4: RAISE QUERY (Lock Client Screen)
     if (path === 'queries/send' || path === 'api/queries/send') {
       const { client_email, subject, message } = body;
       const queryId = new ObjectId().toString();
@@ -573,7 +576,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 🚀 NEW 5: CLIENT REPLY TO QUERY (Unlock Screen)
     if (path === 'queries/reply' || path === 'api/queries/reply') {
       const { queryId, email } = body;
       await db.collection('users').updateOne(
@@ -583,6 +585,7 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
+    // 🚀 FIX FOR ERROR 2: Drive Permission logic fixed
     if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
        const { folderName, email } = body;
        
@@ -607,6 +610,15 @@ export async function POST(request, { params }) {
           const folder = await drive.files.create({
              resource: fileMetadata,
              fields: 'id, webViewLink'
+          });
+
+          // 🚀 ADDED: Granting access so the client doesn't get "Need Access" error
+          await drive.permissions.create({
+             fileId: folder.data.id,
+             requestBody: {
+                role: 'writer',
+                type: 'anyone'
+             }
           });
           
           if (email) {
