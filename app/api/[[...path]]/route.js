@@ -130,9 +130,11 @@ export async function GET(request, { params }) {
       return json({ subscription: user?.subscription || null });
     }
 
+    // 6. PDF FETCH (🚀 UPDATED TO BYPASS PAYWALL FOR EMPLOYEES/MD)
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
       const email = searchParams.get('email');
+      const role = searchParams.get('role');
       if (!email) return json({ error: 'Email required' }, 400);
 
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
@@ -145,6 +147,12 @@ export async function GET(request, { params }) {
       }
       
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
+
+      // Bypass for staff/employee
+      if (role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL) {
+          hasSubscription = true;
+      }
+
       if (!hasSubscription && !hasBoughtSingle) return json({ error: 'Payment required' }, 402);
 
       const tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) });
@@ -349,7 +357,6 @@ export async function DELETE(request, { params }) {
   const { searchParams } = new URL(request.url);
   
   try {
-    // 1. DELETE TENDER
     if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
       const id = pathArray[1];
       if (!id) return json({ error: 'Missing Tender ID' }, 400);
@@ -374,7 +381,6 @@ export async function DELETE(request, { params }) {
       }
     }
 
-    // 🚀 FIX FOR ERROR 1: Delete Active Bids (Works flawlessly now)
     if (path === 'bids' || path === 'api/bids') {
       const id = searchParams.get('id');
       if (!id) return json({ error: 'Missing Bid ID' }, 400);
@@ -546,9 +552,8 @@ export async function POST(request, { params }) {
        return json({ success: true, id: result.insertedId });
     }
 
-    // 🚀 FIX FOR ERROR 3: Active Bids - Now respects frontend status properly
     if (path === 'bids' || path === 'api/bids') {
-       const status = body.status || 'Doc Preparation'; // Uses frontend status if available
+       const status = body.status || 'Doc Preparation';
        const result = await db.collection('bids').insertOne({
           ...body, status: status, created_at: new Date()
        });
@@ -585,7 +590,6 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 🚀 FIX FOR ERROR 2: Drive Permission logic fixed
     if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
        const { folderName, email } = body;
        
@@ -612,7 +616,6 @@ export async function POST(request, { params }) {
              fields: 'id, webViewLink'
           });
 
-          // 🚀 ADDED: Granting access so the client doesn't get "Need Access" error
           await drive.permissions.create({
              fileId: folder.data.id,
              requestBody: {
@@ -729,7 +732,7 @@ export async function POST(request, { params }) {
                  const days = paymentRecord.plan === 'year' ? 365 : 30;
                  const expireDate = new Date();
                  expireDate.setDate(expireDate.getDate() + days);
-                 await db.collection('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true });
+                 await db.location('users').updateOne({ email }, { $set: { subscription: { status: 'active', plan: paymentRecord.plan, expires_at: expireDate } } }, { upsert: true });
                }
             }
          }
