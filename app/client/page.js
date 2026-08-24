@@ -61,7 +61,7 @@ export default function ClientDashboard() {
     clientName: '', orgType: 'Private Limited', companyName: '',
     phone: '', email: '', gstin: '', incorpDate: '',
     udyam: '', address: '', 
-    services: [{ type: 'Service', name: '' }], // డ్రాప్‌డౌన్ కోసం ఆబ్జెక్ట్ ఫార్మాట్
+    services: [{ type: 'Service', name: '' }], 
     description: ''
   });
 
@@ -118,7 +118,6 @@ export default function ClientDashboard() {
             gstin: d.profile.gstin || prev.gstin,
             udyam: d.profile.udyam || prev.udyam,
             address: d.profile.address || prev.address,
-            // పాత స్ట్రింగ్ డేటా ఉంటే ఆటోమాటిక్ గా పార్స్ అయ్యేలా అప్‌డేట్ చేశాను
             services: d.profile.service_category ? d.profile.service_category.split(',').map(item => ({
                 type: item.includes(':') ? item.split(':')[0].trim() : 'Service',
                 name: item.includes(':') ? item.split(':')[1].trim() : item.trim()
@@ -150,7 +149,6 @@ export default function ClientDashboard() {
   
   const updateService = (index, key, value) => {
     const newServices = [...profileForm.services];
-    // ఒకవేళ పాత డేటా స్ట్రింగ్ ఫార్మాట్‌లో ఉంటే దాన్ని ఆబ్జెక్ట్ కి కన్వర్ట్ చేయడం
     if (typeof newServices[index] === 'string') {
         newServices[index] = { type: 'Service', name: newServices[index] };
     }
@@ -180,7 +178,6 @@ export default function ClientDashboard() {
           phone: profileForm.phone,
           address: profileForm.address,
           description: profileForm.description,
-          // కొత్త ఆబ్జెక్ట్ ఫార్మాట్ ని తిరిగి స్ట్రింగ్ లా మార్చి బ్యాకెండ్ కి పంపడం
           service_category: profileForm.services.map(s => typeof s === 'string' ? `Service: ${s}` : `${s.type}: ${s.name}`).join(',')
         })
       });
@@ -665,7 +662,7 @@ export default function ClientDashboard() {
                          </div>
                       </div>
 
-                      {/* Dynamic Services Array - UPDATED UI */}
+                      {/* Dynamic Services Array - SINGLE UNIFIED BOX UI */}
                       <div className="border-t border-slate-100 pt-5">
                          <div className="flex justify-between items-center mb-4">
                             <Label className="text-xs font-bold text-[#0A2647] uppercase tracking-wider">Primary Services / Products Offered</Label>
@@ -673,36 +670,44 @@ export default function ClientDashboard() {
                          </div>
                          <div className="space-y-3">
                             {profileForm.services.map((service, index) => (
-                               <div key={index} className="flex gap-3">
-                                  <div className="bg-slate-100 border text-slate-500 flex items-center justify-center w-10 shrink-0 rounded-md text-xs font-bold">{index + 1}</div>
+                               <div key={index} className="flex gap-3 items-center">
+                                  <div className="bg-slate-100 border text-slate-500 flex items-center justify-center w-10 h-10 shrink-0 rounded-md text-xs font-bold">{index + 1}</div>
+                                  
                                   {isEditingProfile ? (
                                      <>
-                                        <Select 
-                                           value={typeof service === 'string' ? 'Service' : (service.type || 'Service')} 
-                                           onValueChange={(v) => updateService(index, 'type', v)}
-                                        >
-                                           <SelectTrigger className="w-[130px] shrink-0 h-10 bg-white">
-                                              <SelectValue placeholder="Select Type" />
-                                           </SelectTrigger>
-                                           <SelectContent>
-                                              <SelectItem value="Service">Service</SelectItem>
-                                              <SelectItem value="Product">Product</SelectItem>
-                                           </SelectContent>
-                                        </Select>
-                                        <Input 
-                                           value={typeof service === 'string' ? service : service.name} 
-                                           onChange={(e) => updateService(index, 'name', e.target.value)} 
-                                           placeholder={`Enter ${typeof service === 'string' ? 'Service' : service.type} name...`} 
-                                           className="flex-1 h-10"
-                                        />
+                                        {/* 🚀 కొత్తగా యాడ్ చేసిన సింగిల్ కంబైన్డ్ బాక్స్ 🚀 */}
+                                        <div className="flex-1 flex items-center border border-slate-300 rounded-md bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all h-10 overflow-hidden relative">
+                                           <Select 
+                                              value={typeof service === 'string' ? 'Service' : (service.type || 'Service')} 
+                                              onValueChange={(v) => updateService(index, 'type', v)}
+                                           >
+                                              <SelectTrigger className="w-[110px] sm:w-[130px] shrink-0 border-0 border-r border-slate-200 focus:ring-0 focus:ring-offset-0 bg-slate-50 shadow-none font-semibold text-[#0A2647] h-full rounded-none">
+                                                 <SelectValue placeholder="Type" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                 <SelectItem value="Service">Service</SelectItem>
+                                                 <SelectItem value="Product">Product</SelectItem>
+                                              </SelectContent>
+                                           </Select>
+                                           
+                                           <input 
+                                              type="text"
+                                              value={typeof service === 'string' ? service : service.name} 
+                                              onChange={(e) => updateService(index, 'name', e.target.value)} 
+                                              placeholder={`Enter ${typeof service === 'string' ? 'Service' : service.type} description...`} 
+                                              className="flex-1 h-full px-3 text-sm text-[#0A2647] outline-none bg-transparent placeholder:text-slate-400"
+                                              required
+                                           />
+                                        </div>
+
                                         {profileForm.services.length > 1 && (
                                            <Button type="button" variant="ghost" size="icon" onClick={() => removeService(index)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-10 w-10 shrink-0"><Trash2 className="w-4 h-4"/></Button>
                                         )}
                                      </>
                                   ) : (
-                                     <p className="flex-1 font-semibold text-[#0A2647] bg-slate-50 p-2.5 rounded border flex items-center">
-                                        <Badge className="mr-2 bg-blue-100 text-blue-800 border-0">{typeof service === 'string' ? 'Service' : (service.type || 'Service')}</Badge>
-                                        {typeof service === 'string' ? service : (service.name || 'Not specified')}
+                                     <p className="flex-1 h-10 font-semibold text-[#0A2647] bg-slate-50 px-3 rounded-md border flex items-center overflow-hidden">
+                                        <Badge className="mr-3 bg-blue-100 text-blue-800 border-0 shrink-0">{typeof service === 'string' ? 'Service' : (service.type || 'Service')}</Badge>
+                                        <span className="truncate">{typeof service === 'string' ? service : (service.name || 'Not specified')}</span>
                                      </p>
                                   )}
                                </div>
