@@ -60,7 +60,9 @@ export default function ClientDashboard() {
   const [profileForm, setProfileForm] = useState({
     clientName: '', orgType: 'Private Limited', companyName: '',
     phone: '', email: '', gstin: '', incorpDate: '',
-    udyam: '', address: '', services: [''], description: ''
+    udyam: '', address: '', 
+    services: [{ type: 'Service', name: '' }], // డ్రాప్‌డౌన్ కోసం ఆబ్జెక్ట్ ఫార్మాట్
+    description: ''
   });
 
   // --- Real-time Stats, Vault & Wins State ---
@@ -116,7 +118,11 @@ export default function ClientDashboard() {
             gstin: d.profile.gstin || prev.gstin,
             udyam: d.profile.udyam || prev.udyam,
             address: d.profile.address || prev.address,
-            services: d.profile.service_category ? d.profile.service_category.split(',') : prev.services,
+            // పాత స్ట్రింగ్ డేటా ఉంటే ఆటోమాటిక్ గా పార్స్ అయ్యేలా అప్‌డేట్ చేశాను
+            services: d.profile.service_category ? d.profile.service_category.split(',').map(item => ({
+                type: item.includes(':') ? item.split(':')[0].trim() : 'Service',
+                name: item.includes(':') ? item.split(':')[1].trim() : item.trim()
+            })) : prev.services,
             description: d.profile.description || prev.description
           }));
         }
@@ -140,12 +146,18 @@ export default function ClientDashboard() {
   const bypassLockScreen = () => setUserData(prev => ({ ...prev, is_approved: true }));
 
   // --- Dynamic Profile Functions ---
-  const addServiceRow = () => setProfileForm(prev => ({...prev, services: [...prev.services, '']}));
-  const updateService = (index, value) => {
+  const addServiceRow = () => setProfileForm(prev => ({...prev, services: [...prev.services, { type: 'Service', name: '' }]}));
+  
+  const updateService = (index, key, value) => {
     const newServices = [...profileForm.services];
-    newServices[index] = value;
+    // ఒకవేళ పాత డేటా స్ట్రింగ్ ఫార్మాట్‌లో ఉంటే దాన్ని ఆబ్జెక్ట్ కి కన్వర్ట్ చేయడం
+    if (typeof newServices[index] === 'string') {
+        newServices[index] = { type: 'Service', name: newServices[index] };
+    }
+    newServices[index][key] = value;
     setProfileForm(prev => ({...prev, services: newServices}));
   };
+  
   const removeService = (index) => {
     const newServices = profileForm.services.filter((_, i) => i !== index);
     setProfileForm(prev => ({...prev, services: newServices}));
@@ -168,7 +180,8 @@ export default function ClientDashboard() {
           phone: profileForm.phone,
           address: profileForm.address,
           description: profileForm.description,
-          service_category: profileForm.services.join(',')
+          // కొత్త ఆబ్జెక్ట్ ఫార్మాట్ ని తిరిగి స్ట్రింగ్ లా మార్చి బ్యాకెండ్ కి పంపడం
+          service_category: profileForm.services.map(s => typeof s === 'string' ? `Service: ${s}` : `${s.type}: ${s.name}`).join(',')
         })
       });
       if(r.ok) {
@@ -652,7 +665,7 @@ export default function ClientDashboard() {
                          </div>
                       </div>
 
-                      {/* Dynamic Services Array */}
+                      {/* Dynamic Services Array - UPDATED UI */}
                       <div className="border-t border-slate-100 pt-5">
                          <div className="flex justify-between items-center mb-4">
                             <Label className="text-xs font-bold text-[#0A2647] uppercase tracking-wider">Primary Services / Products Offered</Label>
@@ -661,15 +674,37 @@ export default function ClientDashboard() {
                          <div className="space-y-3">
                             {profileForm.services.map((service, index) => (
                                <div key={index} className="flex gap-3">
-                                  <div className="bg-slate-100 border text-slate-500 flex items-center justify-center w-10 rounded-md text-xs font-bold">{index + 1}</div>
+                                  <div className="bg-slate-100 border text-slate-500 flex items-center justify-center w-10 shrink-0 rounded-md text-xs font-bold">{index + 1}</div>
                                   {isEditingProfile ? (
                                      <>
-                                        <Input value={service} onChange={(e) => updateService(index, e.target.value)} placeholder={`Service or Product ${index + 1}`} className="flex-1 h-10"/>
+                                        <Select 
+                                           value={typeof service === 'string' ? 'Service' : (service.type || 'Service')} 
+                                           onValueChange={(v) => updateService(index, 'type', v)}
+                                        >
+                                           <SelectTrigger className="w-[130px] shrink-0 h-10 bg-white">
+                                              <SelectValue placeholder="Select Type" />
+                                           </SelectTrigger>
+                                           <SelectContent>
+                                              <SelectItem value="Service">Service</SelectItem>
+                                              <SelectItem value="Product">Product</SelectItem>
+                                           </SelectContent>
+                                        </Select>
+                                        <Input 
+                                           value={typeof service === 'string' ? service : service.name} 
+                                           onChange={(e) => updateService(index, 'name', e.target.value)} 
+                                           placeholder={`Enter ${typeof service === 'string' ? 'Service' : service.type} name...`} 
+                                           className="flex-1 h-10"
+                                        />
                                         {profileForm.services.length > 1 && (
-                                           <Button type="button" variant="ghost" size="icon" onClick={() => removeService(index)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-10 w-10"><Trash2 className="w-4 h-4"/></Button>
+                                           <Button type="button" variant="ghost" size="icon" onClick={() => removeService(index)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-10 w-10 shrink-0"><Trash2 className="w-4 h-4"/></Button>
                                         )}
                                      </>
-                                  ) : <p className="flex-1 font-semibold text-[#0A2647] bg-slate-50 p-2.5 rounded border">{service || 'Not specified'}</p>}
+                                  ) : (
+                                     <p className="flex-1 font-semibold text-[#0A2647] bg-slate-50 p-2.5 rounded border flex items-center">
+                                        <Badge className="mr-2 bg-blue-100 text-blue-800 border-0">{typeof service === 'string' ? 'Service' : (service.type || 'Service')}</Badge>
+                                        {typeof service === 'string' ? service : (service.name || 'Not specified')}
+                                     </p>
+                                  )}
                                </div>
                             ))}
                          </div>
