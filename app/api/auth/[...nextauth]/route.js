@@ -43,7 +43,7 @@ const handler = NextAuth({
       },
       async authorize(credentials) {
         const db = await getDb();
-        const identifier = credentials.email.trim();
+        const identifier = (credentials?.email || '').trim();
         
         const employee = await db.collection('employees').findOne({ 
            $or: [
