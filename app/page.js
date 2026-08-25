@@ -77,8 +77,10 @@ export default function App() {
   
   const [email, setEmail] = useState('');
   const [paywallModal, setPaywallModal] = useState(false);
+  
+  // 🚀 FIXED: GUEST PAY MODAL NOW USES NAME AND PHONE ONLY
   const [guestPayModal, setGuestPayModal] = useState(false);
-  const [guestPayForm, setGuestPayForm] = useState({ email: '', phone: '' });
+  const [guestPayForm, setGuestPayForm] = useState({ name: '', phone: '' });
   
   const [pendingTender, setPendingTender] = useState(null);
   const [pdfData, setPdfData] = useState(null);
@@ -89,7 +91,6 @@ export default function App() {
     name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [], vision_text: null 
   });
   const [activeBanner, setActiveBanner] = useState(0);
-  const [logoFlip, setLogoFlip] = useState(false); // 🚀 3D Rotating Logo State
 
   // Visitor API State
   const [visitors, setVisitors] = useState({ total: "Loading...", today: "..." });
@@ -102,12 +103,7 @@ export default function App() {
 
   const [policyModal, setPolicyModal] = useState(null);
 
-  // 🚀 3D Earth-like Vertical Logo Rotation & Banner Slides
-  useEffect(() => {
-    const flipTimer = setInterval(() => setLogoFlip(prev => !prev), 4000);
-    return () => clearInterval(flipTimer);
-  }, []);
-
+  // Auto-Slide Logic for Banners
   useEffect(() => {
     if (brandSettings.banners && brandSettings.banners.length > 0) {
       const bannerTimer = setInterval(() => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length), 5000);
@@ -236,8 +232,9 @@ export default function App() {
   useEffect(() => { fetchTenders(); }, [appliedMonth, appliedYear, district, category, searchQ]);
   useEffect(() => { fetchCalendar(); }, [uiMonth, uiYear]);
 
-  // Client Side Filtering for Applied Day
-  const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders]);
+  // 🚀 FIXED: AUTO-DELETE EXPIRED TENDERS FROM UI (Filters out past dates automatically)
+  const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders, today]);
+  
   const filteredTenders = useMemo(() => {
     if (!appliedDay) return activeTenders; 
     return activeTenders.filter((t) => new Date(t.last_date).getDate() === appliedDay);
@@ -376,12 +373,16 @@ export default function App() {
     }
   };
 
+  // 🚀 FIXED: Handle ₹10 Purchase without real email
   const handleGuestPaySubmit = (e) => {
     e.preventDefault();
-    if(!guestPayForm.email || guestPayForm.phone.length < 10) return toast.error("Enter valid email & phone");
-    // 🚀 SAVING GUEST EMAIL SECURELY BEFORE CHECKOUT
-    localStorage.setItem('guest_email', guestPayForm.email);
-    executePayment('single', guestPayForm.email, guestPayForm.phone);
+    if(!guestPayForm.name || guestPayForm.phone.length < 10) return toast.error("Enter valid name & phone number");
+    
+    // Create a dummy email based on phone number to store purchases in database securely
+    const dummyEmail = `${guestPayForm.phone}@guest.tgtenders.in`;
+    localStorage.setItem('guest_email', dummyEmail);
+    
+    executePayment('single', dummyEmail, guestPayForm.phone);
   };
 
   // Full Database Automation Form Submission 
@@ -412,7 +413,7 @@ export default function App() {
 
   if (status === 'loading' || loadingUser) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
-  // 🚀 FIXED: VERIFICATION LOCKOUT TRAP - ONLY TRAPS IF INTENT === 'CLIENT'
+  // VERIFICATION LOCKOUT TRAP
   if (status === 'authenticated' && intent === 'client') {
      if (userData && !userData.onboarding_complete) {
         return (
@@ -486,34 +487,43 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 3: MAIN PORTAL
+  // PUBLIC PORTAL
   // ==============================================================================
   return (
     <div className="min-h-screen bg-slate-50 pb-20 relative font-sans w-full overflow-x-hidden">
       
-      {/* 🚀 HEADER WITH 3D ROTATING LOGO */}
+      {/* 🚀 FIXED: CLASSIC HEADER LAYOUT */}
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm w-full">
         <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+          
+          {/* Left Side: Telangana Tenders */}
           <div className="flex items-center gap-3">
-             <div className="relative w-14 h-14 md:w-16 md:h-16 shrink-0 [perspective:1000px]">
-                <div className={`w-full h-full absolute transition-transform duration-1000 [transform-style:preserve-3d] ${logoFlip ? '[transform:rotateX(180deg)]' : ''}`}>
-                   <div className="absolute inset-0 [backface-visibility:hidden] bg-white rounded-md p-1 border border-slate-100 shadow-sm">
-                      {brandSettings.logo ? <img src={brandSettings.logo} className="w-full h-full object-contain"/> : <div className="w-full h-full bg-[#16a34a] text-white flex items-center justify-center font-bold">TT</div>}
-                   </div>
-                   <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateX(180deg)] bg-white rounded-md p-1 border border-slate-100 shadow-sm">
-                      {brandSettings.gem_logo ? <img src={brandSettings.gem_logo} className="w-full h-full object-contain"/> : <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" className="w-full h-full object-contain" onError={(e) => e.target.style.display='none'}/>}
-                   </div>
-                </div>
+             {brandSettings.logo ? (
+                <img src={brandSettings.logo} alt="Logo" className="w-14 h-14 md:w-16 md:h-16 rounded object-contain" />
+             ) : (
+                <div className="w-14 h-14 bg-[#16a34a] rounded flex items-center justify-center text-white font-bold text-2xl">TT</div>
+             )}
+             <div className="hidden sm:block">
+                <h1 className="text-2xl md:text-3xl font-extrabold text-[#0A2647] leading-tight">
+                  Telangana Tenders
+                </h1>
+                <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">Consultancy Services & Corporate Approvals</p>
              </div>
-            <div className="hidden sm:block">
-               <h1 className="text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-emerald-500 to-indigo-700 leading-tight">
-                 Telangana Tenders
-               </h1>
-               <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">Consultancy Services & Corporate Approvals</p>
-            </div>
           </div>
 
+          {/* Right Side: GeM Logo & Login */}
           <div className="flex items-center gap-4">
+            
+            {/* GeM Logo Block */}
+            <div className="hidden lg:flex flex-col items-center border-r pr-4 mr-1 border-slate-200">
+               {brandSettings.gem_logo ? (
+                  <img src={brandSettings.gem_logo} alt="GeM Logo" className="w-14 h-14 md:w-16 md:h-16 object-contain" />
+               ) : (
+                  <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="GeM" className="w-14 h-14 md:w-16 md:h-16 object-contain" onError={(e) => e.target.style.display='none'}/>
+               )}
+               <span className="text-[10px] md:text-xs font-black text-[#0A2647] uppercase mt-1 tracking-wide">Bidding Service</span>
+            </div>
+
             {subscription && subscription.status === 'active' ? (
               <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white text-[10px] sm:text-xs">
                 <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -802,7 +812,7 @@ export default function App() {
                       {leader.phone && (
                          <a href={`tel:${leader.phone}`} className="flex items-center gap-3 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm w-full justify-center">
                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
-                             <PhoneCall className="w-4 h-4" />
+                             <Phone className="w-4 h-4" />
                            </div>
                            {leader.phone}
                          </a>
@@ -907,14 +917,15 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
+      {/* 🚀 FIXED: GUEST PAY MODAL (Now only asks for Name and Phone) */}
       <Dialog open={guestPayModal} onOpenChange={setGuestPayModal}>
         <DialogContent className="sm:max-w-md border-0 shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl font-black text-[#0A2647]"><Lock className="w-6 h-6 text-emerald-500" /> Secure Quick Checkout</DialogTitle>
-            <DialogDescription className="font-semibold text-slate-500">Provide contact details to receive your payment receipt.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-xl font-black text-[#0A2647]"><Lock className="w-6 h-6 text-emerald-500" /> Unlock This PDF for ₹10</DialogTitle>
+            <DialogDescription className="font-semibold text-slate-500">Provide Name & Phone so you can re-access this document anytime.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleGuestPaySubmit} className="space-y-4 pt-2">
-            <div><Label className="font-bold text-slate-700">Email Address *</Label><Input type="email" required placeholder="For receipt & PDF backup" value={guestPayForm.email} onChange={e => setGuestPayForm({...guestPayForm, email: e.target.value})} className="mt-1 border-2 h-11"/></div>
+            <div><Label className="font-bold text-slate-700">Full Name *</Label><Input type="text" required placeholder="Enter your name" value={guestPayForm.name} onChange={e => setGuestPayForm({...guestPayForm, name: e.target.value})} className="mt-1 border-2 h-11"/></div>
             <div><Label className="font-bold text-slate-700">Phone Number *</Label><Input type="tel" required placeholder="10-digit number" value={guestPayForm.phone} onChange={e => setGuestPayForm({...guestPayForm, phone: e.target.value})} className="mt-1 border-2 h-11"/></div>
             <Button type="submit" disabled={buying} className="w-full bg-emerald-600 hover:bg-emerald-500 h-12 mt-2 font-bold text-lg shadow-lg text-white">
               {buying ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Proceed to Pay ₹10'}
