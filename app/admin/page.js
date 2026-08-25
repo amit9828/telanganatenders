@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { signIn } from 'next-auth/react'; // 🚀 IMPORTED FOR SECURE BYPASS
+import { signIn } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
@@ -31,7 +31,6 @@ const DISTRICTS = [
   'Srikakulam', 'Vizianagaram', 'Prakasam'
 ];
 
-// Reusing this structure from your client to show default docs
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
   { id: 'pan', name: 'PAN Card', status: 'missing', file: null },
@@ -57,6 +56,7 @@ export default function AdminPage() {
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
   const [tickets, setTickets] = useState([]);
+  const [guestQueries, setGuestQueries] = useState([]); // 🚀 Added state for Guest Queries
   const [ticketReply, setTicketReply] = useState({}); 
   const [l1Data, setL1Data] = useState({}); 
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -98,7 +98,6 @@ export default function AdminPage() {
   const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState('');
 
-  // 🚀 FIX: Rejection reason state for vault docs
   const [rejectReason, setRejectReason] = useState({});
 
   useEffect(() => {
@@ -109,13 +108,12 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (token) refresh();
-    // eslint-disable-next-line
   }, [token]);
 
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes] = await Promise.all([
         fetch(`/api/tenders?t=${Date.now()}`, { headers }),
         fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
         fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
@@ -124,7 +122,8 @@ export default function AdminPage() {
         fetch(`/api/client-requests?t=${Date.now()}`, { headers }),
         fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
         fetch(`/api/employees?t=${Date.now()}`, { headers }), 
-        fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }) 
+        fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }),
+        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) // 🚀 FETCH GUEST QUERIES
       ]);
       
       if (tRes.status === 401) return logout();
@@ -138,40 +137,47 @@ export default function AdminPage() {
       const dispJson = dispRes.ok ? await dispRes.json() : { dispatches: [] };
       const empJson = empRes.ok ? await empRes.json() : { team: [] };
       const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
+      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; // 🚀 Extract Guest Queries
 
-      // Connecting Pure Live Data
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
+      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); // 🚀 Save Guest Queries
       setPendingUsers(uJson.users || []);
       setApprovedClients(aJson.users || []); 
       setBidRequests(reqJson.requests || []);
       setDispatches(dispJson.dispatches || []);
       setTeamMembers(empJson.team || []);
       setLedgerTxns(ledgerJson.transactions || []);
-      setLedgerBalance(ledgerJson.balance || 0);
+      
+      // 🚀 FIX: Live Net Balance (Manual + Cashfree Online)
+      const onlineRevenue = sJson.revenue || 0;
+      setLedgerBalance((ledgerJson.balance || 0) + onlineRevenue);
 
-      // Live Reports Mapping
       setClientReports((aJson.users || []).map(c => ({
          id: c.email, name: c.company_name || c.name || 'Unknown',
          total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
       })));
       
+      // 🚀 FIX: Live Employee Efficiency Calculation
       setEmployeeReports((empJson.team || []).map(e => {
-         const effScore = 85 + ((e.name?.length || 5) % 15);
+         const completedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
+         const assignedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id).length || 1;
+         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); // Base 20%
          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
       }));
     } catch (err) { console.error('Refresh failed:', err); }
   };
 
+  // 🚀 FIX: Prevent Verification Logout Loop
   const logout = () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('tt_admin');
-      window.location.replace('/');
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.href = '/';
     }
   };
 
-  // --- UPLOADS ---
   const onPdfChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -191,25 +197,12 @@ export default function AdminPage() {
     reader.readAsDataURL(file);
   };
 
+  // 🚀 FIX: Direct URL Open for PDF to bypass 4MB Network Limitation
   const handleViewPDF = async (tenderId) => {
-    const toastId = toast.loading('Opening PDF Document...');
-    try {
-      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`);
-      const data = await res.json();
-      if (!res.ok) return toast.error(data.error || 'Failed to load PDF', { id: toastId });
-
-      if (data.pdf_base64) {
-        const byteCharacters = atob(data.pdf_base64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-        const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-        window.open(URL.createObjectURL(blob), '_blank');
-        toast.success('PDF Opened Successfully', { id: toastId });
-      } else { toast.error('PDF data not found', { id: toastId }); }
-    } catch (err) { toast.error('Network Error while opening PDF', { id: toastId }); }
+    window.open(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`, '_blank');
+    toast.success('Opening PDF Document...');
   };
 
-  // --- PUBLISHER ---
   const publish = async (e) => {
     e.preventDefault();
     if (!form.title || !form.department || !form.last_date || !form.district) return toast.error('Fill all required fields');
@@ -267,7 +260,6 @@ export default function AdminPage() {
      t.department?.toLowerCase().includes(tenderSearch.toLowerCase())
   );
 
-  // --- CLIENT CRM ---
   const handleSyncDrive = async (email, companyName) => {
      toast.loading("Creating Google Drive Workspace...");
      try {
@@ -304,15 +296,13 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
-  // 🚀 SECURE NEXTAUTH IMPERSONATION
   const impersonateUser = async (type, email_or_id) => {
     toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
-    
     try {
         const res = await signIn('impersonate', { 
            email: email_or_id, 
            adminToken: 'admin_success', 
-           redirect: false // Do not reload the current MD page
+           redirect: false 
         });
 
         if (res?.error) {
@@ -328,7 +318,6 @@ export default function AdminPage() {
     }
   };
 
-  // 🚀 FIX: NEW VAULT VERIFICATION LOGIC FOR MD
   const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
       let reason = '';
       if (status === 'rejected') {
@@ -354,7 +343,15 @@ export default function AdminPage() {
       }
   };
 
-  // --- HELPDESK TICKETS ---
+  // 🚀 FIX: Guest Query Deletion
+  const resolveGuestQuery = async (id) => {
+      try {
+          await fetch(`/api/guest-queries?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+          toast.success("Guest query marked as resolved and removed!");
+          refresh();
+      } catch (e) { toast.error("Error updating query."); }
+  };
+
   const submitTicketReply = async (ticket_id) => {
     const replyText = ticketReply[ticket_id];
     if(!replyText) return toast.error('Please write a reply first.');
@@ -375,7 +372,6 @@ export default function AdminPage() {
     } catch(e) { toast.error("Network error"); }
   };
 
-  // --- OPERATIONS & SLA TRACKER ---
   const handleProcessBidRequest = async (reqId, status) => {
     const reply = bidReply[reqId];
     const assigneeId = bidAssignee[reqId];
@@ -447,7 +443,6 @@ export default function AdminPage() {
     } else { toast.info("No file attached. The link/ID reference is shown above."); }
   };
 
-  // --- FINANCE ---
   const handleLedgerSubmit = async (e) => {
     e.preventDefault();
     if(!ledgerForm.amount || !ledgerForm.reason) return toast.error("Amount and Reason are required");
@@ -485,7 +480,6 @@ export default function AdminPage() {
     e.preventDefault();
     if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) return toast.error("Fill all details");
     
-    // Push the payment fee request to the client via our API
     try {
         const res = await fetch('/api/users/request-payment', {
             method: 'POST',
@@ -521,7 +515,6 @@ export default function AdminPage() {
       toast.info("Payment Link Cancelled & Removed");
   };
 
-  // --- TEAM DIRECTORY ---
   const handleCreateTeamMember = async (e) => {
     e.preventDefault();
     if(!officerForm.name || !officerForm.email || !officerForm.password) return toast.error("Fill all fields");
@@ -559,9 +552,7 @@ export default function AdminPage() {
              </div>
           </div>
           <div className="flex items-center gap-3">
-            <a href="/?guest_login=true" target="_blank" rel="noopener noreferrer">
-               <Button variant="outline" size="sm" className="text-xs sm:text-sm bg-transparent border-slate-600 text-slate-200 hover:text-white hover:bg-slate-800">View Public Site</Button>
-            </a>
+            <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-slate-600 text-slate-200 hover:text-white hover:bg-slate-800">View Public Site</Button>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-400 hover:text-red-300 hover:bg-red-900/50"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
           </div>
         </div>
@@ -659,7 +650,6 @@ export default function AdminPage() {
           {/* ==================== 2. CLIENT CRM & VAULT VERIFICATION ==================== */}
           <TabsContent value="clients" className="mt-4">
             
-            {/* 🚀 NEW: MD Vault Verification Desk */}
             <Card className="tender-shadow border-t-4 border-t-orange-500 mb-6">
               <CardHeader className="bg-orange-50/50 border-b pb-4">
                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Database className="w-5 h-5 text-orange-600" /> Pending Vault Approvals</CardTitle>
@@ -695,7 +685,6 @@ export default function AdminPage() {
                                          <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
                                       </div>
                                       
-                                      {/* PDF Previewer Button */}
                                       <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => {
                                           if (doc.file_base64) {
                                               const byteCharacters = atob(doc.file_base64);
@@ -763,7 +752,13 @@ export default function AdminPage() {
                           </div>
                         </div>
                         <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
-                          <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow h-11 text-base"><CheckCircle2 className="w-5 h-5 mr-2" /> Approve & Unlock</Button>
+                          
+                          {/* 🚀 FIXED: APPROVE & REJECT BUTTONS ADDED HERE */}
+                          <div className="flex gap-2 w-full">
+                             <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] flex-1 shadow h-10 text-xs"><CheckCircle2 className="w-4 h-4 mr-1" /> Approve</Button>
+                             <Button onClick={() => deleteClientPermanently(user.email)} variant="outline" className="flex-1 border-red-300 text-red-600 hover:bg-red-50 shadow h-10 text-xs"><XCircle className="w-4 h-4 mr-1" /> Reject</Button>
+                          </div>
+
                           <div className="flex items-center gap-2 my-1"><div className="flex-1 border-t border-slate-300"></div><span className="text-[10px] uppercase font-bold text-slate-400">MD Access</span><div className="flex-1 border-t border-slate-300"></div></div>
                           <Button onClick={() => impersonateUser('client', user.email)} variant="outline" className="w-full text-[#0A2647] border-slate-300 hover:bg-slate-100"><LogIn className="w-4 h-4 mr-2" /> Login as Client (Bypass)</Button>
                         </div>
@@ -799,7 +794,7 @@ export default function AdminPage() {
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{client.stats?.won || 0}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(client.stats?.revenue || 0).toLocaleString()}</span></div>
+                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(client.stats?.total_paid || 0).toLocaleString()}</span></div>
                                 </div>
                              </div>
                              
@@ -1360,6 +1355,7 @@ export default function AdminPage() {
                       </div>
                       
                       <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
+                         {/* 🚀 FIXED: DIRECT WINDOW OPEN FOR PDF TO BYPASS NETWORK ERROR */}
                          <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
                          </Button>
@@ -1377,8 +1373,41 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ==================== 7. HELPDESK ==================== */}
+          {/* ==================== 7. HELPDESK (WITH GUEST QUERIES) ==================== */}
           <TabsContent value="tickets" className="mt-4">
+            
+            {/* 🚀 NEW: Guest Leads & Public Queries Card */}
+            <Card className="tender-shadow border-t-4 border-t-purple-500 w-full mb-6">
+              <CardHeader className="bg-purple-50/30 border-b pb-4">
+                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Users className="w-5 h-5 text-purple-600" /> Public Visitor Queries (Leads)</CardTitle>
+                 <CardDescription>Questions and Contact Requests submitted from the Guest Home Page.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6 max-h-[500px] overflow-y-auto">
+                 {guestQueries.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400"><MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm font-semibold">No public queries pending.</p></div>
+                 ) : (
+                    <div className="grid md:grid-cols-2 gap-4">
+                       {guestQueries.map(gq => (
+                          <div key={gq._id} className="border border-purple-200 bg-white rounded-lg p-4 shadow-sm relative">
+                             <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-bold text-[#0A2647] text-base">{gq.name}</h4>
+                                <Badge className="bg-purple-100 text-purple-800 border-0">New Lead</Badge>
+                             </div>
+                             <p className="text-sm text-slate-600 mb-2 font-mono"><PhoneCall className="w-3 h-3 inline mr-1"/> {gq.phone}</p>
+                             <div className="bg-slate-50 p-3 rounded border border-slate-100 mb-4">
+                                <p className="text-xs text-slate-700 italic">"{gq.query}"</p>
+                             </div>
+                             <div className="flex gap-2">
+                                <a href={`tel:${gq.phone}`} className="flex-1"><Button size="sm" className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-xs"><PhoneCall className="w-3 h-3 mr-1"/> Call Lead</Button></a>
+                                <Button size="sm" onClick={() => resolveGuestQuery(gq._id)} variant="outline" className="border-slate-300 text-slate-600 hover:bg-slate-100 h-8 text-xs"><CheckCircle2 className="w-3 h-3 mr-1"/> Mark Resolved</Button>
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+              </CardContent>
+            </Card>
+
             <Card className="tender-shadow border-t-4 border-t-amber-500 w-full">
               <CardHeader className="bg-amber-50/30 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MessageSquare className="w-5 h-5 text-amber-600" /> Client Helpdesk & SLA Tracker</CardTitle>
@@ -1499,7 +1528,6 @@ function BrandSettings({ token }) {
     }).catch((err) => console.error(err));
   }, []);
 
-  // --- Image Handlers ---
   const handleImageUpload = (e, setter) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -1524,7 +1552,6 @@ function BrandSettings({ token }) {
     setBanners(prev => prev.filter((_, i) => i !== index));
   };
 
-  // --- Leaders Handlers ---
   const addLeader = () => {
     if (!newLeader.name || !newLeader.role || !newLeader.image) return toast.error('Name, Role, and Photo are required!');
     setLeaders(prev => [...prev, newLeader]);
@@ -1537,7 +1564,6 @@ function BrandSettings({ token }) {
     setLeaders(prev => prev.filter((_, i) => i !== index));
   };
 
-  // --- Save to Backend ---
   const save = async () => {
     setSaving(true);
     try {
@@ -1562,7 +1588,6 @@ function BrandSettings({ token }) {
 
   return (
     <div className="space-y-6">
-      {/* 1. BRAND IDENTITY & LOGOS */}
       <Card className="tender-shadow border-0 ring-1 ring-slate-200">
         <CardHeader className="pb-4 bg-slate-50/50 border-b flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><ImageIcon className="w-5 h-5 text-slate-500" /> Brand Identity & Logos</CardTitle>
@@ -1675,7 +1700,7 @@ function BrandSettings({ token }) {
         </CardContent>
       </Card>
       
-      {/* Save Reminder Sticky Bar (Optional to keep it very clear) */}
+      {/* Save Reminder Sticky Bar */}
       <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-center flex items-center justify-center gap-3">
          <AlertTriangle className="w-5 h-5 text-amber-500"/>
          <span className="text-xs font-bold text-amber-800">Don't forget to click <strong className="text-[#0A2647]">Save All Settings</strong> at the top after making changes!</span>
