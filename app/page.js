@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
-  Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, PhoneCall, Award, TrendingUp, Users, MessageCircle, Loader2, Star,
+  Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, PhoneCall, Award, TrendingUp, Users, Loader2, Star,
   FileBadge
 } from 'lucide-react';
 
@@ -61,7 +61,7 @@ export default function App() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState(null);
-  const [appliedDay, setAppliedDay] = useState(null);
+  const [appliedDay, setAppliedDay] = useState(null); // Calendar apply state
   
   const [category, setCategory] = useState('all');       
   const [stateFilter, setStateFilter] = useState('all'); 
@@ -82,7 +82,6 @@ export default function App() {
   const [pdfData, setPdfData] = useState(null);
   const [buying, setBuying] = useState(false);
   
-  // Dynamic Settings
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [] });
   const [activeBanner, setActiveBanner] = useState(0);
 
@@ -92,13 +91,12 @@ export default function App() {
   const [queryForm, setQueryForm] = useState({ name: '', phone: '', query: '' });
   const [submittingLead, setSubmittingLead] = useState(false);
 
-  // Policy Modal State (terms, privacy, refund)
   const [policyModal, setPolicyModal] = useState(null);
 
-  // Auto-Slide Banners
+  // Auto-Slide Logic
   useEffect(() => {
     if (brandSettings.banners && brandSettings.banners.length > 0) {
-      const bannerTimer = setInterval(() => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length), 4000);
+      const bannerTimer = setInterval(() => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length), 5000);
       return () => clearInterval(bannerTimer);
     }
   }, [brandSettings.banners]);
@@ -122,12 +120,10 @@ export default function App() {
     }
   }, []);
 
-  // Fetch Settings API
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, []);
 
-  // Session User
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
@@ -139,7 +135,7 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Client Auto-Redirect
+  // 🚀 STRICT RULE: Do not redirect to client board if they are in 'subscribe' intent!
   useEffect(() => {
     if (status === 'authenticated' && userData !== null && !loadingUser) {
       if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
@@ -156,7 +152,6 @@ export default function App() {
     await signOut({ callbackUrl: '/' }); 
   };
 
-  // Fetch Tenders API
   const fetchTenders = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return; 
     setLoading(true);
@@ -179,7 +174,7 @@ export default function App() {
 
   useEffect(() => { fetchTenders(); fetchCalendar(); }, [month, year, district, category, searchQ]);
 
-  // Calendar Filter Logic
+  // Calendar Applied Logic
   const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders]);
   const filteredTenders = useMemo(() => {
     if (!appliedDay) return activeTenders; 
@@ -199,9 +194,10 @@ export default function App() {
     signIn('google', { callbackUrl: `${window.location.origin}/?intent=client` }, { prompt: 'select_account' });
   };
 
-  const handleGuestLogin = () => {
-    localStorage.setItem('tt_intent', 'guest'); setIntent('guest');
-    signIn('google', { callbackUrl: `${window.location.origin}/?intent=guest` }, { prompt: 'select_account' });
+  // Login specifically for Subscriptions (Prevents redirect to client board)
+  const handleSubscribeLogin = () => {
+    localStorage.setItem('tt_intent', 'subscribe'); setIntent('subscribe');
+    signIn('google', { callbackUrl: `${window.location.origin}/?intent=subscribe` }, { prompt: 'select_account' });
   };
 
   const handleEmployeeLogin = async (e) => {
@@ -209,45 +205,50 @@ export default function App() {
     try {
       const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: empEmail, password: empPwd }) });
       const d = await r.json();
-      if (r.ok) { localStorage.setItem('tt_admin', d.token); router.push('/admin'); return; } 
-      if (empPwd === 'emp123') { localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); localStorage.setItem('tt_role', 'employee'); router.push('/employee'); return; }
+      if (r.ok) { 
+        localStorage.setItem('tt_admin', d.token); 
+        window.open('/admin', '_blank'); // Opens in New Tab
+        setEmpModalOpen(false);
+        return; 
+      } 
+      if (empPwd === 'emp123') { 
+        localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); 
+        localStorage.setItem('tt_role', 'employee'); 
+        window.open('/employee', '_blank'); // Opens in New Tab
+        setEmpModalOpen(false);
+        return; 
+      }
       toast.error('Invalid Credentials');
     } catch (err) { toast.error('Login failed'); } finally { setEmpLoading(false); }
   };
 
-  // 🚀 FIXED: Client Pre-Registration Redirects to Onboarding Flow
+  // 🚀 Pre-Registration Redirects to Client Setup
   const handleClientReg = async (e) => {
     e.preventDefault();
     if (!clientRegForm.phone || clientRegForm.phone.length < 10) return toast.error("Enter a valid phone number");
     setSubmittingClientReg(true);
     try {
-      // Sends data to your Backend MD Dashboard
       await fetch('/api/client-prereg', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clientRegForm) });
-      
       toast.success("Details saved! Redirecting to secure profile setup...");
       setClientRegForm({ name: '', phone: '', enterprise: '' });
-      
-      // Auto-Redirecting user to actual Client Login -> which leads to Onboarding Form
       setTimeout(() => {
         handleClientLogin();
       }, 1500);
-      
     } catch (err) { toast.error("Failed to register. Try again."); } finally { setSubmittingClientReg(false); }
   };
 
-  // 🚀 Guest Queries API sent to Backend
   const handleGuestQuery = async (e) => {
     e.preventDefault();
     if (!queryForm.phone || queryForm.phone.length < 10) return toast.error("Enter a valid phone number");
     setSubmittingLead(true);
     try {
-      // Sends Query to your Backend MD Dashboard
       await fetch('/api/guest-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(queryForm) });
       toast.success("Query submitted successfully! Our team will contact you shortly.");
       setQueryForm({ name: '', phone: '', query: '' });
     } catch (e) { toast.error("Failed to submit query. Try again."); } finally { setSubmittingLead(false); }
   };
 
+  // NO LOGIN REQUIRED FOR PAYWALL
   const handleViewPDF = (t) => {
     setPendingTender(t);
     setPaywallModal(true);
@@ -260,7 +261,6 @@ export default function App() {
     const d = await r.json(); setPdfData(d);
   };
 
-  // CASHFREE LOGIC
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
     setBuying(true); setGuestPayModal(false);
     try {
@@ -282,7 +282,7 @@ export default function App() {
        if (email) executePayment('single', email); 
        else { setPaywallModal(false); setGuestPayModal(true); } 
     } else {
-       if (!email) { toast.info("Please login to Subscribe"); handleGuestLogin(); return; }
+       if (!email) { toast.info("Please sign in to Subscribe securely"); handleSubscribeLogin(); return; }
        executePayment(planId, email);
     }
   };
@@ -293,7 +293,6 @@ export default function App() {
     executePayment('single', guestPayForm.email, guestPayForm.phone);
   };
 
-  // Auth Save Form
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
@@ -316,7 +315,7 @@ export default function App() {
   // ==============================================================================
   if (status === 'authenticated' && intent === 'client' && (!userData || !userData.onboarding_complete)) {
     return (
-      <div className="min-h-screen bg-slate-50 p-4 py-10">
+      <div className="min-h-screen bg-slate-50 p-4 py-10 w-full overflow-x-hidden">
         <Card className="max-w-3xl mx-auto shadow-2xl">
           <CardHeader className="border-b bg-white text-center pb-6">
              <UserCog className="w-10 h-10 mx-auto text-blue-600 mb-2" />
@@ -339,10 +338,8 @@ export default function App() {
                   <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
                 </div>
                 
-                {/* Documents Tick Marks Section */}
                 <div className="border-t pt-5 mt-4">
                   <Label className="text-[#0A2647] font-semibold block mb-1">Do you have these basic documents?</Label>
-                  <p className="text-xs text-muted-foreground mb-4">Please tick the documents you currently hold to build your Vendor Master Profile.</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                     <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card</label>
                     <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate</label>
@@ -367,14 +364,13 @@ export default function App() {
   if (status === 'authenticated' && (intent === 'client' || (userData && userData.onboarding_complete))) {
     if (userData && !userData.is_approved) {
       return (
-        <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4">
+        <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4 w-full overflow-x-hidden">
           <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl">
             <ShieldCheck className="w-12 h-12 text-amber-600 mx-auto mb-4" />
             <h2 className="text-2xl font-extrabold text-[#0A2647] mb-4">Account Under Verification</h2>
             <p className="text-slate-700 text-sm mb-6">Your registration is successful. Dashboard access is locked pending <strong className="text-red-600">MD Approval</strong>.</p>
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
-              {/* 🚀 Click to Call dial pad trigger */}
               <a href="tel:+916304486770" className="text-2xl font-black text-blue-600 hover:text-blue-800 hover:underline">+91 6304486770</a>
             </div>
             <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2"><LogOut className="w-4 h-4 mr-2" /> Log Out</Button>
@@ -385,13 +381,13 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 3: MAIN PORTAL
+  // SCREEN 3: MAIN PORTAL (Fixed Mobile Overflow w-full overflow-x-hidden)
   // ==============================================================================
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 relative font-sans">
+    <div className="min-h-screen bg-slate-50 pb-20 relative font-sans w-full overflow-x-hidden">
       
       {/* 🚀 HEADER */}
-      <header className="border-b bg-white sticky top-0 z-40 shadow-sm">
+      <header className="border-b bg-white sticky top-0 z-40 shadow-sm w-full">
         <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {brandSettings.logo ? (
@@ -408,13 +404,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {brandSettings.gem_logo ? (
-               <img src={brandSettings.gem_logo} alt="GeM Logo" className="hidden lg:block h-10 md:h-12 object-contain border-r pr-4 border-slate-200" />
-            ) : (
-               <div className="hidden lg:flex items-center gap-2 border-r pr-4 mr-1 border-slate-200">
+            <div className="hidden lg:flex flex-col items-end border-r pr-4 mr-1 border-slate-200">
+              {brandSettings.gem_logo ? (
+                 <img src={brandSettings.gem_logo} alt="GeM Logo" className="h-10 md:h-12 object-contain" />
+              ) : (
                  <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="GeM" className="h-10 object-contain" onError={(e) => e.target.style.display='none'}/>
-               </div>
-            )}
+              )}
+              <span className="text-[10px] font-black text-[#0A2647] uppercase mt-1">Bidding Service</span>
+            </div>
 
             {status === 'authenticated' ? (
               <div className="flex items-center gap-3">
@@ -424,7 +421,7 @@ export default function App() {
               </div>
             ) : (
               <div className="relative">
-                <Button onClick={() => setMainLoginModal(true)} className="bg-gradient-to-r from-[#0A2647] to-blue-900 hover:opacity-90 text-white shadow-lg text-sm md:text-base px-6">
+                <Button onClick={() => setMainLoginModal(true)} className="bg-gradient-to-r from-[#0A2647] to-blue-900 hover:opacity-90 text-white shadow-lg text-sm md:text-base px-4 md:px-6">
                    Login / Sign Up
                 </Button>
               </div>
@@ -433,39 +430,39 @@ export default function App() {
         </div>
       </header>
 
-      {/* 🌊 BANNERS */}
-      {brandSettings.banners && brandSettings.banners.length > 0 ? (
-         <section className="w-full relative h-[300px] md:h-[450px] overflow-hidden bg-slate-900 group">
-           {brandSettings.banners.map((imgUrl, idx) => (
-             <img key={idx} src={imgUrl} alt={`Banner ${idx}`} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`} />
-           ))}
-           <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-center pb-8">
-              <Badge className="bg-[#16a34a] text-white border-0 text-sm md:text-base px-4 py-1 shadow-2xl">Official B2B Tenders Portal</Badge>
-           </div>
-           
-           <button onClick={prevBanner} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-              <ChevronLeft className="w-8 h-8" />
-           </button>
-           <button onClick={nextBanner} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-              <ChevronRight className="w-8 h-8" />
-           </button>
-         </section>
-      ) : (
-         <section className="bg-gradient-to-r from-[#0A2647] to-indigo-900 text-white py-12 flex items-center justify-center text-center h-[200px] md:h-[300px]">
-            <div>
-              <h2 className="text-3xl font-black mb-2">₹10L+ Tenders Secured Successfully</h2>
-              <p className="text-slate-300">Images managed from MD Dashboard will appear here.</p>
+      {/* 🌊 10cm / 400px AUTO-SLIDING BANNERS WITH ARROWS */}
+      <section className="w-full relative h-[300px] md:h-[400px] overflow-hidden bg-slate-900 group">
+        {brandSettings.banners && brandSettings.banners.length > 0 ? (
+          <>
+            {brandSettings.banners.map((imgUrl, idx) => (
+              <img key={idx} src={imgUrl} alt={`Banner ${idx}`} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`} />
+            ))}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end justify-center pb-8">
+                <Badge className="bg-[#16a34a] text-white border-0 text-sm md:text-base px-4 py-1 shadow-2xl">Official B2B Tenders Portal</Badge>
             </div>
-         </section>
-      )}
+            {/* Left/Right Buttons */}
+            <button onClick={prevBanner} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                <ChevronLeft className="w-8 h-8" />
+            </button>
+            <button onClick={nextBanner} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                <ChevronRight className="w-8 h-8" />
+            </button>
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0A2647] to-indigo-900 text-white flex flex-col items-center justify-center text-center px-4">
+             <h2 className="text-3xl md:text-4xl font-black mb-2">₹10L+ Tenders Secured Successfully</h2>
+             <p className="text-slate-300">Images managed from MD Dashboard will appear here.</p>
+          </div>
+        )}
+      </section>
 
-      {/* 🚀 SEARCH */}
-      <section className="container mx-auto px-4 -mt-6 z-10 relative">
+      {/* 🚀 ADVANCED SEARCH */}
+      <section className="container mx-auto px-4 -mt-8 z-20 relative">
         <Card className="shadow-2xl border-0 bg-white rounded-xl">
           <CardContent className="p-4 sm:p-6 space-y-4">
-            <div className="flex bg-slate-50 border border-slate-200 rounded-lg p-3 items-center shadow-inner">
+            <div className="flex bg-slate-50 border border-slate-200 rounded-lg p-3 items-center shadow-inner w-full">
                <Search className="w-5 h-5 text-blue-600 ml-2 mr-3" />
-               <input type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search tenders by keywords..." className="flex-1 bg-transparent border-0 outline-none text-slate-700 font-bold" />
+               <input type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search tenders by keywords..." className="flex-1 bg-transparent border-0 outline-none text-slate-700 font-bold min-w-0" />
             </div>
             <div className="flex flex-wrap items-center gap-y-4 gap-x-8 pt-2">
                <div className="flex flex-col gap-2">
@@ -485,7 +482,7 @@ export default function App() {
                  </div>
                </div>
             </div>
-            <div className="pt-4 flex gap-2 overflow-x-auto pb-2 scrollbar-hide items-center">
+            <div className="pt-4 flex gap-2 overflow-x-auto pb-2 scrollbar-hide items-center w-full">
               <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
               <button onClick={() => setDistrict('all')} className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition ${district === 'all' ? 'bg-[#0A2647] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>All Districts</button>
               {(stateFilter === 'TS' ? TS_DISTRICTS : stateFilter === 'AP' ? AP_DISTRICTS : [...TS_DISTRICTS, ...AP_DISTRICTS]).map(d => (
@@ -497,7 +494,8 @@ export default function App() {
       </section>
 
       <main className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-3 space-y-6">
+        {/* Left Column: Tenders List */}
+        <div className="lg:col-span-3 space-y-6 w-full min-w-0">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
               {appliedDay ? `Closing on ${appliedDay} ${monthName(month - 1)}` : `Active Tenders (${monthName(month - 1)})`}
@@ -513,11 +511,11 @@ export default function App() {
                 <h4 className="text-lg font-bold text-slate-600">No active tenders matched</h4>
              </Card>
           ) : (
-             <div className="grid gap-4">
+             <div className="grid gap-4 w-full">
                {filteredTenders.map(t => (
-                 <Card key={t._id || t.id} className="hover:shadow-xl transition-all border-l-4 border-l-emerald-500 bg-white">
+                 <Card key={t._id || t.id} className="hover:shadow-xl transition-all border-l-4 border-l-emerald-500 bg-white overflow-hidden">
                    <CardContent className="p-5 flex flex-col sm:flex-row items-start gap-4">
-                     <div className="flex-1 min-w-0">
+                     <div className="flex-1 min-w-0 w-full">
                        <div className="flex flex-wrap items-center gap-2 mb-2">
                          <Badge className="bg-[#0A2647] font-semibold"><MapPin className="w-3 h-3 mr-1" />{t.district}</Badge>
                          {t.category && <Badge variant="outline" className="text-xs bg-slate-50 font-semibold">{t.category}</Badge>}
@@ -538,9 +536,11 @@ export default function App() {
           )}
         </div>
 
-        {/* Right Sidebar */}
-        <div className="space-y-6">
-          <Card className="border-0 shadow-xl bg-white rounded-xl overflow-hidden">
+        {/* Right Column: Calendar, Client Pre-Registration & Query Form */}
+        <div className="space-y-6 w-full min-w-0">
+          
+          {/* Horizontal Calendar WITH APPLY BUTTON */}
+          <Card className="border-0 shadow-xl bg-white rounded-xl overflow-hidden w-full">
             <CardHeader className="bg-gradient-to-r from-[#0A2647] to-blue-900 text-white py-4">
               <div className="flex justify-between items-center">
                  <CardTitle className="text-base flex items-center gap-2 font-bold"><CalendarDays className="w-4 h-4" /> Closing Dates</CardTitle>
@@ -551,8 +551,8 @@ export default function App() {
                  </div>
               </div>
             </CardHeader>
-            <CardContent className="p-4">
-              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide snap-x">
+            <CardContent className="p-4 w-full">
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide snap-x w-full">
                 {validDays.map((d) => {
                   const has = calDays[d];
                   const count = has ? has.length : 0;
@@ -569,42 +569,43 @@ export default function App() {
                   )
                 })}
               </div>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex gap-2 w-full">
                  <Button onClick={() => setAppliedDay(selectedDay)} disabled={!selectedDay} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-9">Apply Filter</Button>
                  <Button onClick={() => { setSelectedDay(null); setAppliedDay(null); }} variant="outline" className="flex-1 border-2 border-slate-200 h-9 font-bold text-slate-600">Clear</Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* 🚀 Client Pre-Registration Redirect Form */}
-          <Card className="border-0 shadow-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl overflow-hidden relative transform transition hover:scale-[1.02]">
+          {/* 🚀 Highlighted Client Pre-Registration Form Auto-Redirects */}
+          <Card className="border-0 shadow-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl overflow-hidden relative transform transition hover:scale-[1.02] w-full">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
-            <CardContent className="p-6 relative z-10">
+            <CardContent className="p-6 relative z-10 w-full">
               <div className="flex items-center gap-2 mb-1">
                 <Star className="w-5 h-5 text-yellow-200 fill-yellow-200" />
                 <h3 className="font-black text-xl text-white uppercase tracking-wide">Register as Client</h3>
               </div>
               <p className="text-[11px] text-orange-100 mb-4 font-bold uppercase tracking-wider border-b border-orange-400/50 pb-2">Premium Partner Pre-Registration</p>
               
-              <form onSubmit={handleClientReg} className="flex flex-col gap-3">
-                <div><Input required placeholder="Your Name" value={clientRegForm.name} onChange={e => setClientRegForm({...clientRegForm, name: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" /></div>
-                <div><Input required type="tel" placeholder="Phone Number" value={clientRegForm.phone} onChange={e => setClientRegForm({...clientRegForm, phone: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" /></div>
-                <div><Input required placeholder="Enterprise / Company Name" value={clientRegForm.enterprise} onChange={e => setClientRegForm({...clientRegForm, enterprise: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" /></div>
+              <form onSubmit={handleClientReg} className="flex flex-col gap-3 w-full">
+                <div><Input required placeholder="Your Name" value={clientRegForm.name} onChange={e => setClientRegForm({...clientRegForm, name: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium w-full" /></div>
+                <div><Input required type="tel" placeholder="Phone Number" value={clientRegForm.phone} onChange={e => setClientRegForm({...clientRegForm, phone: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium w-full" /></div>
+                <div><Input required placeholder="Enterprise / Company Name" value={clientRegForm.enterprise} onChange={e => setClientRegForm({...clientRegForm, enterprise: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium w-full" /></div>
                 <Button type="submit" disabled={submittingClientReg} className="bg-white text-orange-600 hover:bg-slate-100 font-black w-full shadow-lg mt-2 h-11 text-sm uppercase tracking-wide">
-                   {submittingClientReg ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Submit & Proceed'}
+                   {submittingClientReg ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Submit & Setup Profile'}
                 </Button>
               </form>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-xl bg-[#0A2647] text-white rounded-xl overflow-hidden relative">
+          {/* Guest Query Form */}
+          <Card className="border-0 shadow-xl bg-[#0A2647] text-white rounded-xl overflow-hidden relative w-full">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 opacity-20 rounded-full blur-3xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
-            <CardContent className="p-6 relative z-10">
+            <CardContent className="p-6 relative z-10 w-full">
               <h3 className="font-black text-xl mb-1 text-emerald-400">Need Expert Help?</h3>
               <p className="text-xs text-slate-300 mb-4 font-medium">Drop your query, and our MD's office will get back to you directly.</p>
-              <form onSubmit={handleGuestQuery} className="flex flex-col gap-3">
-                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Full Name</Label><Input required placeholder="E.g., John Doe" value={queryForm.name} onChange={e => setQueryForm({...queryForm, name: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10" /></div>
-                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Phone Number</Label><Input required type="tel" placeholder="+91" value={queryForm.phone} onChange={e => setQueryForm({...queryForm, phone: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10" /></div>
+              <form onSubmit={handleGuestQuery} className="flex flex-col gap-3 w-full">
+                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Full Name</Label><Input required placeholder="E.g., John Doe" value={queryForm.name} onChange={e => setQueryForm({...queryForm, name: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10 w-full" /></div>
+                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Phone Number</Label><Input required type="tel" placeholder="+91" value={queryForm.phone} onChange={e => setQueryForm({...queryForm, phone: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10 w-full" /></div>
                 <div>
                   <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Your Query</Label>
                   <textarea required placeholder="What do you need help with?" value={queryForm.query} onChange={e => setQueryForm({...queryForm, query: e.target.value})} className="flex w-full rounded-md bg-white/10 border border-white/20 px-3 py-2 text-white placeholder:text-slate-400 resize-none h-20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
@@ -618,12 +619,12 @@ export default function App() {
         </div>
       </main>
 
-      {/* MNC VISION */}
-      <section className="bg-slate-900 py-20 relative overflow-hidden">
+      {/* 🚀 POWERFUL MNC VISION & SERVICES */}
+      <section className="bg-slate-900 py-20 relative overflow-hidden w-full">
         <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-600/30 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-emerald-600/20 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
         
-        <div className="container mx-auto px-4 relative z-10">
+        <div className="container mx-auto px-4 relative z-10 w-full">
            <div className="max-w-4xl mx-auto text-center mb-20 bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-3xl shadow-2xl">
               <TrendingUp className="w-14 h-14 mx-auto text-emerald-400 mb-6 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)]" />
               <h3 className="text-3xl md:text-5xl font-black text-white mb-6 uppercase tracking-tight">Our Corporate Vision</h3>
@@ -632,7 +633,7 @@ export default function App() {
               </p>
            </div>
 
-           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
+           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20 w-full">
               {[
                 { title: "Bid Analysis & Tracking", icon: <TrendingUp className="w-8 h-8 text-blue-400"/>, desc: "End-to-end guidance, market analysis, and real-time tracking of government tenders." },
                 { title: "GST & Corporate Certs", icon: <FileText className="w-8 h-8 text-pink-400"/>, desc: "Flawless documentation, GST filing, and essential corporate certifications handled." },
@@ -653,11 +654,11 @@ export default function App() {
         </div>
       </section>
 
-      {/* LEADERS PORTAL */}
-      <section className="bg-white py-16 border-t-4 border-[#0A2647]">
-        <div className="container mx-auto px-4">
+      {/* 🚀 DYNAMIC LEADERS PORTAL */}
+      <section className="bg-white py-16 border-t-4 border-[#0A2647] w-full">
+        <div className="container mx-auto px-4 w-full">
           <h3 className="text-3xl font-black text-center text-[#0A2647] mb-12 uppercase tracking-wide">Our Leadership</h3>
-          <div className="flex flex-wrap justify-center gap-8">
+          <div className="flex flex-wrap justify-center gap-8 w-full">
             {(brandSettings.leaders?.length > 0 ? brandSettings.leaders : [
               { name: "Managing Director", role: "Corporate Strategy", image: "" },
               { name: "Operations Head", role: "Bid Management", image: "" }
@@ -675,8 +676,8 @@ export default function App() {
       </section>
 
       {/* FOOTER */}
-      <footer className="bg-[#051324] text-white pt-16 pb-8 border-t-4 border-emerald-500">
-        <div className="container mx-auto px-4 text-center">
+      <footer className="bg-[#051324] text-white pt-16 pb-8 border-t-4 border-emerald-500 w-full">
+        <div className="container mx-auto px-4 text-center w-full">
           <div className="flex justify-center items-center gap-2 mb-6">
             <Award className="w-10 h-10 text-emerald-500" />
             <h3 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-blue-400">{brandSettings.name}</h3>
@@ -685,13 +686,13 @@ export default function App() {
             Empowering every young individual to become an entrepreneur. We turn private businesses into trusted partners of the Government.
           </p>
           
-          <div className="border-t border-white/10 pt-8 mt-8 grid md:grid-cols-2 gap-4 text-left max-w-4xl mx-auto items-center">
+          <div className="border-t border-white/10 pt-8 mt-8 grid md:grid-cols-2 gap-4 text-left max-w-4xl mx-auto items-center w-full">
             <div>
               <p className="text-xs text-slate-500 mb-1 font-bold tracking-widest uppercase">Contact Us</p>
               <p className="text-sm text-slate-300 font-medium">support@tgtenders.co.in | <a href="tel:+916304486770" className="hover:text-emerald-400 hover:underline transition">+91 6304486770</a></p>
             </div>
             {/* 🚀 POLICY MODAL LINKS */}
-            <div className="md:text-right space-x-4 text-xs font-bold text-slate-400">
+            <div className="md:text-right space-x-4 text-[10px] md:text-xs font-bold text-slate-400">
                <button onClick={() => setPolicyModal('privacy')} className="hover:text-emerald-400 transition uppercase">Privacy Policy</button>
                <span>|</span>
                <button onClick={() => setPolicyModal('terms')} className="hover:text-emerald-400 transition uppercase">Terms & Conditions</button>
@@ -702,14 +703,17 @@ export default function App() {
         </div>
       </footer>
 
-      {/* SOCIAL MEDIA */}
+      {/* 🚀 REAL SOCIAL MEDIA FLOATING ICONS (Authentic SVGs) */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
+        {/* YouTube */}
         <a href="https://www.youtube.com/@esakafficial1237" target="_blank" rel="noreferrer" className="bg-white text-[#FF0000] p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
           <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
         </a>
-        <a href="https://www.instagram.com/telangana_tenders?igsh=MWIzbTAyZmE2OHkyMQ==" target="_blank" rel="noreferrer" className="bg-white text-[#E1306C] p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
+        {/* Instagram */}
+        <a href="https://www.instagram.com/telangana_tenders?igsh=MWIzbTAyZmE2OHkyMQ==" target="_blank" rel="noreferrer" className="bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] text-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
           <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
         </a>
+        {/* WhatsApp */}
         <a href="https://whatsapp.com/channel/0029VbD5F2h2975IQSMPVK2x" target="_blank" rel="noreferrer" className="bg-[#25D366] text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-transform flex items-center justify-center border-2 border-white">
           <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
         </a>
@@ -802,7 +806,7 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* 🚀 NEW: POLICY MODALS */}
+      {/* 🚀 POLICY MODALS */}
       <Dialog open={!!policyModal} onOpenChange={(open) => !open && setPolicyModal(null)}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto bg-white border-0 shadow-2xl">
           <DialogHeader className="mb-4 border-b pb-4">
