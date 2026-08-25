@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; // 🚀 Added for Publish Win Modal
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
@@ -70,8 +71,12 @@ export default function EmployeeDashboard() {
     bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
   });
   const [editingBid, setEditingBid] = useState(null); 
-
   const [suggestForm, setSuggestForm] = useState({}); 
+
+  // 🚀 Publish Win Modal State
+  const [publishWinModalOpen, setPublishWinModalOpen] = useState(false);
+  const [winForm, setWinForm] = useState({ bid_id: null, contract_value: '', validity: '' });
+  const [processingWin, setProcessingWin] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -97,7 +102,9 @@ export default function EmployeeDashboard() {
         const tData = await tasksRes.json();
         const allDispatches = tData.dispatches || [];
         setMdTasks(allDispatches.filter(d => d.target_type === 'employee_task'));
-        setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed'));
+        
+        // 🚀 BUG FIX: Get Suggestions only (These are still pending "Both Agree" handshake)
+        setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed' && d.client_reply !== 'Client Accepted the Tender'));
       }
       if (bidsRes.ok) {
         const bData = await bidsRes.json();
@@ -241,44 +248,56 @@ export default function EmployeeDashboard() {
     }
   };
 
-  const handleSuggestionResponse = async (suggestion, action) => {
-    try {
-      if (action === 'Accepted') {
-         let extractedBidNo = 'PENDING';
-         let extractedDesc = suggestion.message;
-         
-         const match = suggestion.message.match(/\[BID: (.*?)\] (.*)/);
-         if (match) {
-             extractedBidNo = match[1];
-             extractedDesc = match[2];
-         }
-
-         const isDuplicate = bids.some(b => b.client_email === suggestion.target_id && b.bid_no === extractedBidNo);
-         if(isDuplicate) {
-            return toast.error("Action Denied: This tender is already actively tracked for this client.");
-         }
-
-         const res = await fetch('/api/bids', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-               bid_no: extractedBidNo, 
-               description: extractedDesc, 
-               status: 'Bid Allocated',
-               client_email: suggestion.target_id,
-               submitted_date: ''
-            })
-         });
-         if (res.ok) toast.success("Suggestion Accepted! Moved to Active Bids Tracker.");
-      } else {
-         toast.info("Suggestion Rejected and removed from list.");
+  // 🚀 BOTH AGREE HANDSHAKE LOGIC: Move from Suggestion to Active Bid Tracker ONLY if Client accepted.
+  const handleConvertSuggestionToBid = async (sug) => {
+      // Security Check
+      if (sug.client_reply !== 'Client Accepted the Tender') {
+         return toast.error("Cannot move to tracker until the client actively accepts the suggestion.");
       }
 
-      await fetch('/api/dispatches/complete', {
-         method: 'PUT',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ task_id: suggestion._id })
-      });
+      let extractedBidNo = 'PENDING';
+      let extractedDesc = sug.message;
+      const match = sug.message.match(/\[BID: (.*?)\] (.*)/);
+      if (match) {
+          extractedBidNo = match[1];
+          extractedDesc = match[2];
+      }
+
+      const isDuplicate = bids.some(b => b.client_email === sug.target_id && b.bid_no === extractedBidNo);
+      if(isDuplicate) {
+         return toast.error("Action Denied: This tender is already actively tracked for this client.");
+      }
+
+      try {
+          // 1. Add to Bids Collection
+          const res = await fetch('/api/bids', {
+             method: 'POST', headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ bid_no: extractedBidNo, description: extractedDesc, status: 'Bid Allocated', client_email: sug.target_id, submitted_date: '' })
+          });
+          
+          if (res.ok) {
+             // 2. Mark Suggestion as fully Completed so it leaves the suggestions board
+             await fetch('/api/dispatches/complete', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: sug._id })
+             });
+             toast.success("Both parties agreed! Tender successfully moved to Kanban Tracker.");
+             fetchLiveOperationsData(email);
+          }
+      } catch (e) {
+          toast.error("Error confirming the bid.");
+      }
+  };
+
+  const handleSuggestionResponse = async (suggestion, action) => {
+    try {
+      if (action === 'Rejected') {
+         await fetch('/api/dispatches/complete', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: suggestion._id })
+         });
+         toast.info("Suggestion Rejected and removed from list.");
+      }
       fetchLiveOperationsData(email);
     } catch (err) {
       toast.error("Error processing suggestion.");
@@ -345,26 +364,37 @@ export default function EmployeeDashboard() {
      } catch(e) { toast.error("Network error"); }
   }
 
-  const handleCreateDriveFolder = async (clientEmail, companyName) => {
-      toast.info("Generating secure Google Drive Workspace...");
+  // 🚀 PUBLISH WIN TO CLIENT LEDGER
+  const handlePublishWin = async (e) => {
+      e.preventDefault();
+      if (!winForm.contract_value || !winForm.validity) return toast.error("Please fill in contract value and validity.");
+      setProcessingWin(true);
+      
       try {
-          const res = await fetch('/api/drive/create-folder', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: clientEmail, folderName: `Client - ${companyName}` })
+          const res = await fetch('/api/bids/update', {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                 bid_id: winForm.bid_id, 
+                 status: 'Won', 
+                 contract_value: winForm.contract_value, 
+                 validity: winForm.validity 
+              })
           });
-          const data = await res.json();
-          if(res.ok && data.folderLink) {
-              toast.success("Drive Workspace Synced!");
+          
+          if (res.ok) {
+              toast.success("Winning Bid Published to Client Ledger!");
+              logActivity('PUBLISHED_WIN', `Published bid ${winForm.bid_id} as Won`);
+              setPublishWinModalOpen(false);
+              setWinForm({ bid_id: null, contract_value: '', validity: '' });
               fetchLiveOperationsData(email);
-              window.open(data.folderLink, '_blank');
           } else {
-              toast.error(data.error || "Failed to create drive.");
+              toast.error("Failed to publish win.");
           }
-      } catch(e) {
+      } catch (err) {
           toast.error("Network Error.");
       }
-  }
+      setProcessingWin(false);
+  };
 
   const sendActionAlert = async (e) => {
     e.preventDefault();
@@ -426,11 +456,17 @@ export default function EmployeeDashboard() {
   };
 
   const updateBidStatus = async (id, newStatus) => {
+    // If setting to WON, open the modal instead of instantly updating
+    if (newStatus === 'Won') {
+        setWinForm({ bid_id: id, contract_value: '', validity: '' });
+        setPublishWinModalOpen(true);
+        return;
+    }
+
     setBids(bids.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b));
     try {
       const res = await fetch('/api/bids/update', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bid_id: id, status: newStatus })
       });
       if (res.ok) {
@@ -448,8 +484,7 @@ export default function EmployeeDashboard() {
     setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed' } : t));
     try {
       const res = await fetch('/api/dispatches/complete', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskId })
       });
       if (res.ok) {
@@ -470,7 +505,7 @@ export default function EmployeeDashboard() {
         toast.success('Ticket conversation deleted.');
         fetchLiveOperationsData(email);
       } else {
-        toast.error("Failed to delete ticket. Backend route might need update.");
+        toast.error("Failed to delete ticket.");
       }
     } catch (err) {
       toast.error('Network Error.');
@@ -483,8 +518,7 @@ export default function EmployeeDashboard() {
     setSavingOfficer(true);
     try {
       const res = await fetch('/api/gov-officers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(officerForm)
       });
       if (res.ok) {
@@ -493,17 +527,14 @@ export default function EmployeeDashboard() {
         setOfficerForm({ name: '', department: '', designation: '', phone: '', state: '', district: '', address: '', pincode: '', notes: '' });
         fetchLiveOperationsData(email); 
       }
-    } catch (err) {
-      toast.error('Failed to save officer data');
-    }
+    } catch (err) { toast.error('Failed to save officer data'); }
     setSavingOfficer(false);
   };
 
   const escalateToMD = async (ticket) => {
     try {
       const res = await fetch('/api/dispatches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
            target_type: 'employee_task', 
            target_id: 'MD', 
@@ -515,16 +546,11 @@ export default function EmployeeDashboard() {
          toast.success('Ticket escalated to Managing Director successfully.');
          logActivity('ESCALATED_TICKET', `Escalated ticket ${ticket._id} to MD`);
       }
-    } catch (e) {
-      toast.error("Failed to escalate.");
-    }
+    } catch (e) { toast.error("Failed to escalate."); }
   };
 
-  // 🚀 ULTIMATE FIX: Secure NextAuth Impersonation for Employee
   const handleImpersonate = async (targetEmail) => {
     if (!targetEmail) return toast.error('Enter a valid client email');
-    
-    // బ్రౌజర్ పాపప్ బ్లాకర్‌ని ఆపడానికి ముందే ఒక ఖాళీ ట్యాబ్ ఓపెన్ చేయడం
     const newTab = window.open('about:blank', '_blank');
     toast.loading(`Connecting to ${targetEmail}'s portal...`);
 
@@ -532,15 +558,14 @@ export default function EmployeeDashboard() {
       const res = await signIn('impersonate', {
         email: targetEmail,
         adminToken: 'admin_success',
-        redirect: false // 🚀 FIX: Employee ప్రస్తుత పేజీ రీలోడ్ అవ్వకుండా చేయడం
+        redirect: false 
       });
 
       if (res?.error) {
-         newTab.close(); // ఫెయిల్ అయితే ట్యాబ్ క్లోజ్ చేయడం
+         newTab.close(); 
          toast.error("Failed to connect to client portal!");
       } else {
          toast.success("Successfully Connected!");
-         // లాగిన్ సక్సెస్ అయ్యాక, ఆ కొత్త ట్యాబ్‌లో క్లయింట్ డాష్‌బోర్డ్ లోడ్ చేయడం
          newTab.location.href = '/client';
       }
     } catch (e) {
@@ -551,8 +576,7 @@ export default function EmployeeDashboard() {
 
   const logActivity = (action, details) => {
     fetch('/api/employee/activity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, action, details })
     }).catch(err => console.log('Activity log failed', err));
   };
@@ -801,12 +825,6 @@ export default function EmployeeDashboard() {
                                       </select>
                                     </div>
                                   )}
-
-                                  {b.status === 'Won' && (
-                                     <Button size="sm" onClick={() => toast.success("Winning Bid Published to Client Ledger!")} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2 h-8 text-xs font-bold animate-in fade-in shadow-md">
-                                        <Trophy className="w-4 h-4 mr-2" /> Publish Win to Client
-                                     </Button>
-                                  )}
                                 </div>
                               ))}
                            </CardContent>
@@ -862,16 +880,25 @@ export default function EmployeeDashboard() {
                                              <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[9px] font-mono">Suggested On: {new Date(sug.created_at).toLocaleDateString()}</Badge>
                                              {displayBid !== 'N/A' && <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-mono">{displayBid}</Badge>}
                                           </div>
-                                          <h4 className="font-bold text-[#0A2647] mt-1 mb-4 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
+                                          <h4 className="font-bold text-[#0A2647] mt-1 mb-2 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
                                              {displayDesc}
                                           </h4>
+                                          {/* 🚀 BUG FIX: Display client's response if any */}
+                                          {sug.client_reply ? (
+                                              <Badge className={`w-full justify-center ${sug.client_reply.includes('Accepted') ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                  Client Status: {sug.client_reply}
+                                              </Badge>
+                                          ) : (
+                                              <Badge variant="outline" className="w-full justify-center text-slate-400 bg-slate-50">Waiting for Client Reply</Badge>
+                                          )}
                                        </div>
-                                       <div className="flex gap-2 border-t border-slate-100 pt-3">
-                                          <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Accepted')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-9 text-xs shadow-sm">
-                                             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Accepted
+                                       <div className="flex gap-2 border-t border-slate-100 pt-3 mt-3">
+                                          {/* 🚀 "BOTH AGREE" LOGIC IMPLEMENTATION */}
+                                          <Button size="sm" onClick={() => handleConvertSuggestionToBid(sug)} className={`flex-1 h-9 text-xs shadow-sm ${sug.client_reply === 'Client Accepted the Tender' ? 'bg-[#16a34a] hover:bg-[#15803d]' : 'bg-slate-300 cursor-not-allowed opacity-50'}`}>
+                                             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Add to Tracker
                                           </Button>
                                           <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-9 text-xs">
-                                             <XCircle className="w-3.5 h-3.5 mr-1.5"/> Rejected
+                                             <XCircle className="w-3.5 h-3.5 mr-1.5"/> Remove
                                           </Button>
                                        </div>
                                     </div>
@@ -1029,8 +1056,8 @@ export default function EmployeeDashboard() {
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
                                 ) : (
-                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> Sync Drive Space
+                                   <Button size="sm" onClick={() => toast.info('MD must sync drive first')} variant="outline" className="flex-1 text-slate-400 border-slate-200 h-9">
+                                      <Database className="w-4 h-4 mr-2" /> No Drive Setup
                                    </Button>
                                 )}
                                 <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
@@ -1161,7 +1188,6 @@ export default function EmployeeDashboard() {
           <TabsContent value="publisher" className="w-full space-y-6">
             <div className="grid lg:grid-cols-5 gap-6">
                
-               {/* 🚀 FIXED: BUTTON FOR VIEW PDF UPDATED */}
                <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
                  <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
                    <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
@@ -1173,23 +1199,11 @@ export default function EmployeeDashboard() {
                  </CardHeader>
                  <CardContent className="pt-5">
                    <form onSubmit={handlePublishTender} className="space-y-4">
-                     <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
-                       <Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/>
-                     </div>
-                     <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label>
-                       <Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
-                     </div>
-                     <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label>
-                       <Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} className="bg-white h-10"/>
-                     </div>
+                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/></div>
+                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
+                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label><Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} className="bg-white h-10"/></div>
                      <div className="grid grid-cols-2 gap-4">
-                       <div>
-                         <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label>
-                         <Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="bg-white h-10 text-sm"/>
-                       </div>
+                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label><Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="bg-white h-10 text-sm"/></div>
                        <div>
                          <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
                          <Select value={tenderForm.category} onValueChange={v=>setTenderForm({...tenderForm, category: v})}>
@@ -1210,16 +1224,13 @@ export default function EmployeeDashboard() {
                           </SelectContent>
                        </Select>
                      </div>
-                     <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label>
-                       <textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea>
-                     </div>
+                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea></div>
                      <div>
                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
                        <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
                           <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                           <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                          <span className="text-sm font-bold text-[#0A2647]">{pdfName || 'Click to upload PDF'}</span>
+                          <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF')}</span>
                        </div>
                      </div>
                      <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
@@ -1229,75 +1240,61 @@ export default function EmployeeDashboard() {
                  </CardContent>
                </Card>
 
-               <Card className="shadow-sm border-0 ring-1 ring-slate-200 lg:col-span-3 h-fit">
-                  <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-                     <div>
-                        <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg mb-1">
-                           <Globe className="w-5 h-5 text-blue-600"/> Live Portal Tenders
-                           <Badge variant="outline" className="bg-white ml-2">{filteredTenders.length}</Badge>
-                        </CardTitle>
-                        <CardDescription>View all tenders uploaded by you or MD. Select a tender to suggest it directly to a client.</CardDescription>
-                     </div>
-                     <div className="relative shrink-0 mt-2 sm:mt-0">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <Input placeholder="Search Bid Number..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
-                     </div>
-                  </CardHeader>
-                  <CardContent className="pt-4 max-h-[700px] overflow-y-auto space-y-4 pr-2">
-                     {filteredTenders.length === 0 ? (
-                        <p className="text-center text-sm text-slate-500 py-10">No matching tenders found.</p>
-                     ) : (
-                        filteredTenders.map(t => (
-                           <div key={t._id} className="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-300 transition shadow-sm relative group">
-                              <div className="flex items-start justify-between gap-3 mb-3">
-                                 <div>
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                       <Badge className="bg-[#0A2647] text-[9px] px-1.5">{t.district}</Badge>
-                                       {t.category && <Badge variant="outline" className="text-[9px] px-1.5">{t.category}</Badge>}
-                                       <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {new Date(t.last_date).toLocaleDateString()}</span>
-                                    </div>
-                                    <h4 className="font-bold text-[#0A2647] text-base leading-tight">{t.title}</h4>
-                                    <p className="text-xs text-slate-500 mt-1">{t.department} {t.bid_no && <span className="ml-2 font-mono bg-slate-100 px-1 rounded">Bid No: {t.bid_no}</span>}</p>
-                                 </div>
-                                 
-                                 <div className="flex gap-1 items-center shrink-0">
-                                    <Button variant="outline" size="icon" onClick={() => {
-                                        setIsEditingTender(t._id);
-                                        setTenderForm({
-                                            bid_no: t.bid_no || '', title: t.title, department: t.department, 
-                                            last_date: t.last_date ? new Date(t.last_date).toISOString().split('T')[0] : '', 
-                                            district: t.district, category: t.category || 'Product', supply_details: t.supply_details || ''
-                                        });
-                                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                                    }} className="h-7 w-7 text-slate-500 hover:text-blue-600"><Pencil className="w-3.5 h-3.5"/></Button>
-                                    <Button variant="outline" size="icon" onClick={() => handleDeleteTenderDB(t._id)} className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5"/></Button>
-                                 </div>
-                              </div>
-                              
-                              <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                                 {/* 🚀 BUG FIX: Calling handleViewPDF instead of direct window.open */}
-                                 <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
-                                    <FileText className="w-3 h-3 mr-1.5"/> View PDF
-                                 </Button>
-                                 <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
-                                    <SelectTrigger className="h-8 bg-slate-50 border-blue-200 text-xs font-semibold focus:ring-blue-500 w-full">
-                                       <SelectValue placeholder="Select Client ID to Suggest" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                       {approvedClients.map(c => {
-                                          const safeId = c.client_id || (c.email ? `CLI-${c.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX');
-                                          return <SelectItem key={c.email} value={c.email}>{safeId} ({c.company_name || c.name})</SelectItem>
-                                       })}
-                                    </SelectContent>
-                                 </Select>
-                                 <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
-                                    <Send className="w-3 h-3 mr-1.5"/> Suggest
-                                 </Button>
-                              </div>
+               <Card className="lg:col-span-3 tender-shadow">
+                 <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                    <div>
+                       <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
+                    </div>
+                    <div className="relative shrink-0 w-full sm:w-[250px]">
+                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                       <Input placeholder="Search Bid No or Title..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full bg-white shadow-sm text-xs" />
+                    </div>
+                 </CardHeader>
+                 <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                   {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
+                   {filteredTenders.map((t) => (
+                     <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
+                       <div className="flex items-start justify-between gap-3">
+                         <div className="flex-1 min-w-0">
+                           <div className="flex items-center gap-2 mb-2">
+                             <Badge className="bg-[#0A2647]">{t.district}</Badge>
+                             {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
+                             {t.bid_no && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
+                             <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
                            </div>
-                        ))
-                     )}
-                  </CardContent>
+                           <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
+                           <p className="text-xs text-slate-500 mt-1">{t.department}</p>
+                         </div>
+                         <div className="flex flex-col gap-2">
+                            <Button variant="ghost" size="icon" onClick={() => handleEditTender(t)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"><Pencil className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => remove(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8"><Trash2 className="w-4 h-4" /></Button>
+                         </div>
+                       </div>
+                       
+                       <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
+                          <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
+                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
+                          </Button>
+                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
+                             <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
+                                <SelectTrigger className="h-8 bg-slate-50 border-emerald-200 text-xs font-semibold focus:ring-emerald-500 w-full">
+                                   <SelectValue placeholder="Select Client to Suggest" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                   {approvedClients.map(c => {
+                                      const safeId = c.client_id || (c.email ? `CLI-${c.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX');
+                                      return <SelectItem key={c.email} value={c.email}>{safeId} ({c.company_name || c.name})</SelectItem>
+                                   })}
+                                </SelectContent>
+                             </Select>
+                             <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
+                                <Send className="w-3 h-3 mr-1.5"/> Suggest to Client
+                             </Button>
+                          </div>
+                       </div>
+                     </div>
+                   ))}
+                 </CardContent>
                </Card>
             </div>
           </TabsContent>
@@ -1329,7 +1326,6 @@ export default function EmployeeDashboard() {
                                       <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white"><Trash2 className="w-3 h-3"/></Button>
                                    </div>
                                 </div>
-
                                 <div className="bg-amber-50 border border-amber-100 p-3 rounded-tr-xl rounded-br-xl rounded-bl-xl shadow-inner mb-4 mt-2">
                                    <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">{new Date(ticket.created_at).toLocaleString()}</p>
                                    <h4 className="font-bold text-[#0A2647] text-sm mb-1">{ticket.subject}</h4>
@@ -1339,8 +1335,8 @@ export default function EmployeeDashboard() {
                              
                              <div className="flex flex-col gap-2 mt-4 pt-3 border-t">
                                 <div className="flex gap-2">
-                                   <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
-                                   <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
+                                   <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" value={ticketReply[ticket._id] || ''} onChange={(e) => setTicketReply(prev => ({...prev, [ticket._id]: e.target.value}))}/>
+                                   <Button onClick={() => submitTicketReply(ticket._id)} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
                                 </div>
                                 <div className="flex gap-2">
                                    <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
@@ -1372,20 +1368,47 @@ export default function EmployeeDashboard() {
 
                                 <div className="shrink-0 flex items-center gap-3">
                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</span>
-                                   <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
+                                   <Button variant="ghost" size="icon" onClick={() => deleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
                                 </div>
                              </div>
                           ))}
                        </div>
                     )}
                  </div>
-
               </CardContent>
             </Card>
           </TabsContent>
 
         </Tabs>
       </main>
+
+      {/* 🚀 NEW: PUBLISH WIN MODAL */}
+      <Dialog open={publishWinModalOpen} onOpenChange={setPublishWinModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700"><Trophy className="w-5 h-5"/> Publish Winning Bid</DialogTitle>
+            <DialogDescription>
+              Enter the final contract details to officially mark this bid as won and push it to the Client's Ledger.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handlePublishWin} className="space-y-4 pt-2">
+            <div>
+              <Label className="font-bold text-[#0A2647]">Total Contract Value (₹) *</Label>
+              <Input type="text" required placeholder="e.g. ₹ 5,00,000" value={winForm.contract_value} onChange={e => setWinForm({...winForm, contract_value: e.target.value})} className="mt-1 font-bold"/>
+            </div>
+            <div>
+              <Label className="font-bold text-[#0A2647]">Contract Validity / Due Date *</Label>
+              <Input type="text" required placeholder="e.g. 1 Year (Dec 2027)" value={winForm.validity} onChange={e => setWinForm({...winForm, validity: e.target.value})} className="mt-1"/>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setPublishWinModalOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={processingWin} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                 {processingWin ? 'Publishing...' : 'Confirm Win 🏆'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
