@@ -57,7 +57,7 @@ export default function ClientDashboard() {
   // --- Forms State ---
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
-  const [ticketReplyClient, setTicketReplyClient] = useState({}); // 🚀 FIX: State for Client Replying to Tickets
+  const [ticketReplyClient, setTicketReplyClient] = useState({}); 
 
   // --- Query Reply State --- 
   const [queryForm, setQueryForm] = useState({ description: '', file: null });
@@ -82,7 +82,6 @@ export default function ClientDashboard() {
   const [wonBids, setWonBids] = useState([]);
   const [recommendedTenders, setRecommendedTenders] = useState([]);
   
-  // 🚀 FIX: Brand Settings State for Agreement Signatures & Logos
   const [brandSettings, setBrandSettings] = useState({});
 
   useEffect(() => {
@@ -94,7 +93,6 @@ export default function ClientDashboard() {
     fetchPublicTenders();
     fetchClientData(e); 
     
-    // Fetch Brand Settings for Logos & Signatures
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, [session, status]);
 
@@ -174,7 +172,6 @@ export default function ClientDashboard() {
      }
   };
 
-  // 🚀 FIX: Network Error 4MB Bypass for PDF viewing
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=client`, '_blank');
     toast.success('Opening PDF Document...');
@@ -235,13 +232,11 @@ export default function ClientDashboard() {
     }
   };
 
-  // 🚀 FIX: Enhanced Legal Agreement logic with Vault Save
   const handleSignAgreement = async (e) => {
       e.preventDefault();
       setSubmittingAgreement(true);
       
       try {
-          // Upload a digital copy of agreement to vault silently
           const agreementText = `OFFICIAL B2B SERVICE AGREEMENT\n\nClient: ${profileForm.clientName}\nCompany: ${profileForm.companyName}\nDate: ${new Date().toLocaleDateString()}\n\nAgreed to Terms & Conditions for Bid Analysis, Documentation Support, and Operations.\n\nDigitally Signed by: B. Esak (MD, Telangana Tenders)\nDigitally Signed by: ${profileForm.clientName}`;
           const blob = new Blob([agreementText], { type: 'text/plain' });
           const file = new File([blob], "Signed_Legal_Agreement.txt", { type: "text/plain" });
@@ -253,7 +248,6 @@ export default function ClientDashboard() {
           formData.append('clientName', profileForm.companyName || profileForm.clientName); 
           await fetch('/api/vault/upload', { method: 'POST', body: formData });
 
-          // Unlock Dashboard
           const res = await fetch('/api/users/profile', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
@@ -269,9 +263,10 @@ export default function ClientDashboard() {
       setSubmittingAgreement(false);
   };
 
-  // 🚀 FIX: Easy Request Bid Support (From Public Tenders)
+  // 🚀 FIX 1: Added missing function and passed PDF link to MD
   const requestBidSupportForTender = async (t) => {
-      const desc = `Please support bidding for this public tender: ${t.title}`;
+      const pdfLink = `${window.location.origin}/api/tenders/${t._id}/pdf?email=${email}&role=client`;
+      const desc = `Please support bidding for this public tender: ${t.title}. \n\nDirect PDF Link: ${pdfLink}`;
       const link_or_id = t.bid_no || t._id;
       try {
         const res = await fetch('/api/client-requests', {
@@ -301,7 +296,6 @@ export default function ClientDashboard() {
     } catch(err) { toast.error("Network Error."); }
   };
   
-  // 🚀 FIX: Ticket Reply Client Logic
   const handleTicketSubmit = async (e) => { 
     e.preventDefault(); 
     if(!ticketForm.subject || !ticketForm.message) return toast.error('Fill subject and message');
@@ -322,7 +316,6 @@ export default function ClientDashboard() {
     const replyText = ticketReplyClient[ticket_id];
     if(!replyText) return toast.error('Please write a reply first.');
     try {
-      // Re-raise it back to the MD by creating a new message or updating the current one.
       const r = await fetch('/api/tickets/reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticket_id, reply: `CLIENT REPLY: ${replyText}`, admin_email: 'Client (Action Needed)' })
@@ -437,7 +430,6 @@ export default function ClientDashboard() {
 
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
-  // 🚀 FIX: Prevent Lock Screens from trapping Impersonating Admins/Employees
   if (userData && !userData.is_approved && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
@@ -469,7 +461,6 @@ export default function ClientDashboard() {
     );
   }
 
-  // 🚀 FIX: Enhanced Legal Agreement Gateway
   if (userData && userData.is_approved && !userData.agreement_signed && !session?.user?.is_bypass) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
@@ -714,7 +705,8 @@ export default function ClientDashboard() {
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Ongoing Bids</p>
-                 <p className="text-2xl font-black text-blue-700">{clientStats.ongoing}</p>
+                 {/* 🚀 FIX 2: Dynamic Real-time Calculation for Ongoing Bids */}
+                 <p className="text-2xl font-black text-blue-700">{activeBids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length}</p>
               </CardContent>
            </Card>
            <Card onClick={() => handleCardClick('wins', '')} className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80 cursor-pointer hover:ring-emerald-600 hover:shadow-md transition">
@@ -969,7 +961,7 @@ export default function ClientDashboard() {
                     </div>
                  </div>
 
-                 {/* 🚀 FIX: CUSTOM DOCUMENT UPLOAD AREA */}
+                 {/* 🚀 CUSTOM DOCUMENT UPLOAD AREA */}
                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mt-6 shadow-sm">
                     <h4 className="font-bold text-[#0A2647] flex items-center gap-2 mb-4"><Plus className="w-4 h-4 text-blue-600"/> Add Additional Custom Document</h4>
                     <form onSubmit={(e) => {
@@ -1153,6 +1145,68 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
+            {/* Custom Tender Request */}
+            <Card className="tender-shadow border-t-4 border-t-blue-500">
+              <CardHeader className="bg-blue-50/40 pb-4 border-b">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
+                  <UploadCloud className="w-5 h-5 text-blue-600"/> Found a Tender? Request Bid Support
+                </CardTitle>
+                <CardDescription>Upload tender details you found externally. Track our officer's reply here and in your MD Operations.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-5">
+                <form onSubmit={handleCustomTenderSubmit} className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                       <Label className="text-slate-600 text-xs font-bold">Tender Link / ID / Reference *</Label>
+                       <Input required placeholder="e.g. https://eprocure.gov.in/..." value={customTenderForm.link_or_id} onChange={e => setCustomTenderForm({...customTenderForm, link_or_id: e.target.value})} className="mt-1 bg-white text-sm" />
+                    </div>
+                    <div>
+                       <Label className="text-slate-600 text-xs font-bold">Brief Description of Work *</Label>
+                       <textarea required placeholder="Short description..." value={customTenderForm.description} onChange={e => setCustomTenderForm({...customTenderForm, description: e.target.value})} className="w-full border border-slate-200 rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+                    </div>
+                  </div>
+                  <div className="space-y-4 flex flex-col justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div>
+                       <Label className="text-slate-600 text-xs font-bold mb-2 block">Upload Reference Document (Optional)</Label>
+                       <div className="border-2 border-dashed border-blue-300 rounded-xl p-6 text-center bg-white hover:bg-blue-50/50 transition cursor-pointer relative">
+                          <Input type="file" accept=".pdf,.zip" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={e => setCustomTenderForm({...customTenderForm, file: e.target.files[0]})} />
+                          <div className="flex flex-col items-center pointer-events-none">
+                             <FileUp className="w-8 h-8 text-blue-500 mb-2" />
+                             <span className="text-sm font-semibold text-[#0A2647]">{customTenderForm.file ? customTenderForm.file.name : "Click here to upload PDF/ZIP"}</span>
+                             <span className="text-[10px] text-slate-500 mt-1">Max file size 10MB</span>
+                          </div>
+                       </div>
+                    </div>
+                    <Button type="submit" className="w-full bg-[#0A2647] hover:bg-[#144272] h-11 shadow-sm text-white">
+                      <Send className="w-4 h-4 mr-2"/> Submit Tender to Operations Team
+                    </Button>
+                  </div>
+                </form>
+
+                {userData?.custom_requests?.length > 0 && (
+                  <div className="mt-6 border-t pt-6 space-y-4">
+                     <h4 className="font-bold text-[#0A2647]">My Submitted Requests ({userData.custom_requests.length})</h4>
+                     {userData.custom_requests.map(req => (
+                        <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
+                           <div className="flex-1">
+                              <div className="flex justify-between items-start">
+                                 <h4 className="font-bold text-[#0A2647] text-sm break-all mb-1">{req.link_or_id}</h4>
+                                 <Badge className={req.status === 'Pending Officer Review' ? 'bg-amber-100 text-amber-800 border-0' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">"{req.description}"</p>
+                              {req.reply && (
+                                 <div className="mt-2 text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">
+                                    Officer Reply: {req.reply}
+                                 </div>
+                              )}
+                           </div>
+                        </div>
+                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
           </TabsContent>
 
           {/* ============================================================================== */}
@@ -1227,6 +1281,35 @@ export default function ClientDashboard() {
                             ))
                           )}
                        </div>
+                       
+                       {/* 🚀 FIX 3: Added Payment History & Gross Calculation under Pending Payments */}
+                       <div className="border-t pt-4 mt-4">
+                          <h4 className="font-bold text-slate-700 mb-3 flex items-center justify-between">
+                             Payment History
+                             <Badge className="bg-emerald-100 text-emerald-800 border-0">
+                                Gross: ₹{userData?.payments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString() || 0}
+                             </Badge>
+                          </h4>
+                          {!userData?.payments || userData.payments.length === 0 ? (
+                             <p className="text-xs text-slate-500 text-center py-2">No past payments found.</p>
+                          ) : (
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                              {userData.payments.map((pay, i) => (
+                                <div key={i} className="border border-slate-200 bg-white p-3 rounded-lg flex flex-col gap-1 shadow-sm">
+                                   <div className="flex justify-between items-center text-sm">
+                                      <span className="font-bold text-[#0A2647]">{pay.plan === 'single' ? 'Document Unlock Fee' : pay.plan === 'month' ? 'Monthly Premium' : pay.plan === 'year' ? 'Yearly Premium' : 'Service Fee'}</span>
+                                      <span className="font-black text-emerald-600">₹{pay.amount}</span>
+                                   </div>
+                                   <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
+                                      <span>{new Date(pay.paid_at || pay.created_at).toLocaleDateString()}</span>
+                                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">SUCCESS</Badge>
+                                   </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                       </div>
+
                   </CardContent>
                 </Card>
 
@@ -1249,7 +1332,6 @@ export default function ClientDashboard() {
                       </Button>
                     </form>
 
-                    {/* 🚀 FIX: Client Side Active & Resolved Ticket Management */}
                     <div>
                        <h4 className="font-bold text-slate-700 mb-3">Your Tickets History</h4>
                        {userData?.tickets && userData.tickets.length > 0 ? (
@@ -1286,6 +1368,52 @@ export default function ClientDashboard() {
                   </CardContent>
                 </Card>
              </div>
+
+             {/* Officer Document Queries Tracker */}
+             <Card className="tender-shadow border-t-4 border-t-orange-500">
+               <CardHeader className="pb-4 border-b bg-orange-50/50">
+                  <CardTitle className="text-lg flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-orange-600"/> Officer Document Queries Tracker</CardTitle>
+                  <CardDescription>Track the status of documentation requested by the operations team.</CardDescription>
+               </CardHeader>
+               <CardContent className="pt-5">
+                  {userData?.officer_queries?.length === 0 ? (
+                      <p className="text-sm text-slate-500 py-6 text-center">No queries pending from operations.</p>
+                  ) : (
+                      <div className="space-y-4">
+                         {userData?.officer_queries?.map((q, idx) => (
+                            <div key={idx} className="border border-orange-200 bg-orange-50/50 rounded-xl p-4 flex flex-col gap-3">
+                               <div className="flex justify-between items-start">
+                                  <h4 className="font-bold text-[#0A2647]">{q.subject}</h4>
+                                  <Badge className={q.reply_submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800 animate-pulse'}>
+                                     {q.reply_submitted ? 'Reply Sent' : 'Action Required'}
+                                  </Badge>
+                               </div>
+                               <p className="text-sm text-slate-700 bg-white p-3 rounded border border-orange-100">"{q.message}"</p>
+                               
+                               {q.reply_submitted ? (
+                                  <p className="text-xs text-emerald-600 font-bold bg-emerald-50 p-2 rounded">✓ You have submitted the explanation/document. Pending MD verification.</p>
+                               ) : (
+                                  <form onSubmit={(e) => handleQuerySubmit(e, q.id)} className="border-t border-orange-100 pt-3 mt-1 space-y-3">
+                                     <Textarea required placeholder="Provide explanation or details..." value={queryForm.description} onChange={e => setQueryForm({...queryForm, description: e.target.value})} className="bg-white focus:ring-orange-500"/>
+                                     <div className="flex flex-col sm:flex-row gap-3">
+                                        <div className="flex-1 relative border border-slate-300 bg-white rounded-md flex items-center px-3 cursor-pointer hover:bg-slate-50 h-10">
+                                           <input type="file" accept=".pdf,.jpg,.png,.zip" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={e => setQueryForm({...queryForm, file: e.target.files[0]})} />
+                                           <UploadCloud className="w-4 h-4 text-slate-400 mr-2 shrink-0"/>
+                                           <span className="text-xs text-slate-600 truncate">{queryForm.file ? queryForm.file.name : "Attach Document (Optional)"}</span>
+                                        </div>
+                                        <Button type="submit" disabled={submittingQuery} className="bg-orange-600 hover:bg-orange-700 sm:w-auto w-full h-10 shrink-0">
+                                           {submittingQuery ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Send Reply'}
+                                        </Button>
+                                     </div>
+                                  </form>
+                               )}
+                            </div>
+                         ))}
+                      </div>
+                  )}
+               </CardContent>
+             </Card>
+
           </TabsContent>
 
         </Tabs>
