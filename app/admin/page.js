@@ -1339,74 +1339,212 @@ function StatCard({ icon, label, value, accent }) {
 
 function BrandSettings({ token }) {
   const [logoPreview, setLogoPreview] = useState('');
+  const [gemLogoPreview, setGemLogoPreview] = useState('');
   const [brandName, setBrandName] = useState('Telangana Tenders');
   const [tagline, setTagline] = useState('Official Government Tender Portal');
+  const [visionText, setVisionText] = useState('');
+  const [banners, setBanners] = useState([]);
+  const [leaders, setLeaders] = useState([]);
   const [saving, setSaving] = useState(false);
+
+  // New Leader Form State
+  const [newLeader, setNewLeader] = useState({ name: '', role: '', image: '', phone: '', email: '' });
 
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => {
       if (d.settings) {
         if (d.settings.logo) setLogoPreview(d.settings.logo);
+        if (d.settings.gem_logo) setGemLogoPreview(d.settings.gem_logo);
         if (d.settings.name) setBrandName(d.settings.name);
         if (d.settings.tagline) setTagline(d.settings.tagline);
+        if (d.settings.vision_text) setVisionText(d.settings.vision_text);
+        if (d.settings.banners) setBanners(d.settings.banners);
+        if (d.settings.leaders) setLeaders(d.settings.leaders);
       }
     }).catch((err) => console.error(err));
   }, []);
 
-  const onLogoChange = (e) => {
+  // --- Image Handlers ---
+  const handleImageUpload = (e, setter) => {
     const f = e.target.files?.[0];
     if (!f) return;
     if (!f.type.startsWith('image/')) return toast.error('Please upload an image file');
-    if (f.size > 2 * 1024 * 1024) return toast.error('Logo too large. Keep under 2 MB.');
+    if (f.size > 3 * 1024 * 1024) return toast.error('Image too large. Keep under 3 MB.');
     const reader = new FileReader();
-    reader.onload = () => { setLogoPreview(reader.result?.toString() || ''); };
+    reader.onload = () => { setter(reader.result?.toString() || ''); };
     reader.readAsDataURL(f);
   };
 
+  const onBannerUpload = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 4 * 1024 * 1024) return toast.error('Banner too large. Keep under 4 MB.');
+    const reader = new FileReader();
+    reader.onload = () => { setBanners(prev => [...prev, reader.result?.toString() || '']); toast.success('Banner added to preview!'); };
+    reader.readAsDataURL(f);
+  };
+
+  const removeBanner = (index) => {
+    if(!confirm("Remove this banner?")) return;
+    setBanners(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // --- Leaders Handlers ---
+  const addLeader = () => {
+    if (!newLeader.name || !newLeader.role || !newLeader.image) return toast.error('Name, Role, and Photo are required!');
+    setLeaders(prev => [...prev, newLeader]);
+    setNewLeader({ name: '', role: '', image: '', phone: '', email: '' });
+    toast.success('Leader added to preview list. Click Save Settings to publish.');
+  };
+
+  const removeLeader = (index) => {
+    if(!confirm("Remove this leader?")) return;
+    setLeaders(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // --- Save to Backend ---
   const save = async () => {
     setSaving(true);
     try {
+      const payload = {
+        name: brandName, 
+        tagline: tagline, 
+        logo: logoPreview, 
+        gem_logo: gemLogoPreview,
+        vision_text: visionText,
+        banners: banners,
+        leaders: leaders
+      };
+
       const r = await fetch('/api/settings', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: brandName, tagline: tagline, logo: logoPreview }),
+        body: JSON.stringify(payload),
       });
-      if (!r.ok) return toast.error('Failed to save');
-      toast.success('Brand settings saved.');
+      if (!r.ok) return toast.error('Failed to save settings to database.');
+      toast.success('All Master Settings published successfully!');
     } catch (error) { toast.error('An error occurred while saving.'); } finally { setSaving(false); }
   };
 
-  const removeLogo = async () => {
-    if (!confirm('Remove uploaded logo?')) return;
-    await fetch('/api/settings', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ name: brandName, tagline: tagline, logo: null }),
-    });
-    setLogoPreview(''); toast.success('Logo removed');
-  };
-
   return (
-    <Card className="tender-shadow border-0 ring-1 ring-slate-200">
-      <CardHeader className="pb-4 bg-slate-50/50 border-b">
-        <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><ImageIcon className="w-5 h-5 text-slate-500" /> Brand Identity & Security Settings</CardTitle>
-      </CardHeader>
-      <CardContent className="pt-6">
-        <div className="grid sm:grid-cols-3 gap-8 items-start">
-          <div className="flex flex-col items-center gap-4 bg-slate-50 p-6 rounded-xl border border-slate-200">
-            <div className="w-28 h-28 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-              {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="w-10 h-10 text-slate-300" />}
+    <div className="space-y-6">
+      {/* 1. BRAND IDENTITY & LOGOS */}
+      <Card className="tender-shadow border-0 ring-1 ring-slate-200">
+        <CardHeader className="pb-4 bg-slate-50/50 border-b flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><ImageIcon className="w-5 h-5 text-slate-500" /> Brand Identity & Logos</CardTitle>
+          <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d] shadow-md h-9 text-xs"><ShieldCheck className="w-4 h-4 mr-2"/> {saving ? 'Saving...' : 'Save All Settings'}</Button>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="grid lg:grid-cols-2 gap-8 items-start">
+            <div className="flex gap-4">
+               {/* Main Logo */}
+               <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
+                 <p className="text-xs font-bold text-slate-500 uppercase">Main Logo</p>
+                 <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                   {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
+                 </div>
+                 <div className="flex gap-2 w-full">
+                   <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setLogoPreview)} className="hidden" />Upload</label>
+                   {logoPreview && <button onClick={() => {if(confirm('Remove?')) setLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                 </div>
+               </div>
+               
+               {/* GeM Logo */}
+               <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
+                 <p className="text-xs font-bold text-slate-500 uppercase">GeM / Partner Logo</p>
+                 <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                   {gemLogoPreview ? <img src={gemLogoPreview} alt="gem logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
+                 </div>
+                 <div className="flex gap-2 w-full">
+                   <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setGemLogoPreview)} className="hidden" />Upload</label>
+                   {gemLogoPreview && <button onClick={() => {if(confirm('Remove?')) setGemLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                 </div>
+               </div>
             </div>
-            <div className="flex gap-2 w-full">
-              <label className="cursor-pointer flex-1 text-xs px-3 py-2 bg-[#0A2647] hover:bg-[#144272] text-white rounded-md text-center transition"><input type="file" onChange={onLogoChange} className="hidden" />Upload</label>
-              {logoPreview && <button onClick={removeLogo} className="text-xs px-3 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-md transition">Remove</button>}
+            
+            <div className="space-y-4">
+              <div><Label className="text-slate-700 font-bold">Portal Brand Name</Label><Input value={brandName} onChange={e => setBrandName(e.target.value)} className="mt-1" /></div>
+              <div><Label className="text-slate-700 font-bold">Portal Tagline / Short Desc</Label><Input value={tagline} onChange={e => setTagline(e.target.value)} className="mt-1" /></div>
+              <div><Label className="text-slate-700 font-bold">Corporate Vision Text (Home Page)</Label><Textarea rows={3} value={visionText} onChange={e => setVisionText(e.target.value)} className="mt-1 text-sm bg-white" placeholder="Empowering every young individual..." /></div>
             </div>
           </div>
-          <div className="sm:col-span-2 space-y-5">
-            <div><Label className="text-slate-700 font-bold">Portal Brand Name</Label><Input value={brandName} onChange={e => setBrandName(e.target.value)} className="mt-1.5" /></div>
-            <div><Label className="text-slate-700 font-bold">Portal Tagline</Label><Input value={tagline} onChange={e => setTagline(e.target.value)} className="mt-1.5" /></div>
-            <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d]">Save System Settings</Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      {/* 2. AUTO-SLIDING BANNERS */}
+      <Card className="tender-shadow border-0 ring-1 ring-slate-200">
+        <CardHeader className="pb-4 bg-slate-50/50 border-b">
+          <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MonitorPlay className="w-5 h-5 text-slate-500" /> Auto-Sliding Home Banners</CardTitle>
+          <CardDescription>Upload wide/horizontal images to slide on the public home page.</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
+              {banners.map((b, i) => (
+                 <div key={i} className="relative group rounded-lg overflow-hidden border-2 border-slate-200 shadow-sm">
+                    <img src={b} alt={`Banner ${i}`} className="w-full h-24 object-cover" />
+                    <button onClick={() => removeBanner(i)} className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded shadow-lg opacity-0 group-hover:opacity-100 transition"><Trash2 className="w-3 h-3"/></button>
+                 </div>
+              ))}
+              <label className="border-2 border-dashed border-blue-300 bg-blue-50 rounded-lg flex flex-col items-center justify-center h-24 cursor-pointer hover:bg-blue-100 transition shadow-sm">
+                 <UploadCloud className="w-6 h-6 text-blue-500 mb-1"/>
+                 <span className="text-[10px] font-bold text-blue-700 uppercase">Upload Banner</span>
+                 <input type="file" accept="image/*" onChange={onBannerUpload} className="hidden"/>
+              </label>
+           </div>
+        </CardContent>
+      </Card>
+
+      {/* 3. OUR LEADERS DIRECTORY */}
+      <Card className="tender-shadow border-0 ring-1 ring-slate-200">
+        <CardHeader className="pb-4 bg-slate-50/50 border-b">
+          <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Trophy className="w-5 h-5 text-slate-500" /> "Our Leaders" Profiles</CardTitle>
+          <CardDescription>Add MDs, Directors, or core team members to show on the website.</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+           
+           {/* Current Leaders Display */}
+           {leaders.length > 0 && (
+             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 pb-6 border-b border-slate-100">
+                {leaders.map((ld, i) => (
+                   <div key={i} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 relative shadow-sm group">
+                      <img src={ld.image} alt={ld.name} className="w-14 h-14 rounded-full object-cover border-2 border-emerald-100 shrink-0" />
+                      <div className="min-w-0 pr-6">
+                         <h5 className="font-black text-sm text-[#0A2647] truncate">{ld.name}</h5>
+                         <p className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider mb-1">{ld.role}</p>
+                         <p className="text-[9px] text-slate-500 truncate flex items-center gap-1"><PhoneCall className="w-2.5 h-2.5"/> {ld.phone || 'N/A'}</p>
+                         <p className="text-[9px] text-slate-500 truncate flex items-center gap-1"><Mail className="w-2.5 h-2.5"/> {ld.email || 'N/A'}</p>
+                      </div>
+                      <button onClick={() => removeLeader(i)} className="absolute top-2 right-2 text-red-300 hover:text-red-600 bg-slate-50 hover:bg-red-50 p-1.5 rounded opacity-0 group-hover:opacity-100 transition"><Trash2 className="w-3.5 h-3.5"/></button>
+                   </div>
+                ))}
+             </div>
+           )}
+
+           {/* Add New Leader Form */}
+           <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
+              <h5 className="font-bold text-sm text-slate-700 flex items-center gap-2 mb-4"><UserPlus className="w-4 h-4 text-blue-600"/> Add New Leader Profile</h5>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                 <div><Label className="text-xs font-bold text-slate-600">Full Name *</Label><Input placeholder="e.g. John Doe" value={newLeader.name} onChange={e=>setNewLeader({...newLeader, name: e.target.value})} className="h-9 text-xs bg-white mt-1"/></div>
+                 <div><Label className="text-xs font-bold text-slate-600">Designation / Role *</Label><Input placeholder="e.g. Managing Director" value={newLeader.role} onChange={e=>setNewLeader({...newLeader, role: e.target.value})} className="h-9 text-xs bg-white mt-1"/></div>
+                 <div><Label className="text-xs font-bold text-slate-600">Phone (Optional)</Label><Input placeholder="+91 00000 00000" value={newLeader.phone} onChange={e=>setNewLeader({...newLeader, phone: e.target.value})} className="h-9 text-xs bg-white mt-1"/></div>
+                 <div><Label className="text-xs font-bold text-slate-600">Email (Optional)</Label><Input placeholder="email@tgtenders.in" value={newLeader.email} onChange={e=>setNewLeader({...newLeader, email: e.target.value})} className="h-9 text-xs bg-white mt-1"/></div>
+                 
+                 <div className="sm:col-span-2 lg:col-span-4 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
+                    <label className={`flex-1 w-full border ${newLeader.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
+                       <UploadCloud className="w-4 h-4"/> {newLeader.image ? 'Professional Photo Selected ✓' : 'Upload Professional Photo *'}
+                       <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewLeader({...newLeader, image: b64}))} className="hidden"/>
+                    </label>
+                    <Button type="button" onClick={addLeader} className="flex-1 w-full bg-blue-600 hover:bg-blue-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Leaders List</Button>
+                 </div>
+              </div>
+           </div>
+        </CardContent>
+      </Card>
+      
+      {/* Save Reminder Sticky Bar (Optional to keep it very clear) */}
+      <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-center flex items-center justify-center gap-3">
+         <AlertTriangle className="w-5 h-5 text-amber-500"/>
+         <span className="text-xs font-bold text-amber-800">Don't forget to click <strong className="text-[#0A2647]">Save All Settings</strong> at the top after making changes!</span>
+      </div>
+    </div>
   );
 }
