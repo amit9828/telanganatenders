@@ -83,11 +83,20 @@ export async function GET(request, { params }) {
       if (district && district !== 'all') query.district = district;
       if (q) query.title = { $regex: q,$options: 'i' };
 
-      let tenders = await db.collection('tenders')
+      // 🚀 FIX: Auto-Hide/Delete Expired Tenders from interface
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      let allTenders = await db.collection('tenders')
         .find(query)
         .project({ pdf_base64: 0 }) 
         .sort({ last_date: -1 })
         .toArray();
+
+      let tenders = allTenders.filter(t => {
+          if (!t.last_date) return true;
+          return new Date(t.last_date).getTime() >= today.getTime();
+      });
 
       if (month && year && scope !== 'all') {
         tenders = tenders.filter(t => {
@@ -149,7 +158,8 @@ export async function GET(request, { params }) {
       
       const hasBoughtSingle = user?.purchases?.includes(tenderId);
 
-      if (role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL) {
+      // 🚀 FIX: Give free access to Clients as well
+      if (role === 'client' || role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL) {
           hasSubscription = true; 
       }
 
@@ -190,6 +200,12 @@ export async function GET(request, { params }) {
       
       const tickets = await db.collection('tickets').find(query).sort({ created_at: -1 }).toArray();
       return json({ tickets });
+    }
+
+    // 🚀 FIX: Fetch Guest Queries Database
+    if (path === 'guest-queries' || path === 'api/guest-queries') {
+      const queries = await db.collection('guest_queries').find({}).sort({ created_at: -1 }).toArray();
+      return json({ queries });
     }
 
     if (path === 'users/pending' || path === 'api/users/pending') {
@@ -284,18 +300,22 @@ export async function GET(request, { params }) {
       const active_bids = await db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
       const action_alerts = await db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray();
 
-       // 🚀 BUG FIX: Calculate Real Stats for Client (Only Pending Suggestions)
-const won_bids = active_bids.filter(b => b.status === 'Won');
-const total_revenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+       // 🚀 FIX: Calculate Contract Values and add to Total Revenue
+       const won_bids = active_bids.filter(b => b.status === 'Won');
+       const won_contracts_value = won_bids.reduce((sum, b) => {
+           const val = Number(String(b.contract_value || '0').replace(/[^0-9.-]+/g,""));
+           return sum + val;
+       }, 0);
+       const total_revenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + won_contracts_value;
 
-const calculatedStats = {
-   recommended: action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed').length,
-   participated: active_bids.length,
-   ongoing: active_bids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length,
-   won: won_bids.length,
-   lost: active_bids.filter(b => b.status === 'Lost').length,
-   revenue: total_revenue
-};
+       const calculatedStats = {
+          recommended: action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed').length,
+          participated: active_bids.length,
+          ongoing: active_bids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length,
+          won: won_bids.length,
+          lost: active_bids.filter(b => b.status === 'Lost').length,
+          revenue: total_revenue
+       };
       
       return json({
         subscription: user.subscription || null,
@@ -324,8 +344,8 @@ const calculatedStats = {
         active_bids: active_bids || [],
         officer_queries: user.officer_queries || [],
         pending_payments: user.pending_payments || [],
-        vault_docs: user.vault_docs || [], // 🚀 FIX: Pass vault docs
-        stats: calculatedStats // 🚀 FIX: Real calculated stats
+        vault_docs: user.vault_docs || [], 
+        stats: calculatedStats 
       });
     }
 
@@ -393,11 +413,13 @@ export async function PUT(request, { params }) {
      }
 
      if (path === 'bids/update' || path === 'api/bids/update') {
-        const { bid_id, status, bid_no, description } = body;
+        const { bid_id, status, bid_no, description, contract_value, validity } = body;
         let updateData = { updated_at: new Date() };
         if (status) updateData.status = status;
         if (bid_no !== undefined) updateData.bid_no = bid_no;
         if (description !== undefined) updateData.description = description;
+        if (contract_value !== undefined) updateData.contract_value = contract_value;
+        if (validity !== undefined) updateData.validity = validity;
 
         await db.collection('bids').updateOne(
            { _id: new ObjectId(bid_id) },
@@ -417,7 +439,6 @@ export async function PUT(request, { params }) {
 
      if (path === 'dispatches/update' || path === 'api/dispatches/update') {
         const { task_id, status, reply } = body;
-        // 🚀 BUG FIX: Client Replies & Two-way updating
         let updateData = { status: status, updated_at: new Date() };
         if(reply) updateData.client_reply = reply;
 
@@ -428,17 +449,49 @@ export async function PUT(request, { params }) {
         return json({ success: true, message: `Dispatch status updated to ${status}` });
      }
 
-     // 🚀 NEW: MD Vault Document Approval System
+     // 🚀 FIX: Vault Document Approval + Auto Google Drive Sync
      if (path === 'vault/verify' || path === 'api/vault/verify') {
         const { email, docId, status, reject_reason } = body;
+        const targetEmail = email.toLowerCase();
+        
         await db.collection('users').updateOne(
-            { email: email.toLowerCase(), "vault_docs.id": docId },
+            { email: targetEmail, "vault_docs.id": docId },
             { $set: { 
                 "vault_docs.$.status": status,
                 "vault_docs.$.reject_reason": reject_reason || null 
               } 
             }
         );
+
+        // Push Document to Google Drive
+        if (status === 'verified') {
+            const user = await db.collection('users').findOne({ email: targetEmail });
+            const doc = user?.vault_docs?.find(d => d.id === docId);
+            
+            if (user?.drive_folder_id && doc?.file_base64 && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+               try {
+                   const auth = new google.auth.JWT(
+                       process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, null,
+                       process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+                       ['https://www.googleapis.com/auth/drive.file']
+                   );
+                   const drive = google.drive({ version: 'v3', auth });
+                   
+                   const buffer = Buffer.from(doc.file_base64, 'base64');
+                   const stream = require('stream');
+                   const bufferStream = new stream.PassThrough();
+                   bufferStream.end(buffer);
+
+                   await drive.files.create({
+                       requestBody: { name: doc.file_name || `${doc.name}.pdf`, parents: [user.drive_folder_id] },
+                       media: { mimeType: 'application/pdf', body: bufferStream },
+                       fields: 'id'
+                   });
+               } catch(err) {
+                   console.error("Drive upload failed silently:", err);
+               }
+            }
+        }
         return json({ success: true });
      }
 
@@ -491,7 +544,6 @@ export async function DELETE(request, { params }) {
   const { searchParams } = new URL(request.url);
   
   try {
-    // 🚀 NEW: CASCADING DELETE FOR ENTIRE CLIENT DATA (WIPE OUT)
     if (path === 'users' || path === 'api/users') {
        const email = searchParams.get('email');
        if (!email) return json({ error: 'Missing Client Email' }, 400);
@@ -505,6 +557,14 @@ export async function DELETE(request, { params }) {
        await db.collection('dispatches').deleteMany({ target_id: targetEmail });
        
        return json({ success: true, message: 'Client and all associated data permanently wiped out.' });
+    }
+
+    // 🚀 FIX: Guest Queries Deletion Route
+    if (path === 'guest-queries' || path === 'api/guest-queries') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing ID' }, 400);
+       await db.collection('guest_queries').deleteOne({ _id: new ObjectId(id) });
+       return json({ success: true, message: 'Query resolved and deleted' });
     }
 
     if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
@@ -593,7 +653,6 @@ export async function POST(request, { params }) {
   const path = pathArray.join('/');
 
   try {
-    // 🚀 BUG FIX: Vault File Upload REAL Processing
     if (path === 'vault/upload' || path === 'api/vault/upload') {
        try {
          const formData = await request.formData();
@@ -616,7 +675,6 @@ export async function POST(request, { params }) {
              upload_date: new Date().toLocaleDateString()
          };
 
-         // Pull old document if it exists, then push the new one
          await db.collection('users').updateOne(
              { email: email.toLowerCase() },
              { $pull: { vault_docs: { id: docId } } }
@@ -660,6 +718,12 @@ export async function POST(request, { params }) {
         await db.collection('users').updateOne({ email }, { $set: { email, name: body.name || '', last_login: new Date() } }, { upsert: true });
       }
       return json({ success: true });
+    }
+
+    // 🚀 FIX: Guest Queries POST Route
+    if (path === 'guest-queries' || path === 'api/guest-queries') {
+       const result = await db.collection('guest_queries').insertOne({ ...body, created_at: new Date() });
+       return json({ success: true, id: result.insertedId });
     }
 
     if (path === 'subscription/cancel' || path === 'api/subscription/cancel') {
@@ -765,7 +829,6 @@ export async function POST(request, { params }) {
        return json({ success: true, id: result.insertedId });
     }
 
-    // 🚀 BUG FIX: Ensure new Bids (From Client Accepting Suggestion) are correctly added
     if (path === 'bids' || path === 'api/bids') {
        const status = body.status || 'Doc Preparation';
        const result = await db.collection('bids').insertOne({
