@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { load } from '@cashfreepayments/cashfree-js'; // 🚀 CASHFREE IMPORTED
+import { load } from '@cashfreepayments/cashfree-js'; 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Briefcase, CheckCircle2, AlertTriangle, FileText, Clock, ShieldAlert, Send, 
@@ -48,7 +48,10 @@ export default function ClientDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [publicTenders, setPublicTenders] = useState([]);
   const [buying, setBuying] = useState(false);
-  const [alertReplyText, setAlertReplyText] = useState({}); // 🚀 FIX: State for Alert Replies
+  const [alertReplyText, setAlertReplyText] = useState({}); 
+
+  // --- Highlight State for UX Scrolling ---
+  const [highlightedSection, setHighlightedSection] = useState('');
 
   // --- Forms State ---
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
@@ -90,16 +93,13 @@ export default function ClientDashboard() {
         setUserData(d);
         setClientId(d.client_id || `CLI-${userEmail.substring(0,4).toUpperCase()}X`);
 
-        // 1. LIVE TRACKING
         if(d.stats) setClientStats(d.stats);
         if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
         
-        // 🚀 FIX: Map Action Alerts into Recommended Tenders Array
         if(d.action_alerts) {
             setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
         }
         
-        // 2. VAULT DOCS MERGE 
         if (d.vault_docs && d.vault_docs.length > 0) {
             const mergedDocs = DEFAULT_VAULT_DOCS.map(defaultDoc => {
                 const found = d.vault_docs.find(bd => bd.id === defaultDoc.id);
@@ -110,7 +110,6 @@ export default function ClientDashboard() {
             setVaultDocs(DEFAULT_VAULT_DOCS);
         }
 
-        // 3. Pre-fill profile
         if(d.profile) {
           setProfileForm(prev => ({
             ...prev,
@@ -130,11 +129,7 @@ export default function ClientDashboard() {
           }));
         }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
   const fetchPublicTenders = async () => {
@@ -143,6 +138,52 @@ export default function ClientDashboard() {
       const d = await r.json();
       setPublicTenders(d.tenders || []);
     } catch (err) { console.error(err); }
+  };
+
+  // 🚀 HIGHLIGHT & SCROLL LOGIC
+  const handleCardClick = (targetTab, targetSectionId) => {
+     setActiveTab(targetTab);
+     if (targetSectionId) {
+        setTimeout(() => {
+           const element = document.getElementById(targetSectionId);
+           if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              setHighlightedSection(targetSectionId);
+              // Remove highlight after 2 seconds
+              setTimeout(() => setHighlightedSection(''), 2000);
+           }
+        }, 300); // Wait for tab to render
+     }
+  };
+
+  // 🚀 LIVE TENDERS PDF VIEW LOGIC
+  const handleViewPDF = async (tenderId) => {
+    const toastId = toast.loading('Opening PDF Document...');
+    try {
+      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${email}&role=client`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        if (res.status === 402) {
+          toast.dismiss(toastId);
+          return toast.error("Premium Tender: You need an active subscription or single document access to view this PDF.");
+        }
+        return toast.error(data.error || 'Failed to load PDF', { id: toastId });
+      }
+
+      if (data.pdf_base64) {
+        const byteCharacters = atob(data.pdf_base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+        const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+        window.open(URL.createObjectURL(blob), '_blank');
+        toast.success('PDF Opened Successfully', { id: toastId });
+      } else { 
+        toast.error('PDF data not found', { id: toastId }); 
+      }
+    } catch (err) { 
+      toast.error('Network Error while opening PDF', { id: toastId }); 
+    }
   };
 
   const bypassLockScreen = () => setUserData(prev => ({ ...prev, is_approved: true }));
@@ -164,17 +205,11 @@ export default function ClientDashboard() {
     e.preventDefault();
     try {
       const r = await fetch('/api/users/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          client_name: profileForm.clientName,
-          company_name: profileForm.companyName,
-          company_type: profileForm.orgType,
-          phone: profileForm.phone,
-          address: profileForm.address,
-          description: profileForm.description,
-          service_category: profileForm.services.map(s => typeof s === 'string' ? `Service: ${s}` : `${s.type}: ${s.name}`).join(',')
+          email, client_name: profileForm.clientName, company_name: profileForm.companyName,
+          company_type: profileForm.orgType, phone: profileForm.phone, address: profileForm.address,
+          description: profileForm.description, service_category: profileForm.services.map(s => typeof s === 'string' ? `Service: ${s}` : `${s.type}: ${s.name}`).join(',')
         })
       });
       if(r.ok) {
@@ -185,7 +220,6 @@ export default function ClientDashboard() {
     } catch(err) { toast.error("Network Error."); }
   };
 
-  // Vault File Upload
   const handleFileUpload = async (docId, e) => {
     const file = e?.target?.files?.[0];
     if(file) {
@@ -206,7 +240,6 @@ export default function ClientDashboard() {
     }
   };
 
-  // Custom Tender Request
   const handleCustomTenderSubmit = async (e) => { 
     e.preventDefault(); 
     if(!customTenderForm.link_or_id || !customTenderForm.description) return toast.error("Please fill all details");
@@ -223,7 +256,6 @@ export default function ClientDashboard() {
     } catch(err) { toast.error("Network Error."); }
   };
   
-  // Helpdesk Ticket
   const handleTicketSubmit = async (e) => { 
     e.preventDefault(); 
     if(!ticketForm.subject || !ticketForm.message) return toast.error('Fill subject and message');
@@ -240,7 +272,6 @@ export default function ClientDashboard() {
     } catch(err) { toast.error("Network Error."); }
   };
 
-  // Document Query Submission
   const handleQuerySubmit = async (e, queryId) => {
     e.preventDefault();
     if(!queryForm.description) return toast.error("Please provide an explanation.");
@@ -273,7 +304,6 @@ export default function ClientDashboard() {
     setSubmittingQuery(false);
   };
 
-  // 🚀 FIX 1: MD Action Alert Reply & Dismiss Logic
   const handleAlertReply = async (alertId) => {
      const replyMsg = alertReplyText[alertId];
      try {
@@ -289,20 +319,17 @@ export default function ClientDashboard() {
      } catch (e) { toast.error("Network error"); }
   };
 
-  // 🚀 FIX 2: Accept Recommendation Logic
   const handleAcceptRecommendation = async (tenderAlert) => {
       try {
          const match = tenderAlert.message.match(/\[BID: (.*?)\] (.*)/);
          const bid_no = match ? match[1] : '';
          const desc = match ? match[2] : tenderAlert.message;
 
-         // Send to Bids collection
          await fetch('/api/bids', { 
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ client_email: email, bid_no, description: desc, status: 'Client Approved' }) 
          });
          
-         // Mark Alert as Completed
          await fetch('/api/dispatches/update', { 
             method: 'PUT', headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ task_id: tenderAlert._id, status: 'Completed', reply: 'Client Accepted the Tender' }) 
@@ -310,11 +337,10 @@ export default function ClientDashboard() {
 
          toast.success("Added to your Active Bids Tracking!");
          fetchClientData(email);
-         setActiveTab('dashboard'); // Redirect to dashboard to see it
+         handleCardClick('dashboard', 'tracking-section');
       } catch (e) { toast.error("Error accepting tender."); }
   };
 
-  // 🚀 FIX 3: Cashfree Real Integration
   const executePayment = async (payRecord) => {
     setBuying(true);
     try {
@@ -326,10 +352,7 @@ export default function ClientDashboard() {
       if (!r1.ok) { setBuying(false); return toast.error(d1.error || 'Failed to initialize payment'); }
       
       const cashfree = await load({ mode: "production" });
-      const checkoutOptions = {
-        paymentSessionId: d1.payment_session_id,
-        returnUrl: `https://www.tgtenders.in/payment-status?order_id={order_id}`,
-      };
+      const checkoutOptions = { paymentSessionId: d1.payment_session_id, returnUrl: `https://www.tgtenders.in/payment-status?order_id={order_id}` };
       await cashfree.checkout(checkoutOptions);
     } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
   };
@@ -430,7 +453,6 @@ export default function ClientDashboard() {
 
   const activeBids = userData?.active_bids || [];
   const customRequests = userData?.custom_requests || [];
-  // Exclude 'Suggestion' from critical alerts since we map those to the recommended tab now
   const criticalAlerts = userData?.action_alerts?.filter(a => !a.subject.includes('Suggestion') && a.status !== 'Completed') || [];
   const pendingPayments = userData?.pending_payments || [];
   const totalEmd = userData?.emd_ledger?.total_paid || 0;
@@ -495,6 +517,7 @@ export default function ClientDashboard() {
                    <div className="p-2 border-b mb-2 bg-slate-50 rounded-md">
                      <p className="font-bold text-[#0A2647]">{profileForm.clientName}</p>
                      <p className="text-xs font-mono text-slate-500">{clientId} • {email}</p>
+                     <Badge className="mt-2 bg-blue-100 text-blue-800 border-0">{userData.profile?.category || 'Vendor'}</Badge>
                    </div>
                    <DropdownMenuItem className="text-red-600 cursor-pointer font-medium" onClick={handleSignOut}>
                      <LogOut className="w-4 h-4 mr-2" /> Secure Sign Out
@@ -507,7 +530,7 @@ export default function ClientDashboard() {
 
       <main className="container mx-auto px-4 py-8 space-y-6">
         
-        {/* 🚀 FIX 1: MD CRITICAL ALERTS WITH REPLY & DISMISS */}
+        {/* MD CRITICAL ALERTS WITH REPLY & DISMISS */}
         {criticalAlerts.length > 0 && (
           <div className="bg-red-600 text-white rounded-xl p-4 shadow-lg flex items-start gap-4 animate-in fade-in slide-in-from-top-4">
              <AlertTriangle className="w-8 h-8 shrink-0 text-red-200" />
@@ -530,35 +553,35 @@ export default function ClientDashboard() {
 
         {/* --- TOP FUNNEL METRICS --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-           <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('dashboard', 'recommended-section')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recommended</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('dashboard', 'tracking-section')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <FileText className="w-5 h-5 text-slate-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Participated</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.participated}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-blue-500/50 bg-blue-50/50 cursor-pointer hover:ring-blue-600 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('dashboard', 'tracking-section')} className="border-0 shadow-sm ring-1 ring-blue-500/50 bg-blue-50/50 cursor-pointer hover:ring-blue-600 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Ongoing Bids</p>
                  <p className="text-2xl font-black text-blue-700">{clientStats.ongoing}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => setActiveTab('wins')} className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80 cursor-pointer hover:ring-emerald-600 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('wins', '')} className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80 cursor-pointer hover:ring-emerald-600 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Trophy className="w-5 h-5 text-emerald-600 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Tenders Won</p>
                  <p className="text-2xl font-black text-emerald-700">{clientStats.won}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => setActiveTab('finance')} className="border-0 shadow-sm ring-1 ring-emerald-500 bg-emerald-600 text-white col-span-2 lg:col-span-1 cursor-pointer hover:ring-emerald-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('finance', '')} className="border-0 shadow-sm ring-1 ring-emerald-500 bg-emerald-600 text-white col-span-2 lg:col-span-1 cursor-pointer hover:ring-emerald-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Banknote className="w-5 h-5 text-emerald-200 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Project Revenue</p>
@@ -741,7 +764,6 @@ export default function ClientDashboard() {
                                 {doc.status === 'rejected' ? 'Rejected' : 'Missing'}
                               </Badge>
                             </div>
-                            {/* Rejection Message Display */}
                             {doc.status === 'rejected' && doc.reject_reason && (
                                <p className="text-xs text-red-700 font-semibold mb-3">Reason: {doc.reject_reason}</p>
                             )}
@@ -786,11 +808,9 @@ export default function ClientDashboard() {
                             <div className="bg-white p-2.5 border border-emerald-100 rounded-lg flex flex-col gap-2 shadow-inner">
                                <div className="flex justify-between items-center">
                                   <span className="text-xs font-mono text-slate-500 truncate max-w-[120px]" title={doc.file_name}>{doc.file_name || doc.file}</span>
-                                  {/* Real Live Date */}
                                   <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
                                </div>
                                <div className="flex items-center gap-2 mt-1">
-                                  {/* View & Download Links to Google Drive */}
                                   {doc.view_url && (
                                     <a href={doc.view_url} target="_blank" rel="noreferrer" className="flex-1">
                                       <Button size="sm" variant="ghost" className="w-full h-7 text-[10px] px-2 font-bold bg-slate-100 hover:bg-slate-200 text-[#0A2647]"><Eye className="w-3 h-3 mr-1"/> View</Button>
@@ -813,7 +833,7 @@ export default function ClientDashboard() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 3: WINNING BIDS LEDGER (Read-Only) */}
+          {/* TAB 3: WINNING BIDS LEDGER */}
           {/* ============================================================================== */}
           <TabsContent value="wins" className="space-y-6">
             <Card className="tender-shadow border-t-4 border-t-emerald-500">
@@ -859,8 +879,8 @@ export default function ClientDashboard() {
           {/* ============================================================================== */}
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* 🚀 FIX 2: RECOMMENDED TENDERS BLOCK WITH ACCEPT & REJECT */}
-            <Card className="tender-shadow border-t-4 border-t-blue-500 bg-blue-50/20">
+            {/* RECOMMENDED TENDERS BLOCK */}
+            <Card id="recommended-section" className={`tender-shadow border-t-4 border-t-blue-500 bg-blue-50/20 transition-all duration-500 ${highlightedSection === 'recommended-section' ? 'ring-4 ring-blue-500 transform scale-[1.01]' : ''}`}>
               <CardHeader className="border-b pb-4 bg-white">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
                   <Target className="w-5 h-5 text-blue-600"/> Recommended For You
@@ -902,7 +922,7 @@ export default function ClientDashboard() {
             </Card>
 
             {/* Visual Stepper Logic UI */}
-            <Card className="tender-shadow">
+            <Card id="tracking-section" className={`tender-shadow transition-all duration-500 ${highlightedSection === 'tracking-section' ? 'ring-4 ring-blue-500 transform scale-[1.01]' : ''}`}>
               <CardHeader className="border-b pb-4 bg-slate-50">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
               </CardHeader>
@@ -913,7 +933,6 @@ export default function ClientDashboard() {
                     </div>
                  ) : (
                     activeBids.map((bid, i) => {
-                       // Live Progress Calculation Based on Database Status
                        let barW = 'w-[10%]';
                        let s1 = 'bg-blue-500 text-white'; let s1Icon = <CheckCircle2 className="w-4 h-4"/>;
                        let s2 = 'bg-slate-100 text-slate-300'; let s2Icon = <Clock className="w-4 h-4"/>;
@@ -1003,7 +1022,6 @@ export default function ClientDashboard() {
                   </div>
                 </form>
 
-                {/* Show Permanent Saved Custom Requests */}
                 {customRequests.length > 0 && (
                   <div className="mt-6 border-t pt-6 space-y-4">
                      <h4 className="font-bold text-[#0A2647]">My Submitted Requests ({customRequests.length})</h4>
@@ -1045,9 +1063,9 @@ export default function ClientDashboard() {
                          <p className="font-bold text-[#0A2647]">{t.title}</p>
                          <p className="text-xs text-slate-500 mt-1">{t.department} • {t.district} • Last Date: {new Date(t.last_date).toLocaleDateString()}</p>
                       </div>
-                      <a href={`/?open_tender=${t._id}`} target="_blank" rel="noreferrer">
-                        <Button size="sm" variant="outline"><FileText className="w-4 h-4 mr-2"/> View Notice</Button>
-                      </a>
+                      <Button size="sm" variant="outline" onClick={() => handleViewPDF(t._id)}>
+                        <FileText className="w-4 h-4 mr-2"/> View Document
+                      </Button>
                    </div>
                  ))}
               </CardContent>
@@ -1078,7 +1096,6 @@ export default function ClientDashboard() {
                                 <span className="font-semibold text-red-900">{pay.reason}</span>
                                 <span className="font-bold text-red-700">₹{pay.amount}</span>
                              </div>
-                             {/* 🚀 FIX 3: REAL CASHFREE BUTTON CALL */}
                              <Button onClick={() => executePayment(pay)} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-9 shadow-md">
                                {buying ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <IndianRupee className="w-4 h-4 mr-2"/>} 
                                {buying ? 'Connecting...' : 'Pay via Cashfree'}
