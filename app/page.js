@@ -77,7 +77,8 @@ export default function App() {
   
   const [email, setEmail] = useState('');
   const [paywallModal, setPaywallModal] = useState(false);
-  const [pdfModal, setPdfModal] = useState(false);
+  const [guestPayModal, setGuestPayModal] = useState(false);
+  const [guestPayForm, setGuestPayForm] = useState({ email: '', phone: '' });
   
   const [pendingTender, setPendingTender] = useState(null);
   const [pdfData, setPdfData] = useState(null);
@@ -88,6 +89,7 @@ export default function App() {
     name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [], vision_text: null 
   });
   const [activeBanner, setActiveBanner] = useState(0);
+  const [logoFlip, setLogoFlip] = useState(false); // 🚀 3D Rotating Logo State
 
   // Visitor API State
   const [visitors, setVisitors] = useState({ total: "Loading...", today: "..." });
@@ -100,7 +102,12 @@ export default function App() {
 
   const [policyModal, setPolicyModal] = useState(null);
 
-  // Auto-Slide Logic for Banners
+  // 🚀 3D Earth-like Vertical Logo Rotation & Banner Slides
+  useEffect(() => {
+    const flipTimer = setInterval(() => setLogoFlip(prev => !prev), 4000);
+    return () => clearInterval(flipTimer);
+  }, []);
+
   useEffect(() => {
     if (brandSettings.banners && brandSettings.banners.length > 0) {
       const bannerTimer = setInterval(() => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length), 5000);
@@ -188,10 +195,14 @@ export default function App() {
     }
   }, [status, intent, userData, loadingUser]);
   
+  // 🚀 FIXED: Hard Logout Logic
   const performHardSignOut = async () => {
-    if (typeof window !== 'undefined') localStorage.clear();
-    setEmail(''); setUserData(null); setIntent(''); 
-    await signOut({ callbackUrl: '/' }); 
+    if (typeof window !== 'undefined') {
+        localStorage.clear();
+        sessionStorage.clear();
+    }
+    await signOut({ redirect: false }); 
+    window.location.href = '/'; 
   };
 
   // LIVE API: Fetch Tenders based on APPLIED Filter
@@ -295,21 +306,38 @@ export default function App() {
     } catch (e) { toast.error("Failed to submit query. Try again."); } finally { setSubmittingLead(false); }
   };
 
-  const handleViewPDF = (t) => {
-    setPendingTender(t);
-    setPaywallModal(true);
+  // 🚀 FIXED: REAL PDF UNLOCK LOGIC & NETWORK ERROR BYPASS
+  const tryUnlockPDF = async (t) => {
+    const userMail = email || (typeof window !== 'undefined' ? localStorage.getItem('guest_email') : null);
+    if (!userMail) {
+       setPendingTender(t);
+       setPaywallModal(true);
+       return;
+    }
+
+    const toastId = toast.loading('Verifying secure access...');
+    try {
+       const res = await fetch(`/api/me?email=${encodeURIComponent(userMail)}`);
+       const d = await res.json();
+       
+       let hasAccess = false;
+       if (d.subscription && d.subscription.status === 'active') hasAccess = true;
+       if (d.purchases && d.purchases.includes(t._id || t.id)) hasAccess = true;
+
+       if (hasAccess) {
+          toast.success('Access Granted!', { id: toastId });
+          window.open(`/api/tenders/${t._id || t.id}/pdf?email=${encodeURIComponent(userMail)}&role=guest`, '_blank');
+       } else {
+          toast.dismiss(toastId);
+          setPendingTender(t);
+          setPaywallModal(true);
+       }
+    } catch (e) { toast.error('Network Error.', { id: toastId }); }
   };
 
-  const tryUnlockPDF = async (t, mail) => {
-    setPdfModal(true); setPdfData(null);
-    const r = await fetch(`/api/tenders/${t._id || t.id}/pdf?email=${encodeURIComponent(mail)}`);
-    if (r.status === 402) { setPdfModal(false); setPaywallModal(true); return; }
-    const d = await r.json(); setPdfData(d);
-  };
-
-  // Automated Cashfree Subscriptions Integration (From Code 2)
+  // Automated Cashfree Subscriptions Integration
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
-    setBuying(true);
+    setBuying(true); setGuestPayModal(false);
     await new Promise((r) => setTimeout(r, 250));
 
     const isSubscription = planId === 'month' || planId === 'year';
@@ -340,15 +368,23 @@ export default function App() {
 
   const buyPlan = (planId) => {
     if (planId === 'single') {
-       // Direct ₹10 access bypasses the form entirely, mapping random guest email if not signed in
-       executePayment('single', email || `guest_${Date.now()}@tgtenders.in`, '9999999999'); 
+       if (email) executePayment('single', email); 
+       else { setPaywallModal(false); setGuestPayModal(true); } 
     } else {
        if (!email) { toast.info("Please sign in to Subscribe securely"); handleSubscribeLogin(); return; }
        executePayment(planId, email);
     }
   };
 
-  // Full Database Automation Form Submission (From Code 2)
+  const handleGuestPaySubmit = (e) => {
+    e.preventDefault();
+    if(!guestPayForm.email || guestPayForm.phone.length < 10) return toast.error("Enter valid email & phone");
+    // 🚀 SAVING GUEST EMAIL SECURELY BEFORE CHECKOUT
+    localStorage.setItem('guest_email', guestPayForm.email);
+    executePayment('single', guestPayForm.email, guestPayForm.phone);
+  };
+
+  // Full Database Automation Form Submission 
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
@@ -376,78 +412,76 @@ export default function App() {
 
   if (status === 'loading' || loadingUser) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
-  // VERIFICATION SCREENS
-  if (status === 'authenticated' && intent === 'client' && (!userData || !userData.onboarding_complete)) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-4 py-10 w-full overflow-x-hidden">
-        <Card className="max-w-3xl mx-auto shadow-2xl">
-          <CardHeader className="border-b bg-white text-center pb-6">
-             <UserCog className="w-10 h-10 mx-auto text-blue-600 mb-2" />
-             <CardTitle className="text-2xl text-[#0A2647]">Complete Your Business Profile</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 bg-slate-50/50">
-             <form onSubmit={submitOnboarding}>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div><Label>Client Name *</Label><Input required value={onboardForm.client_name} onChange={e => setOnboardForm({...onboardForm, client_name: e.target.value})} className="mt-1"/></div>
-                  <div><Label>Contact Number *</Label><Input required type="tel" value={onboardForm.phone} onChange={e => setOnboardForm({...onboardForm, phone: e.target.value})} className="mt-1"/></div>
-                  <div className="sm:col-span-2"><Label>Company / Firm Name *</Label><Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} className="mt-1"/></div>
-                  <div>
-                    <Label>Company Type *</Label>
-                    <select required className="w-full border rounded-md p-2 mt-1 bg-white text-sm" value={onboardForm.company_type} onChange={e => setOnboardForm({...onboardForm, company_type: e.target.value})}>
-                      <option value="Proprietor (Individual)">Proprietor (Individual)</option>
-                      <option value="Partnership">Partnership</option>
-                      <option value="Private Limited">Private Limited</option>
-                      <option value="Public Limited">Public Limited</option>
-                      <option value="LLP">LLP</option>
-                    </select>
-                  </div>
-                  <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
-                </div>
-                <div className="border-t pt-5 mt-4">
-                  <Label className="text-[#0A2647] font-semibold block mb-1">Do you have these basic documents?</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_bank} onChange={e => setOnboardForm({...onboardForm, has_bank: e.target.checked})} /> Bank Account</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_ifsc} onChange={e => setOnboardForm({...onboardForm, has_ifsc: e.target.checked})} /> IFSC Details</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_dsc} onChange={e => setOnboardForm({...onboardForm, has_dsc: e.target.checked})} /> DSC Class 3</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_fssai} onChange={e => setOnboardForm({...onboardForm, has_fssai: e.target.checked})} /> FSSAI</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.</label>
-                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_annual_returns} onChange={e => setOnboardForm({...onboardForm, has_annual_returns: e.target.checked})} /> Annual Returns</label>
-                  </div>
-                </div>
-                <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-6 shadow-sm">
-                  {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Portal'}
-                </Button>
-             </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (status === 'authenticated' && (intent === 'client' || (userData && userData.onboarding_complete))) {
-    if (userData && !userData.is_approved) {
-      return (
-        <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4 w-full overflow-x-hidden">
-          <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl">
-            <ShieldCheck className="w-12 h-12 text-amber-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-extrabold text-[#0A2647] mb-4">Account Under Verification</h2>
-            <p className="text-slate-700 text-sm mb-6">Your registration is successful. Dashboard access is locked pending <strong className="text-red-600">MD Approval</strong>.</p>
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
-              <a href="tel:+916304486770" className="text-2xl font-black text-blue-600 hover:text-blue-800 hover:underline">+91 6304486770</a>
-            </div>
-            <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2"><LogOut className="w-4 h-4 mr-2" /> Log Out</Button>
-          </Card>
-        </div>
-      );
+  // 🚀 FIXED: VERIFICATION LOCKOUT TRAP - ONLY TRAPS IF INTENT === 'CLIENT'
+  if (status === 'authenticated' && intent === 'client') {
+     if (userData && !userData.onboarding_complete) {
+        return (
+          <div className="min-h-screen bg-slate-50 p-4 py-10 w-full overflow-x-hidden">
+            <Card className="max-w-3xl mx-auto shadow-2xl">
+              <CardHeader className="border-b bg-white text-center pb-6">
+                 <UserCog className="w-10 h-10 mx-auto text-blue-600 mb-2" />
+                 <CardTitle className="text-2xl text-[#0A2647]">Complete Your Business Profile</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 bg-slate-50/50">
+                 <form onSubmit={submitOnboarding}>
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div><Label>Client Name *</Label><Input required value={onboardForm.client_name} onChange={e => setOnboardForm({...onboardForm, client_name: e.target.value})} className="mt-1"/></div>
+                      <div><Label>Contact Number *</Label><Input required type="tel" value={onboardForm.phone} onChange={e => setOnboardForm({...onboardForm, phone: e.target.value})} className="mt-1"/></div>
+                      <div className="sm:col-span-2"><Label>Company / Firm Name *</Label><Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} className="mt-1"/></div>
+                      <div>
+                        <Label>Company Type *</Label>
+                        <select required className="w-full border rounded-md p-2 mt-1 bg-white text-sm" value={onboardForm.company_type} onChange={e => setOnboardForm({...onboardForm, company_type: e.target.value})}>
+                          <option value="Proprietor (Individual)">Proprietor (Individual)</option>
+                          <option value="Partnership">Partnership</option>
+                          <option value="Private Limited">Private Limited</option>
+                          <option value="Public Limited">Public Limited</option>
+                          <option value="LLP">LLP</option>
+                        </select>
+                      </div>
+                      <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
+                    </div>
+                    <div className="border-t pt-5 mt-4">
+                      <Label className="text-[#0A2647] font-semibold block mb-1">Do you have these basic documents?</Label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_bank} onChange={e => setOnboardForm({...onboardForm, has_bank: e.target.checked})} /> Bank Account</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_ifsc} onChange={e => setOnboardForm({...onboardForm, has_ifsc: e.target.checked})} /> IFSC Details</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_dsc} onChange={e => setOnboardForm({...onboardForm, has_dsc: e.target.checked})} /> DSC Class 3</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_fssai} onChange={e => setOnboardForm({...onboardForm, has_fssai: e.target.checked})} /> FSSAI</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.</label>
+                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_annual_returns} onChange={e => setOnboardForm({...onboardForm, has_annual_returns: e.target.checked})} /> Annual Returns</label>
+                      </div>
+                    </div>
+                    <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-6 shadow-sm">
+                      {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Portal'}
+                    </Button>
+                 </form>
+              </CardContent>
+            </Card>
+          </div>
+        );
+    } else if (userData && !userData.is_approved) {
+        return (
+          <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4 w-full overflow-x-hidden">
+            <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl">
+              <ShieldCheck className="w-12 h-12 text-amber-600 mx-auto mb-4" />
+              <h2 className="text-2xl font-extrabold text-[#0A2647] mb-4">Account Under Verification</h2>
+              <p className="text-slate-700 text-sm mb-6">Your registration is successful. Dashboard access is locked pending <strong className="text-red-600">MD Approval</strong>.</p>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
+                <a href="tel:+916304486770" className="text-2xl font-black text-blue-600 hover:text-blue-800 hover:underline">+91 6304486770</a>
+              </div>
+              <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2"><LogOut className="w-4 h-4 mr-2" /> Log Out</Button>
+            </Card>
+          </div>
+        );
     } 
   }
 
@@ -457,15 +491,20 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20 relative font-sans w-full overflow-x-hidden">
       
-      {/* 🚀 HEADER WITH SUBSCRIPTION BADGE */}
+      {/* 🚀 HEADER WITH 3D ROTATING LOGO */}
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm w-full">
         <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            {brandSettings.logo ? (
-               <img src={brandSettings.logo} alt="Logo" className="w-14 h-14 md:w-16 md:h-16 rounded object-contain" />
-            ) : (
-               <div className="w-14 h-14 bg-[#16a34a] rounded flex items-center justify-center text-white font-bold text-2xl">TT</div>
-            )}
+             <div className="relative w-14 h-14 md:w-16 md:h-16 shrink-0 [perspective:1000px]">
+                <div className={`w-full h-full absolute transition-transform duration-1000 [transform-style:preserve-3d] ${logoFlip ? '[transform:rotateX(180deg)]' : ''}`}>
+                   <div className="absolute inset-0 [backface-visibility:hidden] bg-white rounded-md p-1 border border-slate-100 shadow-sm">
+                      {brandSettings.logo ? <img src={brandSettings.logo} className="w-full h-full object-contain"/> : <div className="w-full h-full bg-[#16a34a] text-white flex items-center justify-center font-bold">TT</div>}
+                   </div>
+                   <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateX(180deg)] bg-white rounded-md p-1 border border-slate-100 shadow-sm">
+                      {brandSettings.gem_logo ? <img src={brandSettings.gem_logo} className="w-full h-full object-contain"/> : <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" className="w-full h-full object-contain" onError={(e) => e.target.style.display='none'}/>}
+                   </div>
+                </div>
+             </div>
             <div className="hidden sm:block">
                <h1 className="text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-emerald-500 to-indigo-700 leading-tight">
                  Telangana Tenders
@@ -475,15 +514,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="hidden lg:flex flex-col items-center border-r pr-4 mr-1 border-slate-200">
-              {brandSettings.gem_logo ? (
-                 <img src={brandSettings.gem_logo} alt="GeM Logo" className="w-14 h-14 md:w-16 md:h-16 object-contain" />
-              ) : (
-                 <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="GeM" className="w-14 h-14 md:w-16 md:h-16 object-contain" onError={(e) => e.target.style.display='none'}/>
-              )}
-              <span className="text-[10px] md:text-xs font-black text-[#0A2647] uppercase mt-1 tracking-wide">Bidding Service</span>
-            </div>
-
             {subscription && subscription.status === 'active' ? (
               <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white text-[10px] sm:text-xs">
                 <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -537,10 +567,13 @@ export default function App() {
       <section className="container mx-auto px-4 -mt-8 z-20 relative">
         <Card className="shadow-2xl border-0 bg-white rounded-xl">
           <CardContent className="p-4 sm:p-6 space-y-4">
+            
+            {/* 🚀 FIXED: LOADING SPINNER IN SEARCH */}
             <div className="flex bg-slate-50 border border-slate-200 rounded-lg p-3 items-center shadow-inner w-full">
-               <Search className="w-5 h-5 text-blue-600 ml-2 mr-3" />
+               {loading ? <Loader2 className="w-5 h-5 text-blue-600 ml-2 mr-3 animate-spin shrink-0" /> : <Search className="w-5 h-5 text-blue-600 ml-2 mr-3 shrink-0" />}
                <input type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search tenders by keywords..." className="flex-1 bg-transparent border-0 outline-none text-slate-700 font-bold min-w-0" />
             </div>
+
             <div className="flex flex-wrap items-center gap-y-4 gap-x-8 pt-2">
                <div className="flex flex-col gap-2">
                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</span>
@@ -603,7 +636,7 @@ export default function App() {
                        <h4 className="font-bold text-slate-800 text-lg mb-1 leading-snug line-clamp-2">{t.title}</h4>
                        <p className="text-sm text-slate-500 flex items-center gap-1 font-semibold"><Building2 className="w-4 h-4 text-slate-400" /> {t.department}</p>
                      </div>
-                     <Button onClick={() => handleViewPDF(t)} className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white shrink-0 w-full sm:w-auto h-11 shadow-md font-bold">
+                     <Button onClick={() => tryUnlockPDF(t)} className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white shrink-0 w-full sm:w-auto h-11 shadow-md font-bold">
                        <FileText className="w-4 h-4 mr-2" /> View PDF
                      </Button>
                    </CardContent>
@@ -769,7 +802,7 @@ export default function App() {
                       {leader.phone && (
                          <a href={`tel:${leader.phone}`} className="flex items-center gap-3 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm w-full justify-center">
                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
-                             <Phone className="w-4 h-4" />
+                             <PhoneCall className="w-4 h-4" />
                            </div>
                            {leader.phone}
                          </a>
@@ -838,19 +871,6 @@ export default function App() {
         </div>
       </footer>
 
-      {/* SOCIAL MEDIA FLOATING ICONS */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
-        <a href="https://www.youtube.com/@esakafficial1237" target="_blank" rel="noreferrer" className="bg-white text-[#FF0000] p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
-          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-        </a>
-        <a href="https://www.instagram.com/telangana_tenders?igsh=MWIzbTAyZmE2OHkyMQ==" target="_blank" rel="noreferrer" className="bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] text-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
-          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
-        </a>
-        <a href="https://whatsapp.com/channel/0029VbD5F2h2975IQSMPVK2x" target="_blank" rel="noreferrer" className="bg-[#25D366] text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-transform flex items-center justify-center border-2 border-white">
-          <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
-        </a>
-      </div>
-
       {/* LOGIN MODALS */}
       <Dialog open={mainLoginModal} onOpenChange={setMainLoginModal}>
         <DialogContent className="sm:max-w-md border-0 shadow-2xl">
@@ -887,6 +907,22 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={guestPayModal} onOpenChange={setGuestPayModal}>
+        <DialogContent className="sm:max-w-md border-0 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-black text-[#0A2647]"><Lock className="w-6 h-6 text-emerald-500" /> Secure Quick Checkout</DialogTitle>
+            <DialogDescription className="font-semibold text-slate-500">Provide contact details to receive your payment receipt.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleGuestPaySubmit} className="space-y-4 pt-2">
+            <div><Label className="font-bold text-slate-700">Email Address *</Label><Input type="email" required placeholder="For receipt & PDF backup" value={guestPayForm.email} onChange={e => setGuestPayForm({...guestPayForm, email: e.target.value})} className="mt-1 border-2 h-11"/></div>
+            <div><Label className="font-bold text-slate-700">Phone Number *</Label><Input type="tel" required placeholder="10-digit number" value={guestPayForm.phone} onChange={e => setGuestPayForm({...guestPayForm, phone: e.target.value})} className="mt-1 border-2 h-11"/></div>
+            <Button type="submit" disabled={buying} className="w-full bg-emerald-600 hover:bg-emerald-500 h-12 mt-2 font-bold text-lg shadow-lg text-white">
+              {buying ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Proceed to Pay ₹10'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* PAYWALL */}
       <Dialog open={paywallModal} onOpenChange={setPaywallModal}>
         <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto bg-slate-50">
@@ -908,51 +944,6 @@ export default function App() {
               </div>
             ))}
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={pdfModal} onOpenChange={setPdfModal}>
-        <DialogContent className="max-w-4xl w-[95vw] h-[90vh] flex flex-col p-4 sm:p-6">
-          <DialogHeader>
-             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg pr-6">
-                <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span className="truncate">{pdfData ? pdfData.title : 'Loading Document...'}</span>
-             </DialogTitle>
-             {pdfData?.watermarked && (
-               <div className="flex flex-col sm:flex-row items-center gap-2 p-3 bg-emerald-50 rounded border border-emerald-100 mt-2 shadow-sm">
-                 <div className="flex items-center gap-2 border-b sm:border-b-0 sm:border-r border-emerald-200 pb-2 sm:pb-0 sm:pr-3">
-                   {brandSettings.logo && <img src={brandSettings.logo} className="w-6 h-6 object-contain" alt="Logo" />}
-                   <span className="font-bold text-[#0A2647] text-sm">{brandSettings.name}</span>
-                 </div>
-                 <div className="flex items-center gap-1 text-emerald-800 text-xs font-medium">
-                   <Lock className="w-3 h-3" />
-                   <span>Licensed to: <strong>{email || 'Guest User'}</strong></span>
-                 </div>
-               </div>
-             )}
-          </DialogHeader>
-          <div className="flex-1 rounded-md border overflow-hidden bg-slate-100 flex items-center justify-center">
-             {!pdfData ? (
-               <div className="flex flex-col items-center justify-center p-10">
-                 <Loader2 className="w-12 h-12 text-emerald-600 animate-spin mb-4" />
-                 <p className="text-[#0A2647] font-semibold text-lg">Fetching your PDF...</p>
-                 <p className="text-muted-foreground text-sm">Please wait a moment...</p>
-               </div>
-             ) : pdfData.pdf_base64 ? (
-               <iframe title="tender-pdf" src={`data:application/pdf;base64,${pdfData.pdf_base64}`} className="w-full h-full" />
-             ) : (
-               <div className="p-10 text-center text-muted-foreground">No PDF uploaded for this tender yet.</div>
-             )}
-          </div>
-          <DialogFooter>
-             {pdfData?.pdf_base64 && (
-               <a href={`data:application/pdf;base64,${pdfData.pdf_base64}`} download={pdfData.pdf_filename} className="w-full sm:w-auto">
-                 <Button className="bg-[#0A2647] hover:bg-[#144272] w-full text-white font-bold">
-                   Download Watermarked PDF
-                 </Button>
-               </a>
-             )}
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
