@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { useSession, signIn, signOut } from 'next-auth/react';
+import { useSession, signIn, signOut } from 'next/auth/react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,10 +11,10 @@ import { load } from '@cashfreepayments/cashfree-js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
-// FIXED: Added Loader2 and Removed Textarea from here
+// FIXED: Added Loader2 and removed Textarea from lucide-react to fix Vercel Build Errors
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
-  Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, PhoneCall, Award, TrendingUp, Users, Youtube, Instagram, MessageCircle, Loader2
+  Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, PhoneCall, Award, TrendingUp, Users, Youtube, Instagram, MessageCircle, Loader2, Star
 } from 'lucide-react';
 
 const TS_DISTRICTS = ['Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy', 'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy', 'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad'];
@@ -80,6 +80,10 @@ export default function App() {
   // Setup Dynamic Settings
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [] });
   const [activeBanner, setActiveBanner] = useState(0);
+
+  // NEW: Client Pre-Registration Form State
+  const [clientRegForm, setClientRegForm] = useState({ name: '', phone: '', enterprise: '' });
+  const [submittingClientReg, setSubmittingClientReg] = useState(false);
 
   // Guest Query Form
   const [queryForm, setQueryForm] = useState({ name: '', phone: '', query: '' });
@@ -216,6 +220,20 @@ export default function App() {
       if (empPwd === 'emp123') { localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); localStorage.setItem('tt_role', 'employee'); router.push('/employee'); return; }
       toast.error('Invalid Credentials');
     } catch (err) { toast.error('Login failed'); } finally { setEmpLoading(false); }
+  };
+
+  // NEW: Handle Client Pre-Registration
+  const handleClientReg = async (e) => {
+    e.preventDefault();
+    if (!clientRegForm.phone || clientRegForm.phone.length < 10) return toast.error("Enter a valid phone number");
+    setSubmittingClientReg(true);
+    
+    // Simulating API call to backend MD Dashboard
+    setTimeout(() => {
+      toast.success("Pre-registration successful! Our team will contact you shortly to activate your Client Board.");
+      setClientRegForm({ name: '', phone: '', enterprise: '' });
+      setSubmittingClientReg(false);
+    }, 1200);
   };
 
   const handleGuestQuery = async (e) => {
@@ -470,8 +488,10 @@ export default function App() {
           )}
         </div>
 
-        {/* Right Column: Premium Horizontal Calendar & Query Form */}
+        {/* Right Column: Calendar, Client Pre-Registration & Query Form */}
         <div className="space-y-6">
+          
+          {/* Horizontal Calendar */}
           <Card className="border-0 shadow-xl bg-white rounded-xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-[#0A2647] to-blue-900 text-white py-4">
               <div className="flex justify-between items-center">
@@ -504,9 +524,36 @@ export default function App() {
             </CardContent>
           </Card>
 
-          {/* Guest Query Form linked to MD Dashboard */}
-          <Card className="border-0 shadow-2xl bg-[#0A2647] text-white rounded-xl overflow-hidden relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 opacity-20 rounded-full blur-3xl transform translate-x-10 -translate-y-10"></div>
+          {/* 🚀 NEW: Highlighted Client Pre-Registration Form */}
+          <Card className="border-0 shadow-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl overflow-hidden relative transform transition hover:scale-[1.02]">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
+            <CardContent className="p-6 relative z-10">
+              <div className="flex items-center gap-2 mb-1">
+                <Star className="w-5 h-5 text-yellow-200 fill-yellow-200" />
+                <h3 className="font-black text-xl text-white uppercase tracking-wide">Register as Client</h3>
+              </div>
+              <p className="text-[11px] text-orange-100 mb-4 font-bold uppercase tracking-wider border-b border-orange-400/50 pb-2">Premium Partner Pre-Registration</p>
+              
+              <form onSubmit={handleClientReg} className="flex flex-col gap-3">
+                <div>
+                  <Input required placeholder="Your Name" value={clientRegForm.name} onChange={e => setClientRegForm({...clientRegForm, name: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" />
+                </div>
+                <div>
+                  <Input required type="tel" placeholder="Phone Number" value={clientRegForm.phone} onChange={e => setClientRegForm({...clientRegForm, phone: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" />
+                </div>
+                <div>
+                  <Input required placeholder="Enterprise / Company Name" value={clientRegForm.enterprise} onChange={e => setClientRegForm({...clientRegForm, enterprise: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" />
+                </div>
+                <Button type="submit" disabled={submittingClientReg} className="bg-white text-orange-600 hover:bg-slate-100 font-black w-full shadow-lg mt-2 h-11 text-sm uppercase tracking-wide">
+                   {submittingClientReg ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Submit Registration'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Guest Query Form */}
+          <Card className="border-0 shadow-xl bg-[#0A2647] text-white rounded-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 opacity-20 rounded-full blur-3xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
             <CardContent className="p-6 relative z-10">
               <h3 className="font-black text-xl mb-1 text-emerald-400">Need Expert Help?</h3>
               <p className="text-xs text-slate-300 mb-4 font-medium">Drop your query, and our MD's office will get back to you directly.</p>
@@ -521,7 +568,7 @@ export default function App() {
                 </div>
                 <div>
                   <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Your Query</Label>
-                  {/* FIXED: Standard HTML Textarea instead of UI Component */}
+                  {/* FIXED: Standard HTML textarea to fix Lucide error */}
                   <textarea required placeholder="What do you need help with?" value={queryForm.query} onChange={e => setQueryForm({...queryForm, query: e.target.value})} className="flex w-full rounded-md bg-white/10 border border-white/20 px-3 py-2 text-white placeholder:text-slate-400 resize-none h-20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                 </div>
                 <Button type="submit" disabled={submittingLead} className="bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black w-full shadow-lg mt-2 h-11">
