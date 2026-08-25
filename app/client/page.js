@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useSession, signOut } from 'next-auth/react'; // 🚀 useSession ఇక్కడే ఉంది కదా!
+import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { load } from '@cashfreepayments/cashfree-js'; // 🚀 CASHFREE IMPORTED
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Briefcase, CheckCircle2, AlertTriangle, FileText, Clock, ShieldAlert, Send, 
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
-  Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck
+  Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle
 } from 'lucide-react';
 
 const DEFAULT_VAULT_DOCS = [
@@ -35,7 +36,6 @@ const DEFAULT_VAULT_DOCS = [
 ];
 
 export default function ClientDashboard() {
-  // 🚀 FIX 1: సెషన్ డేటా తీసుకోవడం
   const { data: session, status } = useSession(); 
   
   const [isMounted, setIsMounted] = useState(false);
@@ -48,6 +48,7 @@ export default function ClientDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [publicTenders, setPublicTenders] = useState([]);
   const [buying, setBuying] = useState(false);
+  const [alertReplyText, setAlertReplyText] = useState({}); // 🚀 FIX: State for Alert Replies
 
   // --- Forms State ---
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
@@ -57,14 +58,12 @@ export default function ClientDashboard() {
   const [queryForm, setQueryForm] = useState({ description: '', file: null });
   const [submittingQuery, setSubmittingQuery] = useState(false);
 
-  // --- Dynamic Business Profile State (Empty Default) ---
+  // --- Dynamic Business Profile State ---
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     clientName: '', orgType: 'Private Limited', companyName: '',
-    phone: '', email: '', gstin: '', incorpDate: '',
-    udyam: '', address: '', 
-    services: [{ type: 'Service', name: '' }], 
-    description: ''
+    phone: '', email: '', gstin: '', incorpDate: '', udyam: '', address: '', 
+    services: [{ type: 'Service', name: '' }], description: ''
   });
 
   // --- Real-time Stats, Vault & Wins State ---
@@ -73,36 +72,32 @@ export default function ClientDashboard() {
   const [wonBids, setWonBids] = useState([]);
   const [recommendedTenders, setRecommendedTenders] = useState([]);
 
-  // 🚀 FIX 2: useEffect ని సెషన్ ఆధారంగా మార్చడం
   useEffect(() => {
     setIsMounted(true);
-    
-    // సెషన్ లోడ్ అవుతున్నప్పుడు ఆగుతాం
     if (status === "loading") return; 
 
-    // సెషన్ లో ఈమెయిల్ ఉంటే అదే వాడతాం (లేదంటే లోకల్ స్టోరేజ్)
-    const e = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '') || 'client@apex.com';
-    
+    const e = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '') || 'client@tgtenders.in';
     setEmail(e);
-    setClientId(`CLI-${e.substring(0, 4).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`);
     fetchPublicTenders();
     fetchClientData(e); 
-  }, [session, status]); // 👈 సెషన్ మారినప్పుడల్లా ఈమెయిల్ అప్డేట్ అవుతుంది
+  }, [session, status]);
 
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Fetch User Data from DB
-  // ============================================================================
   const fetchClientData = async (userEmail) => {
     try {
       const r = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`);
       if(r.ok) {
         const d = await r.json();
         setUserData(d);
+        setClientId(d.client_id || `CLI-${userEmail.substring(0,4).toUpperCase()}X`);
 
         // 1. LIVE TRACKING
         if(d.stats) setClientStats(d.stats);
-        if(d.won_bids) setWonBids(d.won_bids);
-        if(d.recommended_tenders) setRecommendedTenders(d.recommended_tenders);
+        if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
+        
+        // 🚀 FIX: Map Action Alerts into Recommended Tenders Array
+        if(d.action_alerts) {
+            setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
+        }
         
         // 2. VAULT DOCS MERGE 
         if (d.vault_docs && d.vault_docs.length > 0) {
@@ -115,7 +110,7 @@ export default function ClientDashboard() {
             setVaultDocs(DEFAULT_VAULT_DOCS);
         }
 
-        // 3. Pre-fill editable profile from Database
+        // 3. Pre-fill profile
         if(d.profile) {
           setProfileForm(prev => ({
             ...prev,
@@ -150,29 +145,21 @@ export default function ClientDashboard() {
     } catch (err) { console.error(err); }
   };
 
-  // For Demo Purposes: Function to bypass lock screen
   const bypassLockScreen = () => setUserData(prev => ({ ...prev, is_approved: true }));
 
-  // --- Dynamic Profile Functions ---
+  // Profile Methods
   const addServiceRow = () => setProfileForm(prev => ({...prev, services: [...prev.services, { type: 'Service', name: '' }]}));
-  
   const updateService = (index, key, value) => {
     const newServices = [...profileForm.services];
-    if (typeof newServices[index] === 'string') {
-        newServices[index] = { type: 'Service', name: newServices[index] };
-    }
+    if (typeof newServices[index] === 'string') newServices[index] = { type: 'Service', name: newServices[index] };
     newServices[index][key] = value;
     setProfileForm(prev => ({...prev, services: newServices}));
   };
-  
   const removeService = (index) => {
     const newServices = profileForm.services.filter((_, i) => i !== index);
     setProfileForm(prev => ({...prev, services: newServices}));
   };
   
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Save Profile to DB
-  // ============================================================================
   const saveProfile = async (e) => {
     e.preventDefault();
     try {
@@ -193,21 +180,16 @@ export default function ClientDashboard() {
       if(r.ok) {
         setIsEditingProfile(false);
         toast.success("Client Profile Updated Successfully! Synced with MD Database.");
-        fetchClientData(email); // Refresh Data
+        fetchClientData(email); 
       }
-    } catch(err) {
-      toast.error("Network Error.");
-    }
+    } catch(err) { toast.error("Network Error."); }
   };
 
-  // ============================================================================
-  // 🚀 REAL GOOGLE DRIVE UPLOAD LOGIC
-  // ============================================================================
+  // Vault File Upload
   const handleFileUpload = async (docId, e) => {
     const file = e?.target?.files?.[0];
     if(file) {
-      toast.info(`Uploading ${file.name} to Secure Google Drive...`);
-      
+      toast.info(`Uploading ${file.name} to Secure Vault...`);
       const formData = new FormData();
       formData.append('file', file);
       formData.append('docId', docId);
@@ -215,96 +197,61 @@ export default function ClientDashboard() {
       formData.append('clientName', profileForm.companyName || profileForm.clientName); 
 
       try {
-        const res = await fetch('/api/vault/upload', {
-          method: 'POST',
-          body: formData
-        });
-        
+        const res = await fetch('/api/vault/upload', { method: 'POST', body: formData });
         if(res.ok) {
           toast.success(`Document uploaded successfully! Pending MD Approval.`);
-          fetchClientData(email); // Refreshes UI with real DB dates and statuses
-        } else {
-          toast.error('Upload failed. Please try again.');
-        }
-      } catch (err) {
-        toast.error('Network Error during upload.');
-      }
+          fetchClientData(email); 
+        } else { toast.error('Upload failed. Please try again.'); }
+      } catch (err) { toast.error('Network Error during upload.'); }
     }
   };
 
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Send Custom Bid Request to Database
-  // ============================================================================
+  // Custom Tender Request
   const handleCustomTenderSubmit = async (e) => { 
     e.preventDefault(); 
-    if(!customTenderForm.link_or_id || !customTenderForm.description) {
-      return toast.error("Please fill all details");
-    }
-
+    if(!customTenderForm.link_or_id || !customTenderForm.description) return toast.error("Please fill all details");
     try {
       const res = await fetch('/api/client-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_email: email,
-          client_id: clientId,
-          link_or_id: customTenderForm.link_or_id,
-          description: customTenderForm.description
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_email: email, client_id: clientId, link_or_id: customTenderForm.link_or_id, description: customTenderForm.description })
       });
-
       if(res.ok) {
         toast.success("Custom tender request submitted successfully to Operations Team!"); 
         setCustomTenderForm({ link_or_id: '', description: '', file: null }); 
-        fetchClientData(email); // Refresh Data
-      } else {
-        toast.error("Failed to submit request.");
-      }
-    } catch(err) {
-      toast.error("Network Error.");
-    }
+        fetchClientData(email); 
+      } else { toast.error("Failed to submit request."); }
+    } catch(err) { toast.error("Network Error."); }
   };
   
-  // ============================================================================
-  // 🚀 PERMANENT BACKEND LOGIC: Create SLA Ticket in Database
-  // ============================================================================
+  // Helpdesk Ticket
   const handleTicketSubmit = async (e) => { 
     e.preventDefault(); 
     if(!ticketForm.subject || !ticketForm.message) return toast.error('Fill subject and message');
     try {
       const r = await fetch('/api/tickets', {
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, department: 'Support', subject: ticketForm.subject, message: ticketForm.message })
       });
       if(r.ok) {
         toast.success('24/7 SLA Ticket raised successfully!'); 
         setTicketForm({ subject: '', message: '' }); 
-        fetchClientData(email); // Refresh Data
+        fetchClientData(email); 
       }
-    } catch(err) {
-      toast.error("Network Error.");
-    }
+    } catch(err) { toast.error("Network Error."); }
   };
 
-  const handleQueryResponse = (id) => { toast.success('Response submitted to Officer.'); };
-  
-  // ============================================================================
-  // 🚀 OFFICER QUERY SUBMISSION & FILE UPLOAD LOGIC 
-  // ============================================================================
+  // Document Query Submission
   const handleQuerySubmit = async (e, queryId) => {
     e.preventDefault();
     if(!queryForm.description) return toast.error("Please provide an explanation.");
     setSubmittingQuery(true);
-    
     try {
       let uploadedFileName = '';
-      
       if (queryForm.file) {
         toast.info("Uploading document...");
         const formData = new FormData();
         formData.append('file', queryForm.file);
-        formData.append('queryId', queryId);
+        formData.append('docId', `query_response_${queryId}`);
         formData.append('email', email);
         formData.append('clientName', profileForm.companyName || profileForm.clientName); 
         
@@ -313,27 +260,78 @@ export default function ClientDashboard() {
       }
 
       const r = await fetch('/api/queries/reply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          queryId,
-          email,
-          description: queryForm.description,
-          fileName: uploadedFileName
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queryId, email, description: queryForm.description, fileName: uploadedFileName })
       });
 
       if(r.ok) {
         toast.success("Reply & Document submitted to the Officer successfully!");
         setQueryForm({ description: '', file: null });
         fetchClientData(email); 
-      } else {
-        toast.error("Failed to submit reply.");
-      }
-    } catch(err) {
-      toast.error("Network error.");
-    }
+      } else { toast.error("Failed to submit reply."); }
+    } catch(err) { toast.error("Network error."); }
     setSubmittingQuery(false);
+  };
+
+  // 🚀 FIX 1: MD Action Alert Reply & Dismiss Logic
+  const handleAlertReply = async (alertId) => {
+     const replyMsg = alertReplyText[alertId];
+     try {
+       const res = await fetch('/api/dispatches/update', {
+         method: 'PUT', headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ task_id: alertId, status: 'Completed', reply: replyMsg || 'Client acknowledged the alert.' })
+       });
+       if(res.ok) {
+          toast.success("Alert resolved and dismissed.");
+          setAlertReplyText({...alertReplyText, [alertId]: ''});
+          fetchClientData(email);
+       }
+     } catch (e) { toast.error("Network error"); }
+  };
+
+  // 🚀 FIX 2: Accept Recommendation Logic
+  const handleAcceptRecommendation = async (tenderAlert) => {
+      try {
+         const match = tenderAlert.message.match(/\[BID: (.*?)\] (.*)/);
+         const bid_no = match ? match[1] : '';
+         const desc = match ? match[2] : tenderAlert.message;
+
+         // Send to Bids collection
+         await fetch('/api/bids', { 
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ client_email: email, bid_no, description: desc, status: 'Client Approved' }) 
+         });
+         
+         // Mark Alert as Completed
+         await fetch('/api/dispatches/update', { 
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ task_id: tenderAlert._id, status: 'Completed', reply: 'Client Accepted the Tender' }) 
+         });
+
+         toast.success("Added to your Active Bids Tracking!");
+         fetchClientData(email);
+         setActiveTab('dashboard'); // Redirect to dashboard to see it
+      } catch (e) { toast.error("Error accepting tender."); }
+  };
+
+  // 🚀 FIX 3: Cashfree Real Integration
+  const executePayment = async (payRecord) => {
+    setBuying(true);
+    try {
+      const r1 = await fetch('/api/payment/order', { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ email: email, plan: 'single', tenderId: payRecord._id || payRecord.id, customAmount: payRecord.amount }) 
+      });
+      const d1 = await r1.json();
+      if (!r1.ok) { setBuying(false); return toast.error(d1.error || 'Failed to initialize payment'); }
+      
+      const cashfree = await load({ mode: "production" });
+      const checkoutOptions = {
+        paymentSessionId: d1.payment_session_id,
+        returnUrl: `https://www.tgtenders.in/payment-status?order_id={order_id}`,
+      };
+      await cashfree.checkout(checkoutOptions);
+    } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
   };
 
   const handleSignOut = async () => {
@@ -342,12 +340,8 @@ export default function ClientDashboard() {
     window.location.href = '/';
   };
 
-  // 🚀 FIX 3: Loading Screen While Session Loads
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
-  // ============================================================================
-  // 🔒 MNC SECURITY GATE: HOLDING SCREEN FOR MD APPROVAL
-  // ============================================================================
   if (userData && !userData.is_approved) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
@@ -357,7 +351,7 @@ export default function ClientDashboard() {
                 <ShieldAlert className="w-8 h-8 text-amber-600" />
              </div>
              <CardTitle className="text-2xl font-black text-[#0A2647]">Account Under Verification</CardTitle>
-             <CardDescription className="text-sm mt-2">Welcome to TenderNexus Enterprise Portal.</CardDescription>
+             <CardDescription className="text-sm mt-2">Welcome to Enterprise Portal.</CardDescription>
            </CardHeader>
            <CardContent className="pt-6">
              <p className="text-center text-slate-600 text-sm font-medium mb-6">
@@ -382,9 +376,6 @@ export default function ClientDashboard() {
 
   const queries = userData?.officer_queries || [];
 
-  // ============================================================================
-  // 🔒 STRICT GATE: UNANSWERED OFFICER QUERIES (రెడ్ కలర్ క్వెరీ స్క్రీన్) 
-  // ============================================================================
   if (userData && userData.is_approved && queries.length > 0) {
     const q = queries[0]; 
     return (
@@ -413,24 +404,12 @@ export default function ClientDashboard() {
              <form onSubmit={(e) => handleQuerySubmit(e, q.id)} className="space-y-5">
                 <div>
                   <Label className="text-sm font-bold text-[#0A2647]">Your Explanation / Description *</Label>
-                  <Textarea 
-                     required 
-                     rows={4} 
-                     placeholder="Please explain or clarify the issue here..." 
-                     className="mt-2 bg-white focus:ring-2 focus:ring-red-500"
-                     value={queryForm.description}
-                     onChange={e => setQueryForm({...queryForm, description: e.target.value})}
-                  />
+                  <Textarea required rows={4} placeholder="Please explain or clarify the issue here..." className="mt-2 bg-white focus:ring-2 focus:ring-red-500" value={queryForm.description} onChange={e => setQueryForm({...queryForm, description: e.target.value})} />
                 </div>
                 <div>
                    <Label className="text-sm font-bold text-[#0A2647] mb-2 block">Upload Supporting Document (If any)</Label>
                    <div className="border-2 border-dashed border-slate-300 rounded-xl p-5 text-center bg-slate-50 hover:bg-slate-100 transition cursor-pointer relative">
-                      <Input 
-                         type="file" 
-                         accept=".pdf,.jpg,.png,.zip" 
-                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-                         onChange={e => setQueryForm({...queryForm, file: e.target.files[0]})} 
-                      />
+                      <Input type="file" accept=".pdf,.jpg,.png,.zip" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={e => setQueryForm({...queryForm, file: e.target.files[0]})} />
                       <div className="flex flex-col items-center pointer-events-none">
                          <UploadCloud className="w-6 h-6 text-slate-400 mb-2" />
                          <span className="text-sm font-semibold text-[#0A2647]">{queryForm.file ? queryForm.file.name : "Click to upload document"}</span>
@@ -449,17 +428,12 @@ export default function ClientDashboard() {
     );
   }
 
-  // ============================================================================
-  // 🟢 APPROVED CLIENT DASHBOARD
-  // ============================================================================
   const activeBids = userData?.active_bids || [];
   const customRequests = userData?.custom_requests || [];
-  const criticalAlerts = userData?.action_alerts || [];
+  // Exclude 'Suggestion' from critical alerts since we map those to the recommended tab now
+  const criticalAlerts = userData?.action_alerts?.filter(a => !a.subject.includes('Suggestion') && a.status !== 'Completed') || [];
   const pendingPayments = userData?.pending_payments || [];
-  
-  const emdData = userData?.emd_ledger;
-  const totalEmd = emdData?.total_paid || 0;
-  const refundedEmd = emdData?.refunded || 0;
+  const totalEmd = userData?.emd_ledger?.total_paid || 0;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -521,7 +495,6 @@ export default function ClientDashboard() {
                    <div className="p-2 border-b mb-2 bg-slate-50 rounded-md">
                      <p className="font-bold text-[#0A2647]">{profileForm.clientName}</p>
                      <p className="text-xs font-mono text-slate-500">{clientId} • {email}</p>
-                     <Badge className="mt-2 bg-blue-100 text-blue-800 border-0">{userData.profile?.category || 'Vendor'}</Badge>
                    </div>
                    <DropdownMenuItem className="text-red-600 cursor-pointer font-medium" onClick={handleSignOut}>
                      <LogOut className="w-4 h-4 mr-2" /> Secure Sign Out
@@ -534,17 +507,20 @@ export default function ClientDashboard() {
 
       <main className="container mx-auto px-4 py-8 space-y-6">
         
-        {/* --- MD CRITICAL ALERTS BANNER --- */}
+        {/* 🚀 FIX 1: MD CRITICAL ALERTS WITH REPLY & DISMISS */}
         {criticalAlerts.length > 0 && (
           <div className="bg-red-600 text-white rounded-xl p-4 shadow-lg flex items-start gap-4 animate-in fade-in slide-in-from-top-4">
              <AlertTriangle className="w-8 h-8 shrink-0 text-red-200" />
              <div className="flex-1">
-                <h3 className="font-black text-lg uppercase tracking-wide">Action Required from MD / Admin</h3>
-                <div className="mt-2 space-y-2">
+                <h3 className="font-black text-lg uppercase tracking-wide mb-3">Action Required from Operations Team</h3>
+                <div className="space-y-3">
                    {criticalAlerts.map((alert, idx) => (
-                     <div key={idx} className="bg-red-700/50 p-3 rounded-lg border border-red-500/50 flex justify-between items-center">
-                        <p className="font-medium text-sm">{alert.subject}: {alert.message}</p>
-                        <Button size="sm" onClick={() => fetchClientData(email)} className="h-7 text-xs bg-white text-red-700 hover:bg-red-50">Dismiss</Button>
+                     <div key={idx} className="bg-red-700/50 p-4 rounded-lg border border-red-500/50 flex flex-col gap-3">
+                        <p className="font-bold text-sm bg-red-800 p-2 rounded">{alert.subject}: <span className="font-normal text-red-100">{alert.message}</span></p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                           <Input placeholder="Type your reply here..." className="flex-1 bg-white text-slate-800 h-9 focus-visible:ring-red-300" value={alertReplyText[alert._id] || ''} onChange={e => setAlertReplyText({...alertReplyText, [alert._id]: e.target.value})} />
+                           <Button size="sm" onClick={() => handleAlertReply(alert._id)} className="h-9 shrink-0 bg-white text-red-700 hover:bg-red-50">Send Reply & Dismiss</Button>
+                        </div>
                      </div>
                    ))}
                 </div>
@@ -552,7 +528,7 @@ export default function ClientDashboard() {
           </div>
         )}
 
-        {/* --- TOP FUNNEL METRICS (Clickable Links to Tabs) --- */}
+        {/* --- TOP FUNNEL METRICS --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
            <Card onClick={() => setActiveTab('dashboard')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
               <CardContent className="p-4 flex flex-col items-center text-center">
@@ -572,7 +548,7 @@ export default function ClientDashboard() {
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Ongoing Bids</p>
-                 <p className="text-2xl font-black text-blue-700">{activeBids.length || clientStats.ongoing}</p>
+                 <p className="text-2xl font-black text-blue-700">{clientStats.ongoing}</p>
               </CardContent>
            </Card>
            <Card onClick={() => setActiveTab('wins')} className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80 cursor-pointer hover:ring-emerald-600 hover:shadow-md transition">
@@ -685,7 +661,6 @@ export default function ClientDashboard() {
                                   
                                   {isEditingProfile ? (
                                      <>
-                                        {/* 🚀 కొత్తగా యాడ్ చేసిన సింగిల్ కంబైన్డ్ బాక్స్ 🚀 */}
                                         <div className="flex-1 flex items-center border border-slate-300 rounded-md bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all h-10 overflow-hidden relative">
                                            <Select 
                                               value={typeof service === 'string' ? 'Service' : (service.type || 'Service')} 
@@ -857,17 +832,17 @@ export default function ClientDashboard() {
                              <div className="p-5 pl-6 flex flex-col md:flex-row justify-between md:items-center gap-5">
                                 <div className="flex-1">
                                    <div className="flex justify-between items-start mb-2">
-                                      <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] border border-slate-200">{bid.id}</Badge>
+                                      <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] border border-slate-200">{bid.bid_no}</Badge>
                                       <Badge className="bg-emerald-100 text-emerald-800 border-0 uppercase tracking-widest text-[9px] font-bold"><CheckCircle2 className="w-3 h-3 mr-1"/> Contract Awarded</Badge>
                                    </div>
-                                   <h4 className="font-black text-[#0A2647] text-lg mb-1 leading-tight">{bid.desc}</h4>
-                                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Date of Award: {bid.date}</p>
+                                   <h4 className="font-black text-[#0A2647] text-lg mb-1 leading-tight">{bid.description || bid.title}</h4>
+                                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Date of Award: {new Date(bid.updated_at || bid.created_at).toLocaleDateString()}</p>
                                 </div>
                                 <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 min-w-[220px] shrink-0 text-center md:text-right">
                                    <p className="text-[10px] text-emerald-800 font-bold uppercase mb-1 tracking-wider">Contract Value</p>
-                                   <p className="text-2xl font-black text-emerald-700">{bid.value}</p>
+                                   <p className="text-2xl font-black text-emerald-700">{bid.contract_value || '₹ --'}</p>
                                    <div className="border-t border-emerald-200 mt-2 pt-2">
-                                      <p className="text-[10px] text-emerald-800 font-bold uppercase">Valid Until: <span className="text-emerald-900">{bid.validity}</span></p>
+                                      <p className="text-[10px] text-emerald-800 font-bold uppercase">Valid Until: <span className="text-emerald-900">{bid.validity || 'Pending Info'}</span></p>
                                    </div>
                                 </div>
                              </div>
@@ -884,7 +859,7 @@ export default function ClientDashboard() {
           {/* ============================================================================== */}
           <TabsContent value="dashboard" className="space-y-6">
             
-            {/* RECOMMENDED TENDERS BLOCK */}
+            {/* 🚀 FIX 2: RECOMMENDED TENDERS BLOCK WITH ACCEPT & REJECT */}
             <Card className="tender-shadow border-t-4 border-t-blue-500 bg-blue-50/20">
               <CardHeader className="border-b pb-4 bg-white">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
@@ -900,22 +875,27 @@ export default function ClientDashboard() {
                     </div>
                  ) : (
                     <div className="grid md:grid-cols-2 gap-4">
-                       {recommendedTenders.map((tender, i) => (
+                       {recommendedTenders.map((alert, i) => {
+                          const match = alert.message.match(/\[BID: (.*?)\] (.*)/);
+                          const bid_no = match ? match[1] : 'N/A';
+                          const desc = match ? match[2] : alert.message;
+
+                          return (
                           <div key={i} className="border border-blue-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition">
                              <div>
                                <div className="flex justify-between items-start mb-2">
-                                 <Badge variant="outline" className="text-[10px] font-mono bg-slate-50">{tender.id || tender.bid_no}</Badge>
+                                 <Badge variant="outline" className="text-[10px] font-mono bg-slate-50">{bid_no}</Badge>
                                  <Badge className="bg-blue-100 text-blue-800 border-0 text-[10px] uppercase font-bold tracking-wider">High Match</Badge>
                                </div>
-                               <h4 className="font-bold text-[#0A2647] text-sm leading-tight mb-2">{tender.title || tender.description}</h4>
-                               <p className="text-xs text-slate-500 font-semibold">{tender.department} • {tender.district}</p>
+                               <h4 className="font-bold text-[#0A2647] text-sm leading-tight mb-2">{desc}</h4>
                              </div>
-                             <div className="pt-3 mt-2 border-t border-slate-100 flex justify-between items-center">
-                                <span className="text-xs text-red-600 font-bold flex items-center gap-1"><Clock className="w-3 h-3"/> Due: {tender.last_date}</span>
-                                <Button size="sm" className="bg-[#0A2647] hover:bg-[#144272] h-8 text-xs px-3">Review & Apply</Button>
+                             <div className="pt-3 mt-2 border-t border-slate-100 flex gap-2">
+                                <Button size="sm" onClick={() => handleAcceptRecommendation(alert)} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-4 h-4 mr-1"/> Accept & Apply</Button>
+                                <Button size="sm" onClick={() => handleAlertReply(alert._id)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs"><XCircle className="w-4 h-4 mr-1"/> Reject</Button>
                              </div>
                           </div>
-                       ))}
+                          )
+                       })}
                     </div>
                  )}
               </CardContent>
@@ -932,36 +912,55 @@ export default function ClientDashboard() {
                       <p className="text-sm font-semibold">No active bids in progress.</p>
                     </div>
                  ) : (
-                    activeBids.map((bid, i) => (
+                    activeBids.map((bid, i) => {
+                       // Live Progress Calculation Based on Database Status
+                       let barW = 'w-[10%]';
+                       let s1 = 'bg-blue-500 text-white'; let s1Icon = <CheckCircle2 className="w-4 h-4"/>;
+                       let s2 = 'bg-slate-100 text-slate-300'; let s2Icon = <Clock className="w-4 h-4"/>;
+                       let s3 = 'bg-slate-100 text-slate-300'; let s3Icon = <Clock className="w-4 h-4"/>;
+                       let s4 = 'bg-slate-100 text-slate-300'; let s4Icon = <Trophy className="w-4 h-4"/>;
+
+                       if (['Documents Asking', 'Documents Preparing', 'Client Approved'].includes(bid.status)) {
+                          barW = 'w-[30%]'; s2 = 'bg-amber-500 text-white animate-pulse';
+                       } else if (['Bid Participated', 'Technical Evaluation', 'Financial Evaluation'].includes(bid.status)) {
+                          barW = 'w-[70%]'; s2 = 'bg-blue-500 text-white'; s2Icon = <CheckCircle2 className="w-4 h-4"/>; s3 = 'bg-amber-500 text-white animate-pulse';
+                       } else if (bid.status === 'Won' || bid.status === 'Lost') {
+                          barW = 'w-[100%]'; s2 = 'bg-blue-500 text-white'; s2Icon = <CheckCircle2 className="w-4 h-4"/>; s3 = 'bg-blue-500 text-white'; s3Icon = <CheckCircle2 className="w-4 h-4"/>; s4 = bid.status === 'Won' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white';
+                       }
+
+                       return (
                        <div key={i} className="mb-4 border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col gap-6">
                           <div>
-                            <Badge variant="outline" className="text-[10px] mb-2 font-mono bg-slate-50">{bid.bid_no}</Badge>
-                            <p className="font-bold text-[#0A2647] text-base leading-tight">{bid.description}</p>
+                            <div className="flex justify-between items-start">
+                               <Badge variant="outline" className="text-[10px] mb-2 font-mono bg-slate-50">{bid.bid_no}</Badge>
+                               <Badge className="bg-slate-100 text-slate-700 border-0">{bid.status}</Badge>
+                            </div>
+                            <p className="font-bold text-[#0A2647] text-base leading-tight">{bid.description || bid.title}</p>
                           </div>
                           <div className="relative mt-2 px-2 sm:px-6">
                              <div className="absolute top-3 left-8 right-8 h-1.5 bg-slate-100 rounded-full z-0"></div>
-                             <div className="absolute top-3 left-8 w-[50%] h-1.5 bg-blue-500 rounded-full z-0"></div>
+                             <div className={`absolute top-3 left-8 h-1.5 bg-blue-500 rounded-full z-0 transition-all duration-1000 ${barW}`}></div>
                              <div className="relative z-10 flex justify-between">
                                 <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
+                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white ${s1}`}>{s1Icon}</div>
                                    <span className="text-[10px] font-bold text-slate-600 uppercase">Doc Prep</span>
                                 </div>
                                 <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-4 h-4"/></div>
+                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white transition-colors duration-500 ${s2}`}>{s2Icon}</div>
                                    <span className="text-[10px] font-bold text-slate-600 uppercase">Submitted</span>
                                 </div>
                                 <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shadow ring-4 ring-white animate-pulse"><Clock className="w-4 h-4"/></div>
-                                   <span className="text-[10px] font-bold text-amber-700 uppercase">Evaluating</span>
+                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white transition-colors duration-500 ${s3}`}>{s3Icon}</div>
+                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Evaluating</span>
                                 </div>
                                 <div className="flex flex-col items-center gap-2">
-                                   <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-300 flex items-center justify-center shadow ring-4 ring-white"><Trophy className="w-4 h-4"/></div>
-                                   <span className="text-[10px] font-bold text-slate-400 uppercase">Result</span>
+                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white transition-colors duration-500 ${s4}`}>{s4Icon}</div>
+                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Result</span>
                                 </div>
                              </div>
                           </div>
                        </div>
-                    ))
+                    )})
                  )}
               </CardContent>
             </Card>
@@ -1079,7 +1078,9 @@ export default function ClientDashboard() {
                                 <span className="font-semibold text-red-900">{pay.reason}</span>
                                 <span className="font-bold text-red-700">₹{pay.amount}</span>
                              </div>
-                             <Button onClick={() => toast.info('Connecting to Cashfree...')} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-9">
+                             {/* 🚀 FIX 3: REAL CASHFREE BUTTON CALL */}
+                             <Button onClick={() => executePayment(pay)} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-9 shadow-md">
+                               {buying ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <IndianRupee className="w-4 h-4 mr-2"/>} 
                                {buying ? 'Connecting...' : 'Pay via Cashfree'}
                              </Button>
                           </div>
