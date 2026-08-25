@@ -58,7 +58,7 @@ export default function App() {
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
-  // Search & Filters - Separated UI State from Applied State
+  // Search & Filters
   const [uiYear, setUiYear] = useState(today.getFullYear());
   const [uiMonth, setUiMonth] = useState(today.getMonth() + 1);
   const [appliedYear, setAppliedYear] = useState(today.getFullYear());
@@ -88,9 +88,10 @@ export default function App() {
   
   // LIVE API Settings
   const [brandSettings, setBrandSettings] = useState({ 
-    name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [], vision_text: null 
+    name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [], clients: [], vision_text: null 
   });
   const [activeBanner, setActiveBanner] = useState(0);
+  const [logoFlip, setLogoFlip] = useState(false); // 🚀 3D Rotating Logo State for Loading Screen
 
   // Visitor API State
   const [visitors, setVisitors] = useState({ total: "Loading...", today: "..." });
@@ -102,6 +103,12 @@ export default function App() {
   const [submittingLead, setSubmittingLead] = useState(false);
 
   const [policyModal, setPolicyModal] = useState(null);
+
+  // 🚀 3D Earth-like Vertical Logo Rotation (Used only in Loader)
+  useEffect(() => {
+    const flipTimer = setInterval(() => setLogoFlip(prev => !prev), 4000);
+    return () => clearInterval(flipTimer);
+  }, []);
 
   // Auto-Slide Logic for Banners
   useEffect(() => {
@@ -118,7 +125,7 @@ export default function App() {
     if(brandSettings.banners?.length > 0) setActiveBanner(p => (p + 1) % brandSettings.banners.length);
   }
 
-  // URL Intent Tracking (Guarantees data won't be lost after Google redirect)
+  // URL Intent Tracking
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
@@ -135,11 +142,10 @@ export default function App() {
     }
   }, []);
 
-  // ALL LIVE API FETCHES (Including Live IP Traffic Polling)
+  // ALL LIVE API FETCHES
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
     
-    // Polling function for Live Traffic via IP
     const getLiveTraffic = () => {
       fetch('/api/analytics/visitors')
         .then(r => r.json())
@@ -148,7 +154,7 @@ export default function App() {
     };
     
     getLiveTraffic();
-    const trafficInterval = setInterval(getLiveTraffic, 15000); // Live poll every 15 seconds
+    const trafficInterval = setInterval(getLiveTraffic, 15000); 
     
     return () => clearInterval(trafficInterval);
   }, []);
@@ -178,20 +184,19 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Client Dashboard Logic (Intent based) - NOW OPENS IN NEW TAB
+  // Client Dashboard Logic (Intent based) 
   useEffect(() => {
     if (status === 'authenticated' && userData !== null && !loadingUser) {
       if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
         if (typeof window !== 'undefined' && window.location.pathname !== '/client') {
-          window.open('/client', '_blank'); // Opens strictly in new tab
+          window.open('/client', '_blank'); 
           localStorage.removeItem('tt_intent');
-          setIntent(''); // Clears intent in original tab to avoid looping
+          setIntent(''); 
         }
       }
     }
   }, [status, intent, userData, loadingUser]);
   
-  // 🚀 FIXED: Hard Logout Logic
   const performHardSignOut = async () => {
     if (typeof window !== 'undefined') {
         localStorage.clear();
@@ -201,7 +206,6 @@ export default function App() {
     window.location.href = '/'; 
   };
 
-  // LIVE API: Fetch Tenders based on APPLIED Filter
   const fetchTenders = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return; 
     setLoading(true);
@@ -221,7 +225,6 @@ export default function App() {
     } finally { setLoading(false); }
   };
 
-  // Fetch Calendar Data purely for the UI display
   const fetchCalendar = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return;
     const r = await fetch(`/api/tenders/calendar?month=${uiMonth}&year=${uiYear}&t=${Date.now()}`, { cache: 'no-store' });
@@ -232,7 +235,6 @@ export default function App() {
   useEffect(() => { fetchTenders(); }, [appliedMonth, appliedYear, district, category, searchQ]);
   useEffect(() => { fetchCalendar(); }, [uiMonth, uiYear]);
 
-  // 🚀 FIXED: AUTO-DELETE EXPIRED TENDERS FROM UI (Filters out past dates automatically)
   const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders, today]);
   
   const filteredTenders = useMemo(() => {
@@ -258,15 +260,12 @@ export default function App() {
     signIn('google', { callbackUrl: `${window.location.origin}/?intent=subscribe` }, { prompt: 'select_account' });
   };
 
-  // 🚀 PROPER FIX: Employee & Admin Database Login
   const handleEmployeeLogin = async (e) => {
     e.preventDefault(); 
     setEmpLoading(true);
     try {
-      // 1. Check if it's the Admin/MD first
       const r = await fetch('/api/admin/login', { 
-         method: 'POST', 
-         headers: { 'Content-Type': 'application/json' }, 
+         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
          body: JSON.stringify({ email: empEmail, password: empPwd }) 
       });
       const d = await r.json();
@@ -279,10 +278,9 @@ export default function App() {
         return; 
       } 
       
-      // 2. Not Admin, so check the Real Employee Database via NextAuth
       const res = await signIn('employee-login', {
          redirect: false,
-         email: empEmail, // Now accepts EMP-XXXX or email
+         email: empEmail, 
          password: empPwd
       });
 
@@ -324,7 +322,6 @@ export default function App() {
     } catch (e) { toast.error("Failed to submit query. Try again."); } finally { setSubmittingLead(false); }
   };
 
-  // 🚀 FIXED: REAL PDF UNLOCK LOGIC & NETWORK ERROR BYPASS
   const tryUnlockPDF = async (t) => {
     const userMail = email || (typeof window !== 'undefined' ? localStorage.getItem('guest_email') : null);
     if (!userMail) {
@@ -353,7 +350,6 @@ export default function App() {
     } catch (e) { toast.error('Network Error.', { id: toastId }); }
   };
 
-  // Automated Cashfree Subscriptions Integration
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
     setBuying(true); setGuestPayModal(false);
     await new Promise((r) => setTimeout(r, 250));
@@ -394,7 +390,7 @@ export default function App() {
     }
   };
 
-  // 🚀 FIXED: Handle ₹10 Purchase without real email
+  // 🚀 FIXED: Handling ₹10 Purchase without email (Using Name and Phone)
   const handleGuestPaySubmit = (e) => {
     e.preventDefault();
     if(!guestPayForm.name || guestPayForm.phone.length < 10) return toast.error("Enter valid name & phone number");
@@ -406,7 +402,6 @@ export default function App() {
     executePayment('single', dummyEmail, guestPayForm.phone);
   };
 
-  // Full Database Automation Form Submission 
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
@@ -423,7 +418,7 @@ export default function App() {
             has_ifsc: onboardForm.has_ifsc, has_fssai: onboardForm.has_fssai, has_cer: onboardForm.has_cer, 
             has_turnover: onboardForm.has_turnover, has_annual_returns: onboardForm.has_annual_returns, has_msme: onboardForm.has_msme
           }, 
-          status: 'pending' // STRICT: Always pending for new clients
+          status: 'pending'
         })
       });
       toast.success('Profile created successfully! Sent for MD Approval.');
@@ -432,7 +427,25 @@ export default function App() {
     setSubmittingOnboard(false);
   };
 
-  if (status === 'loading' || loadingUser) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+  // 🚀 FIXED: 3D ANIMATED SPINNER LOADER
+  if (status === 'loading' || loadingUser) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+         <div className="relative w-24 h-24 shrink-0 [perspective:1000px] mb-6">
+            <div className={`w-full h-full absolute transition-transform duration-1000 [transform-style:preserve-3d] ${logoFlip ? '[transform:rotateX(180deg)]' : ''}`}>
+               <div className="absolute inset-0 [backface-visibility:hidden] bg-white rounded-full p-2 border shadow-lg flex items-center justify-center">
+                  {brandSettings.logo ? <img src={brandSettings.logo} className="w-full h-full object-contain"/> : <div className="text-[#16a34a] font-bold text-2xl">TT</div>}
+               </div>
+               <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateX(180deg)] bg-white rounded-full p-2 border shadow-lg flex items-center justify-center">
+                  {brandSettings.gem_logo ? <img src={brandSettings.gem_logo} className="w-full h-full object-contain"/> : <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" className="w-full h-full object-contain"/>}
+               </div>
+            </div>
+         </div>
+         <Loader2 className="w-6 h-6 animate-spin text-[#0A2647] mb-2"/>
+         <p className="text-[#0A2647] font-bold tracking-widest uppercase text-sm animate-pulse">Loading Portal...</p>
+      </div>
+    );
+  }
 
   // VERIFICATION LOCKOUT TRAP
   if (status === 'authenticated' && intent === 'client') {
@@ -513,7 +526,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20 relative font-sans w-full overflow-x-hidden">
       
-      {/* 🚀 FIXED: CLASSIC HEADER LAYOUT */}
+      {/* 🚀 FIXED: RESTORED CLASSIC STATIC HEADER */}
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm w-full">
         <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           
@@ -574,7 +587,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* 🌊 AUTO-SLIDING BANNERS (LIVE DATA ONLY) */}
       <section className="w-full relative h-[300px] md:h-[400px] overflow-hidden bg-slate-900 group">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
@@ -594,7 +606,6 @@ export default function App() {
         )}
       </section>
 
-      {/* 🚀 ADVANCED SEARCH */}
       <section className="container mx-auto px-4 -mt-8 z-20 relative">
         <Card className="shadow-2xl border-0 bg-white rounded-xl">
           <CardContent className="p-4 sm:p-6 space-y-4">
@@ -634,7 +645,6 @@ export default function App() {
       </section>
 
       <main className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
-        {/* Left Column: Tenders List */}
         <div className="lg:col-span-3 space-y-6 w-full min-w-0">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
@@ -676,9 +686,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Right Sidebar */}
         <div className="space-y-6 w-full min-w-0">
-          
           <Card className="border-0 shadow-xl bg-white rounded-xl overflow-hidden w-full">
             <CardHeader className="bg-gradient-to-r from-[#0A2647] to-blue-900 text-white py-4">
               <div className="flex justify-between items-center">
@@ -766,7 +774,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* 🚀 POWERFUL MNC VISION & SERVICES (LIVE DATA) */}
       <section className="bg-slate-900 py-20 relative overflow-hidden w-full">
         <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-600/30 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-emerald-600/20 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
@@ -801,7 +808,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* 🚀 DYNAMIC LEADERS PORTAL (LIVE DATA ONLY) */}
+      {/* 🚀 DYNAMIC LEADERS PORTAL */}
       {brandSettings.leaders && brandSettings.leaders.length > 0 && (
         <section className="bg-slate-50 py-20 border-t-4 border-[#0A2647] w-full relative">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-1 bg-emerald-500 rounded-b-full"></div>
@@ -814,40 +821,27 @@ export default function App() {
             <div className="flex flex-wrap justify-center gap-8 w-full max-w-6xl mx-auto">
               {brandSettings.leaders.map((leader, i) => (
                 <div key={i} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-sm hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 group">
-                  
-                  {/* Realistic Photo Container */}
                   <div className="relative w-36 h-36 mx-auto rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors mb-5 shadow-lg bg-white">
                     <img src={leader.image} alt={leader.name} className="w-full h-full object-cover object-top" />
                   </div>
-                  
-                  {/* Name & Designation */}
                   <h4 className="font-black text-2xl text-[#0A2647] mb-2">{leader.name}</h4>
                   <Badge className="bg-emerald-100 text-emerald-800 border-0 font-bold px-4 py-1.5 mb-5 text-xs tracking-wide uppercase">
                     {leader.role}
                   </Badge>
-                  
-                  {/* Contact Information (Rendered only if backend provides them) */}
                   {(leader.phone || leader.email) && (
                     <div className="border-t border-slate-100 pt-5 flex flex-col gap-3 items-center">
                       {leader.phone && (
                          <a href={`tel:${leader.phone}`} className="flex items-center gap-3 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm w-full justify-center">
-                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
-                             <Phone className="w-4 h-4" />
-                           </div>
-                           {leader.phone}
+                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors"><Phone className="w-4 h-4" /></div>{leader.phone}
                          </a>
                       )}
                       {leader.email && (
                          <a href={`mailto:${leader.email}`} className="flex items-center gap-3 text-slate-600 hover:text-blue-600 font-bold transition-colors text-sm w-full justify-center">
-                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                             <Mail className="w-4 h-4" />
-                           </div>
-                           <span className="truncate max-w-[200px]">{leader.email}</span>
+                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors"><Mail className="w-4 h-4" /></div><span className="truncate max-w-[200px]">{leader.email}</span>
                          </a>
                       )}
                     </div>
                   )}
-                  
                 </div>
               ))}
             </div>
@@ -855,7 +849,32 @@ export default function App() {
         </section>
       )}
 
-      {/* FOOTER */}
+      {/* 🚀 OUR PRESTIGIOUS CLIENTS SHOWCASE */}
+      {brandSettings.clients && brandSettings.clients.length > 0 && (
+        <section className="bg-white py-20 border-t-4 border-[#16a34a] w-full relative">
+          <div className="container mx-auto px-4 w-full">
+            <div className="text-center mb-16">
+               <h3 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-4">Our Prestigious Clients</h3>
+               <p className="text-slate-500 font-medium max-w-2xl mx-auto">Proudly serving top enterprises and successfully executing government contracts.</p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-8 w-full max-w-6xl mx-auto">
+              {brandSettings.clients.map((client, i) => (
+                <div key={i} className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-md text-center w-full max-w-xs hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
+                  <div className="relative w-24 h-24 mx-auto rounded-full overflow-hidden border-4 border-white shadow-md mb-4 bg-white">
+                    <img src={client.image || 'https://via.placeholder.com/150'} alt={client.company_name} className="w-full h-full object-cover" />
+                  </div>
+                  <h4 className="font-black text-xl text-[#0A2647] mb-1">{client.company_name}</h4>
+                  <p className="text-sm font-bold text-slate-600 mb-3">{client.client_name}</p>
+                  <Badge className="bg-blue-100 text-blue-800 border-0 font-mono tracking-widest text-[10px]">
+                    UDYAM: {client.udyam_no || 'N/A'}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <footer className="bg-[#051324] text-white pt-16 pb-8 border-t-4 border-emerald-500 w-full relative">
         <div className="container mx-auto px-4 text-center w-full">
           <div className="flex justify-center items-center gap-2 mb-6">
@@ -901,6 +920,33 @@ export default function App() {
         </div>
       </footer>
 
+      {/* 🚀 FLOATING SOCIAL MEDIA & SHARE BUTTONS */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 items-center">
+        {/* Web Share Button */}
+        <button onClick={() => {
+            if (navigator.share) {
+                navigator.share({ title: 'Telangana Tenders', text: 'Check out official B2B tender consultancy services!', url: window.location.href })
+                .catch(console.error);
+            } else {
+                toast.info("Sharing not supported on this browser.");
+            }
+        }} className="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center" title="Share Website">
+           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+        </button>
+        {/* YouTube */}
+        <a href="https://www.youtube.com/@esakafficial1237" target="_blank" rel="noreferrer" className="bg-white text-[#FF0000] p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center" title="YouTube">
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+        </a>
+        {/* Instagram */}
+        <a href="https://www.instagram.com/telangana_tenders?igsh=MWIzbTAyZmE2OHkyMQ==" target="_blank" rel="noreferrer" className="bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] text-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center" title="Instagram">
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
+        </a>
+        {/* WhatsApp */}
+        <a href="https://whatsapp.com/channel/0029VbD5F2h2975IQSMPVK2x" target="_blank" rel="noreferrer" className="bg-[#25D366] text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-transform flex items-center justify-center border-2 border-white" title="WhatsApp">
+          <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
+        </a>
+      </div>
+
       {/* LOGIN MODALS */}
       <Dialog open={mainLoginModal} onOpenChange={setMainLoginModal}>
         <DialogContent className="sm:max-w-md border-0 shadow-2xl">
@@ -928,7 +974,6 @@ export default function App() {
             <DialogTitle className="text-xl font-black text-[#0A2647] flex items-center gap-2"><UserCog className="w-5 h-5 text-blue-600"/> Employee Access</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEmployeeLogin} className="space-y-4 pt-4">
-             {/* 🚀 FIXED: HTML FORM INPUT TYPE CHANGED TO TEXT FOR EMP-ID */}
              <div>
                 <Label className="font-bold text-slate-700">Employee ID or Email</Label>
                 <Input type="text" placeholder="e.g. EMP-1001 or email@tgtenders.in" value={empEmail} onChange={e=>setEmpEmail(e.target.value)} required className="mt-1 border-2 h-11" />
