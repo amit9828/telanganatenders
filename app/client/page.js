@@ -18,7 +18,7 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee, PenTool
+  IndianRupee, PenTool, Printer
 } from 'lucide-react';
 
 const DEFAULT_VAULT_DOCS = [
@@ -57,16 +57,15 @@ export default function ClientDashboard() {
   // --- Forms State ---
   const [customTenderForm, setCustomTenderForm] = useState({ link_or_id: '', description: '', file: null });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
+  const [ticketReplyClient, setTicketReplyClient] = useState({}); // 🚀 FIX: State for Client Replying to Tickets
 
   // --- Query Reply State --- 
   const [queryForm, setQueryForm] = useState({ description: '', file: null });
   const [submittingQuery, setSubmittingQuery] = useState(false);
 
-  // 🚀 FIX: Custom Vault Document State
   const [customDocForm, setCustomDocForm] = useState({ name: '', file: null });
   const [uploadingCustom, setUploadingCustom] = useState(false);
 
-  // 🚀 FIX: Legal Agreement State
   const [submittingAgreement, setSubmittingAgreement] = useState(false);
 
   // --- Dynamic Business Profile State ---
@@ -82,6 +81,9 @@ export default function ClientDashboard() {
   const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
   const [recommendedTenders, setRecommendedTenders] = useState([]);
+  
+  // 🚀 FIX: Brand Settings State for Agreement Signatures & Logos
+  const [brandSettings, setBrandSettings] = useState({});
 
   useEffect(() => {
     setIsMounted(true);
@@ -91,7 +93,16 @@ export default function ClientDashboard() {
     setEmail(e);
     fetchPublicTenders();
     fetchClientData(e); 
+    
+    // Fetch Brand Settings for Logos & Signatures
+    fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, [session, status]);
+
+  useEffect(() => {
+    if (status === "loading" || !email) return;
+    const interval = setInterval(() => { fetchClientData(email); }, 15000);
+    return () => clearInterval(interval);
+  }, [email, status]);
 
   const fetchClientData = async (userEmail) => {
     try {
@@ -113,7 +124,6 @@ export default function ClientDashboard() {
                 const found = d.vault_docs.find(bd => bd.id === defaultDoc.id);
                 return found ? found : defaultDoc;
             });
-            // Append any custom documents uploaded by the client
             const customDocs = d.vault_docs.filter(bd => !DEFAULT_VAULT_DOCS.some(def => def.id === bd.id));
             setVaultDocs([...mergedDocs, ...customDocs]);
         } else {
@@ -164,33 +174,10 @@ export default function ClientDashboard() {
      }
   };
 
+  // 🚀 FIX: Network Error 4MB Bypass for PDF viewing
   const handleViewPDF = async (tenderId) => {
-    const toastId = toast.loading('Opening PDF Document...');
-    try {
-      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${email}&role=client`);
-      const data = await res.json();
-      
-      if (!res.ok) {
-        if (res.status === 402) {
-          toast.dismiss(toastId);
-          return toast.error("Premium Tender: You need an active subscription or single document access to view this PDF.");
-        }
-        return toast.error(data.error || 'Failed to load PDF', { id: toastId });
-      }
-
-      if (data.pdf_base64) {
-        const byteCharacters = atob(data.pdf_base64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-        const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-        window.open(URL.createObjectURL(blob), '_blank');
-        toast.success('PDF Opened Successfully', { id: toastId });
-      } else { 
-        toast.error('PDF data not found', { id: toastId }); 
-      }
-    } catch (err) { 
-      toast.error('Network Error while opening PDF', { id: toastId }); 
-    }
+    window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=client`, '_blank');
+    toast.success('Opening PDF Document...');
   };
 
   const bypassLockScreen = () => setUserData(prev => ({ ...prev, is_approved: true }));
@@ -248,23 +235,54 @@ export default function ClientDashboard() {
     }
   };
 
-  // 🚀 FIX: Submit Legal Agreement logic
+  // 🚀 FIX: Enhanced Legal Agreement logic with Vault Save
   const handleSignAgreement = async (e) => {
       e.preventDefault();
       setSubmittingAgreement(true);
+      
       try {
+          // Upload a digital copy of agreement to vault silently
+          const agreementText = `OFFICIAL B2B SERVICE AGREEMENT\n\nClient: ${profileForm.clientName}\nCompany: ${profileForm.companyName}\nDate: ${new Date().toLocaleDateString()}\n\nAgreed to Terms & Conditions for Bid Analysis, Documentation Support, and Operations.\n\nDigitally Signed by: B. Esak (MD, Telangana Tenders)\nDigitally Signed by: ${profileForm.clientName}`;
+          const blob = new Blob([agreementText], { type: 'text/plain' });
+          const file = new File([blob], "Signed_Legal_Agreement.txt", { type: "text/plain" });
+          
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('docId', 'signed_agreement');
+          formData.append('email', email);
+          formData.append('clientName', profileForm.companyName || profileForm.clientName); 
+          await fetch('/api/vault/upload', { method: 'POST', body: formData });
+
+          // Unlock Dashboard
           const res = await fetch('/api/users/profile', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
           });
+          
           if(res.ok) {
-              toast.success("Legal Agreement Signed. Welcome to your Dashboard!");
+              toast.success("Legal Agreement Signed & Saved to Vault. Welcome to your Dashboard!");
               setUserData(prev => ({...prev, agreement_signed: true}));
           }
       } catch(err) {
           toast.error("Network error saving agreement.");
       }
       setSubmittingAgreement(false);
+  };
+
+  // 🚀 FIX: Easy Request Bid Support (From Public Tenders)
+  const requestBidSupportForTender = async (t) => {
+      const desc = `Please support bidding for this public tender: ${t.title}`;
+      const link_or_id = t.bid_no || t._id;
+      try {
+        const res = await fetch('/api/client-requests', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_email: email, client_id: clientId, link_or_id, description: desc })
+        });
+        if(res.ok) {
+          toast.success("Request sent to Operations/MD successfully! Check Helpdesk for updates.");
+          fetchClientData(email);
+        } else { toast.error("Failed to submit request."); }
+      } catch(e) { toast.error("Network Error"); }
   };
 
   const handleCustomTenderSubmit = async (e) => { 
@@ -283,6 +301,7 @@ export default function ClientDashboard() {
     } catch(err) { toast.error("Network Error."); }
   };
   
+  // 🚀 FIX: Ticket Reply Client Logic
   const handleTicketSubmit = async (e) => { 
     e.preventDefault(); 
     if(!ticketForm.subject || !ticketForm.message) return toast.error('Fill subject and message');
@@ -297,6 +316,32 @@ export default function ClientDashboard() {
         fetchClientData(email); 
       }
     } catch(err) { toast.error("Network Error."); }
+  };
+
+  const submitTicketReplyClient = async (ticket_id) => {
+    const replyText = ticketReplyClient[ticket_id];
+    if(!replyText) return toast.error('Please write a reply first.');
+    try {
+      // Re-raise it back to the MD by creating a new message or updating the current one.
+      const r = await fetch('/api/tickets/reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_id, reply: `CLIENT REPLY: ${replyText}`, admin_email: 'Client (Action Needed)' })
+      });
+      if(r.ok) { 
+         toast.success('Reply Sent to MD successfully!'); 
+         setTicketReplyClient(prev => ({...prev, [ticket_id]: ''})); 
+         fetchClientData(email); 
+      } else { toast.error('Failed to send reply'); }
+    } catch(e) { toast.error('Error resolving ticket'); }
+  };
+
+  const handleDeleteTicketClient = async (ticket_id) => {
+    if(!confirm("Are you sure you want to close and delete this ticket?")) return;
+    try {
+       const res = await fetch(`/api/tickets?id=${ticket_id}`, { method: 'DELETE' });
+       if(res.ok) { toast.success("Ticket Closed & Removed"); fetchClientData(email); } 
+       else { toast.error("Failed to delete"); }
+    } catch(e) { toast.error("Network error"); }
   };
 
   const handleQuerySubmit = async (e, queryId) => {
@@ -392,10 +437,11 @@ export default function ClientDashboard() {
 
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
-  if (userData && !userData.is_approved) {
+  // 🚀 FIX: Prevent Lock Screens from trapping Impersonating Admins/Employees
+  if (userData && !userData.is_approved && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
-        <Card className="max-w-lg w-full shadow-2xl border-t-8 border-t-amber-500 bg-white">
+        <Card className="max-w-md w-full shadow-2xl border-t-8 border-t-amber-500 bg-white">
            <CardHeader className="text-center pb-2 border-b">
              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 ring-4 ring-amber-50">
                 <ShieldAlert className="w-8 h-8 text-amber-600" />
@@ -416,7 +462,6 @@ export default function ClientDashboard() {
              </div>
              <div className="mt-8 flex justify-between items-center">
                 <Button variant="ghost" onClick={handleSignOut} className="text-slate-500 hover:text-slate-700">Log Out</Button>
-                <Button onClick={bypassLockScreen} size="sm" variant="outline" className="border-slate-300 text-xs text-slate-400 hover:text-slate-600">Bypass (Dev Demo)</Button>
              </div>
            </CardContent>
         </Card>
@@ -424,60 +469,80 @@ export default function ClientDashboard() {
     );
   }
 
-  // 🚀 FIX: Legal Agreement Gateway
-  if (userData && userData.is_approved && !userData.agreement_signed) {
+  // 🚀 FIX: Enhanced Legal Agreement Gateway
+  if (userData && userData.is_approved && !userData.agreement_signed && !session?.user?.is_bypass) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
-          <Card className="max-w-3xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white">
-             <CardHeader className="border-b bg-emerald-50/50 pb-6 text-center">
-                <ShieldCheck className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
-                <CardTitle className="text-2xl font-black text-[#0A2647]">B2B Legal Agreement</CardTitle>
-                <CardDescription>Mandatory Partnership Declaration before Dashboard Access</CardDescription>
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
+          <Card className="max-w-4xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white print:border-none print:shadow-none">
+             <CardHeader className="border-b bg-emerald-50/50 pb-6 print:bg-white text-center">
+                <div className="flex justify-between items-center mb-6 px-4">
+                   <div className="flex items-center gap-2">
+                      {brandSettings.logo ? <img src={brandSettings.logo} className="w-12 h-12 object-contain" alt="Logo"/> : <ShieldCheck className="w-10 h-10 text-emerald-600" />}
+                      <div className="text-left"><p className="font-black text-xl text-[#0A2647]">Telangana Tenders</p><p className="text-[10px] text-slate-500 font-bold">Consultancy Services</p></div>
+                   </div>
+                   {brandSettings.gem_logo && <img src={brandSettings.gem_logo} className="w-12 h-12 object-contain" alt="GeM"/>}
+                </div>
+                <CardTitle className="text-2xl font-black text-[#0A2647]">B2B Legal Partnership Agreement</CardTitle>
              </CardHeader>
              <CardContent className="pt-6 space-y-4">
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-5 text-sm text-slate-700 h-64 overflow-y-auto leading-relaxed">
-                   <h4 className="font-bold text-slate-800 mb-2 uppercase">Service Agreement between Telangana Tenders & {profileForm.companyName || 'Client'}</h4>
-                   <p className="mb-3">This agreement officially commences the B2B consultancy service. Telangana Tenders agrees to provide comprehensive bid analysis, documentation support, and operational management.</p>
-                   <h5 className="font-bold mt-4 mb-1">1. Confidentiality</h5>
+                <div className="bg-white border border-slate-200 rounded-lg p-8 text-sm text-slate-700 h-[350px] overflow-y-auto leading-relaxed print:overflow-visible print:border-none print:h-auto">
+                   <h4 className="font-bold text-slate-800 mb-2 uppercase text-center text-lg">Service Agreement</h4>
+                   <p className="mb-3">This agreement officially commences the B2B consultancy service between <strong>Telangana Tenders</strong> and <strong>{profileForm.companyName || 'Client'}</strong>. Telangana Tenders agrees to provide comprehensive bid analysis, documentation support, and operational management.</p>
+                   <h5 className="font-bold mt-4 mb-1">1. Confidentiality & Vault Access</h5>
                    <p className="mb-3">All financial and proprietary documents uploaded to the Corporate Vault shall remain strictly confidential and accessed solely for tender fulfillment purposes.</p>
-                   <h5 className="font-bold mt-4 mb-1">2. Payment & Liability</h5>
-                   <p className="mb-3">The Client agrees that initial consultation, processing fees, and document unlock fees (including EMD deposits where requested) are required as per project demand. Failure to declare correct financials absolves the consultancy of failed bid liabilities.</p>
-                   <h5 className="font-bold mt-4 mb-1">3. Authorization</h5>
-                   <p className="mb-3">The Client authorizes the consultancy's MD and assigned Officers to represent their firm digitally on government portals (GeM, eProcurement) strictly for the scope of the assigned tenders.</p>
-                   <div className="mt-8 border-t border-slate-300 pt-4 flex justify-between items-end">
-                       <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Digitally Signed By Managing Director</p>
-                          <p className="font-black text-blue-900 text-lg font-signature">B. Esak</p>
-                          <p className="text-xs font-semibold text-slate-500">Telangana Tenders</p>
+                   <h5 className="font-bold mt-4 mb-1">2. Payment & Liability Declarations</h5>
+                   <p className="mb-3">The Client agrees that initial consultation, processing fees, and document unlock fees (including EMD deposits where requested) are required as per project demand. Failure to declare correct financials or delays in EMD payments absolves the consultancy of any failed bid liabilities.</p>
+                   <h5 className="font-bold mt-4 mb-1">3. Official Representation</h5>
+                   <p className="mb-3">The Client legally authorizes the consultancy's MD and assigned Officers to represent their firm digitally on government portals (GeM, eProcurement) strictly for the scope of the assigned tenders.</p>
+                   
+                   <div className="mt-12 border-t-2 border-slate-300 pt-8 flex justify-between items-end">
+                       <div className="text-left">
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Digitally Signed By</p>
+                          {brandSettings.md_signature ? (
+                             <img src={brandSettings.md_signature} alt="MD Signature" className="h-12 object-contain mb-1" />
+                          ) : (
+                             <p className="font-black text-blue-900 text-2xl font-signature italic mb-1">B. Esak</p>
+                          )}
+                          <p className="text-sm font-black text-slate-800">Managing Director</p>
+                          <p className="text-[10px] font-semibold text-slate-500">Telangana Tenders</p>
+                          <p className="text-[10px] font-semibold text-slate-500">+91 6304486770</p>
                        </div>
                        <div className="text-right">
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Authorised Client Signatory</p>
-                          <p className="font-black text-slate-800 text-lg">{profileForm.clientName || 'Pending'}</p>
-                          <p className="text-xs font-semibold text-slate-500">{profileForm.companyName || 'Company'}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Authorised Signatory</p>
+                          <p className="font-black text-slate-800 text-xl italic font-serif mb-1">{profileForm.clientName || 'Pending'}</p>
+                          <p className="text-sm font-black text-slate-800">{profileForm.companyName || 'Company'}</p>
+                          <p className="text-[10px] font-semibold text-slate-500">Date: {new Date().toLocaleDateString()}</p>
                        </div>
                    </div>
                 </div>
-                <form onSubmit={handleSignAgreement} className="pt-4 flex flex-col items-center gap-4">
-                   <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" required className="w-5 h-5 accent-emerald-600 cursor-pointer" />
-                      <span className="font-bold text-slate-700 text-sm">I have read and legally accept the terms of this B2B Partnership Agreement.</span>
-                   </label>
-                   <Button type="submit" disabled={submittingAgreement} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10 shadow-lg">
-                      {submittingAgreement ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <PenTool className="w-5 h-5 mr-2"/>}
-                      {submittingAgreement ? 'Processing...' : 'Digitally Sign & Enter Dashboard'}
-                   </Button>
-                </form>
+                
+                <div className="print:hidden">
+                   <form onSubmit={handleSignAgreement} className="pt-4 flex flex-col items-center gap-4">
+                      <label className="flex items-center gap-3 cursor-pointer bg-emerald-50 p-4 rounded-xl border border-emerald-200 w-full sm:w-auto">
+                         <input type="checkbox" required className="w-6 h-6 accent-emerald-600 cursor-pointer" />
+                         <span className="font-bold text-emerald-900 text-sm">I have read, understood, and legally accept the terms of this B2B Agreement.</span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto mt-2">
+                         <Button type="button" onClick={() => window.print()} variant="outline" className="border-slate-300 text-slate-700 font-bold h-12 px-6">
+                            <Printer className="w-5 h-5 mr-2"/> Print / Save PDF
+                         </Button>
+                         <Button type="submit" disabled={submittingAgreement} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10 shadow-lg">
+                            {submittingAgreement ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <PenTool className="w-5 h-5 mr-2"/>}
+                            {submittingAgreement ? 'Generating Record...' : 'Sign Agreement & Enter'}
+                         </Button>
+                      </div>
+                   </form>
+                </div>
              </CardContent>
           </Card>
         </div>
       );
   }
 
-  // 🚀 FIX: Show active lock screen ONLY if there's a blocking query that hasn't been replied to yet
   const queries = userData?.officer_queries || [];
   const activeLockingQuery = queries.find(q => !q.reply_submitted);
 
-  if (userData && userData.is_approved && userData.agreement_signed && activeLockingQuery) {
+  if (userData && userData.is_approved && userData.agreement_signed && activeLockingQuery && !session?.user?.is_bypass) {
     const q = activeLockingQuery; 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
@@ -595,7 +660,7 @@ export default function ClientDashboard() {
                    <div className="p-2 border-b mb-2 bg-slate-50 rounded-md">
                      <p className="font-bold text-[#0A2647]">{profileForm.clientName}</p>
                      <p className="text-xs font-mono text-slate-500">{clientId} • {email}</p>
-                     <Badge className="mt-2 bg-blue-100 text-blue-800 border-0">{userData.profile?.category || 'Vendor'}</Badge>
+                     <Badge className="mt-2 bg-blue-100 text-blue-800 border-0">{userData?.profile?.category || 'Vendor'}</Badge>
                    </div>
                    <DropdownMenuItem className="text-red-600 cursor-pointer font-medium" onClick={handleSignOut}>
                      <LogOut className="w-4 h-4 mr-2" /> Secure Sign Out
@@ -749,7 +814,6 @@ export default function ClientDashboard() {
                          </div>
                       </div>
 
-                      {/* Dynamic Services Array - SINGLE UNIFIED BOX UI */}
                       <div className="border-t border-slate-100 pt-5">
                          <div className="flex justify-between items-center mb-4">
                             <Label className="text-xs font-bold text-[#0A2647] uppercase tracking-wider">Primary Services / Products Offered</Label>
@@ -905,14 +969,15 @@ export default function ClientDashboard() {
                     </div>
                  </div>
 
-                 {/* 🚀 FIX: CUSTOM DOCUMENT UPLOAD AREA ADDED */}
+                 {/* 🚀 FIX: CUSTOM DOCUMENT UPLOAD AREA */}
                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mt-6 shadow-sm">
                     <h4 className="font-bold text-[#0A2647] flex items-center gap-2 mb-4"><Plus className="w-4 h-4 text-blue-600"/> Add Additional Custom Document</h4>
                     <form onSubmit={(e) => {
                        e.preventDefault();
                        if (!customDocForm.name || !customDocForm.file) return toast.error("Please provide both name and file.");
-                       const customDocId = `custom_${Date.now()}`;
-                       handleFileUpload(customDocId, { target: { files: [customDocForm.file] } }, customDocForm.name);
+                       setUploadingCustom(true);
+                       const customDocId = customDocForm.name.replace(/\s+/g, '_').toLowerCase();
+                       handleFileUpload(customDocId, { target: { files: [customDocForm.file] } }, customDocForm.name).finally(() => setUploadingCustom(false));
                     }} className="flex flex-col sm:flex-row gap-4 items-end">
                        <div className="flex-1 w-full">
                           <Label className="text-xs font-bold text-slate-600 mb-1 block">Custom Document Name *</Label>
@@ -927,7 +992,7 @@ export default function ClientDashboard() {
                           </div>
                        </div>
                        <Button type="submit" disabled={uploadingCustom} className="bg-blue-600 hover:bg-blue-700 h-10 w-full sm:w-auto shadow-sm">
-                          {uploadingCustom ? 'Uploading...' : 'Upload to Vault'}
+                          {uploadingCustom ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Upload to Vault'}
                        </Button>
                     </form>
                  </div>
@@ -1088,68 +1153,6 @@ export default function ClientDashboard() {
               </CardContent>
             </Card>
 
-            {/* Custom Tender Request */}
-            <Card className="tender-shadow border-t-4 border-t-blue-500">
-              <CardHeader className="bg-blue-50/40 pb-4 border-b">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
-                  <UploadCloud className="w-5 h-5 text-blue-600"/> Found a Tender? Request Bid Support
-                </CardTitle>
-                <CardDescription>Upload tender details you found externally. Track our officer's reply here and in your MD Operations.</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-5">
-                <form onSubmit={handleCustomTenderSubmit} className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                       <Label className="text-slate-600 text-xs font-bold">Tender Link / ID / Reference *</Label>
-                       <Input required placeholder="e.g. https://eprocure.gov.in/..." value={customTenderForm.link_or_id} onChange={e => setCustomTenderForm({...customTenderForm, link_or_id: e.target.value})} className="mt-1 bg-white text-sm" />
-                    </div>
-                    <div>
-                       <Label className="text-slate-600 text-xs font-bold">Brief Description of Work *</Label>
-                       <textarea required placeholder="Short description..." value={customTenderForm.description} onChange={e => setCustomTenderForm({...customTenderForm, description: e.target.value})} className="w-full border border-slate-200 rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
-                    </div>
-                  </div>
-                  <div className="space-y-4 flex flex-col justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
-                    <div>
-                       <Label className="text-slate-600 text-xs font-bold mb-2 block">Upload Reference Document (Optional)</Label>
-                       <div className="border-2 border-dashed border-blue-300 rounded-xl p-6 text-center bg-white hover:bg-blue-50/50 transition cursor-pointer relative">
-                          <Input type="file" accept=".pdf,.zip" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={e => setCustomTenderForm({...customTenderForm, file: e.target.files[0]})} />
-                          <div className="flex flex-col items-center pointer-events-none">
-                             <FileUp className="w-8 h-8 text-blue-500 mb-2" />
-                             <span className="text-sm font-semibold text-[#0A2647]">{customTenderForm.file ? customTenderForm.file.name : "Click here to upload PDF/ZIP"}</span>
-                             <span className="text-[10px] text-slate-500 mt-1">Max file size 10MB</span>
-                          </div>
-                       </div>
-                    </div>
-                    <Button type="submit" className="w-full bg-[#0A2647] hover:bg-[#144272] h-11 shadow-sm text-white">
-                      <Send className="w-4 h-4 mr-2"/> Submit Tender to Operations Team
-                    </Button>
-                  </div>
-                </form>
-
-                {customRequests.length > 0 && (
-                  <div className="mt-6 border-t pt-6 space-y-4">
-                     <h4 className="font-bold text-[#0A2647]">My Submitted Requests ({customRequests.length})</h4>
-                     {customRequests.map(req => (
-                        <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
-                           <div className="flex-1">
-                              <div className="flex justify-between items-start">
-                                 <h4 className="font-bold text-[#0A2647] text-sm break-all mb-1">{req.link_or_id}</h4>
-                                 <Badge className={req.status === 'Pending Officer Review' ? 'bg-amber-100 text-amber-800 border-0' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
-                              </div>
-                              <p className="text-xs text-slate-500 mt-1">"{req.description}"</p>
-                              {req.reply && (
-                                 <div className="mt-2 text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">
-                                    Officer Reply: {req.reply}
-                                 </div>
-                              )}
-                           </div>
-                        </div>
-                     ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
           </TabsContent>
 
           {/* ============================================================================== */}
@@ -1160,16 +1163,31 @@ export default function ClientDashboard() {
               <CardHeader className="bg-slate-50 border-b">
                 <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Public Procurement Tenders</CardTitle>
               </CardHeader>
-              <CardContent className="p-0 divide-y">
-                 {publicTenders.map(t => (
-                   <div key={t._id} className="p-4 hover:bg-slate-50 flex flex-col md:flex-row justify-between md:items-center gap-4">
-                      <div>
-                         <p className="font-bold text-[#0A2647]">{t.title}</p>
-                         <p className="text-xs text-slate-500 mt-1">{t.department} • {t.district} • Last Date: {new Date(t.last_date).toLocaleDateString()}</p>
-                      </div>
-                      <Button size="sm" variant="outline" onClick={() => handleViewPDF(t._id)}>
-                        <FileText className="w-4 h-4 mr-2"/> View Document
-                      </Button>
+              <CardContent className="p-4 space-y-4 max-h-[750px] overflow-y-auto">
+                 {/* 🚀 FIX: Live Tenders UI with "Request MD to Bid" Option */}
+                 {publicTenders.map((t) => (
+                   <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
+                     <div className="flex items-start justify-between gap-3">
+                       <div className="flex-1 min-w-0">
+                         <div className="flex items-center gap-2 mb-2">
+                           <Badge className="bg-[#0A2647]">{t.district}</Badge>
+                           {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
+                           {t.bid_no && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
+                           <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
+                         </div>
+                         <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
+                         <p className="text-xs text-slate-500 mt-1">{t.department}</p>
+                       </div>
+                     </div>
+                     
+                     <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
+                        <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0 w-full sm:w-auto">
+                           <FileText className="w-3 h-3 mr-1.5"/> View PDF Document
+                        </Button>
+                        <Button size="sm" onClick={() => requestBidSupportForTender(t)} className="bg-[#0A2647] hover:bg-[#144272] h-8 text-xs flex-1 w-full shadow-sm text-white">
+                           <UploadCloud className="w-3 h-3 mr-1.5"/> Request MD to Bid This
+                        </Button>
+                     </div>
                    </div>
                  ))}
               </CardContent>
@@ -1216,8 +1234,8 @@ export default function ClientDashboard() {
                   <CardHeader className="pb-4 bg-slate-50 border-b">
                     <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-slate-700"/> 24/7 SLA Support Desk</CardTitle>
                   </CardHeader>
-                  <CardContent className="pt-5">
-                    <form onSubmit={handleTicketSubmit} className="space-y-4">
+                  <CardContent className="pt-5 space-y-6">
+                    <form onSubmit={handleTicketSubmit} className="space-y-4 border-b pb-6">
                       <div>
                         <Label className="text-xs text-slate-600 font-bold">Ticket Subject *</Label>
                         <Input placeholder="e.g., Portal Login Issue" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} required className="mt-1" />
@@ -1230,55 +1248,44 @@ export default function ClientDashboard() {
                         <Send className="w-4 h-4 mr-2"/> Submit Ticket
                       </Button>
                     </form>
+
+                    {/* 🚀 FIX: Client Side Active & Resolved Ticket Management */}
+                    <div>
+                       <h4 className="font-bold text-slate-700 mb-3">Your Tickets History</h4>
+                       {userData?.tickets && userData.tickets.length > 0 ? (
+                          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                             {userData.tickets.map((tkt, i) => (
+                                <div key={tkt._id || i} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm">
+                                   <div className="flex justify-between items-start mb-2">
+                                      <h5 className="font-bold text-[#0A2647]">{tkt.subject}</h5>
+                                      <Badge className={tkt.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-amber-100 text-amber-800 border-0'}>{tkt.status}</Badge>
+                                   </div>
+                                   <p className="text-xs text-slate-600 mb-3 bg-white p-2 rounded border border-slate-100">Me: {tkt.message}</p>
+                                   
+                                   {tkt.reply && (
+                                      <div className="mb-3 text-xs font-semibold bg-emerald-50 text-emerald-800 p-2 rounded border border-emerald-100">
+                                         Support: {tkt.reply}
+                                      </div>
+                                   )}
+
+                                   {/* Client Actions: Reply or Close */}
+                                   <div className="flex flex-col sm:flex-row gap-2 border-t pt-3 mt-1">
+                                      <Input placeholder="Reply to Support..." className="h-8 text-xs bg-white flex-1" value={ticketReplyClient[tkt._id] || ''} onChange={(e) => setTicketReplyClient({...ticketReplyClient, [tkt._id]: e.target.value})} />
+                                      <div className="flex gap-2 shrink-0">
+                                         <Button size="sm" onClick={() => submitTicketReplyClient(tkt._id)} className="bg-slate-800 hover:bg-slate-900 h-8 text-xs text-white px-3"><Send className="w-3 h-3 mr-1"/> Reply</Button>
+                                         <Button size="sm" onClick={() => handleDeleteTicketClient(tkt._id)} variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs px-2"><Trash2 className="w-3 h-3"/></Button>
+                                      </div>
+                                   </div>
+                                </div>
+                             ))}
+                          </div>
+                       ) : (
+                          <p className="text-xs text-slate-500 text-center py-4">No ticket history found.</p>
+                       )}
+                    </div>
                   </CardContent>
                 </Card>
              </div>
-
-             {/* 🚀 FIX: QUERY TRACKING UI - ALLOWS CLIENTS TO TRACK PREVIOUS QUERIES */}
-             <Card className="tender-shadow border-t-4 border-t-orange-500">
-               <CardHeader className="pb-4 border-b bg-orange-50/50">
-                  <CardTitle className="text-lg flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-orange-600"/> Officer Document Queries Tracker</CardTitle>
-                  <CardDescription>Track the status of documentation requested by the operations team.</CardDescription>
-               </CardHeader>
-               <CardContent className="pt-5">
-                  {userData?.officer_queries?.length === 0 ? (
-                      <p className="text-sm text-slate-500 py-6 text-center">No queries pending from operations.</p>
-                  ) : (
-                      <div className="space-y-4">
-                         {userData?.officer_queries?.map((q, idx) => (
-                            <div key={idx} className="border border-orange-200 bg-orange-50/50 rounded-xl p-4 flex flex-col gap-3">
-                               <div className="flex justify-between items-start">
-                                  <h4 className="font-bold text-[#0A2647]">{q.subject}</h4>
-                                  <Badge className={q.reply_submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800 animate-pulse'}>
-                                     {q.reply_submitted ? 'Reply Sent' : 'Action Required'}
-                                  </Badge>
-                               </div>
-                               <p className="text-sm text-slate-700 bg-white p-3 rounded border border-orange-100">"{q.message}"</p>
-                               
-                               {q.reply_submitted ? (
-                                  <p className="text-xs text-emerald-600 font-bold bg-emerald-50 p-2 rounded">✓ You have submitted the explanation/document. Pending MD verification.</p>
-                               ) : (
-                                  <form onSubmit={(e) => handleQuerySubmit(e, q.id)} className="border-t border-orange-100 pt-3 mt-1 space-y-3">
-                                     <Textarea required placeholder="Provide explanation or details..." value={queryForm.description} onChange={e => setQueryForm({...queryForm, description: e.target.value})} className="bg-white focus:ring-orange-500"/>
-                                     <div className="flex flex-col sm:flex-row gap-3">
-                                        <div className="flex-1 relative border border-slate-300 bg-white rounded-md flex items-center px-3 cursor-pointer hover:bg-slate-50 h-10">
-                                           <input type="file" accept=".pdf,.jpg,.png,.zip" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={e => setQueryForm({...queryForm, file: e.target.files[0]})} />
-                                           <UploadCloud className="w-4 h-4 text-slate-400 mr-2 shrink-0"/>
-                                           <span className="text-xs text-slate-600 truncate">{queryForm.file ? queryForm.file.name : "Attach Document (Optional)"}</span>
-                                        </div>
-                                        <Button type="submit" disabled={submittingQuery} className="bg-orange-600 hover:bg-orange-700 sm:w-auto w-full h-10 shrink-0">
-                                           {submittingQuery ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Send Reply'}
-                                        </Button>
-                                     </div>
-                                  </form>
-                               )}
-                            </div>
-                         ))}
-                      </div>
-                  )}
-               </CardContent>
-             </Card>
-
           </TabsContent>
 
         </Tabs>
