@@ -19,7 +19,7 @@ import {
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
-  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle
+  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2 // 🚀 FIX: IMPORTED Building2 HERE
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -56,7 +56,7 @@ export default function AdminPage() {
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
   const [tickets, setTickets] = useState([]);
-  const [guestQueries, setGuestQueries] = useState([]);
+  const [guestQueries, setGuestQueries] = useState([]); // 🚀 Added state for Guest Queries
   const [ticketReply, setTicketReply] = useState({}); 
   const [l1Data, setL1Data] = useState({}); 
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -124,7 +124,7 @@ export default function AdminPage() {
         fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
         fetch(`/api/employees?t=${Date.now()}`, { headers }), 
         fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }),
-        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) 
+        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) // 🚀 FETCH GUEST QUERIES
       ]);
       
       if (tRes.status === 401) return logout();
@@ -138,12 +138,12 @@ export default function AdminPage() {
       const dispJson = dispRes.ok ? await dispRes.json() : { dispatches: [] };
       const empJson = empRes.ok ? await empRes.json() : { team: [] };
       const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
-      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; 
+      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; // 🚀 Extract Guest Queries
 
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
-      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); 
+      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); // 🚀 Save Guest Queries
       setPendingUsers(uJson.users || []);
       setApprovedClients(aJson.users || []); 
       setBidRequests(reqJson.requests || []);
@@ -151,7 +151,7 @@ export default function AdminPage() {
       setTeamMembers(empJson.team || []);
       setLedgerTxns(ledgerJson.transactions || []);
       
-      // 🚀 FIX: Live Net Balance
+      // 🚀 FIX: Live Net Balance (Manual + Cashfree Online)
       const onlineRevenue = sJson.revenue || 0;
       setLedgerBalance((ledgerJson.balance || 0) + onlineRevenue);
 
@@ -160,17 +160,16 @@ export default function AdminPage() {
          total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
       })));
       
-      // 🚀 FIX: Employee Efficiency
+      // 🚀 FIX: Live Employee Efficiency Calculation
       setEmployeeReports((empJson.team || []).map(e => {
          const completedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
          const assignedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id).length || 1;
-         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); 
+         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); // Base 20%
          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
       }));
     } catch (err) { console.error('Refresh failed:', err); }
   };
 
-  // 🚀 FIX: Hard Logout
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.clear();
@@ -198,7 +197,6 @@ export default function AdminPage() {
     reader.readAsDataURL(file);
   };
 
-  // 🚀 FIX: Proper Window Open for PDF
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`, '_blank');
     toast.success('Opening PDF Document...');
@@ -572,7 +570,6 @@ export default function AdminPage() {
             <TabsTrigger value="settings" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Setup</TabsTrigger>
           </TabsList>
 
-          {/* ==================== 1. MASTER REPORTS ==================== */}
           <TabsContent value="reports" className="space-y-4">
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
                <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
@@ -648,9 +645,7 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ==================== 2. CLIENT CRM & VAULT VERIFICATION ==================== */}
           <TabsContent value="clients" className="mt-4">
-            
             <Card className="tender-shadow border-t-4 border-t-orange-500 mb-6">
               <CardHeader className="bg-orange-50/50 border-b pb-4">
                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Database className="w-5 h-5 text-orange-600" /> Pending Vault Approvals</CardTitle>
@@ -754,7 +749,6 @@ export default function AdminPage() {
                         </div>
                         <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
                           
-                          {/* 🚀 FIXED: APPROVE & REJECT BUTTONS ADDED HERE */}
                           <div className="flex gap-2 w-full">
                              <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] flex-1 shadow h-10 text-xs"><CheckCircle2 className="w-4 h-4 mr-1" /> Approve</Button>
                              <Button onClick={() => deleteClientPermanently(user.email)} variant="outline" className="flex-1 border-red-300 text-red-600 hover:bg-red-50 shadow h-10 text-xs"><XCircle className="w-4 h-4 mr-1" /> Reject</Button>
@@ -824,7 +818,6 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
-          {/* ==================== 3. FINANCE HUB ==================== */}
           <TabsContent value="finance" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6 mb-6">
               <Card className="shadow-sm border-t-4 border-t-blue-600 h-fit">
