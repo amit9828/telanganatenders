@@ -4,10 +4,15 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 
+// 🚀 SERVERLESS MONGODB CONNECTION POOLING
 let _client;
 async function getDb() {
   if (!_client) {
-    _client = new MongoClient(process.env.MONGO_URL);
+    if (!process.env.MONGO_URL) throw new Error('MONGO_URL missing in environment variables.');
+    _client = new MongoClient(process.env.MONGO_URL, {
+       useNewUrlParser: true,
+       useUnifiedTopology: true,
+    });
     await _client.connect();
   }
   return _client.db(process.env.DB_NAME || 'tender_portal');
@@ -15,6 +20,7 @@ async function getDb() {
 
 const handler = NextAuth({
   providers: [
+    // 1. STANDARD GOOGLE LOGIN FOR CLIENTS
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -27,7 +33,7 @@ const handler = NextAuth({
       },
     }),
     
-    // 🚀 EMPLOYEE LOGIN PROVIDER (Now supports EMP-XXXX ID or Email)
+    // 2. 🚀 EMPLOYEE LOGIN PROVIDER (Supports EMP-XXXX ID or Email)
     CredentialsProvider({
       id: 'employee-login',
       name: 'Employee Login',
@@ -42,7 +48,7 @@ const handler = NextAuth({
         const employee = await db.collection('employees').findOne({ 
            $or: [
              { email: identifier.toLowerCase() },
-             { emp_id: new RegExp(`^${identifier}$`, 'i') } // Matches EMP-XXXX
+             { emp_id: new RegExp(`^${identifier}$`, 'i') } // Matches EMP-XXXX exactly
            ],
            password: credentials.password 
         });
@@ -60,7 +66,7 @@ const handler = NextAuth({
       }
     }),
 
-    // 🚀 UPDATED: IMPERSONATE LOGIN PROVIDER (Supports CLI-XXXX, EMP-XXXX, and Email)
+    // 3. 🚀 IMPERSONATE LOGIN PROVIDER (For MD/Employee to bypass locks)
     CredentialsProvider({
       id: 'impersonate',
       name: 'Impersonate',
@@ -69,12 +75,13 @@ const handler = NextAuth({
         adminToken: { label: "Token", type: "text" }
       },
       async authorize(credentials) {
+        // Validate the internal security token
         if (credentials.adminToken === 'admin_success' || credentials.adminToken === process.env.ADMIN_TOKEN) {
            const db = await getDb();
            const searchStr = credentials.email.trim();
            const searchEmail = searchStr.toLowerCase();
            
-           // 1. First check if it's a Client (by Email or CLI-XXXX)
+           // A. Check if it's a Client (by Email or CLI-XXXX)
            const user = await db.collection('users').findOne({
              $or: [
                { email: searchEmail },
@@ -89,13 +96,13 @@ const handler = NextAuth({
                  name: user.name, 
                  client_id: user.client_id, 
                  role: 'Client',
-                 // 🚀 BUG FIX: Force bypass and approval flag to skip verification lock screen
+                 // 🚀 BUG FIX INCLUDED: Force bypass flags to skip verification holding screens
                  is_approved: true,
                  is_bypass: true
               };
            }
 
-           // 2. If not client, check if it's an Employee (by Email or EMP-XXXX)
+           // B. If not client, check if it's an Employee (by Email or EMP-XXXX)
            const emp = await db.collection('employees').findOne({
              $or: [
                { email: searchEmail },
@@ -114,18 +121,19 @@ const handler = NextAuth({
               };
            }
 
-           // 3. Fallback for unsaved users
+           // C. Fallback for completely new/unsaved users
            return { id: credentials.email, email: credentials.email, role: 'Client', is_approved: true, is_bypass: true };
         }
-        return null;
+        return null; // Token failed
       }
     })
   ],
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: 'jwt' },
   callbacks: {
+    // RUNS WHEN USER PRESSES LOGIN
     async signIn({ user, account }) {
-      // 🚀 SAFEGUARD: Bypass login & Employee login doesn't override Google Profile
+      // SAFEGUARD: Bypass internal logins so they don't override Google Profile data
       if (account?.provider === 'impersonate' || account?.provider === 'employee-login') {
         return true; 
       }
@@ -134,8 +142,11 @@ const handler = NextAuth({
         const db = await getDb();
         const email = (user.email || '').toLowerCase();
         if (!email) return false;
+        
         const existing = await db.collection('users').findOne({ email });
+        
         if (!existing) {
+          // Register new Google User
           await db.collection('users').insertOne({
             id: uuidv4(),
             email,
@@ -145,17 +156,19 @@ const handler = NextAuth({
             created_at: new Date(),
           });
         } else if (!existing.name || !existing.image) {
-          // backfill profile fields
+          // Backfill missing profile picture or name
           await db.collection('users').updateOne(
             { email },
             { $set: { name: user.name || existing.name, image: user.image || existing.image } }
           );
         }
       } catch (e) {
-        console.error('[NEXTAUTH signIn]', e?.message || e);
+        console.error('[NEXTAUTH signIn Error]', e?.message || e);
       }
       return true;
     },
+    
+    // ATTACH DATABASE FLAGS TO THE SECURE JWT TOKEN
     async jwt({ token, user }) {
       if (user) {
          token.email = user.email?.toLowerCase();
@@ -163,12 +176,14 @@ const handler = NextAuth({
          if (user.emp_id) token.emp_id = user.emp_id; 
          if (user.role) token.role = user.role;
          
-         // 🚀 BUG FIX: Map Bypass Flags to Token
+         // Secure Bypass Flags
          if (user.is_approved !== undefined) token.is_approved = user.is_approved;
          if (user.is_bypass) token.is_bypass = user.is_bypass;
       }
       return token;
     },
+    
+    // SEND JWT FLAGS TO THE FRONTEND SESSION (useSession)
     async session({ session, token }) {
       if (token?.email) {
          session.user.email = token.email;
@@ -176,7 +191,7 @@ const handler = NextAuth({
          if (token.emp_id) session.user.emp_id = token.emp_id; 
          if (token.role) session.user.role = token.role; 
          
-         // 🚀 BUG FIX: Pass Bypass Flags to Frontend Session
+         // Make Bypass Flags visible to the UI Components
          if (token.is_approved !== undefined) session.user.is_approved = token.is_approved;
          if (token.is_bypass) session.user.is_bypass = token.is_bypass;
       }
