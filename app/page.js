@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
   Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, Award, TrendingUp, Loader2, Star,
-  FileBadge, Activity, Eye, User, Sparkles, X
+  FileBadge, Activity, Eye, User, Sparkles, X, Phone
 } from 'lucide-react';
 
 const TS_DISTRICTS = ['Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy', 'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy', 'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad'];
@@ -740,17 +740,51 @@ export default function App() {
 
       {/* 🚀 DYNAMIC LEADERS PORTAL (LIVE DATA ONLY) */}
       {brandSettings.leaders && brandSettings.leaders.length > 0 && (
-        <section className="bg-white py-16 border-t-4 border-[#0A2647] w-full">
+        <section className="bg-slate-50 py-20 border-t-4 border-[#0A2647] w-full relative">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-1 bg-emerald-500 rounded-b-full"></div>
           <div className="container mx-auto px-4 w-full">
-            <h3 className="text-3xl font-black text-center text-[#0A2647] mb-12 uppercase tracking-wide">Our Leadership</h3>
-            <div className="flex flex-wrap justify-center gap-8 w-full">
+            <div className="text-center mb-16">
+               <h3 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-4">Our Leadership</h3>
+               <p className="text-slate-500 font-medium max-w-2xl mx-auto">Meet the visionaries driving our consultancy forward. Connect directly with our core management team.</p>
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-8 w-full max-w-6xl mx-auto">
               {brandSettings.leaders.map((leader, i) => (
-                <div key={i} className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-xs hover:shadow-2xl transition">
-                  <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border-4 border-emerald-500 mb-4 shadow-md bg-white">
-                    <img src={leader.image} alt={leader.name} className="w-full h-full object-cover" />
+                <div key={i} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-sm hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 group">
+                  
+                  {/* Realistic Photo Container */}
+                  <div className="relative w-36 h-36 mx-auto rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors mb-5 shadow-lg bg-white">
+                    <img src={leader.image} alt={leader.name} className="w-full h-full object-cover object-top" />
                   </div>
-                  <h4 className="font-black text-xl text-[#0A2647]">{leader.name}</h4>
-                  <Badge className="bg-emerald-100 text-emerald-800 border-0 mt-2 font-bold px-3 py-1">{leader.role}</Badge>
+                  
+                  {/* Name & Designation */}
+                  <h4 className="font-black text-2xl text-[#0A2647] mb-2">{leader.name}</h4>
+                  <Badge className="bg-emerald-100 text-emerald-800 border-0 font-bold px-4 py-1.5 mb-5 text-xs tracking-wide uppercase">
+                    {leader.role}
+                  </Badge>
+                  
+                  {/* Contact Information (Rendered only if backend provides them) */}
+                  {(leader.phone || leader.email) && (
+                    <div className="border-t border-slate-100 pt-5 flex flex-col gap-3 items-center">
+                      {leader.phone && (
+                         <a href={`tel:${leader.phone}`} className="flex items-center gap-3 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm w-full justify-center">
+                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
+                             <Phone className="w-4 h-4" />
+                           </div>
+                           {leader.phone}
+                         </a>
+                      )}
+                      {leader.email && (
+                         <a href={`mailto:${leader.email}`} className="flex items-center gap-3 text-slate-600 hover:text-blue-600 font-bold transition-colors text-sm w-full justify-center">
+                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                             <Mail className="w-4 h-4" />
+                           </div>
+                           <span className="truncate max-w-[200px]">{leader.email}</span>
+                         </a>
+                      )}
+                    </div>
+                  )}
+                  
                 </div>
               ))}
             </div>
