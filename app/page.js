@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,26 +13,17 @@ import { toast } from 'sonner';
 
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
-  Filter, Search, ShieldCheck, Sparkles, X, Loader2, User, Briefcase, UserCog, Eye, LogOut,
-  PhoneCall, Award, TrendingUp, Users, Youtube, Instagram, MessageCircle, Star
+  Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, PhoneCall, Award, TrendingUp, Users, MessageCircle, Loader2, Star,
+  FileBadge
 } from 'lucide-react';
 
 const TS_DISTRICTS = ['Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy', 'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy', 'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad'];
 const AP_DISTRICTS = ['Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore', 'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru', 'Srikakulam', 'Vizianagaram', 'Prakasam'];
 
 const PLANS = [
-  {
-    id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff',
-    perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No subscription, no auto-renew'], cta: 'Pay ₹10 for this PDF',
-  },
-  {
-    id: 'month', name: 'Monthly Premium', price: 149, desc: 'Auto-renews every 30 days — cancel anytime', mode: 'subscription',
-    perks: ['Every current & future tender unlocked', 'Full archive & calendar access', 'Auto-renew · cancel anytime', 'Best for active bidders'], cta: 'Subscribe ₹149/mo', highlight: true,
-  },
-  {
-    id: 'year', name: 'Yearly Premium', price: 1499, desc: 'Auto-renews every 365 days — save big', mode: 'subscription',
-    perks: ['Everything in Monthly', 'Auto-renews yearly', 'Save ₹289 vs 12× monthly', 'Cancel anytime'], cta: 'Subscribe ₹1499/yr',
-  },
+  { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
+  { id: 'month', name: 'Monthly Premium', price: 149, desc: 'Auto-renews every 30 days', perks: ['Every tender unlocked', 'Full archive access', 'Cancel anytime'], cta: 'Subscribe ₹149/mo', highlight: true },
+  { id: 'year', name: 'Yearly Premium', price: 1499, desc: 'Save big on yearly', perks: ['Everything in Monthly', 'Save ₹289 vs 12× monthly'], cta: 'Subscribe ₹1499/yr' },
 ];
 
 const monthName = (m) => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m];
@@ -47,13 +37,13 @@ export default function App() {
   const [userData, setUserData] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
   
-  // Modals & States
+  // Auth Modals
   const [mainLoginModal, setMainLoginModal] = useState(false);
   const [empModalOpen, setEmpModalOpen] = useState(false);
+  
   const [empEmail, setEmpEmail] = useState('');
   const [empPwd, setEmpPwd] = useState('');
   const [empLoading, setEmpLoading] = useState(false);
-  const [isGuest, setIsGuest] = useState(false);
   
   const [intent, setIntent] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('tt_intent') || '';
@@ -67,9 +57,12 @@ export default function App() {
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
+  // Search & Filters
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState(null);
+  const [appliedDay, setAppliedDay] = useState(null);
+  
   const [category, setCategory] = useState('all');       
   const [stateFilter, setStateFilter] = useState('all'); 
   const [district, setDistrict] = useState('all');       
@@ -78,25 +71,31 @@ export default function App() {
   const [tenders, setTenders] = useState([]);
   const [calDays, setCalDays] = useState({});
   const [loading, setLoading] = useState(false);
+  
   const [email, setEmail] = useState('');
-  const [emailModal, setEmailModal] = useState(false);
   const [paywallModal, setPaywallModal] = useState(false);
   const [pdfModal, setPdfModal] = useState(false);
+  const [guestPayModal, setGuestPayModal] = useState(false);
+  const [guestPayForm, setGuestPayForm] = useState({ email: '', phone: '' });
+  
   const [pendingTender, setPendingTender] = useState(null);
   const [pdfData, setPdfData] = useState(null);
-  const [subscription, setSubscription] = useState(null);
   const [buying, setBuying] = useState(false);
   
+  // Dynamic Settings
   const [brandSettings, setBrandSettings] = useState({ name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [] });
   const [activeBanner, setActiveBanner] = useState(0);
 
-  // Lead Gen Forms
   const [clientRegForm, setClientRegForm] = useState({ name: '', phone: '', enterprise: '' });
   const [submittingClientReg, setSubmittingClientReg] = useState(false);
+
   const [queryForm, setQueryForm] = useState({ name: '', phone: '', query: '' });
   const [submittingLead, setSubmittingLead] = useState(false);
 
-  // 1. Auto-Slide Banners Effect
+  // Policy Modal State (terms, privacy, refund)
+  const [policyModal, setPolicyModal] = useState(null);
+
+  // Auto-Slide Banners
   useEffect(() => {
     if (brandSettings.banners && brandSettings.banners.length > 0) {
       const bannerTimer = setInterval(() => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length), 4000);
@@ -104,61 +103,49 @@ export default function App() {
     }
   }, [brandSettings.banners]);
 
-  // 2. URL Intent Tracking (Exactly as Original)
+  const prevBanner = () => {
+    if(brandSettings.banners?.length > 0) setActiveBanner(p => (p === 0 ? brandSettings.banners.length - 1 : p - 1));
+  }
+  const nextBanner = () => {
+    if(brandSettings.banners?.length > 0) setActiveBanner(p => (p + 1) % brandSettings.banners.length);
+  }
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const urlIntent = urlParams.get('intent');
       if (urlIntent) {
-        localStorage.setItem('tt_intent', urlIntent);
-        setIntent(urlIntent);
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete('intent');
+        localStorage.setItem('tt_intent', urlIntent); setIntent(urlIntent);
+        const newUrl = new URL(window.location.href); newUrl.searchParams.delete('intent');
         window.history.replaceState({}, document.title, newUrl.pathname + newUrl.search);
-      } else {
-        setIntent(localStorage.getItem('tt_intent') || '');
-      }
+      } else { setIntent(localStorage.getItem('tt_intent') || ''); }
     }
   }, []);
 
-  // 3. Settings API
+  // Fetch Settings API
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, []);
 
-  // 4. Session & User API (Exactly as Original)
+  // Session User
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
-      setEmail(e);
-      if (typeof window !== 'undefined') localStorage.setItem('tt_email', e);
-      
-      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' } })
-        .then((r) => r.json())
-        .then((d) => {
-           setUserData(d);
-           setSubscription(d.subscription || null);
-           setLoadingUser(false);
-        })
-        .catch(() => setLoadingUser(false));
+      setEmail(e); localStorage.setItem('tt_email', e);
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, { cache: 'no-store' })
+        .then((r) => r.json()).then((d) => { setUserData(d); setLoadingUser(false); }).catch(() => setLoadingUser(false));
     } else if (status === 'unauthenticated') {
-      if (typeof window !== 'undefined') localStorage.removeItem('tt_email');
-      setEmail('');
-      setUserData(null);
-      setLoadingUser(false);
+      setEmail(''); setUserData(null); setLoadingUser(false);
     }
   }, [session, status]);
 
-  // 5. Client Auto-Redirect (Exactly as Original)
+  // Client Auto-Redirect
   useEffect(() => {
     if (status === 'authenticated' && userData !== null && !loadingUser) {
-      if (userData.onboarding_complete && userData.is_approved) {
+      if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
         if (typeof window !== 'undefined' && window.location.pathname !== '/client') {
-          localStorage.setItem('tt_intent', 'client');
           window.location.href = '/client';
         }
-      } else if (intent === 'guest' && (!userData.onboarding_complete || !userData.is_approved)) {
-        setIsGuest(true);
       }
     }
   }, [status, intent, userData, loadingUser]);
@@ -169,7 +156,7 @@ export default function App() {
     await signOut({ callbackUrl: '/' }); 
   };
 
-  // 6. Fetch Tenders & Calendar API (Exactly as Original)
+  // Fetch Tenders API
   const fetchTenders = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return; 
     setLoading(true);
@@ -177,59 +164,93 @@ export default function App() {
       const params = new URLSearchParams();
       if (district !== 'all') params.set('district', district);
       if (category !== 'all') params.set('category', category);
-      params.set('month', String(month));
-      params.set('year', String(year));
-      if (searchQ.trim()) { params.set('q', searchQ.trim()); params.set('scope', 'all'); }
-      
+      params.set('month', String(month)); params.set('year', String(year));
+      if (searchQ.trim()) params.set('q', searchQ.trim());
       const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
-      const d = await r.json();
-      setTenders(d.tenders || []);
+      const d = await r.json(); setTenders(d.tenders || []);
     } finally { setLoading(false); }
   };
 
   const fetchCalendar = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
-    const d = await r.json();
-    setCalDays(d.days || {});
+    const d = await r.json(); setCalDays(d.days || {});
   };
 
-  useEffect(() => { fetchTenders(); fetchCalendar(); }, [month, year, district, category, searchQ, userData?.onboarding_complete, isGuest, intent]);
+  useEffect(() => { fetchTenders(); fetchCalendar(); }, [month, year, district, category, searchQ]);
 
-  // Calendar Logics
+  // Calendar Filter Logic
   const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders]);
   const filteredTenders = useMemo(() => {
-    if (!selectedDay) return activeTenders;
-    return activeTenders.filter((t) => new Date(t.last_date).getDate() === selectedDay);
-  }, [activeTenders, selectedDay]);
+    if (!appliedDay) return activeTenders; 
+    return activeTenders.filter((t) => new Date(t.last_date).getDate() === appliedDay);
+  }, [activeTenders, appliedDay]);
 
   const validDays = useMemo(() => {
     const daysInMonth = new Date(year, month, 0).getDate();
     return Array.from({ length: daysInMonth }, (_, i) => i + 1);
   }, [month, year]);
 
-  const prevMonth = () => { setSelectedDay(null); if (month === 1) { setMonth(12); setYear(year - 1); } else setMonth(month - 1); };
-  const nextMonth = () => { setSelectedDay(null); if (month === 12) { setMonth(1); setYear(year + 1); } else setMonth(month + 1); };
+  const prevMonth = () => { setSelectedDay(null); setAppliedDay(null); if (month === 1) { setMonth(12); setYear(year - 1); } else setMonth(month - 1); };
+  const nextMonth = () => { setSelectedDay(null); setAppliedDay(null); if (month === 12) { setMonth(1); setYear(year + 1); } else setMonth(month + 1); };
 
-  // 7. Payment & PDF Logics (EXACTLY AS ORIGINAL 1400-LINE CODE)
-  const handleViewPDF = async (t) => {
-    setPendingTender(t);
-    if (!email) {
-      setEmailModal(true); // Re-enabled the original Email Box !
-      return;
-    }
-    await tryUnlockPDF(t, email);
+  const handleClientLogin = () => {
+    localStorage.setItem('tt_intent', 'client'); setIntent('client');
+    signIn('google', { callbackUrl: `${window.location.origin}/?intent=client` }, { prompt: 'select_account' });
   };
 
-  const submitEmail = async (e) => {
+  const handleGuestLogin = () => {
+    localStorage.setItem('tt_intent', 'guest'); setIntent('guest');
+    signIn('google', { callbackUrl: `${window.location.origin}/?intent=guest` }, { prompt: 'select_account' });
+  };
+
+  const handleEmployeeLogin = async (e) => {
+    e.preventDefault(); setEmpLoading(true);
+    try {
+      const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: empEmail, password: empPwd }) });
+      const d = await r.json();
+      if (r.ok) { localStorage.setItem('tt_admin', d.token); router.push('/admin'); return; } 
+      if (empPwd === 'emp123') { localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); localStorage.setItem('tt_role', 'employee'); router.push('/employee'); return; }
+      toast.error('Invalid Credentials');
+    } catch (err) { toast.error('Login failed'); } finally { setEmpLoading(false); }
+  };
+
+  // 🚀 FIXED: Client Pre-Registration Redirects to Onboarding Flow
+  const handleClientReg = async (e) => {
     e.preventDefault();
-    const val = e.target.email.value.trim().toLowerCase();
-    if (!val) return;
-    const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: val }) });
-    if (!r.ok) return toast.error('Invalid email');
-    localStorage.setItem('tt_email', val); setEmail(val); setEmailModal(false);
-    toast.success('Email captured. Unlocking...');
-    if (pendingTender) await tryUnlockPDF(pendingTender, val);
+    if (!clientRegForm.phone || clientRegForm.phone.length < 10) return toast.error("Enter a valid phone number");
+    setSubmittingClientReg(true);
+    try {
+      // Sends data to your Backend MD Dashboard
+      await fetch('/api/client-prereg', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clientRegForm) });
+      
+      toast.success("Details saved! Redirecting to secure profile setup...");
+      setClientRegForm({ name: '', phone: '', enterprise: '' });
+      
+      // Auto-Redirecting user to actual Client Login -> which leads to Onboarding Form
+      setTimeout(() => {
+        handleClientLogin();
+      }, 1500);
+      
+    } catch (err) { toast.error("Failed to register. Try again."); } finally { setSubmittingClientReg(false); }
+  };
+
+  // 🚀 Guest Queries API sent to Backend
+  const handleGuestQuery = async (e) => {
+    e.preventDefault();
+    if (!queryForm.phone || queryForm.phone.length < 10) return toast.error("Enter a valid phone number");
+    setSubmittingLead(true);
+    try {
+      // Sends Query to your Backend MD Dashboard
+      await fetch('/api/guest-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(queryForm) });
+      toast.success("Query submitted successfully! Our team will contact you shortly.");
+      setQueryForm({ name: '', phone: '', query: '' });
+    } catch (e) { toast.error("Failed to submit query. Try again."); } finally { setSubmittingLead(false); }
+  };
+
+  const handleViewPDF = (t) => {
+    setPendingTender(t);
+    setPaywallModal(true);
   };
 
   const tryUnlockPDF = async (t, mail) => {
@@ -239,34 +260,40 @@ export default function App() {
     const d = await r.json(); setPdfData(d);
   };
 
-  // CASHFREE INTEGRATION UNTOUCHED
-  const buyPlan = async (plan) => {
-    if (!email) return toast.error('Please sign in first');
-    if (buying) return;
-    if (plan === 'single' && !pendingTender?.id && !pendingTender?._id) return toast.error('Please pick a tender first');
-    setBuying(true); setPaywallModal(false);
-    await new Promise((r) => setTimeout(r, 250));
-
+  // CASHFREE LOGIC
+  const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
+    setBuying(true); setGuestPayModal(false);
     try {
-      const isSubscription = plan === 'month' || plan === 'year';
-      const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
-      const r1 = await fetch(endpoint, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, plan, tenderId: pendingTender?._id || pendingTender?.id }),
+      const endpoint = (planId === 'month' || planId === 'year') ? '/api/subscription/create' : '/api/payment/order';
+      const r1 = await fetch(endpoint, { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ email: userEmail, phone: userPhone, plan: planId, tenderId: pendingTender?._id || pendingTender?.id }) 
       });
       const d1 = await r1.json();
-
-      if (!r1.ok || (!d1.payment_session_id && !d1.order?.payment_session_id)) {
-        setBuying(false); return toast.error(d1.error || 'Failed to initialize payment');
-      }
-
+      if (!r1.ok) return toast.error(d1.error || 'Failed to initialize payment');
+      
       const cashfree = await load({ mode: "production" });
-      const checkoutOptions = { paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id, returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}" };
-      await cashfree.checkout(checkoutOptions);
+      await cashfree.checkout({ paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id, returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}" });
     } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
   };
 
-  // 8. Auth Logics
+  const buyPlan = (planId) => {
+    if (planId === 'single') {
+       if (email) executePayment('single', email); 
+       else { setPaywallModal(false); setGuestPayModal(true); } 
+    } else {
+       if (!email) { toast.info("Please login to Subscribe"); handleGuestLogin(); return; }
+       executePayment(planId, email);
+    }
+  };
+
+  const handleGuestPaySubmit = (e) => {
+    e.preventDefault();
+    if(!guestPayForm.email || guestPayForm.phone.length < 10) return toast.error("Enter valid email & phone");
+    executePayment('single', guestPayForm.email, guestPayForm.phone);
+  };
+
+  // Auth Save Form
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
@@ -281,57 +308,6 @@ export default function App() {
     } catch (err) { toast.error('Error submitting profile'); }
     setSubmittingOnboard(false);
   };
-
-  const handleEmployeeLogin = async (e) => {
-    e.preventDefault(); setEmpLoading(true);
-    try {
-      const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: empEmail, password: empPwd }) });
-      const d = await r.json();
-      if (r.ok) { localStorage.setItem('tt_admin', d.token); router.push('/admin'); return; } 
-      if (empPwd === 'emp123') { localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); localStorage.setItem('tt_role', 'employee'); router.push('/employee'); return; }
-      toast.error('Invalid Credentials');
-    } catch (err) { toast.error('Login failed'); } finally { setEmpLoading(false); }
-  };
-
-  const handleClientLogin = () => {
-    if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'client');
-    setIntent('client');
-    signIn('google', { callbackUrl: `${window.location.origin}/?intent=client` }, { prompt: 'select_account' });
-  };
-
-  const handleGuestLogin = () => {
-    if (typeof window !== 'undefined') localStorage.setItem('tt_intent', 'guest');
-    setIntent('guest');
-    signIn('google', { callbackUrl: `${window.location.origin}/?intent=guest` }, { prompt: 'select_account' });
-  };
-
-  const handleClientReg = async (e) => {
-    e.preventDefault();
-    if (!clientRegForm.phone || clientRegForm.phone.length < 10) return toast.error("Enter a valid phone number");
-    setSubmittingClientReg(true);
-    // Future API link for pre-registration goes here
-    setTimeout(() => {
-      toast.success("Pre-registration successful! Our team will contact you shortly to activate your Client Board.");
-      setClientRegForm({ name: '', phone: '', enterprise: '' });
-      setSubmittingClientReg(false);
-    }, 1200);
-  };
-
-  const handleGuestQuery = async (e) => {
-    e.preventDefault();
-    if (!queryForm.phone || queryForm.phone.length < 10) return toast.error("Enter a valid phone number");
-    setSubmittingLead(true);
-    try {
-      await fetch('/api/guest-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(queryForm) });
-      toast.success("Query submitted successfully! Our team will contact you shortly.");
-      setQueryForm({ name: '', phone: '', query: '' });
-    } catch (e) { toast.error("Failed to submit query. Try again."); } finally { setSubmittingLead(false); }
-  };
-
-  let currentDistricts = [];
-  if (stateFilter === 'TS') currentDistricts = TS_DISTRICTS;
-  else if (stateFilter === 'AP') currentDistricts = AP_DISTRICTS;
-  else currentDistricts = [...TS_DISTRICTS, ...AP_DISTRICTS];
 
   if (status === 'loading' || loadingUser) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
@@ -362,6 +338,19 @@ export default function App() {
                   </div>
                   <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
                 </div>
+                
+                {/* Documents Tick Marks Section */}
+                <div className="border-t pt-5 mt-4">
+                  <Label className="text-[#0A2647] font-semibold block mb-1">Do you have these basic documents?</Label>
+                  <p className="text-xs text-muted-foreground mb-4">Please tick the documents you currently hold to build your Vendor Master Profile.</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_bank} onChange={e => setOnboardForm({...onboardForm, has_bank: e.target.checked})} /> Bank Account</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)</label>
+                  </div>
+                </div>
+                
                 <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-6 shadow-sm">
                   {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Portal'}
                 </Button>
@@ -383,6 +372,11 @@ export default function App() {
             <ShieldCheck className="w-12 h-12 text-amber-600 mx-auto mb-4" />
             <h2 className="text-2xl font-extrabold text-[#0A2647] mb-4">Account Under Verification</h2>
             <p className="text-slate-700 text-sm mb-6">Your registration is successful. Dashboard access is locked pending <strong className="text-red-600">MD Approval</strong>.</p>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
+              {/* 🚀 Click to Call dial pad trigger */}
+              <a href="tel:+916304486770" className="text-2xl font-black text-blue-600 hover:text-blue-800 hover:underline">+91 6304486770</a>
+            </div>
             <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2"><LogOut className="w-4 h-4 mr-2" /> Log Out</Button>
           </Card>
         </div>
@@ -391,7 +385,7 @@ export default function App() {
   }
 
   // ==============================================================================
-  // SCREEN 3: MAIN PUBLIC PORTAL
+  // SCREEN 3: MAIN PORTAL
   // ==============================================================================
   return (
     <div className="min-h-screen bg-slate-50 pb-20 relative font-sans">
@@ -439,23 +433,25 @@ export default function App() {
         </div>
       </header>
 
-      {/* 🌊 AUTO-SLIDING MARKETING BANNERS */}
+      {/* 🌊 BANNERS */}
       {brandSettings.banners && brandSettings.banners.length > 0 ? (
-         <section className="w-full relative h-[250px] md:h-[400px] overflow-hidden bg-slate-900">
+         <section className="w-full relative h-[300px] md:h-[450px] overflow-hidden bg-slate-900 group">
            {brandSettings.banners.map((imgUrl, idx) => (
-             <img 
-               key={idx} 
-               src={imgUrl} 
-               alt={`Banner ${idx}`} 
-               className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`} 
-             />
+             <img key={idx} src={imgUrl} alt={`Banner ${idx}`} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`} />
            ))}
            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-center pb-8">
               <Badge className="bg-[#16a34a] text-white border-0 text-sm md:text-base px-4 py-1 shadow-2xl">Official B2B Tenders Portal</Badge>
            </div>
+           
+           <button onClick={prevBanner} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+              <ChevronLeft className="w-8 h-8" />
+           </button>
+           <button onClick={nextBanner} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+              <ChevronRight className="w-8 h-8" />
+           </button>
          </section>
       ) : (
-         <section className="bg-gradient-to-r from-[#0A2647] to-indigo-900 text-white py-12 flex items-center justify-center text-center">
+         <section className="bg-gradient-to-r from-[#0A2647] to-indigo-900 text-white py-12 flex items-center justify-center text-center h-[200px] md:h-[300px]">
             <div>
               <h2 className="text-3xl font-black mb-2">₹10L+ Tenders Secured Successfully</h2>
               <p className="text-slate-300">Images managed from MD Dashboard will appear here.</p>
@@ -463,17 +459,13 @@ export default function App() {
          </section>
       )}
 
-      {/* 🚀 ADVANCED SEARCH */}
+      {/* 🚀 SEARCH */}
       <section className="container mx-auto px-4 -mt-6 z-10 relative">
         <Card className="shadow-2xl border-0 bg-white rounded-xl">
           <CardContent className="p-4 sm:p-6 space-y-4">
             <div className="flex bg-slate-50 border border-slate-200 rounded-lg p-3 items-center shadow-inner">
                <Search className="w-5 h-5 text-blue-600 ml-2 mr-3" />
-               <input 
-                 type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} 
-                 placeholder="Search tenders by keywords..." 
-                 className="flex-1 bg-transparent border-0 outline-none text-slate-700 font-bold"
-               />
+               <input type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search tenders by keywords..." className="flex-1 bg-transparent border-0 outline-none text-slate-700 font-bold" />
             </div>
             <div className="flex flex-wrap items-center gap-y-4 gap-x-8 pt-2">
                <div className="flex flex-col gap-2">
@@ -505,11 +497,10 @@ export default function App() {
       </section>
 
       <main className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
-        {/* Left Column: Tenders List */}
         <div className="lg:col-span-3 space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
-              {selectedDay ? `Closing on ${selectedDay} ${monthName(month - 1)}` : `Active Tenders (${monthName(month - 1)})`}
+              {appliedDay ? `Closing on ${appliedDay} ${monthName(month - 1)}` : `Active Tenders (${monthName(month - 1)})`}
             </h3>
             <Badge variant="outline" className="bg-white font-bold">{filteredTenders.length} Results</Badge>
           </div>
@@ -547,10 +538,8 @@ export default function App() {
           )}
         </div>
 
-        {/* Right Column: Calendar, Client Pre-Registration & Query Form */}
+        {/* Right Sidebar */}
         <div className="space-y-6">
-          
-          {/* Horizontal Calendar */}
           <Card className="border-0 shadow-xl bg-white rounded-xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-[#0A2647] to-blue-900 text-white py-4">
               <div className="flex justify-between items-center">
@@ -580,10 +569,14 @@ export default function App() {
                   )
                 })}
               </div>
+              <div className="mt-3 flex gap-2">
+                 <Button onClick={() => setAppliedDay(selectedDay)} disabled={!selectedDay} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-9">Apply Filter</Button>
+                 <Button onClick={() => { setSelectedDay(null); setAppliedDay(null); }} variant="outline" className="flex-1 border-2 border-slate-200 h-9 font-bold text-slate-600">Clear</Button>
+              </div>
             </CardContent>
           </Card>
 
-          {/* 🚀 Highlighted Client Pre-Registration Form */}
+          {/* 🚀 Client Pre-Registration Redirect Form */}
           <Card className="border-0 shadow-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl overflow-hidden relative transform transition hover:scale-[1.02]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
             <CardContent className="p-6 relative z-10">
@@ -594,37 +587,24 @@ export default function App() {
               <p className="text-[11px] text-orange-100 mb-4 font-bold uppercase tracking-wider border-b border-orange-400/50 pb-2">Premium Partner Pre-Registration</p>
               
               <form onSubmit={handleClientReg} className="flex flex-col gap-3">
-                <div>
-                  <Input required placeholder="Your Name" value={clientRegForm.name} onChange={e => setClientRegForm({...clientRegForm, name: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" />
-                </div>
-                <div>
-                  <Input required type="tel" placeholder="Phone Number" value={clientRegForm.phone} onChange={e => setClientRegForm({...clientRegForm, phone: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" />
-                </div>
-                <div>
-                  <Input required placeholder="Enterprise / Company Name" value={clientRegForm.enterprise} onChange={e => setClientRegForm({...clientRegForm, enterprise: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" />
-                </div>
+                <div><Input required placeholder="Your Name" value={clientRegForm.name} onChange={e => setClientRegForm({...clientRegForm, name: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" /></div>
+                <div><Input required type="tel" placeholder="Phone Number" value={clientRegForm.phone} onChange={e => setClientRegForm({...clientRegForm, phone: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" /></div>
+                <div><Input required placeholder="Enterprise / Company Name" value={clientRegForm.enterprise} onChange={e => setClientRegForm({...clientRegForm, enterprise: e.target.value})} className="bg-white/20 border-white/30 text-white placeholder:text-white/70 h-10 font-medium" /></div>
                 <Button type="submit" disabled={submittingClientReg} className="bg-white text-orange-600 hover:bg-slate-100 font-black w-full shadow-lg mt-2 h-11 text-sm uppercase tracking-wide">
-                   {submittingClientReg ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Submit Registration'}
+                   {submittingClientReg ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Submit & Proceed'}
                 </Button>
               </form>
             </CardContent>
           </Card>
 
-          {/* Guest Query Form */}
           <Card className="border-0 shadow-xl bg-[#0A2647] text-white rounded-xl overflow-hidden relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 opacity-20 rounded-full blur-3xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
             <CardContent className="p-6 relative z-10">
               <h3 className="font-black text-xl mb-1 text-emerald-400">Need Expert Help?</h3>
               <p className="text-xs text-slate-300 mb-4 font-medium">Drop your query, and our MD's office will get back to you directly.</p>
               <form onSubmit={handleGuestQuery} className="flex flex-col gap-3">
-                <div>
-                  <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Full Name</Label>
-                  <Input required placeholder="E.g., John Doe" value={queryForm.name} onChange={e => setQueryForm({...queryForm, name: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10" />
-                </div>
-                <div>
-                  <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Phone Number</Label>
-                  <Input required type="tel" placeholder="+91" value={queryForm.phone} onChange={e => setQueryForm({...queryForm, phone: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10" />
-                </div>
+                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Full Name</Label><Input required placeholder="E.g., John Doe" value={queryForm.name} onChange={e => setQueryForm({...queryForm, name: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10" /></div>
+                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Phone Number</Label><Input required type="tel" placeholder="+91" value={queryForm.phone} onChange={e => setQueryForm({...queryForm, phone: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10" /></div>
                 <div>
                   <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Your Query</Label>
                   <textarea required placeholder="What do you need help with?" value={queryForm.query} onChange={e => setQueryForm({...queryForm, query: e.target.value})} className="flex w-full rounded-md bg-white/10 border border-white/20 px-3 py-2 text-white placeholder:text-slate-400 resize-none h-20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
@@ -638,7 +618,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* 🚀 POWERFUL MNC VISION & SERVICES */}
+      {/* MNC VISION */}
       <section className="bg-slate-900 py-20 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-600/30 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-emerald-600/20 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
@@ -673,25 +653,26 @@ export default function App() {
         </div>
       </section>
 
-      {/* 🚀 DYNAMIC LEADERS PORTAL */}
-      {brandSettings.leaders && brandSettings.leaders.length > 0 && (
-        <section className="bg-white py-16 border-t-4 border-[#0A2647]">
-          <div className="container mx-auto px-4">
-            <h3 className="text-3xl font-black text-center text-[#0A2647] mb-12 uppercase tracking-wide">Our Leadership</h3>
-            <div className="flex flex-wrap justify-center gap-8">
-              {brandSettings.leaders.map((leader, i) => (
-                <div key={i} className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-xs hover:shadow-2xl transition">
-                  <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border-4 border-emerald-500 mb-4 shadow-md bg-white">
-                    {leader.image ? <img src={leader.image} alt={leader.name} className="w-full h-full object-cover" /> : <UserCog className="w-12 h-12 m-auto mt-5 text-slate-300"/>}
-                  </div>
-                  <h4 className="font-black text-xl text-[#0A2647]">{leader.name}</h4>
-                  <Badge className="bg-emerald-100 text-emerald-800 border-0 mt-2 font-bold px-3 py-1">{leader.role}</Badge>
+      {/* LEADERS PORTAL */}
+      <section className="bg-white py-16 border-t-4 border-[#0A2647]">
+        <div className="container mx-auto px-4">
+          <h3 className="text-3xl font-black text-center text-[#0A2647] mb-12 uppercase tracking-wide">Our Leadership</h3>
+          <div className="flex flex-wrap justify-center gap-8">
+            {(brandSettings.leaders?.length > 0 ? brandSettings.leaders : [
+              { name: "Managing Director", role: "Corporate Strategy", image: "" },
+              { name: "Operations Head", role: "Bid Management", image: "" }
+            ]).map((leader, i) => (
+              <div key={i} className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-xs hover:shadow-2xl transition">
+                <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border-4 border-emerald-500 mb-4 shadow-md bg-white">
+                  {leader.image ? <img src={leader.image} alt={leader.name} className="w-full h-full object-cover" /> : <UserCog className="w-12 h-12 m-auto mt-5 text-slate-300"/>}
                 </div>
-              ))}
-            </div>
+                <h4 className="font-black text-xl text-[#0A2647]">{leader.name}</h4>
+                <Badge className="bg-emerald-100 text-emerald-800 border-0 mt-2 font-bold px-3 py-1">{leader.role}</Badge>
+              </div>
+            ))}
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       {/* FOOTER */}
       <footer className="bg-[#051324] text-white pt-16 pb-8 border-t-4 border-emerald-500">
@@ -707,26 +688,27 @@ export default function App() {
           <div className="border-t border-white/10 pt-8 mt-8 grid md:grid-cols-2 gap-4 text-left max-w-4xl mx-auto items-center">
             <div>
               <p className="text-xs text-slate-500 mb-1 font-bold tracking-widest uppercase">Contact Us</p>
-              <p className="text-sm text-slate-300 font-medium">support@tgtenders.co.in | +91 6304486770</p>
+              <p className="text-sm text-slate-300 font-medium">support@tgtenders.co.in | <a href="tel:+916304486770" className="hover:text-emerald-400 hover:underline transition">+91 6304486770</a></p>
             </div>
+            {/* 🚀 POLICY MODAL LINKS */}
             <div className="md:text-right space-x-4 text-xs font-bold text-slate-400">
-               <a href="/policies#privacy" className="hover:text-emerald-400 transition">PRIVACY POLICY</a>
+               <button onClick={() => setPolicyModal('privacy')} className="hover:text-emerald-400 transition uppercase">Privacy Policy</button>
                <span>|</span>
-               <a href="/policies#terms" className="hover:text-emerald-400 transition">TERMS & CONDITIONS</a>
+               <button onClick={() => setPolicyModal('terms')} className="hover:text-emerald-400 transition uppercase">Terms & Conditions</button>
                <span>|</span>
-               <a href="/policies#refund" className="hover:text-emerald-400 transition">REFUND POLICY</a>
+               <button onClick={() => setPolicyModal('refund')} className="hover:text-emerald-400 transition uppercase">Refund Policy</button>
             </div>
           </div>
         </div>
       </footer>
 
-      {/* 🚀 REAL SOCIAL MEDIA FLOATING ICONS */}
+      {/* SOCIAL MEDIA */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
-        <a href="https://www.youtube.com/@esakafficial1237" target="_blank" rel="noreferrer" className="bg-[#FF0000] text-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
-          <Youtube className="w-6 h-6" />
+        <a href="https://www.youtube.com/@esakafficial1237" target="_blank" rel="noreferrer" className="bg-white text-[#FF0000] p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
         </a>
-        <a href="https://www.instagram.com/telangana_tenders?igsh=MWIzbTAyZmE2OHkyMQ==" target="_blank" rel="noreferrer" className="bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] text-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
-          <Instagram className="w-6 h-6" />
+        <a href="https://www.instagram.com/telangana_tenders?igsh=MWIzbTAyZmE2OHkyMQ==" target="_blank" rel="noreferrer" className="bg-white text-[#E1306C] p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center">
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
         </a>
         <a href="https://whatsapp.com/channel/0029VbD5F2h2975IQSMPVK2x" target="_blank" rel="noreferrer" className="bg-[#25D366] text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-transform flex items-center justify-center border-2 border-white">
           <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
@@ -769,49 +751,32 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* 🚀 ORIGINAL EMAIL COLLECTION MODAL RESTORED */}
-      <Dialog open={emailModal} onOpenChange={setEmailModal}>
+      {/* GUEST PAYMENT MODAL (Rs. 10) */}
+      <Dialog open={guestPayModal} onOpenChange={setGuestPayModal}>
         <DialogContent className="sm:max-w-md border-0 shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl font-black text-[#0A2647]">
-              <Mail className="w-6 h-6 text-emerald-500" /> Sign in to Unlock PDF
-            </DialogTitle>
-            <DialogDescription className="font-semibold text-slate-500">
-              We need to authenticate your profile before showing the secure document.
-            </DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-xl font-black text-[#0A2647]"><Lock className="w-6 h-6 text-emerald-500" /> Secure Quick Checkout</DialogTitle>
+            <DialogDescription className="font-semibold text-slate-500">Provide contact details to receive your payment receipt.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <Button onClick={() => { setEmailModal(false); handleGuestLogin(); }} className="w-full bg-white hover:bg-slate-50 border-2 border-slate-200 text-[#0A2647] gap-2 h-14 shadow-sm font-bold text-base">
-              <svg className="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.5-5.9 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
-                <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8c1.8-4.4 6-7.5 11.1-7.5 3 0 5.8 1.1 7.9 3l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/>
-                <path fill="#4CAF50" d="M24 44c5.4 0 10.3-2.1 14-5.4l-6.5-5.5C29.6 34.6 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8l-6.6 5.1C9.5 39.5 16.2 44 24 44z"/>
-                <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4-4 5.4l6.5 5.5c-.4.4 6.9-5 6.9-15-.1-1.4-.2-2.7-.5-3.4z"/>
-              </svg>
-              Continue with Google (Fast Access)
+          <form onSubmit={handleGuestPaySubmit} className="space-y-4 pt-2">
+            <div><Label className="font-bold text-slate-700">Email Address *</Label><Input type="email" required placeholder="For receipt & PDF backup" value={guestPayForm.email} onChange={e => setGuestPayForm({...guestPayForm, email: e.target.value})} className="mt-1 border-2 h-11"/></div>
+            <div><Label className="font-bold text-slate-700">Phone Number *</Label><Input type="tel" required placeholder="10-digit number" value={guestPayForm.phone} onChange={e => setGuestPayForm({...guestPayForm, phone: e.target.value})} className="mt-1 border-2 h-11"/></div>
+            <Button type="submit" disabled={buying} className="w-full bg-emerald-600 hover:bg-emerald-500 h-12 mt-2 font-bold text-lg shadow-lg text-white">
+              {buying ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Proceed to Pay ₹10'}
             </Button>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-              <div className="flex-1 h-px bg-slate-200" /> or use email <div className="flex-1 h-px bg-slate-200" />
-            </div>
-            <form onSubmit={submitEmail} className="space-y-3">
-              <Input name="email" type="email" placeholder="you@example.com" required className="h-12 border-2" />
-              <Button type="submit" className="bg-[#0A2647] hover:bg-blue-900 w-full h-12 font-bold text-base shadow-md">
-                Continue with Email
-              </Button>
-            </form>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 
-      {/* PURCHASE PDF MODALS */}
+      {/* PAYWALL */}
       <Dialog open={paywallModal} onOpenChange={setPaywallModal}>
-        <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto bg-slate-50">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg font-black"><Lock className="w-5 h-5 text-emerald-600" /> Unlock this Document</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-2xl font-black text-[#0A2647]"><Lock className="w-6 h-6 text-emerald-600" /> Unlock this Document</DialogTitle>
           </DialogHeader>
           <div className="grid sm:grid-cols-3 gap-4 mt-4">
             {PLANS.map((p) => (
-              <div key={p.id} className={`rounded-2xl border-2 p-6 flex flex-col ${p.highlight ? 'border-emerald-500 bg-emerald-50 shadow-xl relative' : 'border-slate-200 bg-white'}`}>
+              <div key={p.id} className={`rounded-2xl border-2 p-6 flex flex-col ${p.highlight ? 'border-emerald-500 bg-emerald-50 shadow-xl relative transform scale-105 z-10' : 'border-slate-200 bg-white'}`}>
                 {p.highlight && <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white font-bold">⭐ Most Popular</Badge>}
                 <h3 className="font-black text-[#0A2647] text-lg">{p.name}</h3>
                 <div className="my-3 flex items-baseline gap-1"><span className="text-4xl font-black text-[#0A2647]">₹{p.price}</span></div>
@@ -834,6 +799,49 @@ export default function App() {
            ) : (
              <div className="flex-1 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-600"/></div>
            )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 🚀 NEW: POLICY MODALS */}
+      <Dialog open={!!policyModal} onOpenChange={(open) => !open && setPolicyModal(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto bg-white border-0 shadow-2xl">
+          <DialogHeader className="mb-4 border-b pb-4">
+            <DialogTitle className="text-2xl font-black text-[#0A2647] flex items-center gap-2">
+              <FileBadge className="w-6 h-6 text-emerald-500" />
+              {policyModal === 'terms' && 'Terms & Conditions'}
+              {policyModal === 'privacy' && 'Privacy Policy'}
+              {policyModal === 'refund' && 'Refund Policy'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-slate-600 space-y-5 leading-relaxed pb-4">
+            {policyModal === 'terms' && (
+               <>
+                  <p className="font-semibold text-slate-800">Welcome to Telangana Tenders Consultancy Services. By using our portal, you agree to these terms.</p>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">1. Service Description</h4><p>We provide B2B consultancy, bid management, and tender information. We are a private corporate entity and NOT an official government department.</p></div>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">2. Document Unlocks</h4><p>PDF documents unlocked via our ₹10 plan or premium subscriptions are for internal business use only and cannot be resold.</p></div>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">3. Account Verification</h4><p>Client accounts require mandatory MD approval. We reserve the right to suspend accounts providing false business details.</p></div>
+               </>
+            )}
+            {policyModal === 'privacy' && (
+               <>
+                  <p className="font-semibold text-slate-800">Your privacy is strictly protected under our corporate policies.</p>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">1. Data Collection</h4><p>We collect Name, Phone, Email, and Business Credentials (GST, PAN, etc.) solely for vendor registration and bid management operations.</p></div>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">2. Data Security</h4><p>All corporate data is securely encrypted. We do not sell or share your business data with third-party marketers.</p></div>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">3. Payment Processing</h4><p>Payments are securely handled by Cashfree. We do not store your credit card or UPI details on our servers.</p></div>
+               </>
+            )}
+            {policyModal === 'refund' && (
+               <>
+                  <p className="font-semibold text-slate-800">Our refund policies are designed to be transparent and fair for B2B operations.</p>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">1. Single Document Unlocks (₹10)</h4><p>Due to the digital nature of the PDFs, the ₹10 fee is strictly non-refundable once the document is successfully unlocked.</p></div>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">2. Subscriptions</h4><p>Monthly and Yearly subscriptions auto-renew. You may cancel at any time to prevent future billing. Partial month refunds are not provided.</p></div>
+                  <div><h4 className="font-bold text-[#0A2647] text-lg mb-1">3. Failed Transactions</h4><p>If your account is debited but the PDF does not unlock due to a technical error, the transaction will automatically be refunded to your original payment method by Cashfree within 5-7 business days.</p></div>
+               </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setPolicyModal(null)} className="bg-[#0A2647] hover:bg-[#144272] text-white font-bold px-8">Acknowledge & Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
