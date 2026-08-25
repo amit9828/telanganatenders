@@ -56,7 +56,7 @@ export default function AdminPage() {
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
   const [tickets, setTickets] = useState([]);
-  const [guestQueries, setGuestQueries] = useState([]); // 🚀 Added state for Guest Queries
+  const [guestQueries, setGuestQueries] = useState([]);
   const [ticketReply, setTicketReply] = useState({}); 
   const [l1Data, setL1Data] = useState({}); 
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -108,6 +108,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (token) refresh();
+    // eslint-disable-next-line
   }, [token]);
 
   const refresh = async () => {
@@ -123,7 +124,7 @@ export default function AdminPage() {
         fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
         fetch(`/api/employees?t=${Date.now()}`, { headers }), 
         fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }),
-        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) // 🚀 FETCH GUEST QUERIES
+        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) 
       ]);
       
       if (tRes.status === 401) return logout();
@@ -137,12 +138,12 @@ export default function AdminPage() {
       const dispJson = dispRes.ok ? await dispRes.json() : { dispatches: [] };
       const empJson = empRes.ok ? await empRes.json() : { team: [] };
       const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
-      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; // 🚀 Extract Guest Queries
+      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; 
 
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
-      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); // 🚀 Save Guest Queries
+      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); 
       setPendingUsers(uJson.users || []);
       setApprovedClients(aJson.users || []); 
       setBidRequests(reqJson.requests || []);
@@ -150,7 +151,7 @@ export default function AdminPage() {
       setTeamMembers(empJson.team || []);
       setLedgerTxns(ledgerJson.transactions || []);
       
-      // 🚀 FIX: Live Net Balance (Manual + Cashfree Online)
+      // 🚀 FIX: Live Net Balance
       const onlineRevenue = sJson.revenue || 0;
       setLedgerBalance((ledgerJson.balance || 0) + onlineRevenue);
 
@@ -159,17 +160,17 @@ export default function AdminPage() {
          total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
       })));
       
-      // 🚀 FIX: Live Employee Efficiency Calculation
+      // 🚀 FIX: Employee Efficiency
       setEmployeeReports((empJson.team || []).map(e => {
          const completedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
          const assignedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id).length || 1;
-         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); // Base 20%
+         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); 
          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
       }));
     } catch (err) { console.error('Refresh failed:', err); }
   };
 
-  // 🚀 FIX: Prevent Verification Logout Loop
+  // 🚀 FIX: Hard Logout
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.clear();
@@ -197,7 +198,7 @@ export default function AdminPage() {
     reader.readAsDataURL(file);
   };
 
-  // 🚀 FIX: Direct URL Open for PDF to bypass 4MB Network Limitation
+  // 🚀 FIX: Proper Window Open for PDF
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`, '_blank');
     toast.success('Opening PDF Document...');
@@ -298,6 +299,7 @@ export default function AdminPage() {
 
   const impersonateUser = async (type, email_or_id) => {
     toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
+    
     try {
         const res = await signIn('impersonate', { 
            email: email_or_id, 
@@ -343,7 +345,6 @@ export default function AdminPage() {
       }
   };
 
-  // 🚀 FIX: Guest Query Deletion
   const resolveGuestQuery = async (id) => {
       try {
           await fetch(`/api/guest-queries?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
@@ -614,7 +615,7 @@ export default function AdminPage() {
                                 <tr key={emp.id} className="hover:bg-slate-50">
                                    <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
                                    <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
-                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
+                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
                                 </tr>
                              ))}
                           </tbody>
@@ -1182,7 +1183,6 @@ export default function AdminPage() {
                                            <p className="font-bold text-[#0A2647] text-sm">{task.subject}</p>
                                            <p className="text-[10px] text-slate-500 mt-1">Assigned To: <span className="font-mono bg-slate-100 px-1 rounded">{task.target_id}</span></p>
                                            
-                                           {/* 🚀 NEW: Show Client Reply if they responded to the Alert */}
                                            {task.client_reply && (
                                               <div className="mt-2 bg-blue-50 border border-blue-100 p-2 rounded-md">
                                                 <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Client Reply:</span>
@@ -1355,7 +1355,6 @@ export default function AdminPage() {
                       </div>
                       
                       <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                         {/* 🚀 FIXED: DIRECT WINDOW OPEN FOR PDF TO BYPASS NETWORK ERROR */}
                          <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
                          </Button>
@@ -1376,7 +1375,6 @@ export default function AdminPage() {
           {/* ==================== 7. HELPDESK (WITH GUEST QUERIES) ==================== */}
           <TabsContent value="tickets" className="mt-4">
             
-            {/* 🚀 NEW: Guest Leads & Public Queries Card */}
             <Card className="tender-shadow border-t-4 border-t-purple-500 w-full mb-6">
               <CardHeader className="bg-purple-50/30 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Users className="w-5 h-5 text-purple-600" /> Public Visitor Queries (Leads)</CardTitle>
@@ -1509,10 +1507,11 @@ function BrandSettings({ token }) {
   const [visionText, setVisionText] = useState('');
   const [banners, setBanners] = useState([]);
   const [leaders, setLeaders] = useState([]);
+  const [clients, setClients] = useState([]); // 🚀 NEW: State for Clients Showcase
   const [saving, setSaving] = useState(false);
 
-  // New Leader Form State
   const [newLeader, setNewLeader] = useState({ name: '', role: '', image: '', phone: '', email: '' });
+  const [newClient, setNewClient] = useState({ client_name: '', company_name: '', udyam_no: '', image: '' }); // 🚀 NEW: Form for Clients
 
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => {
@@ -1524,6 +1523,7 @@ function BrandSettings({ token }) {
         if (d.settings.vision_text) setVisionText(d.settings.vision_text);
         if (d.settings.banners) setBanners(d.settings.banners);
         if (d.settings.leaders) setLeaders(d.settings.leaders);
+        if (d.settings.clients) setClients(d.settings.clients); // 🚀 NEW: Load Clients
       }
     }).catch((err) => console.error(err));
   }, []);
@@ -1564,6 +1564,19 @@ function BrandSettings({ token }) {
     setLeaders(prev => prev.filter((_, i) => i !== index));
   };
 
+  // 🚀 NEW: Add & Remove Clients Logic
+  const addClient = () => {
+    if (!newClient.client_name || !newClient.company_name || !newClient.image) return toast.error('Client Name, Company, and Photo are required!');
+    setClients(prev => [...prev, newClient]);
+    setNewClient({ client_name: '', company_name: '', udyam_no: '', image: '' });
+    toast.success('Client added to showcase. Click Save Settings to publish.');
+  };
+
+  const removeClient = (index) => {
+    if(!confirm("Remove this client?")) return;
+    setClients(prev => prev.filter((_, i) => i !== index));
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -1574,7 +1587,8 @@ function BrandSettings({ token }) {
         gem_logo: gemLogoPreview,
         vision_text: visionText,
         banners: banners,
-        leaders: leaders
+        leaders: leaders,
+        clients: clients // 🚀 NEW: Save Clients to DB
       };
 
       const r = await fetch('/api/settings', {
@@ -1596,7 +1610,6 @@ function BrandSettings({ token }) {
         <CardContent className="pt-6">
           <div className="grid lg:grid-cols-2 gap-8 items-start">
             <div className="flex gap-4">
-               {/* Main Logo */}
                <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
                  <p className="text-xs font-bold text-slate-500 uppercase">Main Logo</p>
                  <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
@@ -1608,7 +1621,6 @@ function BrandSettings({ token }) {
                  </div>
                </div>
                
-               {/* GeM Logo */}
                <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
                  <p className="text-xs font-bold text-slate-500 uppercase">GeM / Partner Logo</p>
                  <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
@@ -1630,7 +1642,6 @@ function BrandSettings({ token }) {
         </CardContent>
       </Card>
 
-      {/* 2. AUTO-SLIDING BANNERS */}
       <Card className="tender-shadow border-0 ring-1 ring-slate-200">
         <CardHeader className="pb-4 bg-slate-50/50 border-b">
           <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MonitorPlay className="w-5 h-5 text-slate-500" /> Auto-Sliding Home Banners</CardTitle>
@@ -1653,15 +1664,12 @@ function BrandSettings({ token }) {
         </CardContent>
       </Card>
 
-      {/* 3. OUR LEADERS DIRECTORY */}
       <Card className="tender-shadow border-0 ring-1 ring-slate-200">
         <CardHeader className="pb-4 bg-slate-50/50 border-b">
           <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Trophy className="w-5 h-5 text-slate-500" /> "Our Leaders" Profiles</CardTitle>
           <CardDescription>Add MDs, Directors, or core team members to show on the website.</CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
-           
-           {/* Current Leaders Display */}
            {leaders.length > 0 && (
              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 pb-6 border-b border-slate-100">
                 {leaders.map((ld, i) => (
@@ -1679,7 +1687,6 @@ function BrandSettings({ token }) {
              </div>
            )}
 
-           {/* Add New Leader Form */}
            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
               <h5 className="font-bold text-sm text-slate-700 flex items-center gap-2 mb-4"><UserPlus className="w-4 h-4 text-blue-600"/> Add New Leader Profile</h5>
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1699,8 +1706,49 @@ function BrandSettings({ token }) {
            </div>
         </CardContent>
       </Card>
+
+      {/* 🚀 NEW: OUR CLIENTS SHOWCASE SETTINGS */}
+      <Card className="tender-shadow border-0 ring-1 ring-slate-200">
+        <CardHeader className="pb-4 bg-slate-50/50 border-b">
+          <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Building2 className="w-5 h-5 text-emerald-600" /> "Our Clients" Showcase</CardTitle>
+          <CardDescription>Add prestigious clients to display on the public homepage.</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+           {clients.length > 0 && (
+             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 pb-6 border-b border-slate-100">
+                {clients.map((cl, i) => (
+                   <div key={i} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 relative shadow-sm group">
+                      <img src={cl.image} alt={cl.company_name} className="w-14 h-14 rounded-md object-cover border border-slate-200 shrink-0 p-1" />
+                      <div className="min-w-0 pr-6">
+                         <h5 className="font-black text-sm text-[#0A2647] truncate">{cl.company_name}</h5>
+                         <p className="text-[10px] text-slate-500 font-bold mb-1 truncate">{cl.client_name}</p>
+                         <Badge className="bg-slate-100 text-slate-700 border-0 h-4 text-[9px] px-1.5 py-0 font-mono">UDYAM: {cl.udyam_no || 'N/A'}</Badge>
+                      </div>
+                      <button onClick={() => removeClient(i)} className="absolute top-2 right-2 text-red-300 hover:text-red-600 bg-slate-50 hover:bg-red-50 p-1.5 rounded opacity-0 group-hover:opacity-100 transition"><Trash2 className="w-3.5 h-3.5"/></button>
+                   </div>
+                ))}
+             </div>
+           )}
+
+           <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
+              <h5 className="font-bold text-sm text-slate-700 flex items-center gap-2 mb-4"><PlusCircle className="w-4 h-4 text-emerald-600"/> Add New Client to Showcase</h5>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                 <div><Label className="text-xs font-bold text-slate-600">Company Name *</Label><Input placeholder="e.g. Tata Projects" value={newClient.company_name} onChange={e=>setNewClient({...newClient, company_name: e.target.value})} className="h-9 text-xs bg-white mt-1"/></div>
+                 <div><Label className="text-xs font-bold text-slate-600">Client / Owner Name *</Label><Input placeholder="e.g. Mr. Sharma" value={newClient.client_name} onChange={e=>setNewClient({...newClient, client_name: e.target.value})} className="h-9 text-xs bg-white mt-1"/></div>
+                 <div><Label className="text-xs font-bold text-slate-600">UDYAM / Registration No</Label><Input placeholder="e.g. UDYAM-TS-02-XXXX" value={newClient.udyam_no} onChange={e=>setNewClient({...newClient, udyam_no: e.target.value})} className="h-9 text-xs bg-white mt-1"/></div>
+                 
+                 <div className="sm:col-span-2 lg:col-span-3 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
+                    <label className={`flex-1 w-full border ${newClient.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
+                       <UploadCloud className="w-4 h-4"/> {newClient.image ? 'Company Logo Selected ✓' : 'Upload Company Logo *'}
+                       <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewClient({...newClient, image: b64}))} className="hidden"/>
+                    </label>
+                    <Button type="button" onClick={addClient} className="flex-1 w-full bg-emerald-600 hover:bg-emerald-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Public Showcase</Button>
+                 </div>
+              </div>
+           </div>
+        </CardContent>
+      </Card>
       
-      {/* Save Reminder Sticky Bar */}
       <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-center flex items-center justify-center gap-3">
          <AlertTriangle className="w-5 h-5 text-amber-500"/>
          <span className="text-xs font-bold text-amber-800">Don't forget to click <strong className="text-[#0A2647]">Save All Settings</strong> at the top after making changes!</span>
