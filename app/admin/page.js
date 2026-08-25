@@ -31,6 +31,22 @@ const DISTRICTS = [
   'Srikakulam', 'Vizianagaram', 'Prakasam'
 ];
 
+// Reusing this structure from your client to show default docs
+const DEFAULT_VAULT_DOCS = [
+  { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
+  { id: 'pan', name: 'PAN Card', status: 'missing', file: null },
+  { id: 'bank_account', name: 'Bank Account Details', status: 'missing', file: null },
+  { id: 'cancelled_check', name: 'Cancelled Check', status: 'missing', file: null },
+  { id: 'dsc', name: 'DSC (Class 3)', status: 'missing', file: null },
+  { id: 'msme', name: 'MSME (Udyam)', status: 'missing', file: null },
+  { id: 'iso', name: 'ISO Certificate', status: 'missing', file: null },
+  { id: 'ca_turnover', name: 'Last 3 Years CA Turnover', status: 'missing', file: null },
+  { id: 'annual_returns', name: 'Annual Returns / ITR', status: 'missing', file: null },
+  { id: 'fssai', name: 'FSSAI License', status: 'missing', file: null },
+  { id: 'firm_reg', name: 'Firm / Pvt Ltd Registration', status: 'missing', file: null },
+  { id: 'other_license', name: 'Other Trade Licenses', status: 'missing', file: null }
+];
+
 export default function AdminPage() {
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
@@ -81,6 +97,9 @@ export default function AdminPage() {
   const [pdfName, setPdfName] = useState('');
   const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState('');
+
+  // 🚀 FIX: Rejection reason state for vault docs
+  const [rejectReason, setRejectReason] = useState({});
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -285,12 +304,11 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
-  // 🚀 ULTIMATE FIX: Secure NextAuth Impersonation (No Lock Screen!)
+  // 🚀 SECURE NEXTAUTH IMPERSONATION
   const impersonateUser = async (type, email_or_id) => {
     toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
     
     try {
-        // Step 1: Set the authentication cookie in the background (No Redirect)
         const res = await signIn('impersonate', { 
            email: email_or_id, 
            adminToken: 'admin_success', 
@@ -301,7 +319,6 @@ export default function AdminPage() {
            toast.error("Bypass Authentication Failed!");
         } else {
            toast.success("Bypass Successful! Opening Real Dashboard...");
-           // Step 2: Open the new tab after the cookie is securely set
            setTimeout(() => {
               window.open(`/${type}`, '_blank');
            }, 800);
@@ -309,6 +326,32 @@ export default function AdminPage() {
     } catch (e) {
         toast.error("Network Error during authentication.");
     }
+  };
+
+  // 🚀 FIX: NEW VAULT VERIFICATION LOGIC FOR MD
+  const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
+      let reason = '';
+      if (status === 'rejected') {
+          reason = rejectReason[`${clientEmail}_${docId}`];
+          if (!reason) return toast.error("Please provide a rejection reason so the client can fix it.");
+      }
+
+      try {
+          const res = await fetch('/api/vault/verify', {
+             method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+             body: JSON.stringify({ email: clientEmail, docId: docId, status: status, reject_reason: reason })
+          });
+          
+          if (res.ok) {
+              toast.success(`Document marked as ${status.toUpperCase()}!`);
+              if (status === 'rejected') setRejectReason(prev => ({...prev, [`${clientEmail}_${docId}`]: ''}));
+              refresh();
+          } else {
+              toast.error("Failed to update status.");
+          }
+      } catch (err) {
+          toast.error("Network error while updating vault document.");
+      }
   };
 
   // --- HELPDESK TICKETS ---
@@ -441,10 +484,24 @@ export default function AdminPage() {
   const handleSendPaymentRequest = async (e) => {
     e.preventDefault();
     if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) return toast.error("Fill all details");
-    const newReq = { id: `REQ-${Date.now()}`, ...paymentRequestForm, status: 'sent', sent_time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) };
-    setFinancialRequests(prev => [newReq, ...prev]);
-    toast.success(`Cashfree payment link dispatched securely!`);
-    setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
+    
+    // Push the payment fee request to the client via our API
+    try {
+        const res = await fetch('/api/users/request-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ email: paymentRequestForm.client_id, amount: paymentRequestForm.amount, reason: paymentRequestForm.reason })
+        });
+        if (res.ok) {
+            toast.success(`Cashfree payment link dispatched securely!`);
+            setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
+            refresh();
+        } else {
+            toast.error("Failed to dispatch payment link.");
+        }
+    } catch(err) {
+        toast.error("Network error while sending request.");
+    }
   };
 
   const handleOfflinePayment = async (req) => {
@@ -599,8 +656,78 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
-          {/* ==================== 2. CLIENT CRM ==================== */}
+          {/* ==================== 2. CLIENT CRM & VAULT VERIFICATION ==================== */}
           <TabsContent value="clients" className="mt-4">
+            
+            {/* 🚀 NEW: MD Vault Verification Desk */}
+            <Card className="tender-shadow border-t-4 border-t-orange-500 mb-6">
+              <CardHeader className="bg-orange-50/50 border-b pb-4">
+                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Database className="w-5 h-5 text-orange-600" /> Pending Vault Approvals</CardTitle>
+                <CardDescription>Verify KYC and Business documents uploaded by clients before syncing to their permanent drive.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+                 {approvedClients.filter(c => c.vault_docs?.some(d => d.status === 'uploaded')).length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">
+                       <CheckCircle2 className="w-10 h-10 mx-auto mb-2 opacity-30 text-emerald-500" />
+                       <p className="text-sm font-semibold">All client documents have been verified.</p>
+                    </div>
+                 ) : (
+                    <div className="space-y-6">
+                       {approvedClients.map(client => {
+                          const pendingDocs = client.vault_docs?.filter(d => d.status === 'uploaded') || [];
+                          if (pendingDocs.length === 0) return null;
+                          
+                          return (
+                          <div key={client.email} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
+                             <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                                <div>
+                                   <h4 className="font-bold text-[#0A2647] text-base">{client.company_name || client.client_name}</h4>
+                                   <p className="text-xs font-mono text-slate-500">{client.email}</p>
+                                </div>
+                                <Badge className="bg-orange-100 text-orange-800 border-0">{pendingDocs.length} Docs Pending</Badge>
+                             </div>
+                             
+                             <div className="grid md:grid-cols-2 gap-4">
+                                {pendingDocs.map(doc => (
+                                   <div key={doc.id} className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex flex-col justify-between gap-3">
+                                      <div>
+                                         <p className="font-bold text-slate-800 text-sm">{doc.name}</p>
+                                         <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
+                                      </div>
+                                      
+                                      {/* PDF Previewer Button */}
+                                      <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => {
+                                          if (doc.file_base64) {
+                                              const byteCharacters = atob(doc.file_base64);
+                                              const byteNumbers = new Array(byteCharacters.length);
+                                              for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                              const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+                                              window.open(URL.createObjectURL(blob), '_blank');
+                                          } else {
+                                              toast.error("File is corrupted or not a valid PDF.");
+                                          }
+                                      }}>
+                                         <Eye className="w-4 h-4 mr-2"/> View Document
+                                      </Button>
+
+                                      <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
+                                         <Input placeholder="Rejection reason (if rejecting)..." className="h-8 text-xs bg-white" value={rejectReason[`${client.email}_${doc.id}`] || ''} onChange={e => setRejectReason({...rejectReason, [`${client.email}_${doc.id}`]: e.target.value})} />
+                                         <div className="flex gap-2">
+                                            <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'verified')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
+                                            <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs"><XCircle className="w-3.5 h-3.5 mr-1"/> Reject</Button>
+                                         </div>
+                                      </div>
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+                          );
+                       })}
+                    </div>
+                 )}
+              </CardContent>
+            </Card>
+
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><UserCheck className="w-5 h-5 text-[#16a34a]" /> Enterprise Client Approvals</CardTitle>
@@ -672,7 +799,7 @@ export default function AdminPage() {
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{client.stats?.won || 0}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(client.stats?.total_paid || 0).toLocaleString()}</span></div>
+                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(client.stats?.revenue || 0).toLocaleString()}</span></div>
                                 </div>
                              </div>
                              
@@ -1059,6 +1186,14 @@ export default function AdminPage() {
                                            </div>
                                            <p className="font-bold text-[#0A2647] text-sm">{task.subject}</p>
                                            <p className="text-[10px] text-slate-500 mt-1">Assigned To: <span className="font-mono bg-slate-100 px-1 rounded">{task.target_id}</span></p>
+                                           
+                                           {/* 🚀 NEW: Show Client Reply if they responded to the Alert */}
+                                           {task.client_reply && (
+                                              <div className="mt-2 bg-blue-50 border border-blue-100 p-2 rounded-md">
+                                                <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Client Reply:</span>
+                                                <span className="text-xs font-medium text-slate-700">"{task.client_reply}"</span>
+                                              </div>
+                                           )}
 
                                            <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 mb-3">
                                                <div className={`h-1.5 rounded-full ${barColor} ${progress}`}></div>
