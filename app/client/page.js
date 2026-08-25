@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react'; // 🚀 useSession ఇక్కడే ఉంది కదా!
 import BrandLogo from '@/components/BrandLogo';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,6 @@ import {
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck
 } from 'lucide-react';
 
-// డిఫాల్ట్ గా అడగాల్సిన డాక్యుమెంట్ల లిస్ట్ (కచ్చితంగా కావాల్సినవి)
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
   { id: 'pan', name: 'PAN Card', status: 'missing', file: null },
@@ -36,6 +35,9 @@ const DEFAULT_VAULT_DOCS = [
 ];
 
 export default function ClientDashboard() {
+  // 🚀 FIX 1: సెషన్ డేటా తీసుకోవడం
+  const { data: session, status } = useSession(); 
+  
   const [isMounted, setIsMounted] = useState(false);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(true);
@@ -71,14 +73,21 @@ export default function ClientDashboard() {
   const [wonBids, setWonBids] = useState([]);
   const [recommendedTenders, setRecommendedTenders] = useState([]);
 
+  // 🚀 FIX 2: useEffect ని సెషన్ ఆధారంగా మార్చడం
   useEffect(() => {
     setIsMounted(true);
-    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') || 'client@apex.com' : 'client@apex.com';
+    
+    // సెషన్ లోడ్ అవుతున్నప్పుడు ఆగుతాం
+    if (status === "loading") return; 
+
+    // సెషన్ లో ఈమెయిల్ ఉంటే అదే వాడతాం (లేదంటే లోకల్ స్టోరేజ్)
+    const e = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '') || 'client@apex.com';
+    
     setEmail(e);
     setClientId(`CLI-${e.substring(0, 4).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`);
     fetchPublicTenders();
     fetchClientData(e); 
-  }, []);
+  }, [session, status]); // 👈 సెషన్ మారినప్పుడల్లా ఈమెయిల్ అప్డేట్ అవుతుంది
 
   // ============================================================================
   // 🚀 PERMANENT BACKEND LOGIC: Fetch User Data from DB
@@ -333,7 +342,8 @@ export default function ClientDashboard() {
     window.location.href = '/';
   };
 
-  if (!isMounted || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+  // 🚀 FIX 3: Loading Screen While Session Loads
+  if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
   // ============================================================================
   // 🔒 MNC SECURITY GATE: HOLDING SCREEN FOR MD APPROVAL
@@ -351,7 +361,7 @@ export default function ClientDashboard() {
            </CardHeader>
            <CardContent className="pt-6">
              <p className="text-center text-slate-600 text-sm font-medium mb-6">
-               Your registration was successful. As part of our strict MNC compliance, your dashboard access is currently locked pending <strong className="text-slate-800">MD Approval</strong>.
+                Your registration was successful. As part of our strict MNC compliance, your dashboard access is currently locked pending <strong className="text-slate-800">MD Approval</strong>.
              </p>
              <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 text-center flex flex-col items-center gap-3 shadow-inner">
                 <PhoneCall className="w-8 h-8 text-blue-600 animate-pulse" />
