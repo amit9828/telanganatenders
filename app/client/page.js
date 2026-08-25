@@ -68,7 +68,15 @@ export default function ClientDashboard() {
 
   const [submittingAgreement, setSubmittingAgreement] = useState(false);
 
-  // --- Dynamic Business Profile State ---
+  // 🚀 FIX: Onboarding Profile State
+  const [submittingOnboard, setSubmittingOnboard] = useState(false);
+  const [onboardForm, setOnboardForm] = useState({
+    client_name: '', company_name: '', phone: '', company_type: 'Proprietor (Individual)', service: '', 
+    has_gst: false, has_esi: false, has_epf: false, has_iso: false, has_bank: false, has_pan: false, 
+    has_aadhar: false, has_dsc: false, has_ifsc: false, has_fssai: false, has_cer: false, has_turnover: false, has_annual_returns: false, has_msme: false
+  });
+
+  // --- Dynamic Business Profile State (For internal Edit Profile Tab) ---
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     clientName: '', orgType: 'Private Limited', companyName: '',
@@ -81,7 +89,6 @@ export default function ClientDashboard() {
   const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
   const [recommendedTenders, setRecommendedTenders] = useState([]);
-  
   const [brandSettings, setBrandSettings] = useState({});
 
   useEffect(() => {
@@ -144,6 +151,15 @@ export default function ClientDashboard() {
                 name: item.includes(':') ? item.split(':')[1].trim() : item.trim()
             })) : prev.services,
             description: d.profile.description || prev.description
+          }));
+          
+          setOnboardForm(prev => ({
+            ...prev,
+            client_name: d.profile.client_name || '',
+            company_name: d.profile.company_name || '',
+            phone: d.profile.phone || '',
+            service: d.profile.service_category || '',
+            company_type: d.profile.company_type || 'Proprietor (Individual)'
           }));
         }
       }
@@ -232,14 +248,14 @@ export default function ClientDashboard() {
     }
   };
 
+  // 🚀 FIX: Submit Legal Agreement logic & Never reflect again
   const handleSignAgreement = async (e) => {
       e.preventDefault();
       setSubmittingAgreement(true);
-      
       try {
-          const agreementText = `OFFICIAL B2B SERVICE AGREEMENT\n\nClient: ${profileForm.clientName}\nCompany: ${profileForm.companyName}\nDate: ${new Date().toLocaleDateString()}\n\nAgreed to Terms & Conditions for Bid Analysis, Documentation Support, and Operations.\n\nDigitally Signed by: B. Esak (MD, Telangana Tenders)\nDigitally Signed by: ${profileForm.clientName}`;
+          const agreementText = `B2B LEGAL SERVICE AGREEMENT\n\nClient: ${profileForm.clientName}\nCompany: ${profileForm.companyName}\nDate: ${new Date().toLocaleDateString()}\n\nAgreed to Terms & Conditions for Bid Analysis, Documentation Support, and Operations.\n\nDigitally Signed by: B. Esak (MD, Telangana Tenders)\nDigitally Signed by: ${profileForm.clientName}`;
           const blob = new Blob([agreementText], { type: 'text/plain' });
-          const file = new File([blob], "Signed_Legal_Agreement.txt", { type: "text/plain" });
+          const file = new File([blob], "Signed_Legal_Service_Agreement.txt", { type: "text/plain" });
           
           const formData = new FormData();
           formData.append('file', file);
@@ -254,7 +270,7 @@ export default function ClientDashboard() {
           });
           
           if(res.ok) {
-              toast.success("Legal Agreement Signed & Saved to Vault. Welcome to your Dashboard!");
+              toast.success("Legal Agreement Signed. Proceeding to Profile Completion.");
               setUserData(prev => ({...prev, agreement_signed: true}));
           }
       } catch(err) {
@@ -263,7 +279,34 @@ export default function ClientDashboard() {
       setSubmittingAgreement(false);
   };
 
-  // 🚀 FIX 1: Added missing function and passed PDF link to MD
+  // 🚀 FIX: Handle Onboarding Profile Submission
+  const submitOnboarding = async (e) => {
+    e.preventDefault();
+    if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
+    setSubmittingOnboard(true);
+    try {
+      const res = await fetch('/api/users/profile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email, client_name: onboardForm.client_name, company_name: onboardForm.company_name, phone: onboardForm.phone, 
+          company_type: onboardForm.company_type, service_category: onboardForm.service, 
+          documents: { 
+            has_gst: onboardForm.has_gst, has_esi: onboardForm.has_esi, has_epf: onboardForm.has_epf, has_iso: onboardForm.has_iso,
+            has_bank: onboardForm.has_bank, has_pan: onboardForm.has_pan, has_aadhar: onboardForm.has_aadhar, has_dsc: onboardForm.has_dsc,
+            has_ifsc: onboardForm.has_ifsc, has_fssai: onboardForm.has_fssai, has_cer: onboardForm.has_cer, 
+            has_turnover: onboardForm.has_turnover, has_annual_returns: onboardForm.has_annual_returns, has_msme: onboardForm.has_msme
+          }, 
+          onboarding_complete: true
+        })
+      });
+      if(res.ok) {
+        toast.success('Profile created successfully! Dashboard Unlocked.');
+        setUserData(prev => ({ ...prev, onboarding_complete: true }));
+      }
+    } catch (err) { toast.error('Error submitting profile'); }
+    setSubmittingOnboard(false);
+  };
+
   const requestBidSupportForTender = async (t) => {
       const pdfLink = `${window.location.origin}/api/tenders/${t._id}/pdf?email=${email}&role=client`;
       const desc = `Please support bidding for this public tender: ${t.title}. \n\nDirect PDF Link: ${pdfLink}`;
@@ -329,10 +372,10 @@ export default function ClientDashboard() {
   };
 
   const handleDeleteTicketClient = async (ticket_id) => {
-    if(!confirm("Are you sure you want to close and delete this ticket?")) return;
+    if(!confirm("Are you sure you want to close and mark this query as resolved?")) return;
     try {
        const res = await fetch(`/api/tickets?id=${ticket_id}`, { method: 'DELETE' });
-       if(res.ok) { toast.success("Ticket Closed & Removed"); fetchClientData(email); } 
+       if(res.ok) { toast.success("Query Closed & Resolved"); fetchClientData(email); } 
        else { toast.error("Failed to delete"); }
     } catch(e) { toast.error("Network error"); }
   };
@@ -430,6 +473,9 @@ export default function ClientDashboard() {
 
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
+  // =========================================================================================
+  // 🚀 STRICT PATHWAY 1: VERIFICATION LOCKOUT SCREEN
+  // =========================================================================================
   if (userData && !userData.is_approved && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
@@ -461,65 +507,87 @@ export default function ClientDashboard() {
     );
   }
 
+  // =========================================================================================
+  // 🚀 STRICT PATHWAY 2: ADVANCED LEGAL AGREEMENT GATEWAY
+  // =========================================================================================
   if (userData && userData.is_approved && !userData.agreement_signed && !session?.user?.is_bypass) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
-          <Card className="max-w-4xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white print:border-none print:shadow-none">
-             <CardHeader className="border-b bg-emerald-50/50 pb-6 print:bg-white text-center">
-                <div className="flex justify-between items-center mb-6 px-4">
-                   <div className="flex items-center gap-2">
-                      {brandSettings.logo ? <img src={brandSettings.logo} className="w-12 h-12 object-contain" alt="Logo"/> : <ShieldCheck className="w-10 h-10 text-emerald-600" />}
-                      <div className="text-left"><p className="font-black text-xl text-[#0A2647]">Telangana Tenders</p><p className="text-[10px] text-slate-500 font-bold">Consultancy Services</p></div>
+        <div className="min-h-screen flex flex-col items-center bg-slate-100 p-4 sm:py-10">
+          <Card className="max-w-4xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white print:border-none print:shadow-none mx-auto">
+             
+             {/* Proper Letterhead Design */}
+             <CardHeader className="border-b bg-white pb-6 print:bg-white text-center pt-8">
+                <div className="flex justify-between items-center px-2 sm:px-8">
+                   <div className="flex items-center gap-3">
+                      {brandSettings.logo ? <img src={brandSettings.logo} className="w-16 h-16 object-contain" alt="Logo"/> : <ShieldCheck className="w-12 h-12 text-emerald-600" />}
+                      <div className="text-left">
+                         <p className="font-black text-2xl text-[#0A2647] tracking-tight">Telangana Tenders</p>
+                         <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Consultancy Services</p>
+                      </div>
                    </div>
-                   {brandSettings.gem_logo && <img src={brandSettings.gem_logo} className="w-12 h-12 object-contain" alt="GeM"/>}
+                   {brandSettings.gem_logo && <img src={brandSettings.gem_logo} className="w-16 h-16 object-contain hidden sm:block" alt="GeM"/>}
                 </div>
-                <CardTitle className="text-2xl font-black text-[#0A2647]">B2B Legal Partnership Agreement</CardTitle>
              </CardHeader>
-             <CardContent className="pt-6 space-y-4">
-                <div className="bg-white border border-slate-200 rounded-lg p-8 text-sm text-slate-700 h-[350px] overflow-y-auto leading-relaxed print:overflow-visible print:border-none print:h-auto">
-                   <h4 className="font-bold text-slate-800 mb-2 uppercase text-center text-lg">Service Agreement</h4>
-                   <p className="mb-3">This agreement officially commences the B2B consultancy service between <strong>Telangana Tenders</strong> and <strong>{profileForm.companyName || 'Client'}</strong>. Telangana Tenders agrees to provide comprehensive bid analysis, documentation support, and operational management.</p>
-                   <h5 className="font-bold mt-4 mb-1">1. Confidentiality & Vault Access</h5>
-                   <p className="mb-3">All financial and proprietary documents uploaded to the Corporate Vault shall remain strictly confidential and accessed solely for tender fulfillment purposes.</p>
-                   <h5 className="font-bold mt-4 mb-1">2. Payment & Liability Declarations</h5>
-                   <p className="mb-3">The Client agrees that initial consultation, processing fees, and document unlock fees (including EMD deposits where requested) are required as per project demand. Failure to declare correct financials or delays in EMD payments absolves the consultancy of any failed bid liabilities.</p>
-                   <h5 className="font-bold mt-4 mb-1">3. Official Representation</h5>
-                   <p className="mb-3">The Client legally authorizes the consultancy's MD and assigned Officers to represent their firm digitally on government portals (GeM, eProcurement) strictly for the scope of the assigned tenders.</p>
+             
+             <CardContent className="pt-8 px-6 sm:px-12 space-y-4">
+                <h3 className="text-2xl font-black text-center text-[#0A2647] uppercase bg-slate-100 py-3 rounded border border-slate-200 shadow-sm">
+                   B2B Legal Service Agreement
+                </h3>
+                <hr className="border-t-2 border-[#0A2647] my-6" />
+
+                <div className="text-sm text-slate-700 leading-relaxed text-justify font-medium">
+                   <p className="mb-4">
+                     This B2B Legal Service Agreement ("Agreement") is entered into by and between <strong>Telangana Tenders</strong> (hereinafter referred to as the "Consultancy") and <strong>{profileForm.companyName || 'The Client'}</strong> (hereinafter referred to as the "Client"), effective as of <strong>{new Date().toLocaleDateString()}</strong>.
+                   </p>
                    
-                   <div className="mt-12 border-t-2 border-slate-300 pt-8 flex justify-between items-end">
+                   <h5 className="font-black text-slate-900 mt-6 mb-2">1. Scope of Services & Vault Access</h5>
+                   <p className="mb-4">The Consultancy agrees to provide comprehensive bid analysis, documentation support, and operational tender management. All financial and proprietary documents uploaded by the Client to the Corporate Vault shall remain strictly confidential, stored securely via 256-bit encryption, and accessed solely for tender fulfillment purposes on government portals.</p>
+                   
+                   <h5 className="font-black text-slate-900 mt-6 mb-2">2. Professional Fees & Consultancy Charges</h5>
+                   <p className="mb-4">The Client agrees to pay the stipulated processing fees, document unlock fees, and post-win success fees (consultancy charges) as mutually agreed upon for each respective tender. The Client is also solely responsible for depositing Earnest Money Deposits (EMD) directly or via the Consultancy within the stipulated timeframe.</p>
+                   
+                   <h5 className="font-black text-slate-900 mt-6 mb-2">3. Default of Payment & Legal Recourse</h5>
+                   <p className="mb-4">
+                     In the event of non-payment or delayed payment of consultancy charges post-service delivery, the Consultancy reserves the absolute right to initiate legal proceedings. This includes recovery actions under <strong>Section 73 of the Indian Contract Act, 1872</strong> (Compensation for loss or damage caused by breach of contract) and <strong>Section 138 of the Negotiable Instruments Act, 1881</strong> (in the event of any dishonored payments or cheques). The Client shall be strictly liable for all legal recovery costs, attorney fees, and an interest penalty of 18% per annum on the outstanding amount until full realization.
+                   </p>
+
+                   <h5 className="font-black text-slate-900 mt-6 mb-2">4. Official Representation & Authorization</h5>
+                   <p className="mb-4">The Client legally authorizes the consultancy's Managing Director (MD) and assigned Operations Officers to represent their firm digitally on government procurement portals (including GeM and eProcurement) strictly for the scope of the assigned tenders. The Consultancy is absolved of any liabilities arising from false documents or misrepresented financial data provided by the Client.</p>
+                   
+                   <div className="mt-16 border-t-2 border-slate-300 pt-8 flex justify-between items-end">
                        <div className="text-left">
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Digitally Signed By</p>
                           {brandSettings.md_signature ? (
-                             <img src={brandSettings.md_signature} alt="MD Signature" className="h-12 object-contain mb-1" />
+                             <img src={brandSettings.md_signature} alt="MD Signature" className="h-14 object-contain mb-2" />
                           ) : (
-                             <p className="font-black text-blue-900 text-2xl font-signature italic mb-1">B. Esak</p>
+                             <p className="font-black text-blue-900 text-3xl font-signature italic mb-2">B. Esak</p>
                           )}
                           <p className="text-sm font-black text-slate-800">Managing Director</p>
                           <p className="text-[10px] font-semibold text-slate-500">Telangana Tenders</p>
                           <p className="text-[10px] font-semibold text-slate-500">+91 6304486770</p>
                        </div>
                        <div className="text-right">
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Authorised Signatory</p>
-                          <p className="font-black text-slate-800 text-xl italic font-serif mb-1">{profileForm.clientName || 'Pending'}</p>
-                          <p className="text-sm font-black text-slate-800">{profileForm.companyName || 'Company'}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Authorised Client Signatory</p>
+                          <p className="font-black text-slate-800 text-xl italic font-serif mb-2">{profileForm.clientName || 'Pending'}</p>
+                          <p className="text-sm font-black text-slate-800">{profileForm.companyName || 'Company Name'}</p>
                           <p className="text-[10px] font-semibold text-slate-500">Date: {new Date().toLocaleDateString()}</p>
                        </div>
                    </div>
                 </div>
                 
-                <div className="print:hidden">
-                   <form onSubmit={handleSignAgreement} className="pt-4 flex flex-col items-center gap-4">
-                      <label className="flex items-center gap-3 cursor-pointer bg-emerald-50 p-4 rounded-xl border border-emerald-200 w-full sm:w-auto">
+                <div className="print:hidden mt-10 pt-6 border-t border-slate-200">
+                   <form onSubmit={handleSignAgreement} className="flex flex-col items-center gap-5">
+                      <label className="flex items-center gap-3 cursor-pointer bg-emerald-50 p-4 rounded-xl border border-emerald-200 w-full sm:w-auto shadow-sm hover:shadow-md transition">
                          <input type="checkbox" required className="w-6 h-6 accent-emerald-600 cursor-pointer" />
                          <span className="font-bold text-emerald-900 text-sm">I have read, understood, and legally accept the terms of this B2B Agreement.</span>
                       </label>
-                      <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto mt-2">
+                      <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                          <Button type="button" onClick={() => window.print()} variant="outline" className="border-slate-300 text-slate-700 font-bold h-12 px-6">
-                            <Printer className="w-5 h-5 mr-2"/> Print / Save PDF
+                            <Printer className="w-5 h-5 mr-2"/> Download / Print Agreement
                          </Button>
                          <Button type="submit" disabled={submittingAgreement} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10 shadow-lg">
                             {submittingAgreement ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <PenTool className="w-5 h-5 mr-2"/>}
-                            {submittingAgreement ? 'Generating Record...' : 'Sign Agreement & Enter'}
+                            {submittingAgreement ? 'Generating Record...' : 'Sign Agreement & Enter Profile'}
                          </Button>
                       </div>
                    </form>
@@ -530,10 +598,67 @@ export default function ClientDashboard() {
       );
   }
 
+  // =========================================================================================
+  // 🚀 STRICT PATHWAY 3: COMPLETE BUSINESS PROFILE (ONBOARDING)
+  // =========================================================================================
+  if (userData && userData.is_approved && userData.agreement_signed && !userData.onboarding_complete && !session?.user?.is_bypass) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 py-10 w-full overflow-x-hidden">
+        <Card className="max-w-3xl mx-auto shadow-2xl border-t-8 border-t-blue-600">
+          <CardHeader className="border-b bg-white text-center pb-6">
+             <UserCog className="w-10 h-10 mx-auto text-blue-600 mb-2" />
+             <CardTitle className="text-2xl font-black text-[#0A2647]">Complete Your Business Profile</CardTitle>
+             <CardDescription className="text-sm mt-1 text-slate-500 font-semibold">Step 2 of 2: Setup your portal identity to unlock dashboard access.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-6 bg-slate-50/50">
+             <form onSubmit={submitOnboarding}>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div><Label>Client Name *</Label><Input required value={onboardForm.client_name} onChange={e => setOnboardForm({...onboardForm, client_name: e.target.value})} className="mt-1"/></div>
+                  <div><Label>Contact Number *</Label><Input required type="tel" value={onboardForm.phone} onChange={e => setOnboardForm({...onboardForm, phone: e.target.value})} className="mt-1"/></div>
+                  <div className="sm:col-span-2"><Label>Company / Firm Name *</Label><Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} className="mt-1"/></div>
+                  <div>
+                    <Label>Company Type *</Label>
+                    <select required className="w-full border rounded-md p-2 mt-1 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500" value={onboardForm.company_type} onChange={e => setOnboardForm({...onboardForm, company_type: e.target.value})}>
+                      <option value="Proprietor (Individual)">Proprietor (Individual)</option>
+                      <option value="Partnership">Partnership</option>
+                      <option value="Private Limited">Private Limited</option>
+                      <option value="Public Limited">Public Limited</option>
+                      <option value="LLP">LLP</option>
+                    </select>
+                  </div>
+                  <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
+                </div>
+                <div className="border-t pt-5 mt-5">
+                  <Label className="text-[#0A2647] font-semibold block mb-2">Do you have these basic documents?</Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Cert.</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_bank} onChange={e => setOnboardForm({...onboardForm, has_bank: e.target.checked})} /> Bank Details</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_ifsc} onChange={e => setOnboardForm({...onboardForm, has_ifsc: e.target.checked})} /> IFSC Details</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_dsc} onChange={e => setOnboardForm({...onboardForm, has_dsc: e.target.checked})} /> DSC Class 3</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.</label>
+                  </div>
+                </div>
+                <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-14 text-lg font-bold mt-8 shadow-md">
+                  {submittingOnboard ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <CheckCircle2 className="w-5 h-5 mr-2"/>}
+                  {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Dashboard'}
+                </Button>
+             </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // =========================================================================================
+  // 🚀 STRICT PATHWAY 4: QUERY LOCKOUT SCREEN
+  // =========================================================================================
   const queries = userData?.officer_queries || [];
   const activeLockingQuery = queries.find(q => !q.reply_submitted);
 
-  if (userData && userData.is_approved && userData.agreement_signed && activeLockingQuery && !session?.user?.is_bypass) {
+  if (userData && userData.is_approved && userData.agreement_signed && userData.onboarding_complete && activeLockingQuery && !session?.user?.is_bypass) {
     const q = activeLockingQuery; 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
@@ -591,16 +716,26 @@ export default function ClientDashboard() {
   const pendingPayments = userData?.pending_payments || [];
   const totalEmd = userData?.emd_ledger?.total_paid || 0;
 
+  // ==============================================================================
+  // 🚀 MAIN CLIENT DASHBOARD
+  // ==============================================================================
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="bg-white border-b sticky top-0 z-40 shadow-sm">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <BrandLogo subtitle="Enterprise Portal" />
+          
           <div className="flex items-center gap-4">
+             {/* 🚀 FIX: View Public Site Button Added */}
+             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="hidden sm:flex border-slate-300 text-slate-700 font-bold hover:bg-slate-100">
+                <Globe className="w-4 h-4 mr-2" /> View Public Site
+             </Button>
+
              <div className="hidden md:flex flex-col items-end mr-2">
                <span className="text-sm font-bold text-[#0A2647]">{profileForm.companyName || 'Guest Company'}</span>
                <span className="text-[10px] font-mono text-slate-500 tracking-widest">{clientId}</span>
              </div>
+             
              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                    <Button variant="ghost" size="icon" className="relative text-slate-700">
@@ -705,7 +840,6 @@ export default function ClientDashboard() {
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Ongoing Bids</p>
-                 {/* 🚀 FIX 2: Dynamic Real-time Calculation for Ongoing Bids */}
                  <p className="text-2xl font-black text-blue-700">{activeBids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length}</p>
               </CardContent>
            </Card>
@@ -961,7 +1095,7 @@ export default function ClientDashboard() {
                     </div>
                  </div>
 
-                 {/* 🚀 CUSTOM DOCUMENT UPLOAD AREA */}
+                 {/* CUSTOM DOCUMENT UPLOAD AREA */}
                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mt-6 shadow-sm">
                     <h4 className="font-bold text-[#0A2647] flex items-center gap-2 mb-4"><Plus className="w-4 h-4 text-blue-600"/> Add Additional Custom Document</h4>
                     <form onSubmit={(e) => {
@@ -1218,7 +1352,6 @@ export default function ClientDashboard() {
                 <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Public Procurement Tenders</CardTitle>
               </CardHeader>
               <CardContent className="p-4 space-y-4 max-h-[750px] overflow-y-auto">
-                 {/* 🚀 FIX: Live Tenders UI with "Request MD to Bid" Option */}
                  {publicTenders.map((t) => (
                    <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
                      <div className="flex items-start justify-between gap-3">
@@ -1282,7 +1415,6 @@ export default function ClientDashboard() {
                           )}
                        </div>
                        
-                       {/* 🚀 FIX 3: Added Payment History & Gross Calculation under Pending Payments */}
                        <div className="border-t pt-4 mt-4">
                           <h4 className="font-bold text-slate-700 mb-3 flex items-center justify-between">
                              Payment History
@@ -1332,6 +1464,7 @@ export default function ClientDashboard() {
                       </Button>
                     </form>
 
+                    {/* 🚀 FIX: Client Side Active & Resolved Ticket Management (Reply Again Option) */}
                     <div>
                        <h4 className="font-bold text-slate-700 mb-3">Your Tickets History</h4>
                        {userData?.tickets && userData.tickets.length > 0 ? (
@@ -1353,9 +1486,9 @@ export default function ClientDashboard() {
                                    {/* Client Actions: Reply or Close */}
                                    <div className="flex flex-col sm:flex-row gap-2 border-t pt-3 mt-1">
                                       <Input placeholder="Reply to Support..." className="h-8 text-xs bg-white flex-1" value={ticketReplyClient[tkt._id] || ''} onChange={(e) => setTicketReplyClient({...ticketReplyClient, [tkt._id]: e.target.value})} />
-                                      <div className="flex gap-2 shrink-0">
-                                         <Button size="sm" onClick={() => submitTicketReplyClient(tkt._id)} className="bg-slate-800 hover:bg-slate-900 h-8 text-xs text-white px-3"><Send className="w-3 h-3 mr-1"/> Reply</Button>
-                                         <Button size="sm" onClick={() => handleDeleteTicketClient(tkt._id)} variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs px-2"><Trash2 className="w-3 h-3"/></Button>
+                                      <div className="flex gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+                                         <Button size="sm" onClick={() => submitTicketReplyClient(tkt._id)} className="flex-1 sm:flex-none bg-slate-800 hover:bg-slate-900 h-8 text-xs text-white px-3"><Send className="w-3 h-3 mr-1"/> Reply Again</Button>
+                                         <Button size="sm" onClick={() => handleDeleteTicketClient(tkt._id)} variant="outline" className="flex-1 sm:flex-none border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs px-2"><XCircle className="w-3 h-3 mr-1"/> Close Query</Button>
                                       </div>
                                    </div>
                                 </div>
