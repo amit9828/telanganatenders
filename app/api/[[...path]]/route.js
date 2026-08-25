@@ -284,18 +284,19 @@ export async function GET(request, { params }) {
       const active_bids = await db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
       const action_alerts = await db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray();
 
-      // 🚀 BUG FIX 1: LIVE STATS CALCULATION
-      const won_bids = active_bids.filter(b => b.status === 'Won');
-      const total_revenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-      const calculatedStats = {
-         recommended: action_alerts.filter(a => a.subject.includes('Suggestion')).length,
-         participated: active_bids.length,
-         ongoing: active_bids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length,
-         won: won_bids.length,
-         lost: active_bids.filter(b => b.status === 'Lost').length,
-         revenue: total_revenue
-      };
+       // 🚀 BUG FIX: Calculate Real Stats for Client (Only Pending Suggestions)
+const won_bids = active_bids.filter(b => b.status === 'Won');
+const total_revenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
+const calculatedStats = {
+   recommended: action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed').length,
+   participated: active_bids.length,
+   ongoing: active_bids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length,
+   won: won_bids.length,
+   lost: active_bids.filter(b => b.status === 'Lost').length,
+   revenue: total_revenue
+};
+      
       return json({
         subscription: user.subscription || null,
         unlocked_tenders: unlocked_tenders,
