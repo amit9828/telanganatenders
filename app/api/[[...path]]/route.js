@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { MongoClient, ObjectId } from 'mongodb';
-import { google } from 'googleapis'; // 🚀 Google Drive Integration Kept Safe!
+import { google } from 'googleapis'; // 🚀 Google Drive Integration
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const dynamic = 'force-dynamic';
@@ -81,7 +81,7 @@ export async function GET(request, { params }) {
 
       let query = {};
       if (district && district !== 'all') query.district = district;
-      if (q) query.title = { $regex: q, $options: 'i' };
+      if (q) query.title = { $regex: q,$options: 'i' };
 
       let tenders = await db.collection('tenders')
         .find(query)
@@ -284,6 +284,18 @@ export async function GET(request, { params }) {
       const active_bids = await db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
       const action_alerts = await db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray();
 
+      // 🚀 BUG FIX 1: LIVE STATS CALCULATION
+      const won_bids = active_bids.filter(b => b.status === 'Won');
+      const total_revenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const calculatedStats = {
+         recommended: action_alerts.filter(a => a.subject.includes('Suggestion')).length,
+         participated: active_bids.length,
+         ongoing: active_bids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length,
+         won: won_bids.length,
+         lost: active_bids.filter(b => b.status === 'Lost').length,
+         revenue: total_revenue
+      };
+
       return json({
         subscription: user.subscription || null,
         unlocked_tenders: unlocked_tenders,
@@ -310,7 +322,9 @@ export async function GET(request, { params }) {
         custom_requests: custom_requests || [],
         active_bids: active_bids || [],
         officer_queries: user.officer_queries || [],
-        pending_payments: user.pending_payments || []
+        pending_payments: user.pending_payments || [],
+        vault_docs: user.vault_docs || [], // 🚀 FIX: Pass vault docs
+        stats: calculatedStats // 🚀 FIX: Real calculated stats
       });
     }
 
@@ -401,12 +415,30 @@ export async function PUT(request, { params }) {
      }
 
      if (path === 'dispatches/update' || path === 'api/dispatches/update') {
-        const { task_id, status } = body;
+        const { task_id, status, reply } = body;
+        // 🚀 BUG FIX: Client Replies & Two-way updating
+        let updateData = { status: status, updated_at: new Date() };
+        if(reply) updateData.client_reply = reply;
+
         await db.collection('dispatches').updateOne(
            { _id: new ObjectId(task_id) },
-           { $set: { status: status, updated_at: new Date() } }
+           { $set: updateData }
         );
         return json({ success: true, message: `Dispatch status updated to ${status}` });
+     }
+
+     // 🚀 NEW: MD Vault Document Approval System
+     if (path === 'vault/verify' || path === 'api/vault/verify') {
+        const { email, docId, status, reject_reason } = body;
+        await db.collection('users').updateOne(
+            { email: email.toLowerCase(), "vault_docs.id": docId },
+            { $set: { 
+                "vault_docs.$.status": status,
+                "vault_docs.$.reject_reason": reject_reason || null 
+              } 
+            }
+        );
+        return json({ success: true });
      }
 
      if (path === 'finance/ledger' || path === 'api/finance/ledger') {
@@ -465,17 +497,12 @@ export async function DELETE(request, { params }) {
 
        const targetEmail = email.toLowerCase();
 
-       // 1. Delete Client Profile & Login Access
        await db.collection('users').deleteOne({ email: targetEmail });
-
-       // 2. Delete all their related data to force a fresh start later
        await db.collection('bids').deleteMany({ client_email: targetEmail });
        await db.collection('client_requests').deleteMany({ client_email: targetEmail });
        await db.collection('tickets').deleteMany({ client_email: targetEmail });
        await db.collection('dispatches').deleteMany({ target_id: targetEmail });
        
-       // (Finance Ledger is kept safely as standard accounting practice requires preserving revenue logs)
-
        return json({ success: true, message: 'Client and all associated data permanently wiped out.' });
     }
 
@@ -565,10 +592,40 @@ export async function POST(request, { params }) {
   const path = pathArray.join('/');
 
   try {
+    // 🚀 BUG FIX: Vault File Upload REAL Processing
     if (path === 'vault/upload' || path === 'api/vault/upload') {
        try {
          const formData = await request.formData();
-         return json({ success: true, message: "File processed successfully." });
+         const file = formData.get('file');
+         const docId = formData.get('docId');
+         const email = formData.get('email');
+
+         if (!file || !email || !docId) return json({ error: 'Missing data' }, 400);
+
+         const arrayBuffer = await file.arrayBuffer();
+         const buffer = Buffer.from(arrayBuffer);
+         const base64 = buffer.toString('base64');
+
+         const newDoc = {
+             id: docId,
+             name: docId.replace(/_/g, ' ').toUpperCase(),
+             file_name: file.name,
+             file_base64: base64,
+             status: 'uploaded', // This tells MD it's under review
+             upload_date: new Date().toLocaleDateString()
+         };
+
+         // Pull old document if it exists, then push the new one
+         await db.collection('users').updateOne(
+             { email: email.toLowerCase() },
+             { $pull: { vault_docs: { id: docId } } }
+         );
+         await db.collection('users').updateOne(
+             { email: email.toLowerCase() },
+             { $push: { vault_docs: newDoc } }
+         );
+
+         return json({ success: true, message: "File processed and saved successfully." });
        } catch(e) {
          return json({ error: 'File upload failed' }, 500);
        }
@@ -707,6 +764,7 @@ export async function POST(request, { params }) {
        return json({ success: true, id: result.insertedId });
     }
 
+    // 🚀 BUG FIX: Ensure new Bids (From Client Accepting Suggestion) are correctly added
     if (path === 'bids' || path === 'api/bids') {
        const status = body.status || 'Doc Preparation';
        const result = await db.collection('bids').insertOne({
