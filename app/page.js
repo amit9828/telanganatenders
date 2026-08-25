@@ -58,9 +58,11 @@ export default function App() {
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
-  // Search & Filters
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  // Search & Filters - Separated UI State from Applied State
+  const [uiYear, setUiYear] = useState(today.getFullYear());
+  const [uiMonth, setUiMonth] = useState(today.getMonth() + 1);
+  const [appliedYear, setAppliedYear] = useState(today.getFullYear());
+  const [appliedMonth, setAppliedMonth] = useState(today.getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState(null);
   const [appliedDay, setAppliedDay] = useState(null);
   
@@ -76,8 +78,6 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [paywallModal, setPaywallModal] = useState(false);
   const [pdfModal, setPdfModal] = useState(false);
-  const [guestPayModal, setGuestPayModal] = useState(false);
-  const [guestPayForm, setGuestPayForm] = useState({ email: '', phone: '' });
   
   const [pendingTender, setPendingTender] = useState(null);
   const [pdfData, setPdfData] = useState(null);
@@ -132,10 +132,22 @@ export default function App() {
     }
   }, []);
 
-  // ALL LIVE API FETCHES
+  // ALL LIVE API FETCHES (Including Live IP Traffic Polling)
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
-    fetch('/api/analytics/visitors').then(r => r.json()).then(d => { if(d) setVisitors(d); }).catch(()=>{});
+    
+    // Polling function for Live Traffic via IP
+    const getLiveTraffic = () => {
+      fetch('/api/analytics/visitors')
+        .then(r => r.json())
+        .then(d => { if(d) setVisitors(d); })
+        .catch(()=>{});
+    };
+    
+    getLiveTraffic();
+    const trafficInterval = setInterval(getLiveTraffic, 15000); // Live poll every 15 seconds
+    
+    return () => clearInterval(trafficInterval);
   }, []);
 
   useEffect(() => {
@@ -163,12 +175,14 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Client Dashboard Logic (Intent based)
+  // Client Dashboard Logic (Intent based) - NOW OPENS IN NEW TAB
   useEffect(() => {
     if (status === 'authenticated' && userData !== null && !loadingUser) {
       if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
         if (typeof window !== 'undefined' && window.location.pathname !== '/client') {
-          window.location.href = '/client';
+          window.open('/client', '_blank'); // Opens strictly in new tab
+          localStorage.removeItem('tt_intent');
+          setIntent(''); // Clears intent in original tab to avoid looping
         }
       }
     }
@@ -180,7 +194,7 @@ export default function App() {
     await signOut({ callbackUrl: '/' }); 
   };
 
-  // LIVE API: Fetch Tenders based on Filter (INCLUDING SCOPE ALL FOR SEARCH)
+  // LIVE API: Fetch Tenders based on APPLIED Filter
   const fetchTenders = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return; 
     setLoading(true);
@@ -188,11 +202,11 @@ export default function App() {
       const params = new URLSearchParams();
       if (district !== 'all') params.set('district', district);
       if (category !== 'all') params.set('category', category);
-      params.set('month', String(month)); 
-      params.set('year', String(year));
+      params.set('month', String(appliedMonth)); 
+      params.set('year', String(appliedYear));
       if (searchQ.trim()) {
         params.set('q', searchQ.trim());
-        params.set('scope', 'all'); // Deep connection from code 2
+        params.set('scope', 'all'); 
       }
       const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
       const d = await r.json(); 
@@ -200,14 +214,16 @@ export default function App() {
     } finally { setLoading(false); }
   };
 
+  // Fetch Calendar Data purely for the UI display
   const fetchCalendar = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return;
-    const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
+    const r = await fetch(`/api/tenders/calendar?month=${uiMonth}&year=${uiYear}&t=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json(); 
     setCalDays(d.days || {});
   };
 
-  useEffect(() => { fetchTenders(); fetchCalendar(); }, [month, year, district, category, searchQ]);
+  useEffect(() => { fetchTenders(); }, [appliedMonth, appliedYear, district, category, searchQ]);
+  useEffect(() => { fetchCalendar(); }, [uiMonth, uiYear]);
 
   // Client Side Filtering for Applied Day
   const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders]);
@@ -217,12 +233,12 @@ export default function App() {
   }, [activeTenders, appliedDay]);
 
   const validDays = useMemo(() => {
-    const daysInMonth = new Date(year, month, 0).getDate();
+    const daysInMonth = new Date(uiYear, uiMonth, 0).getDate();
     return Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  }, [month, year]);
+  }, [uiMonth, uiYear]);
 
-  const prevMonth = () => { setSelectedDay(null); setAppliedDay(null); if (month === 1) { setMonth(12); setYear(year - 1); } else setMonth(month - 1); };
-  const nextMonth = () => { setSelectedDay(null); setAppliedDay(null); if (month === 12) { setMonth(1); setYear(year + 1); } else setMonth(month + 1); };
+  const prevMonth = () => { setSelectedDay(null); if (uiMonth === 1) { setUiMonth(12); setUiYear(uiYear - 1); } else setUiMonth(uiMonth - 1); };
+  const nextMonth = () => { setSelectedDay(null); if (uiMonth === 12) { setUiMonth(1); setUiYear(uiYear + 1); } else setUiMonth(uiMonth + 1); };
 
   const handleClientLogin = () => {
     localStorage.setItem('tt_intent', 'client'); setIntent('client');
@@ -293,7 +309,7 @@ export default function App() {
 
   // Automated Cashfree Subscriptions Integration (From Code 2)
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
-    setBuying(true); setGuestPayModal(false);
+    setBuying(true);
     await new Promise((r) => setTimeout(r, 250));
 
     const isSubscription = planId === 'month' || planId === 'year';
@@ -324,18 +340,12 @@ export default function App() {
 
   const buyPlan = (planId) => {
     if (planId === 'single') {
-       if (email) executePayment('single', email); 
-       else { setPaywallModal(false); setGuestPayModal(true); } 
+       // Direct ₹10 access bypasses the form entirely, mapping random guest email if not signed in
+       executePayment('single', email || `guest_${Date.now()}@tgtenders.in`, '9999999999'); 
     } else {
        if (!email) { toast.info("Please sign in to Subscribe securely"); handleSubscribeLogin(); return; }
        executePayment(planId, email);
     }
-  };
-
-  const handleGuestPaySubmit = (e) => {
-    e.preventDefault();
-    if(!guestPayForm.email || guestPayForm.phone.length < 10) return toast.error("Enter valid email & phone");
-    executePayment('single', guestPayForm.email, guestPayForm.phone);
   };
 
   // Full Database Automation Form Submission (From Code 2)
@@ -465,13 +475,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="hidden lg:flex flex-col items-end border-r pr-4 mr-1 border-slate-200">
+            <div className="hidden lg:flex flex-col items-center border-r pr-4 mr-1 border-slate-200">
               {brandSettings.gem_logo ? (
-                 <img src={brandSettings.gem_logo} alt="GeM Logo" className="h-14 md:h-16 object-contain" />
+                 <img src={brandSettings.gem_logo} alt="GeM Logo" className="w-14 h-14 md:w-16 md:h-16 object-contain" />
               ) : (
-                 <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="GeM" className="h-14 md:h-16 object-contain" onError={(e) => e.target.style.display='none'}/>
+                 <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="GeM" className="w-14 h-14 md:w-16 md:h-16 object-contain" onError={(e) => e.target.style.display='none'}/>
               )}
-              <span className="text-xs font-black text-[#0A2647] uppercase mt-1 tracking-wide">Bidding Service</span>
+              <span className="text-[10px] md:text-xs font-black text-[#0A2647] uppercase mt-1 tracking-wide">Bidding Service</span>
             </div>
 
             {subscription && subscription.status === 'active' ? (
@@ -565,7 +575,7 @@ export default function App() {
         <div className="lg:col-span-3 space-y-6 w-full min-w-0">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
-              {appliedDay ? `Closing on ${appliedDay} ${monthName(month - 1)}` : `Active Tenders`}
+              {appliedDay ? `Closing on ${appliedDay} ${monthName(appliedMonth - 1)}` : `Active Tenders for ${monthName(appliedMonth - 1)}`}
             </h3>
             <Badge variant="outline" className="bg-white font-bold">{filteredTenders.length} Results</Badge>
           </div>
@@ -612,7 +622,7 @@ export default function App() {
                  <CardTitle className="text-base flex items-center gap-2 font-bold"><CalendarDays className="w-4 h-4" /> Closing Dates</CardTitle>
                  <div className="flex items-center gap-1">
                    <Button variant="ghost" size="icon" className="h-6 w-6 hover:bg-white/20" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
-                   <span className="text-xs font-black">{monthName(month - 1).slice(0,3)} {year}</span>
+                   <span className="text-xs font-black">{monthName(uiMonth - 1).slice(0,3)} {uiYear}</span>
                    <Button variant="ghost" size="icon" className="h-6 w-6 hover:bg-white/20" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
                  </div>
               </div>
@@ -628,7 +638,7 @@ export default function App() {
                       key={d} onClick={() => count > 0 && setSelectedDay(isSelected ? null : d)}
                       className={`snap-center shrink-0 w-14 h-16 rounded-lg border-2 flex flex-col items-center justify-center transition-all ${count > 0 ? 'cursor-pointer hover:border-emerald-500' : 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-100'} ${isSelected ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-white'}`}
                     >
-                       <span className="text-[10px] font-black uppercase text-slate-400 mb-0.5">{new Date(year, month - 1, d).toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                       <span className="text-[10px] font-black uppercase text-slate-400 mb-0.5">{new Date(uiYear, uiMonth - 1, d).toLocaleDateString('en-US', { weekday: 'short' })}</span>
                        <span className={`text-lg font-black leading-none ${isSelected ? 'text-white' : 'text-[#0A2647]'}`}>{d}</span>
                        {count > 0 && <div className={`w-1.5 h-1.5 rounded-full mt-1 ${isSelected ? 'bg-white' : 'bg-emerald-500'}`}></div>}
                     </div>
@@ -636,8 +646,18 @@ export default function App() {
                 })}
               </div>
               <div className="mt-3 flex gap-2 w-full">
-                 <Button onClick={() => setAppliedDay(selectedDay)} disabled={!selectedDay} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-9">Apply Filter</Button>
-                 <Button onClick={() => { setSelectedDay(null); setAppliedDay(null); }} variant="outline" className="flex-1 border-2 border-slate-200 h-9 font-bold text-slate-600">Clear</Button>
+                 <Button onClick={() => {
+                    setAppliedMonth(uiMonth);
+                    setAppliedYear(uiYear);
+                    setAppliedDay(selectedDay);
+                 }} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-9">Apply Filter</Button>
+                 
+                 <Button onClick={() => { 
+                    setSelectedDay(null); 
+                    setAppliedDay(null); 
+                    setAppliedMonth(uiMonth);
+                    setAppliedYear(uiYear);
+                 }} variant="outline" className="flex-1 border-2 border-slate-200 h-9 font-bold text-slate-600">Clear</Button>
               </div>
             </CardContent>
           </Card>
@@ -833,22 +853,6 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={guestPayModal} onOpenChange={setGuestPayModal}>
-        <DialogContent className="sm:max-w-md border-0 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl font-black text-[#0A2647]"><Lock className="w-6 h-6 text-emerald-500" /> Secure Quick Checkout</DialogTitle>
-            <DialogDescription className="font-semibold text-slate-500">Provide contact details to receive your payment receipt.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleGuestPaySubmit} className="space-y-4 pt-2">
-            <div><Label className="font-bold text-slate-700">Email Address *</Label><Input type="email" required placeholder="For receipt & PDF backup" value={guestPayForm.email} onChange={e => setGuestPayForm({...guestPayForm, email: e.target.value})} className="mt-1 border-2 h-11"/></div>
-            <div><Label className="font-bold text-slate-700">Phone Number *</Label><Input type="tel" required placeholder="10-digit number" value={guestPayForm.phone} onChange={e => setGuestPayForm({...guestPayForm, phone: e.target.value})} className="mt-1 border-2 h-11"/></div>
-            <Button type="submit" disabled={buying} className="w-full bg-emerald-600 hover:bg-emerald-500 h-12 mt-2 font-bold text-lg shadow-lg text-white">
-              {buying ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Proceed to Pay ₹10'}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       {/* PAYWALL */}
       <Dialog open={paywallModal} onOpenChange={setPaywallModal}>
         <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto bg-slate-50">
@@ -888,7 +892,7 @@ export default function App() {
                  </div>
                  <div className="flex items-center gap-1 text-emerald-800 text-xs font-medium">
                    <Lock className="w-3 h-3" />
-                   <span>Licensed to: <strong>{email || guestPayForm.email}</strong></span>
+                   <span>Licensed to: <strong>{email || 'Guest User'}</strong></span>
                  </div>
                </div>
              )}
