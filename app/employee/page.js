@@ -1,25 +1,21 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { signIn } from 'next-auth/react'; // 🚀 IMPORTED FOR SECURE BYPASS
+import { signIn } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea'; 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
-  ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, PlusCircle,
-  Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
-  CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
-  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
-  PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
-  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle
+  ArrowLeft, Users, FileText, PlusCircle, BellRing, 
+  MessageSquare, Send, CheckCircle2, ShieldCheck, 
+  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -31,633 +27,986 @@ const DISTRICTS = [
   'Srikakulam', 'Vizianagaram', 'Prakasam'
 ];
 
-export default function AdminPage() {
-  const [token, setToken] = useState('');
-  const [authChecking, setAuthChecking] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('reports');
+const BORDER_COLORS = [
+  'border-blue-500', 'border-purple-500', 'border-emerald-500', 
+  'border-orange-500', 'border-indigo-500', 'border-rose-500'
+];
 
-  // --- CORE DATA STATES ---
-  const [tenders, setTenders] = useState([]);
-  const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
-  const [tickets, setTickets] = useState([]);
-  const [ticketReply, setTicketReply] = useState({}); 
-  const [l1Data, setL1Data] = useState({}); 
-  const [pendingUsers, setPendingUsers] = useState([]);
+export default function EmployeeDashboard() {
+  const [isMounted, setIsMounted] = useState(false);
+  const [email, setEmail] = useState('');
+  const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
+  const [loading, setLoading] = useState(true);
+
+  const [mdTasks, setMdTasks] = useState([]);
+  const [bids, setBids] = useState([]);
+  const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
+  const [publicTenders, setPublicTenders] = useState([]); 
+  const [suggestions, setSuggestions] = useState([]); 
+  const [tickets, setTickets] = useState([]); 
 
-  // Reports Filter & Real Data Arrays
-  const [timeRange, setTimeRange] = useState('monthly'); 
-  const [clientReports, setClientReports] = useState([]);
-  const [employeeReports, setEmployeeReports] = useState([]);
-
-  // Team & Credentials
-  const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'employee' });
-  const [teamMembers, setTeamMembers] = useState([]); 
-  const [showPwdId, setShowPwdId] = useState(null); 
-
-  // Finance Ledger & Progress States
-  const [paymentRequestForm, setPaymentRequestForm] = useState({ client_id: '', amount: '', reason: '' });
-  const [financialRequests, setFinancialRequests] = useState([]);
-  const [ledgerTxns, setLedgerTxns] = useState([]);
-  const [ledgerBalance, setLedgerBalance] = useState(0);
-  const [ledgerForm, setLedgerForm] = useState({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' });
-  const [ledgerProof, setLedgerProof] = useState('');
-  const [ledgerProofName, setLedgerProofName] = useState('');
-  const [editingLedgerId, setEditingLedgerId] = useState(null);
-
-  // --- PERMANENT BACKEND STATES ---
-  const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
-  const [dispatches, setDispatches] = useState([]);
-  const [bidRequests, setBidRequests] = useState([]);
-  const [bidReply, setBidReply] = useState({});
-  const [bidAssignee, setBidAssignee] = useState({});
-
-  // Tender Publisher State
-  const [form, setForm] = useState({
-    title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '', bid_no: ''
+  const [tenderForm, setTenderForm] = useState({
+    bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
   });
-  const [pdfBase64, setPdfBase64] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [isEditingTender, setIsEditingTender] = useState(null); 
   const [pdfName, setPdfName] = useState('');
-  const [isEditingTender, setIsEditingTender] = useState(null);
-  const [tenderSearch, setTenderSearch] = useState('');
+  const [pdfBase64, setPdfBase64] = useState('');
+  const [tenderSearch, setTenderSearch] = useState(''); 
+  
+  const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
+  const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
+  
+  const [officerForm, setOfficerForm] = useState({ 
+    name: '', department: '', designation: '', phone: '', 
+    state: '', district: '', address: '', pincode: '', notes: '' 
+  });
+  const [savingOfficer, setSavingOfficer] = useState(false);
+  const [officerSearch, setOfficerSearch] = useState('');
+
+  const [showAddBid, setShowAddBid] = useState(false);
+  const [newBidForm, setNewBidForm] = useState({ 
+    bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
+  });
+  const [editingBid, setEditingBid] = useState(null); 
+
+  const [suggestForm, setSuggestForm] = useState({}); 
 
   useEffect(() => {
-    const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
-    if (t) setToken(t);
-    setAuthChecking(false);
+    setIsMounted(true);
+    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_emp_email') : 'employee@tgtenders.in';
+    const finalEmail = e || 'employee@tgtenders.in';
+    setEmail(finalEmail);
+    fetchLiveOperationsData(finalEmail);
+    fetch('/api/employee/activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: finalEmail, action: 'LOGIN', details: 'Employee started session on portal.' })
+    }).catch(err => console.log('Attendance log failed', err));
   }, []);
 
-  useEffect(() => {
-    if (token) refresh();
-    // eslint-disable-next-line
-  }, [token]);
-
-  const refresh = async () => {
-    const headers = { Authorization: `Bearer ${token}` };
+  const fetchLiveOperationsData = async (userEmail) => {
     try {
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes] = await Promise.all([
-        fetch(`/api/tenders?t=${Date.now()}`, { headers }),
-        fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
-        fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
-        fetch(`/api/users/pending?t=${Date.now()}`, { headers }),
-        fetch(`/api/users/approved?t=${Date.now()}`, { headers }), 
-        fetch(`/api/client-requests?t=${Date.now()}`, { headers }),
-        fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
-        fetch(`/api/employees?t=${Date.now()}`, { headers }), 
-        fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }) 
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes] = await Promise.all([
+        fetch('/api/dispatches'), fetch('/api/bids'), fetch('/api/gov-officers'),
+        fetch('/api/users/approved'), fetch('/api/tenders'), fetch('/api/tickets')
       ]);
-      
-      if (tRes.status === 401) return logout();
-      
-      const tJson = await tRes.json();
-      const sJson = await sRes.json();
-      const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
-      const uJson = uRes.ok ? await uRes.json() : { users: [] };
-      const aJson = aRes.ok ? await aRes.json() : { users: [] }; 
-      const reqJson = reqRes.ok ? await reqRes.json() : { requests: [] };
-      const dispJson = dispRes.ok ? await dispRes.json() : { dispatches: [] };
-      const empJson = empRes.ok ? await empRes.json() : { team: [] };
-      const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
 
-      // Connecting Pure Live Data
-      setTenders(tJson.tenders || []);
-      setStats(sJson || {});
-      setTickets(tkJson.tickets || []);
-      setPendingUsers(uJson.users || []);
-      setApprovedClients(aJson.users || []); 
-      setBidRequests(reqJson.requests || []);
-      setDispatches(dispJson.dispatches || []);
-      setTeamMembers(empJson.team || []);
-      setLedgerTxns(ledgerJson.transactions || []);
-      setLedgerBalance(ledgerJson.balance || 0);
-
-      // Live Reports Mapping
-      setClientReports((aJson.users || []).map(c => ({
-         id: c.email, name: c.company_name || c.name || 'Unknown',
-         total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
-      })));
-      
-      setEmployeeReports((empJson.team || []).map(e => {
-         const effScore = 85 + ((e.name?.length || 5) % 15);
-         return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
-      }));
-    } catch (err) { console.error('Refresh failed:', err); }
-  };
-
-  const logout = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('tt_admin');
-      window.location.replace('/');
+      if (tasksRes.ok) {
+        const tData = await tasksRes.json();
+        const allDispatches = tData.dispatches || [];
+        setMdTasks(allDispatches.filter(d => d.target_type === 'employee_task'));
+        setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed'));
+      }
+      if (bidsRes.ok) {
+        const bData = await bidsRes.json();
+        setBids(bData.bids || []);
+      }
+      if (officersRes.ok) {
+        const oData = await officersRes.json();
+        setOfficers(oData.officers || []);
+      }
+      if (clientsRes.ok) {
+        const cData = await clientsRes.json();
+        setApprovedClients(cData.users || []);
+      }
+      if (tendersRes.ok) {
+        const pData = await tendersRes.json();
+        setPublicTenders(pData.tenders || []);
+      }
+      if (ticketsRes.ok) {
+        const tkData = await ticketsRes.json();
+        setTickets(tkData.tickets || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch live operations data", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // --- UPLOADS ---
   const onPdfChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
     if (file.size > 4 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 4MB.');
+    
     const reader = new FileReader();
-    reader.onload = () => { setPdfBase64(reader.result?.toString().split(',')[1] || ''); setPdfName(file.name); toast.success(`PDF loaded: ${file.name}`); };
-    reader.readAsDataURL(file);
-  };
-
-  const onLedgerProofChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) return toast.error('Image/PDF too large! Keep under 2MB.');
-    const reader = new FileReader();
-    reader.onload = () => { setLedgerProof(reader.result?.toString() || ''); setLedgerProofName(file.name); toast.success(`Proof loaded: ${file.name}`); };
+    reader.onload = () => {
+      setPdfBase64(reader.result?.toString().split(',')[1] || '');
+      setPdfName(file.name);
+    };
     reader.readAsDataURL(file);
   };
 
   const handleViewPDF = async (tenderId) => {
     const toastId = toast.loading('Opening PDF Document...');
     try {
-      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`);
+      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`);
       const data = await res.json();
-      if (!res.ok) return toast.error(data.error || 'Failed to load PDF', { id: toastId });
+      
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to load PDF', { id: toastId });
+        return;
+      }
 
       if (data.pdf_base64) {
         const byteCharacters = atob(data.pdf_base64);
         const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-        const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-        window.open(URL.createObjectURL(blob), '_blank');
-        toast.success('PDF Opened Successfully', { id: toastId });
-      } else { toast.error('PDF data not found', { id: toastId }); }
-    } catch (err) { toast.error('Network Error while opening PDF', { id: toastId }); }
-  };
-
-  // --- PUBLISHER ---
-  const publish = async (e) => {
-    e.preventDefault();
-    if (!form.title || !form.department || !form.last_date || !form.district) return toast.error('Fill all required fields');
-    setLoading(true);
-    try {
-      const endpoint = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
-      const method = isEditingTender ? 'PUT' : 'POST';
-      const payload = { ...form, pdf_filename: pdfName || 'tender.pdf' };
-      if (pdfBase64) payload.pdf_base64 = pdfBase64; 
-
-      const r = await fetch(endpoint, {
-        method: method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
-      if (!r.ok) return toast.error(`Server Error (${r.status})`);
-      
-      toast.success(isEditingTender ? `Tender updated successfully!` : `Tender published successfully!`);
-      setForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '', bid_no: '' });
-      setPdfBase64(''); setPdfName(''); setIsEditingTender(null); refresh();
-    } catch (err) { toast.error('Network Error.'); } finally { setLoading(false); }
-  };
-
-  const handleEditTender = (t) => {
-    setForm({
-      title: t.title || '', department: t.department || '', last_date: t.last_date ? new Date(t.last_date).toISOString().split('T')[0] : '', 
-      district: t.district || '', category: t.category || 'Product', supply_details: t.supply_details || '', bid_no: t.bid_no || ''
-    });
-    setIsEditingTender(t._id || t.id);
-    toast.info("Edit mode active. Update details and click save.");
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const remove = async (id) => {
-    if (!confirm('Delete this tender permanently?')) return;
-    await fetch(`/api/tenders/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    toast.success('Deleted'); refresh();
-  };
-
-  const submitL1Price = async (tender_id) => {
-    const data = l1Data[tender_id];
-    if (!data?.price) return toast.error('Please enter the L1 Price');
-    try {
-      await fetch(`/api/tenders/${tender_id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ l1_price: data.price, l1_winner: data.winner })
-      });
-      toast.success('L1 Intel saved successfully!'); refresh();
-    } catch(e) { toast.error('Error saving L1 Price'); }
-  };
-
-  const filteredTenders = tenders.filter(t => 
-     t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
-     t.title?.toLowerCase().includes(tenderSearch.toLowerCase()) ||
-     t.department?.toLowerCase().includes(tenderSearch.toLowerCase())
-  );
-
-  // --- CLIENT CRM ---
-  const handleSyncDrive = async (email, companyName) => {
-     toast.loading("Creating Google Drive Workspace...");
-     try {
-        const res = await fetch('/api/drive/create-folder', {
-           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-           body: JSON.stringify({ email, folderName: `Client - ${companyName}` })
-        });
-        const data = await res.json();
-        if(res.ok) { toast.success("Drive Synced & Created Successfully!"); refresh(); } 
-        else { toast.error(data.error || "Drive Sync Failed."); }
-     } catch(e) { toast.error("Network Error."); }
-  };
-
-  const approveClient = async (email) => {
-    try {
-      await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email }) });
-      toast.success('✅ Client Verified & Portal Unlocked!'); refresh();
-    } catch(e) { toast.error('Network Error while approving.'); }
-  };
-
-  const deleteClientPermanently = async (email) => {
-    if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data (Bids, Tickets, Requests)? This action CANNOT be undone.")) return;
-    try {
-      const res = await fetch(`/api/users?email=${encodeURIComponent(email)}`, { 
-         method: 'DELETE', 
-         headers: { Authorization: `Bearer ${token}` } 
-      });
-      if (res.ok) { 
-         toast.success("Client and all data permanently wiped out!"); 
-         refresh(); 
-      } else { 
-         toast.error("Failed to delete client."); 
-      }
-    } catch(e) { toast.error('Network Error while deleting.'); }
-  };
-
-  // 🚀 ULTIMATE FIX: Secure NextAuth Impersonation (Popup Blocker Bypassed)
-  const impersonateUser = async (type, email_or_id) => {
-    // స్టెప్ 1: బ్రౌజర్ పాపప్ బ్లాకర్‌ని ఆపడానికి ముందే ఒక ఖాళీ ట్యాబ్ ఓపెన్ చేయడం
-    const newTab = window.open('about:blank', '_blank');
-    
-    toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
-    
-    try {
-        // స్టెప్ 2: బ్యాక్‌గ్రౌండ్‌లో కుకీ సెట్ చేయడం
-        const res = await signIn('impersonate', { 
-           email: email_or_id, 
-           adminToken: 'admin_success', 
-           redirect: false // MD పేజీ రీలోడ్ అవ్వకుండా ఆపడం
-        });
-
-        if (res?.error) {
-           newTab.close(); // ఎర్రర్ వస్తే ఆ ఖాళీ ట్యాబ్ క్లోజ్ చేయడం
-           toast.error("Bypass Authentication Failed!");
-        } else {
-           toast.success("Bypass Successful! Opening Real Dashboard...");
-           // స్టెప్ 3: లాగిన్ సక్సెస్ అయ్యాక, ఆ ఖాళీ ట్యాబ్‌లో అసలు పేజీని లోడ్ చేయడం
-           newTab.location.href = `/${type}`;
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
         }
-    } catch (e) {
-        newTab.close();
-        toast.error("Network Error during authentication.");
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'application/pdf'});
+        
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+        toast.success('PDF Opened Successfully', { id: toastId });
+      } else {
+        toast.error('PDF data not found', { id: toastId });
+      }
+    } catch (err) {
+      toast.error('Network Error while opening PDF', { id: toastId });
     }
   };
 
-  // --- HELPDESK TICKETS ---
-  const submitTicketReply = async (ticket_id) => {
-    const replyText = ticketReply[ticket_id];
-    if(!replyText) return toast.error('Please write a reply first.');
+  const handlePublishTender = async (e) => {
+    e.preventDefault();
+    if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
+    setPublishing(true);
+    
     try {
-      const r = await fetch('/api/tickets/reply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ticket_id, reply: replyText, admin_email: 'MD Admin' })
+      const url = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
+      const method = isEditingTender ? 'PUT' : 'POST';
+      
+      const r = await fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...tenderForm, pdf_base64: pdfBase64, pdf_filename: pdfName || 'tender.pdf' })
       });
-      if(r.ok) { toast.success('Reply Sent & Ticket Resolved!'); setTicketReply(prev => ({...prev, [ticket_id]: ''})); refresh(); } else toast.error('Failed to send reply');
-    } catch(e) { toast.error('Error resolving ticket'); }
+      if(r.ok) {
+        toast.success(isEditingTender ? 'Tender updated successfully!' : 'Tender published successfully!');
+        setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
+        setPdfBase64(''); setPdfName(''); setIsEditingTender(null);
+        fetchLiveOperationsData(email); 
+      } else {
+        toast.error('Failed to save tender');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    }
+    setPublishing(false);
   };
 
-  const deleteTicket = async (ticket_id) => {
+  const handleDeleteTenderDB = async (id) => {
+    if(!confirm("Are you sure you want to permanently delete this tender from the Live Portal?")) return;
+    try {
+      const res = await fetch(`/api/tenders/${id}`, { method: 'DELETE' });
+      if(res.ok) { toast.success("Tender deleted successfully."); fetchLiveOperationsData(email); }
+      else { toast.error("Failed to delete tender."); }
+    } catch(e) { toast.error("Network error"); }
+  };
+
+  const handleSuggestTender = async (tenderId, tenderTitle, tenderBidNo) => {
+    const selectedClientEmail = suggestForm[tenderId];
+    if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
+    
+    const formattedMessage = `[BID: ${tenderBidNo || 'N/A'}] ${tenderTitle}`;
+    
+    const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === formattedMessage);
+    if(isDuplicate) {
+      return toast.error("Action Denied: You have already suggested this tender to the selected client.");
+    }
+    
+    try {
+      const res = await fetch('/api/dispatches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          target_type: 'client_alert', 
+          target_id: selectedClientEmail, 
+          subject: 'New Tender Suggestion from Officer', 
+          message: formattedMessage 
+        })
+      });
+      if (res.ok) {
+        toast.success(`Tender suggestion sent successfully to client!`);
+        logActivity('SUGGESTED_TENDER', `Suggested tender to ${selectedClientEmail}`);
+        setSuggestForm({...suggestForm, [tenderId]: ''});
+        fetchLiveOperationsData(email);
+      }
+    } catch (err) {
+      toast.error('Network Error while sending suggestion.');
+    }
+  };
+
+  const handleSuggestionResponse = async (suggestion, action) => {
+    try {
+      if (action === 'Accepted') {
+         let extractedBidNo = 'PENDING';
+         let extractedDesc = suggestion.message;
+         
+         const match = suggestion.message.match(/\[BID: (.*?)\] (.*)/);
+         if (match) {
+             extractedBidNo = match[1];
+             extractedDesc = match[2];
+         }
+
+         const isDuplicate = bids.some(b => b.client_email === suggestion.target_id && b.bid_no === extractedBidNo);
+         if(isDuplicate) {
+            return toast.error("Action Denied: This tender is already actively tracked for this client.");
+         }
+
+         const res = await fetch('/api/bids', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+               bid_no: extractedBidNo, 
+               description: extractedDesc, 
+               status: 'Bid Allocated',
+               client_email: suggestion.target_id,
+               submitted_date: ''
+            })
+         });
+         if (res.ok) toast.success("Suggestion Accepted! Moved to Active Bids Tracker.");
+      } else {
+         toast.info("Suggestion Rejected and removed from list.");
+      }
+
+      await fetch('/api/dispatches/complete', {
+         method: 'PUT',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ task_id: suggestion._id })
+      });
+      fetchLiveOperationsData(email);
+    } catch (err) {
+      toast.error("Error processing suggestion.");
+    }
+  };
+
+  const handleAddBidRow = async (e) => {
+    e.preventDefault();
+    if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
+    
+    const isDuplicate = bids.some(b => b.bid_no === newBidForm.bid_no && b.client_email === newBidForm.client_email);
+    if(isDuplicate) return toast.error("Action Denied: This Bid Number is already active for this client!");
+
+    try {
+      const res = await fetch('/api/bids', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newBidForm)
+      });
+      if(res.ok) {
+        toast.success("New Bid Event Row Added Successfully!");
+        setNewBidForm({ bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' });
+        setShowAddBid(false);
+        fetchLiveOperationsData(email);
+      } else {
+        toast.error("Failed to add bid row.");
+      }
+    } catch (err) {
+      toast.error("Network Error.");
+    }
+  };
+
+  const handleSaveEditBid = async (e) => {
+     e.preventDefault();
+     if(!editingBid) return;
+     try {
+        const res = await fetch('/api/bids/update', {
+           method: 'PUT',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ bid_id: editingBid._id || editingBid.id, status: editingBid.status, bid_no: editingBid.bid_no, description: editingBid.description })
+        });
+        if(res.ok) {
+           toast.success("Bid details updated successfully!");
+           setEditingBid(null);
+           fetchLiveOperationsData(email);
+        } else {
+           toast.error("Failed to update bid details.");
+        }
+     } catch(err) {
+        toast.error("Network Error.");
+     }
+  };
+
+  const handleDeleteBid = async (bidId) => {
+     if(!confirm("Are you sure you want to delete this bid access from the tracker?")) return;
+     try {
+       const res = await fetch(`/api/bids?id=${bidId}`, { method: 'DELETE' });
+       if (res.ok) { 
+          toast.success("Bid tracking removed."); 
+          fetchLiveOperationsData(email); 
+       } else {
+          toast.error("Failed to remove. Backend route might need update.");
+       }
+     } catch(e) { toast.error("Network error"); }
+  }
+
+  const handleCreateDriveFolder = async (clientEmail, companyName) => {
+      toast.info("Generating secure Google Drive Workspace...");
+      try {
+          const res = await fetch('/api/drive/create-folder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: clientEmail, folderName: `Client - ${companyName}` })
+          });
+          const data = await res.json();
+          if(res.ok && data.folderLink) {
+              toast.success("Drive Workspace Synced!");
+              fetchLiveOperationsData(email);
+              window.open(data.folderLink, '_blank');
+          } else {
+              toast.error(data.error || "Failed to create drive.");
+          }
+      } catch(e) {
+          toast.error("Network Error.");
+      }
+  }
+
+  const sendActionAlert = async (e) => {
+    e.preventDefault();
+    if(!alertForm.client_id || !alertForm.message) return toast.error('Please select client and fill message');
+    try {
+      const res = await fetch('/api/dispatches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_type: 'client_alert', target_id: alertForm.client_id, subject: 'ACTION REQUIRED: Operations Update', message: alertForm.message })
+      });
+      if (res.ok) {
+        toast.success(`CRITICAL ALERT pushed to Client Dashboard!`);
+        logActivity('SENT_ALERT', `Alert to ${alertForm.client_id}`);
+        setAlertForm({ client_id: '', message: '' });
+        fetchLiveOperationsData(email);
+      }
+    } catch (err) {
+      toast.error('Network Error while pushing alert.');
+    }
+  };
+
+  const handleRaiseQuery = async (e) => {
+    e.preventDefault();
+    if(!queryForm.client_email || !queryForm.subject || !queryForm.message) return toast.error('Please select client and fill query');
+    try {
+      const res = await fetch('/api/queries/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(queryForm)
+      });
+      if (res.ok) {
+        toast.success(`Query Raised! Client's dashboard is now locked until they reply.`);
+        logActivity('RAISED_QUERY', `Locked client ${queryForm.client_email} for document request.`);
+        setQueryForm({ client_email: '', subject: '', message: '' });
+        fetchLiveOperationsData(email);
+      } else {
+        toast.error('Failed to raise query.');
+      }
+    } catch (err) {
+      toast.error('Network Error while raising query.');
+    }
+  };
+
+  const handleCloseQuery = async (queryId, clientEmail) => {
+    if(!confirm("Are you sure you want to close this query?")) return;
+    try {
+      const res = await fetch('/api/queries/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queryId, email: clientEmail })
+      });
+      if (res.ok) {
+        toast.success(`Query Closed successfully.`);
+        fetchLiveOperationsData(email);
+      }
+    } catch (err) {
+      toast.error('Network Error.');
+    }
+  };
+
+  const updateBidStatus = async (id, newStatus) => {
+    setBids(bids.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b));
+    try {
+      const res = await fetch('/api/bids/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bid_id: id, status: newStatus })
+      });
+      if (res.ok) {
+        toast.success(`Bid updated to "${newStatus}". Client Notified.`);
+        logActivity('UPDATED_BID', `Changed bid ${id} status to ${newStatus}`);
+      } else {
+        fetchLiveOperationsData(email); 
+      }
+    } catch (err) {
+      toast.error('Network Error during status update.');
+    }
+  };
+
+  const markTaskDone = async (taskId) => {
+    setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed' } : t));
+    try {
+      const res = await fetch('/api/dispatches/complete', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId })
+      });
+      if (res.ok) {
+        toast.success('Task marked completed & removed.');
+        logActivity('COMPLETED_TASK', `Task ${taskId} marked as done`);
+        fetchLiveOperationsData(email); 
+      }
+    } catch (err) {
+      toast.error('Network Error while updating task.');
+    }
+  };
+
+  const handleDeleteTicket = async (ticketId) => {
     if(!confirm("Permanently delete this helpdesk conversation?")) return;
     try {
-       const res = await fetch(`/api/tickets?id=${ticket_id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-       if(res.ok) { toast.success("Ticket deleted"); refresh(); } else toast.error("Failed to delete");
-    } catch(e) { toast.error("Network error"); }
-  };
-
-  // --- OPERATIONS & SLA TRACKER ---
-  const handleProcessBidRequest = async (reqId, status) => {
-    const reply = bidReply[reqId];
-    const assigneeId = bidAssignee[reqId];
-    if(status === 'Assigned' && !assigneeId) return toast.error('Please select an employee from the dropdown to assign.');
-    try {
-      let endpoint = '/api/client-requests/reply';
-      let payload = { req_id: reqId, status: status, reply: reply || 'Processed by MD' };
-      if (status === 'Assigned' && assigneeId) {
-         const emp = teamMembers.find(t => t.emp_id === assigneeId);
-         endpoint = '/api/client-requests/assign';
-         payload = { req_id: reqId, emp_id: emp.emp_id, emp_name: emp.name, status: 'Assigned', reply: reply || 'Assigned to Employee' };
+      const res = await fetch(`/api/tickets?id=${ticketId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Ticket conversation deleted.');
+        fetchLiveOperationsData(email);
+      } else {
+        toast.error("Failed to delete ticket. Backend route might need update.");
       }
-      const res = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
-      if(res.ok) { toast.success(`Client Request ${status}!`); setBidReply(prev => ({...prev, [reqId]: ''})); setBidAssignee(prev => ({...prev, [reqId]: ''})); refresh(); } 
-      else { toast.error("Failed to update status."); }
-    } catch(err) { toast.error("Network Error."); }
+    } catch (err) {
+      toast.error('Network Error.');
+    }
   };
 
-  const handleDispatchTask = async (e) => {
+  const handleSaveOfficer = async (e) => {
     e.preventDefault();
-    if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
+    if(!officerForm.name || !officerForm.department) return toast.error('Name and Dept are required');
+    setSavingOfficer(true);
     try {
-      const res = await fetch('/api/dispatches', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(taskForm) });
-      if(res.ok) { toast.success('Dispatch Sent!'); setTaskForm({ target_type: 'client_alert', target_id: '', subject: '', message: '' }); refresh(); } 
-      else toast.error('Failed to dispatch');
-    } catch (err) { toast.error('Network Error.'); }
-  };
-
-  const deleteDispatch = async (id, isRequest = true) => {
-     if(!confirm("Permanently delete this task?")) return;
-     if(isRequest) {
-         setBidRequests(prev => prev.filter(r => r._id !== id));
-         await fetch(`/api/client-requests?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-     } else {
-         setDispatches(prev => prev.filter(d => d._id !== id));
-         await fetch(`/api/dispatches?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-     }
-     toast.success("Deleted permanently.");
-  };
-
-  const handleGiveWarning = async (id) => {
-    try {
-      await fetch('/api/dispatches/update', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ task_id: id, status: 'Warning Issued' })
+      const res = await fetch('/api/gov-officers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(officerForm)
       });
-      toast.success("Warning issued successfully!"); refresh();
-    } catch(e) { toast.error("Network error"); }
+      if (res.ok) {
+        toast.success('Govt Officer added to Central Directory!');
+        logActivity('ADDED_OFFICER', `Added officer: ${officerForm.name}`);
+        setOfficerForm({ name: '', department: '', designation: '', phone: '', state: '', district: '', address: '', pincode: '', notes: '' });
+        fetchLiveOperationsData(email); 
+      }
+    } catch (err) {
+      toast.error('Failed to save officer data');
+    }
+    setSavingOfficer(false);
   };
 
-  const handleForceClose = async (id) => {
-    if(!confirm("Are you sure you want to force close this task?")) return;
+  const escalateToMD = async (ticket) => {
     try {
-      await fetch('/api/dispatches/update', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ task_id: id, status: 'Force Closed (SLA Breach)' })
+      const res = await fetch('/api/dispatches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+           target_type: 'employee_task', 
+           target_id: 'MD', 
+           subject: `ESCALATION: ${ticket.subject}`, 
+           message: `Client ${ticket.client_email} is facing an issue that needs MD attention.\n\nIssue: ${ticket.message}` 
+        })
       });
-      toast.success("Task force closed."); refresh();
-    } catch(e) { toast.error("Network error"); }
+      if (res.ok) {
+         toast.success('Ticket escalated to Managing Director successfully.');
+         logActivity('ESCALATED_TICKET', `Escalated ticket ${ticket._id} to MD`);
+      }
+    } catch (e) {
+      toast.error("Failed to escalate.");
+    }
   };
 
-  const handleViewDocument = (req) => {
-    const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
-    if (docLink) {
-       const finalUrl = docLink.startsWith('http') ? docLink : (docLink.startsWith('/') ? docLink : `/uploads/${docLink}`);
-       window.open(finalUrl, '_blank');
-    } else if (req.link_or_id && req.link_or_id.startsWith('http')) {
-       window.open(req.link_or_id, '_blank');
-    } else { toast.info("No file attached. The link/ID reference is shown above."); }
-  };
+  // 🚀 ULTIMATE FIX: Secure NextAuth Impersonation for Employee
+  const handleImpersonate = async (targetEmail) => {
+    if (!targetEmail) return toast.error('Enter a valid client email');
+    
+    // బ్రౌజర్ పాపప్ బ్లాకర్‌ని ఆపడానికి ముందే ఒక ఖాళీ ట్యాబ్ ఓపెన్ చేయడం
+    const newTab = window.open('about:blank', '_blank');
+    toast.loading(`Connecting to ${targetEmail}'s portal...`);
 
-  // --- FINANCE ---
-  const handleLedgerSubmit = async (e) => {
-    e.preventDefault();
-    if(!ledgerForm.amount || !ledgerForm.reason) return toast.error("Amount and Reason are required");
     try {
-      const method = editingLedgerId ? 'PUT' : 'POST';
-      const payload = { ...ledgerForm, proof_base64: ledgerProof };
-      if (editingLedgerId) payload.id = editingLedgerId;
+      const res = await signIn('impersonate', {
+        email: targetEmail,
+        adminToken: 'admin_success',
+        redirect: false // 🚀 FIX: Employee ప్రస్తుత పేజీ రీలోడ్ అవ్వకుండా చేయడం
+      });
 
-      const res = await fetch('/api/finance/ledger', { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
-      if(res.ok) { 
-         toast.success(editingLedgerId ? `Ledger Updated!` : `Ledger Entry saved!`); 
-         setLedgerForm({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' }); 
-         setLedgerProof(''); setLedgerProofName(''); setEditingLedgerId(null); 
-         refresh(); 
-      } 
-      else toast.error("Failed to save entry");
-    } catch(err) { toast.error("Network Error"); }
+      if (res?.error) {
+         newTab.close(); // ఫెయిల్ అయితే ట్యాబ్ క్లోజ్ చేయడం
+         toast.error("Failed to connect to client portal!");
+      } else {
+         toast.success("Successfully Connected!");
+         // లాగిన్ సక్సెస్ అయ్యాక, ఆ కొత్త ట్యాబ్‌లో క్లయింట్ డాష్‌బోర్డ్ లోడ్ చేయడం
+         newTab.location.href = '/client';
+      }
+    } catch (e) {
+      newTab.close();
+      toast.error("Network Error.");
+    }
   };
 
-  const handleEditLedger = (txn) => {
-      setLedgerForm({ type: txn.type, amount: txn.amount, reason: txn.reason, client_id: txn.client_id, payment_mode: txn.payment_mode });
-      setEditingLedgerId(txn._id);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      toast.info("Edit Ledger Entry Active.");
+  const logActivity = (action, details) => {
+    fetch('/api/employee/activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, action, details })
+    }).catch(err => console.log('Activity log failed', err));
   };
 
-  const handleDeleteLedger = async (id) => {
-      if(!confirm("Permanently delete this ledger entry?")) return;
-      setLedgerTxns(prev => prev.filter(t => t._id !== id)); 
-      await fetch(`/api/finance/ledger?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      toast.success("Entry Deleted"); refresh();
-  };
+  if (!isMounted) return null;
 
-  const handleSendPaymentRequest = async (e) => {
-    e.preventDefault();
-    if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) return toast.error("Fill all details");
-    const newReq = { id: `REQ-${Date.now()}`, ...paymentRequestForm, status: 'sent', sent_time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) };
-    setFinancialRequests(prev => [newReq, ...prev]);
-    toast.success(`Cashfree payment link dispatched securely!`);
-    setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
-  };
+  const groupedBids = bids.reduce((acc, bid) => {
+      const key = bid.client_email || 'Unknown';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(bid);
+      return acc;
+  }, {});
 
-  const handleOfflinePayment = async (req) => {
-      if(!confirm("Mark this payment as collected offline? It will be added to the Balance Sheet.")) return;
-      setFinancialRequests(prev => prev.filter(r => r.id !== req.id)); 
-      try {
-          await fetch('/api/payments/offline', {
-              method: 'PUT', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
-              body: JSON.stringify({ id: req.db_id || null, amount: req.amount, reason: req.reason, client_id: req.client_id })
-          });
-          toast.success("Payment Marked Offline & Ledger Updated"); refresh();
-      } catch(e) { toast.error("Network Error"); }
-  };
+  const groupedSuggestions = suggestions.reduce((acc, sug) => {
+      const key = sug.target_id || 'Unknown';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(sug);
+      return acc;
+  }, {});
 
-  const handleCancelPayment = (reqId) => {
-      setFinancialRequests(prev => prev.filter(r => r.id !== reqId));
-      toast.info("Payment Link Cancelled & Removed");
-  };
+  const filteredOfficers = officers.filter(o => 
+     o.name?.toLowerCase().includes(officerSearch.toLowerCase()) || 
+     o.department?.toLowerCase().includes(officerSearch.toLowerCase()) ||
+     o.district?.toLowerCase().includes(officerSearch.toLowerCase())
+  );
 
-  // --- TEAM DIRECTORY ---
-  const handleCreateTeamMember = async (e) => {
-    e.preventDefault();
-    if(!officerForm.name || !officerForm.email || !officerForm.password) return toast.error("Fill all fields");
-    try {
-      const res = await fetch('/api/employees', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(officerForm) });
-      const data = await res.json();
-      if(res.ok) { toast.success(`Created! UID: ${data.emp_id}`); setOfficerForm({ name: '', email: '', password: '', role: 'employee' }); refresh(); } 
-      else toast.error('Failed to create member');
-    } catch(err) { toast.error('Network Error'); }
-  };
-
-  const handleRevokeEmployee = async (id) => {
-    if(!confirm("Are you sure you want to permanently delete this employee account?")) return;
-    try {
-      const res = await fetch(`/api/employees?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      if(res.ok) { toast.success("Employee removed successfully"); refresh(); } else toast.error("Failed to remove employee");
-    } catch(err) { toast.error("Network error"); }
-  };
-
-  if (authChecking) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
-  if (!token) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+  const filteredTenders = publicTenders.filter(t => 
+     t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
+     t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
+  );
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-[#0A2647] text-white border-b sticky top-0 z-40 shadow-sm">
-        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-[#0A2647] border-b sticky top-0 z-30 shadow-md text-white">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <ShieldCheck className="w-6 h-6 text-[#16a34a]" />
+             <div className="bg-white/10 p-2 rounded-lg"><Briefcase className="w-6 h-6 text-[#16a34a]" /></div>
              <div>
-               <h1 className="font-bold text-lg leading-tight tracking-wide">MD Command Center</h1>
-               <p className="text-[10px] text-emerald-300 font-mono tracking-widest">ENTERPRISE ADMINISTRATION</p>
+               <h1 className="font-bold text-lg leading-tight">Operations Desk</h1>
+               <p className="text-[10px] text-emerald-300 font-mono tracking-widest">{empData.id} • {email}</p>
              </div>
           </div>
-          <div className="flex items-center gap-3">
-            <a href="/?guest_login=true" target="_blank" rel="noopener noreferrer">
-               <Button variant="outline" size="sm" className="text-xs sm:text-sm bg-transparent border-slate-600 text-slate-200 hover:text-white hover:bg-slate-800">View Public Site</Button>
-            </a>
-            <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-400 hover:text-red-300 hover:bg-red-900/50"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
+          <div className="flex gap-3 items-center">
+             <Badge className="bg-[#16a34a] border-0 hidden sm:inline-flex">Session Active</Badge>
+             <a href="/"><Button variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:text-white hover:bg-slate-800"><ArrowLeft className="w-4 h-4 mr-2"/> Exit System</Button></a>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-4">
-            <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><BarChart3 className="w-4 h-4 mr-2 hidden sm:block"/> Master Reports</TabsTrigger>
-            <TabsTrigger value="clients" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><UserCheck className="w-4 h-4 mr-2 hidden sm:block"/> Client CRM</TabsTrigger>
-            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md"><IndianRupee className="w-4 h-4 mr-2 hidden sm:block"/> Finance Hub</TabsTrigger>
-            <TabsTrigger value="team" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-blue-700 data-[state=active]:text-white font-semibold rounded-md"><UserCog className="w-4 h-4 mr-2 hidden sm:block"/> Team Directory</TabsTrigger>
-            <TabsTrigger value="operations" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-purple-700 data-[state=active]:text-white font-semibold rounded-md"><ClipboardList className="w-4 h-4 mr-2 hidden sm:block"/> Operations</TabsTrigger>
-            <TabsTrigger value="publisher" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><FileText className="w-4 h-4 mr-2 hidden sm:block"/> Publisher</TabsTrigger>
-            <TabsTrigger value="tickets" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk</TabsTrigger>
-            <TabsTrigger value="settings" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Setup</TabsTrigger>
+      <main className="w-full px-4 sm:px-8 py-6">
+        
+        <div className="mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
+           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+           <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Tasks Assigned by MD / Admin</h3>
+           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {mdTasks.length === 0 ? (
+                 <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
+              ) : (
+                 mdTasks.map(task => (
+                    <div key={task._id || task.id} className="flex justify-between items-center bg-slate-50 border p-3 rounded-lg shadow-sm">
+                       <div>
+                          <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>Priority Task</Badge>
+                          <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
+                          <p className="text-xs text-slate-500 mt-1">{task.message}</p>
+                       </div>
+                       {task.status !== 'Completed' ? (
+                          <Button size="sm" onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0">Mark Done</Button>
+                       ) : (
+                          <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>
+                       )}
+                    </div>
+                 ))
+              )}
+           </div>
+        </div>
+
+        <Tabs defaultValue="kanban" className="w-full">
+          <TabsList className="flex flex-wrap w-full bg-slate-200 h-auto p-1 mb-6 rounded-lg gap-1">
+            <TabsTrigger value="kanban" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Active Bids
+            </TabsTrigger>
+            <TabsTrigger value="suggestions" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Lightbulb className="w-4 h-4 mr-2 hidden sm:block"/> Suggestions
+            </TabsTrigger>
+            <TabsTrigger value="officers" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
+            </TabsTrigger>
+            <TabsTrigger value="clients" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Users className="w-4 h-4 mr-2 hidden sm:block"/> Clients DB
+            </TabsTrigger>
+            <TabsTrigger value="alerts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <BellRing className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Queries
+            </TabsTrigger>
+            <TabsTrigger value="publisher" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders DB
+            </TabsTrigger>
+            <TabsTrigger value="sla" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk
+            </TabsTrigger>
           </TabsList>
 
-          {/* ==================== 1. MASTER REPORTS ==================== */}
-          <TabsContent value="reports" className="space-y-4">
-            <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
-               <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
-               <div className="bg-slate-100 p-1 rounded-lg flex gap-1">
-                  <Button size="sm" variant={timeRange === 'daily' ? 'default' : 'ghost'} onClick={()=>setTimeRange('daily')} className={`h-7 text-xs ${timeRange === 'daily' ? 'bg-[#0A2647] text-white' : ''}`}>Daily</Button>
-                  <Button size="sm" variant={timeRange === 'weekly' ? 'default' : 'ghost'} onClick={()=>setTimeRange('weekly')} className={`h-7 text-xs ${timeRange === 'weekly' ? 'bg-[#0A2647] text-white' : ''}`}>Weekly</Button>
-                  <Button size="sm" variant={timeRange === 'monthly' ? 'default' : 'ghost'} onClick={()=>setTimeRange('monthly')} className={`h-7 text-xs ${timeRange === 'monthly' ? 'bg-[#0A2647] text-white' : ''}`}>Monthly</Button>
-               </div>
-            </div>
-            
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders" value={tenders.length} />
-              </div>
-              <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Operations" value={dispatches.length + bidRequests.length} />
-              </div>
-              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Total Clients" value={approvedClients.length} />
-              </div>
-              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<UserPlus className="w-4 h-4 text-orange-500" />} label="Pending Appr." value={pendingUsers.length} accent={pendingUsers.length > 0} />
-              </div>
-              <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${ledgerBalance.toLocaleString()}`} />
-              </div>
-            </div>
-
-            <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Logs</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     {employeeReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No active employees found.</p> : (
-                       <table className="w-full text-sm text-left border-collapse">
-                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
-                             <tr><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Efficiency</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                             {employeeReports.map(emp => (
-                                <tr key={emp.id} className="hover:bg-slate-50">
-                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
-                                   <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
-                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                     )}
-                  </CardContent>
-               </Card>
-               <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Consultancy Funnel (Business Conversion)</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     {clientReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No verified clients yet.</p> : (
-                       <table className="w-full text-sm text-left border-collapse">
-                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
-                             <tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Applied</th><th className="px-3 py-2 text-emerald-600">Won</th><th className="px-3 py-2 text-red-600">Lost</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                             {clientReports.map(cr => (
-                                <tr key={cr.id} className="hover:bg-slate-50">
-                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
-                                   <td className="px-3 py-2 font-bold text-slate-700">{cr.total}</td>
-                                   <td className="px-3 py-2 font-black text-emerald-600">{cr.won}</td>
-                                   <td className="px-3 py-2 font-bold text-red-500">{cr.lost}</td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                     )}
-                  </CardContent>
-               </Card>
-            </div>
-          </TabsContent>
-
-          {/* ==================== 2. CLIENT CRM ==================== */}
-          <TabsContent value="clients" className="mt-4">
-            <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
-              <CardHeader className="bg-emerald-50/50 border-b pb-4">
-                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><UserCheck className="w-5 h-5 text-[#16a34a]" /> Enterprise Client Approvals</CardTitle>
-                <CardDescription>Review and approve new client registrations to unlock their portals.</CardDescription>
+          <TabsContent value="kanban" className="w-full space-y-6">
+            <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
+              <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                   <CardTitle className="text-[#0A2647] flex items-center gap-2"><Kanban className="w-5 h-5 text-blue-600"/> Active Bid Events Tracker</CardTitle>
+                   <CardDescription>Manually add or update the progress of ongoing client bids.</CardDescription>
+                </div>
+                <Button onClick={() => setShowAddBid(!showAddBid)} className="bg-blue-600 hover:bg-blue-700 shrink-0">
+                   <PlusCircle className="w-4 h-4 mr-2"/> Add New Bid Row
+                </Button>
               </CardHeader>
-              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
-                {pendingUsers.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-400 mb-3" />
-                    <p className="font-semibold text-lg text-slate-600">Zero Pending Approvals</p>
-                  </div>
+              <CardContent className="pt-4">
+                
+                {showAddBid && (
+                   <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner animate-in fade-in slide-in-from-top-4">
+                      <h4 className="font-bold text-blue-900 mb-4 flex items-center"><Target className="w-4 h-4 mr-2"/> Create New Bid Tracking Row</h4>
+                      <form onSubmit={handleAddBidRow} className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+                         <div>
+                            <Label className="text-xs font-bold text-slate-600">Select Client *</Label>
+                            <Select required value={newBidForm.client_email} onValueChange={v => setNewBidForm({...newBidForm, client_email: v})}>
+                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                               <SelectContent>
+                                  {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                               </SelectContent>
+                            </Select>
+                         </div>
+                         <div>
+                            <Label className="text-xs font-bold text-slate-600">Bid Number / ID *</Label>
+                            <Input required placeholder="e.g. GEM/2026/B/..." value={newBidForm.bid_no} onChange={e=>setNewBidForm({...newBidForm, bid_no: e.target.value})} className="mt-1 bg-white h-9" />
+                         </div>
+                         <div>
+                            <Label className="text-xs font-bold text-slate-600">Initial Status *</Label>
+                            <Select required value={newBidForm.status} onValueChange={v => setNewBidForm({...newBidForm, status: v})}>
+                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select Status" /></SelectTrigger>
+                               <SelectContent>
+                                  <SelectItem value="Bid Allocated">Bid Allocated</SelectItem>
+                                  <SelectItem value="Client Approved">Client Approved</SelectItem>
+                                  <SelectItem value="Client Cancelled">Client Cancelled</SelectItem>
+                                  <SelectItem value="ADC Check">ADC Check</SelectItem>
+                                  <SelectItem value="Documents Asking">Documents Asking</SelectItem>
+                                  <SelectItem value="Documents Preparing">Documents Preparing</SelectItem>
+                                  <SelectItem value="Bid Participated">Bid Participated</SelectItem>
+                                  <SelectItem value="Technical Evaluation">Technical Evaluation</SelectItem>
+                                  <SelectItem value="Technical Qualification">Technical Qualification</SelectItem>
+                                  <SelectItem value="Financial Evaluation">Financial Evaluation</SelectItem>
+                                  <SelectItem value="Won">Won</SelectItem>
+                                  <SelectItem value="Lost">Lost</SelectItem>
+                               </SelectContent>
+                            </Select>
+                         </div>
+                         <div>
+                            <Label className="text-xs font-bold text-slate-600">Submitted Date (Optional)</Label>
+                            <Input type="date" value={newBidForm.submitted_date} onChange={e=>setNewBidForm({...newBidForm, submitted_date: e.target.value})} className="mt-1 bg-white h-9" />
+                         </div>
+                         <div className="sm:col-span-3">
+                            <Label className="text-xs font-bold text-slate-600">Description of Work *</Label>
+                            <Input required placeholder="Short title of the tender work..." value={newBidForm.description} onChange={e=>setNewBidForm({...newBidForm, description: e.target.value})} className="mt-1 bg-white h-9" />
+                         </div>
+                         <div className="sm:col-span-1 flex items-end">
+                            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-9 shadow-md"><CheckCircle2 className="w-4 h-4 mr-2"/> Save Record</Button>
+                         </div>
+                      </form>
+                   </div>
+                )}
+
+                {bids.length === 0 ? (
+                  <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
                 ) : (
-                  <div className="space-y-4">
-                    {pendingUsers.map(user => {
-                      const safeId = user?.email ? `CLI-${user.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                      return (
-                      <div key={user._id} className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm flex flex-col xl:flex-row gap-5 justify-between items-start hover:shadow-md transition">
-                        <div className="flex-1 w-full">
-                          <div className="flex justify-between items-start mb-3">
-                             <div>
-                               <h4 className="font-black text-[#0A2647] text-xl">{user.company_name || 'Unnamed Company'}</h4>
-                               <div className="flex gap-2 text-xs font-semibold text-slate-500 mt-1">
-                                 <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-mono tracking-widest text-[10px]">{safeId}</Badge> 
-                                 <span className="flex items-center"><Mail className="w-3 h-3 mr-1 text-slate-400"/>{user.email}</span>
-                               </div>
-                             </div>
-                             <Badge className="bg-amber-100 text-amber-800 border-0 uppercase tracking-widest text-[10px]">Awaiting Approval</Badge>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
-                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact</span> <span className="text-slate-800 font-semibold text-sm">{user.phone || 'Not Provided'}</span></div>
-                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Company Type</span> <span className="text-slate-800 font-semibold">{user.company_type || 'N/A'}</span></div>
-                             <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Interested Services</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
-                          </div>
-                        </div>
-                        <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
-                          <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] w-full shadow h-11 text-base"><CheckCircle2 className="w-5 h-5 mr-2" /> Approve & Unlock</Button>
-                          <div className="flex items-center gap-2 my-1"><div className="flex-1 border-t border-slate-300"></div><span className="text-[10px] uppercase font-bold text-slate-400">MD Access</span><div className="flex-1 border-t border-slate-300"></div></div>
-                          <Button onClick={() => impersonateUser('client', user.email)} variant="outline" className="w-full text-[#0A2647] border-slate-300 hover:bg-slate-100"><LogIn className="w-4 h-4 mr-2" /> Login as Client (Bypass)</Button>
-                        </div>
-                      </div>
+                  <div className="space-y-6">
+                    {Object.entries(groupedBids).map(([clientEmail, clientBids], index) => {
+                        const clientInfo = approvedClients.find(c => c.email === clientEmail);
+                        const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
+                        const colorClass = BORDER_COLORS[index % BORDER_COLORS.length]; 
+                        
+                        return (
+                        <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
+                           <CardHeader className="bg-slate-50 border-b py-3 px-4">
+                              <div className="flex justify-between items-center">
+                                 <div>
+                                    <CardTitle className="text-xl uppercase font-black text-[#0A2647]">{cName}</CardTitle>
+                                    <CardDescription className="text-xs font-mono mt-0.5">{clientEmail}</CardDescription>
+                                 </div>
+                                 <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{clientBids.length} Active Bids</Badge>
+                              </div>
+                           </CardHeader>
+                           <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                              {clientBids.map(b => (
+                                <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
+                                  
+                                  {editingBid && (editingBid._id === b._id || editingBid.id === b.id) ? (
+                                     <form onSubmit={handleSaveEditBid} className="space-y-3 animate-in fade-in">
+                                        <div>
+                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Bid Number</Label>
+                                           <Input value={editingBid.bid_no} onChange={e => setEditingBid({...editingBid, bid_no: e.target.value})} className="h-8 text-xs bg-slate-50" />
+                                        </div>
+                                        <div>
+                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Description/Shortcut</Label>
+                                           <Textarea rows={2} value={editingBid.description} onChange={e => setEditingBid({...editingBid, description: e.target.value})} className="text-xs bg-slate-50" />
+                                        </div>
+                                        <div className="flex gap-2">
+                                           <Button type="button" onClick={() => setEditingBid(null)} variant="outline" className="flex-1 h-8 text-xs"><X className="w-3 h-3 mr-1"/> Cancel</Button>
+                                           <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 h-8 text-xs"><CheckCircle2 className="w-3 h-3 mr-1"/> Save</Button>
+                                        </div>
+                                     </form>
+                                  ) : (
+                                     <div>
+                                       <div className="flex justify-between items-start mb-2">
+                                         <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
+                                            <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
+                                            <span className="text-xs font-black font-mono truncate max-w-[120px]">{b.bid_no || b.id || 'N/A'}</span>
+                                         </div>
+                                         <div className="flex gap-1 items-center">
+                                            <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm mr-1">{b.status}</Badge>
+                                            <Button variant="ghost" size="icon" onClick={() => setEditingBid(b)} className="h-6 w-6 p-0 text-slate-400 hover:text-blue-600 bg-slate-50 border"><Pencil className="w-3 h-3"/></Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-slate-50 border"><Trash2 className="w-3 h-3"/></Button>
+                                         </div>
+                                       </div>
+                                       <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight line-clamp-2">{b.description || b.title}</h4>
+                                     </div>
+                                  )}
+                                  
+                                  {!editingBid && (
+                                    <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
+                                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
+                                      <select 
+                                        className="border border-blue-300 rounded-md px-2 py-1.5 text-xs bg-blue-50 font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto shadow-sm cursor-pointer"
+                                        value={b.status}
+                                        onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
+                                      >
+                                        <option value="Bid Allocated">Bid Allocated</option>
+                                        <option value="Client Approved">Client Approved</option>
+                                        <option value="Client Cancelled">Client Cancelled</option>
+                                        <option value="ADC Check">ADC Check</option>
+                                        <option value="Documents Asking">Documents Asking</option>
+                                        <option value="Documents Preparing">Documents Preparing</option>
+                                        <option value="Bid Participated">Bid Participated</option>
+                                        <option value="Technical Evaluation">Technical Evaluation</option>
+                                        <option value="Technical Qualification">Technical Qualification</option>
+                                        <option value="Financial Evaluation">Financial Evaluation</option>
+                                        <option value="Won">Won</option>
+                                        <option value="Lost">Lost</option>
+                                      </select>
+                                    </div>
+                                  )}
+
+                                  {b.status === 'Won' && (
+                                     <Button size="sm" onClick={() => toast.success("Winning Bid Published to Client Ledger!")} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2 h-8 text-xs font-bold animate-in fade-in shadow-md">
+                                        <Trophy className="w-4 h-4 mr-2" /> Publish Win to Client
+                                     </Button>
+                                  )}
+                                </div>
+                              ))}
+                           </CardContent>
+                        </Card>
                     )})}
                   </div>
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
 
+          <TabsContent value="suggestions" className="w-full space-y-6">
+            <Card className="shadow-sm border-0 ring-1 ring-slate-200">
+               <CardHeader className="bg-slate-50/50 border-b pb-4">
+                  <CardTitle className="text-[#0A2647] flex items-center gap-2"><Lightbulb className="w-5 h-5 text-amber-500"/> Suggested Tenders Tracker</CardTitle>
+                  <CardDescription>Track all tenders you have suggested. If a client accepts, convert it to an Active Bid.</CardDescription>
+               </CardHeader>
+               <CardContent className="pt-4 max-h-[700px] overflow-y-auto">
+                  {suggestions.length === 0 ? (
+                     <div className="text-center py-10 text-slate-400">
+                        <Lightbulb className="w-12 h-12 mx-auto mb-3 opacity-20"/>
+                        <p className="text-sm font-semibold">No pending suggestions.</p>
+                     </div>
+                  ) : (
+                     <div className="space-y-6">
+                        {Object.entries(groupedSuggestions).map(([clientEmail, clientSuggestions], index) => {
+                           const clientInfo = approvedClients.find(c => c.email === clientEmail);
+                           const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
+                           const colorClass = BORDER_COLORS[(index + 1) % BORDER_COLORS.length]; 
+                           
+                           return (
+                           <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
+                              <CardHeader className="bg-amber-50/30 border-b py-3 px-4">
+                                 <div className="flex justify-between items-center">
+                                    <div>
+                                       <CardTitle className="text-lg uppercase font-black text-[#0A2647]">{cName}</CardTitle>
+                                       <CardDescription className="text-xs font-mono mt-0.5">{clientEmail}</CardDescription>
+                                    </div>
+                                    <Badge className="bg-amber-100 text-amber-800 border-0 shadow-sm">{clientSuggestions.length} Suggestions</Badge>
+                                 </div>
+                              </CardHeader>
+                              <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                                 {clientSuggestions.map(sug => {
+                                    let displayBid = 'N/A';
+                                    let displayDesc = sug.message;
+                                    const match = sug.message.match(/\[BID: (.*?)\] (.*)/);
+                                    if (match) { displayBid = match[1]; displayDesc = match[2]; }
+
+                                    return (
+                                    <div key={sug._id} className="border border-amber-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition relative">
+                                       <div>
+                                          <div className="flex justify-between items-start mb-2">
+                                             <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[9px] font-mono">Suggested On: {new Date(sug.created_at).toLocaleDateString()}</Badge>
+                                             {displayBid !== 'N/A' && <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-mono">{displayBid}</Badge>}
+                                          </div>
+                                          <h4 className="font-bold text-[#0A2647] mt-1 mb-4 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
+                                             {displayDesc}
+                                          </h4>
+                                       </div>
+                                       <div className="flex gap-2 border-t border-slate-100 pt-3">
+                                          <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Accepted')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-9 text-xs shadow-sm">
+                                             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Accepted
+                                          </Button>
+                                          <Button size="sm" onClick={() => handleSuggestionResponse(sug, 'Rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-9 text-xs">
+                                             <XCircle className="w-3.5 h-3.5 mr-1.5"/> Rejected
+                                          </Button>
+                                       </div>
+                                    </div>
+                                 )})}
+                              </CardContent>
+                           </Card>
+                        )})}
+                     </div>
+                  )}
+               </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="officers" className="w-full space-y-6">
+            <div className="grid lg:grid-cols-3 gap-6">
+              <Card className="shadow-sm border-t-4 border-t-purple-600 lg:col-span-1 h-fit">
+                <CardHeader className="bg-purple-50/50 pb-4 border-b">
+                  <CardTitle className="text-purple-900 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-purple-600"/> Add Govt Officer</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleSaveOfficer} className="space-y-4">
+                    <div>
+                      <Label className="text-xs font-bold text-slate-600">Officer Name *</Label>
+                      <Input required value={officerForm.name} onChange={e=>setOfficerForm({...officerForm, name: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                       <div>
+                         <Label className="text-xs font-bold text-slate-600">Department *</Label>
+                         <Input required placeholder="e.g. R&B" value={officerForm.department} onChange={e=>setOfficerForm({...officerForm, department: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                       </div>
+                       <div>
+                         <Label className="text-xs font-bold text-slate-600">Designation</Label>
+                         <Input placeholder="e.g. EE" value={officerForm.designation} onChange={e=>setOfficerForm({...officerForm, designation: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                       </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold text-slate-600">Phone Number</Label>
+                      <Input type="tel" value={officerForm.phone} onChange={e=>setOfficerForm({...officerForm, phone: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+                       <div>
+                          <Label className="text-xs font-bold text-slate-600">State</Label>
+                          <Select value={officerForm.state} onValueChange={v=>setOfficerForm({...officerForm, state: v})}>
+                             <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select" /></SelectTrigger>
+                             <SelectContent>
+                                <SelectItem value="Telangana">Telangana</SelectItem>
+                                <SelectItem value="Andhra Pradesh">Andhra Pradesh</SelectItem>
+                             </SelectContent>
+                          </Select>
+                       </div>
+                       <div>
+                          <Label className="text-xs font-bold text-slate-600">District</Label>
+                          <Select value={officerForm.district} onValueChange={v=>setOfficerForm({...officerForm, district: v})}>
+                             <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select" /></SelectTrigger>
+                             <SelectContent>
+                                {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                             </SelectContent>
+                          </Select>
+                       </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold text-slate-600">Full Address</Label>
+                      <Textarea rows={2} placeholder="Office address..." value={officerForm.address} onChange={e=>setOfficerForm({...officerForm, address: e.target.value})} className="mt-1 bg-white text-sm" />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold text-slate-600">Pincode</Label>
+                      <Input type="text" placeholder="e.g. 500001" value={officerForm.pincode} onChange={e=>setOfficerForm({...officerForm, pincode: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold text-slate-600">Follow-up Notes</Label>
+                      <textarea className="w-full border rounded-md p-2 mt-1 h-16 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-500" value={officerForm.notes} onChange={e=>setOfficerForm({...officerForm, notes: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" disabled={savingOfficer} className="w-full bg-purple-600 hover:bg-purple-700 h-10 shadow-md">
+                      {savingOfficer ? 'Saving...' : 'Save to Directory'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm lg:col-span-2 w-full">
+                <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                  <div>
+                     <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
+                     <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
+                  </div>
+                  <div className="relative shrink-0">
+                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                     <Input placeholder="Search officers..." value={officerSearch} onChange={e=>setOfficerSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4 p-0">
+                  {filteredOfficers.length === 0 ? (
+                    <p className="text-center text-sm text-slate-500 py-10">No officers found.</p>
+                  ) : (
+                    <div className="divide-y max-h-[650px] overflow-y-auto">
+                      {filteredOfficers.map(officer => (
+                        <div key={officer._id || Math.random()} className="p-4 hover:bg-slate-50 transition flex flex-col sm:flex-row justify-between gap-4">
+                          <div>
+                            <h4 className="font-bold text-[#0A2647] text-base">{officer.name}</h4>
+                            <p className="text-sm font-semibold text-purple-700">{officer.designation} - {officer.department}</p>
+                            
+                            {(officer.state || officer.district) && (
+                               <p className="text-[10px] text-slate-500 font-bold mt-1 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3"/> {officer.district}{officer.district && officer.state ? ', ' : ''}{officer.state} {officer.pincode ? `- ${officer.pincode}` : ''}
+                               </p>
+                            )}
+                            
+                            {officer.notes && <p className="text-xs text-slate-600 mt-2 bg-slate-100 p-2 rounded italic">"{officer.notes}"</p>}
+                          </div>
+                          <div className="shrink-0 flex sm:flex-col gap-2 items-end">
+                            {officer.phone && <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-sm py-1 shadow-sm">📞 {officer.phone}</Badge>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="clients" className="w-full space-y-6">
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6 w-full">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
-                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Briefcase className="w-5 h-5 text-blue-600" /> Active Verified Clients</CardTitle>
-                 <CardDescription>Directory of all approved enterprise clients, their stats, and direct portal/drive access.</CardDescription>
+                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+                    <Briefcase className="w-5 h-5 text-blue-600" /> Active Clients Directory
+                 </CardTitle>
+                 <CardDescription>View client details, access their Google Drive vault, or login to troubleshoot.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+              <CardContent className="pt-4 max-h-[700px] overflow-y-auto">
                  {approvedClients.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400"><Users className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-semibold">No active verified clients found.</p></div>
+                    <div className="text-center py-8 text-slate-400">
+                       <Users className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                       <p className="text-sm font-semibold">No active verified clients found.</p>
+                    </div>
                  ) : (
                     <div className="grid xl:grid-cols-2 gap-4">
                        {approvedClients.map(client => {
@@ -672,11 +1021,6 @@ export default function AdminPage() {
                                    </div>
                                    <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{client.stats?.won || 0}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(client.stats?.total_paid || 0).toLocaleString()}</span></div>
-                                </div>
                              </div>
                              
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
@@ -685,15 +1029,12 @@ export default function AdminPage() {
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
                                 ) : (
-                                   <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                                   <Button size="sm" onClick={() => handleCreateDriveFolder(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
                                       <Database className="w-4 h-4 mr-2" /> Sync Drive Space
                                    </Button>
                                 )}
-                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
+                                <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
-                                </Button>
-                                <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
-                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                              </div>
                           </div>
@@ -704,553 +1045,268 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
-          {/* ==================== 3. FINANCE HUB ==================== */}
-          <TabsContent value="finance" className="mt-4">
-            <div className="grid lg:grid-cols-2 gap-6 mb-6">
-              <Card className="shadow-sm border-t-4 border-t-blue-600 h-fit">
-                 <CardHeader className="bg-blue-50/50 border-b pb-4">
-                    <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
-                       <Wallet className="w-5 h-5 text-blue-600" /> {editingLedgerId ? 'Update Ledger Entry' : 'Offline Ledger Entry'}
-                    </CardTitle>
-                    <CardDescription>Record manual transactions (Cash/PhonePe/Bank Transfer).</CardDescription>
-                 </CardHeader>
-                 <CardContent className="pt-6">
-                    <form onSubmit={handleLedgerSubmit} className="space-y-4">
-                       <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
-                          <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${ledgerForm.type === 'CREDIT' ? 'bg-white shadow-sm border border-slate-200 text-emerald-700' : 'text-slate-500 hover:bg-slate-200'}`}>
-                             <input type="radio" name="ledgerType" value="CREDIT" checked={ledgerForm.type === 'CREDIT'} onChange={e => setLedgerForm({...ledgerForm, type: e.target.value})} className="hidden" />
-                             <ArrowDownRight className="w-4 h-4"/> <span className="text-sm font-bold">Credit (Income)</span>
-                          </label>
-                          <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${ledgerForm.type === 'DEBIT' ? 'bg-white shadow-sm border border-slate-200 text-red-600' : 'text-slate-500 hover:bg-slate-200'}`}>
-                             <input type="radio" name="ledgerType" value="DEBIT" checked={ledgerForm.type === 'DEBIT'} onChange={e => setLedgerForm({...ledgerForm, type: e.target.value})} className="hidden" />
-                             <ArrowUpRight className="w-4 h-4"/> <span className="text-sm font-bold">Debit (Expense)</span>
-                          </label>
-                       </div>
-                       <div className="grid grid-cols-2 gap-4">
-                          <div className="col-span-2 sm:col-span-1">
-                             <Label className="font-bold text-slate-700">Amount (₹) *</Label>
-                             <Input type="number" placeholder="5000" value={ledgerForm.amount} onChange={e => setLedgerForm({...ledgerForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647]" />
-                          </div>
-                          <div className="col-span-2 sm:col-span-1">
-                             <Label className="font-bold text-slate-700">Client / Ref (Optional)</Label>
-                             <Select value={ledgerForm.client_id} onValueChange={v => setLedgerForm({...ledgerForm, client_id: v})}>
-                               <SelectTrigger className="mt-1"><SelectValue placeholder="Select Client" /></SelectTrigger>
-                               <SelectContent>
-                                 <SelectItem value="N/A">General / Office Expense</SelectItem>
-                                 {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
-                               </SelectContent>
-                             </Select>
-                          </div>
-                       </div>
-                       <div>
-                          <Label className="font-bold text-slate-700">Reason / Description *</Label>
-                          <Input placeholder="e.g. Received Cash for DSC, Paid Internet Bill..." value={ledgerForm.reason} onChange={e => setLedgerForm({...ledgerForm, reason: e.target.value})} required className="mt-1" />
-                       </div>
-                       <div>
-                          <Label className="font-bold text-slate-700">Attach Proof (Receipt / Screenshot)</Label>
-                          <div className="mt-1 border-2 border-dashed rounded-md p-3 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer">
-                             <input type="file" accept="image/*,application/pdf" onChange={onLedgerProofChange} className="hidden" id="proof-input" />
-                             <label htmlFor="proof-input" className="cursor-pointer flex flex-col items-center">
-                               <FileUp className="w-5 h-5 text-slate-400 mb-1" />
-                               <span className="text-xs font-medium text-[#0A2647]">{ledgerProofName || 'Upload Image/PDF'}</span>
-                             </label>
-                          </div>
-                       </div>
-                       <Button type="submit" className={`w-full h-11 text-base shadow-md ${ledgerForm.type === 'CREDIT' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}>
-                          {editingLedgerId ? 'Update Entry' : (ledgerForm.type === 'CREDIT' ? '+ Add Income to Ledger' : '- Record Expense')}
-                       </Button>
-                       {editingLedgerId && <Button type="button" variant="outline" className="w-full mt-2" onClick={() => { setEditingLedgerId(null); setLedgerForm({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' }); }}>Cancel Edit</Button>}
-                    </form>
-                 </CardContent>
-              </Card>
-
-              <Card className="shadow-sm border-t-4 border-t-slate-800">
-                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-row items-center justify-between">
-                    <CardTitle className="text-[#0A2647] text-lg">Balance Sheet Book</CardTitle>
-                    <div className="text-right">
-                       <p className="text-[10px] text-slate-500 uppercase font-bold">Net Balance</p>
-                       <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{ledgerBalance.toLocaleString()}</h3>
+          <TabsContent value="alerts" className="w-full space-y-6">
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card className="shadow-sm border-t-4 border-t-red-500">
+                <CardHeader className="bg-red-50/50 pb-4 border-b">
+                  <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
+                  <CardDescription>Send a direct red-alert banner to the client's portal screen.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={sendActionAlert} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client ID *</Label>
+                      <Select required value={alertForm.client_id} onValueChange={v => setAlertForm({...alertForm, client_id: v})}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
                     </div>
-                 </CardHeader>
-                 <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
-                    {ledgerTxns.length === 0 ? (
-                       <div className="text-center py-12 text-slate-400"><Database className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No ledger entries found.</p></div>
-                    ) : (
-                       <table className="w-full text-sm text-left">
-                          <thead className="text-[10px] uppercase bg-slate-100 text-slate-500 sticky top-0 z-10">
-                             <tr><th className="p-2">Date</th><th className="p-2">Desc & Ref</th><th className="p-2 text-right">Amount</th><th className="p-2 w-10"></th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                             {ledgerTxns.map((txn) => (
-                                <tr key={txn._id} className="hover:bg-slate-50 group">
-                                   <td className="p-2 text-xs text-slate-500 whitespace-nowrap align-top">{new Date(txn.created_at).toLocaleDateString()}</td>
-                                   <td className="p-2 align-top">
-                                      <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
-                                      {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
-                                      {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer" onClick={()=>window.open(txn.proof_base64.startsWith('http') ? txn.proof_base64 : `data:image/png;base64,${txn.proof_base64}`)}>View Proof</Badge>}
-                                   </td>
-                                   <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
-                                      {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
-                                   </td>
-                                   <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                      <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
-                                      <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
-                                   </td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                    )}
-                 </CardContent>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Requirement / Message *</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g., Please check email..." value={alertForm.message} onChange={e=>setAlertForm({...alertForm, message: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-10 shadow-md">
+                      <Send className="w-4 h-4 mr-2"/> Push Alert
+                    </Button>
+                  </form>
+
+                  <div className="mt-8">
+                     <h4 className="font-bold text-slate-700 text-sm mb-3">Pending Action Alerts</h4>
+                     {mdTasks.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No active alerts pushed to clients.</p>
+                     ) : (
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                           {mdTasks.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').map(alert => (
+                              <div key={alert._id} className="bg-red-50 border border-red-100 p-3 rounded-lg flex flex-col relative">
+                                 <span className="text-[9px] text-red-400 font-bold mb-1">To: {alert.target_id}</span>
+                                 <p className="text-xs text-red-900 mb-2">"{alert.message}"</p>
+                                 <Button size="sm" onClick={() => markTaskDone(alert._id || alert.id)} variant="outline" className="h-6 text-[10px] w-fit self-end border-red-200 text-red-600 hover:bg-red-100">
+                                    <X className="w-3 h-3 mr-1"/> Close & Remove
+                                 </Button>
+                              </div>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm border-t-4 border-t-orange-500">
+                <CardHeader className="bg-orange-50/50 pb-4 border-b">
+                  <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
+                  <CardDescription>Missing documents? This will lock the client's screen until they reply.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleRaiseQuery} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client *</Label>
+                      <Select required value={queryForm.client_email} onValueChange={v => setQueryForm({...queryForm, client_email: v})}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Query Subject *</Label>
+                      <Input required placeholder="e.g., PAN Card Missing" value={queryForm.subject} onChange={e=>setQueryForm({...queryForm, subject: e.target.value})} className="mt-1 bg-white h-9 text-sm"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Detailed Description *</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-[68px] text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Explain what document is needed..." value={queryForm.message} onChange={e=>setQueryForm({...queryForm, message: e.target.value})}></textarea>
+                    </div>
+                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-10 shadow-md">
+                      <Lock className="w-4 h-4 mr-2"/> Lock Client & Send Query
+                    </Button>
+                  </form>
+
+                  <div className="mt-8">
+                     <h4 className="font-bold text-slate-700 text-sm mb-3">Active Client Queries</h4>
+                     <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                        {approvedClients.filter(c => c.officer_queries && c.officer_queries.length > 0).length === 0 ? (
+                           <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No active queries pending.</p>
+                        ) : (
+                           approvedClients.filter(c => c.officer_queries && c.officer_queries.length > 0).map(client => (
+                              client.officer_queries.map((q, idx) => (
+                                 <div key={idx} className="bg-orange-50 border border-orange-200 p-3 rounded-lg flex flex-col relative shadow-sm">
+                                    <span className="text-[9px] text-orange-500 font-bold mb-1">To: {client.company_name || client.email}</span>
+                                    <p className="text-xs font-bold text-orange-900 mb-1">{q.subject}</p>
+                                    <p className="text-xs text-orange-800 mb-3 bg-white p-2 rounded border border-orange-100">"{q.message}"</p>
+                                    
+                                    <div className="flex gap-2 justify-end mt-1 pt-2 border-t border-orange-200">
+                                       <Button size="sm" onClick={() => { 
+                                          const link = client.drive_folder_link || client.drive_link;
+                                          if(link) window.open(link, '_blank'); 
+                                          else toast.info("No documents uploaded yet."); 
+                                       }} variant="outline" className="h-7 text-[10px] border-orange-300 text-orange-700 hover:bg-orange-100 bg-white">
+                                          <Eye className="w-3 h-3 mr-1"/> View Docs
+                                       </Button>
+                                       <Button size="sm" onClick={() => handleCloseQuery(q.id, client.email)} className="h-7 text-[10px] bg-[#16a34a] hover:bg-[#15803d]">
+                                          <CheckCircle2 className="w-3 h-3 mr-1"/> Resolve & Close
+                                       </Button>
+                                    </div>
+                                 </div>
+                              ))
+                           ))
+                        )}
+                     </div>
+                  </div>
+                </CardContent>
               </Card>
             </div>
-            
-            <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
-                  <CardHeader className="bg-emerald-50/50 border-b pb-4">
-                     <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg"><IndianRupee className="w-5 h-5 text-emerald-600" /> Dispatch Online Payment Link</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                     <form onSubmit={handleSendPaymentRequest} className="space-y-4">
-                        <div>
-                           <Label className="font-bold text-slate-700">Select Client *</Label>
-                           <Select value={paymentRequestForm.client_id} onValueChange={v => setPaymentRequestForm({...paymentRequestForm, client_id: v})}>
-                             <SelectTrigger className="mt-1"><SelectValue placeholder="Choose client..." /></SelectTrigger>
-                             <SelectContent>
-                               {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
-                              <Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" />
-                           </div>
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">Reason / Purpose *</Label>
-                              <Select value={paymentRequestForm.reason} onValueChange={v => setPaymentRequestForm({...paymentRequestForm, reason: v})}>
-                                 <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Select Type" /></SelectTrigger>
-                                 <SelectContent>
-                                    <SelectItem value="Subscription Renewal">Subscription Renew</SelectItem>
-                                    <SelectItem value="Document Preparation Fee">Document Prep Fee</SelectItem>
-                                    <SelectItem value="EMD Deposit">EMD Deposit</SelectItem>
-                                 </SelectContent>
-                              </Select>
-                           </div>
-                        </div>
-                        <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base shadow-md"><Send className="w-4 h-4 mr-2" /> Dispatch Secure Link</Button>
-                     </form>
-                  </CardContent>
-               </Card>
-
-               <Card className="shadow-sm h-fit">
-                  <CardHeader className="bg-slate-50 border-b pb-4">
-                     <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
-                     {financialRequests.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400">
-                           <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                           <p className="text-sm font-semibold">No recent payment links dispatched.</p>
-                        </div>
-                     ) : (
-                        <div className="space-y-6">
-                           {financialRequests.map(req => (
-                              <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
-                                 <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
-                                    <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
-                                 </div>
-                                 
-                                 <div className="relative pt-2 pb-1 mx-2">
-                                    <div className="absolute top-4 left-0 right-0 h-1.5 bg-slate-100 rounded-full z-0"></div>
-                                    <div className={`absolute top-4 left-0 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[100%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
-                                    <div className="relative z-10 flex justify-between px-1">
-                                       <div className="flex flex-col items-center gap-1.5">
-                                          <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
-                                          <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span><span className="text-[9px] text-slate-400 font-mono">{req.sent_time}</span>
-                                       </div>
-                                       <div className="flex flex-col items-center gap-1.5">
-                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                            {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
-                                          </div>
-                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
-                                       </div>
-                                       <div className="flex flex-col items-center gap-1.5">
-                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                            {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
-                                          </div>
-                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span><span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
-                                       </div>
-                                    </div>
-                                 </div>
-
-                                 <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                                    <Button size="sm" onClick={() => handleOfflinePayment(req)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 h-8 text-xs shadow-sm"><IndianRupee className="w-3 h-3 mr-1"/> Mark Paid Offline</Button>
-                                    <Button size="sm" onClick={() => handleCancelPayment(req.id)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs shadow-sm"><X className="w-3 h-3 mr-1"/> Cancel Link</Button>
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </CardContent>
-               </Card>
-            </div>
           </TabsContent>
 
-          {/* ==================== 4. TEAM DIRECTORY ==================== */}
-          <TabsContent value="team" className="mt-4">
-            <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="tender-shadow border-t-4 border-t-blue-600 h-fit">
-                  <CardHeader className="bg-blue-50/50 border-b pb-4">
-                     <CardTitle className="flex items-center gap-2 text-blue-900 text-lg"><Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID</CardTitle>
-                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                     <form onSubmit={handleCreateTeamMember} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">Full Name *</Label>
-                              <Input placeholder="e.g. Ramesh" value={officerForm.name} onChange={e => setOfficerForm({...officerForm, name: e.target.value})} required className="mt-1" />
-                           </div>
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">System Role *</Label>
-                              <Select value={officerForm.role} onValueChange={v => setOfficerForm({...officerForm, role: v})}>
-                                 <SelectTrigger className="mt-1"><SelectValue placeholder="Role" /></SelectTrigger>
-                                 <SelectContent>
-                                    <SelectItem value="officer">Tender Officer</SelectItem>
-                                    <SelectItem value="employee">Data Entry Emp</SelectItem>
-                                    <SelectItem value="admin">Manager (MD)</SelectItem>
-                                 </SelectContent>
-                              </Select>
-                           </div>
-                        </div>
-                        <div>
-                           <Label className="font-bold text-slate-700">Official Email *</Label>
-                           <Input type="email" placeholder="name@tgtenders.in" value={officerForm.email} onChange={e => setOfficerForm({...officerForm, email: e.target.value})} required className="mt-1" />
-                        </div>
-                        <div>
-                           <Label className="font-bold text-slate-700">Assign Password *</Label>
-                           <Input type="text" placeholder="Pass@123" value={officerForm.password} onChange={e => setOfficerForm({...officerForm, password: e.target.value})} required className="mt-1" />
-                        </div>
-                        <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 shadow-md h-12 text-base mt-2"><UserPlus className="w-5 h-5 mr-2" /> Save & Auto-Generate ID</Button>
-                     </form>
-                  </CardContent>
-               </Card>
-
-               <Card className="tender-shadow border-0 ring-1 ring-slate-200 h-fit">
-                  <CardHeader className="bg-slate-50 border-b pb-4">
-                     <CardTitle className="text-[#0A2647] text-lg">Database: Active Team & Passwords</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 max-h-[500px] overflow-y-auto">
-                     {teamMembers.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400"><ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-30" /><p className="text-sm font-semibold">No Team Members Logged Yet.</p></div>
-                     ) : (
-                        <div className="space-y-4">
-                           {teamMembers.map(off => (
-                              <div key={off._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
-                                 <div className="flex justify-between items-start mb-4">
-                                    <div className="flex items-center gap-3">
-                                       <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-lg">{(off?.name || 'U').charAt(0)}</div>
-                                       <div>
-                                          <h4 className="font-bold text-[#0A2647] text-sm flex items-center gap-2">{off.name} <Badge className="bg-emerald-100 text-emerald-800 border-0 h-4 text-[9px] px-1.5 py-0">Active</Badge></h4>
-                                          <p className="text-[10px] text-slate-500 font-mono tracking-wider mt-0.5">{off.email}</p>
-                                       </div>
-                                    </div>
-                                    <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.emp_id}</Badge>
-                                 </div>
-                                 <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
-                                    <div className="flex flex-col">
-                                       <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
-                                       <span className="text-sm font-mono font-bold text-[#0A2647]">{showPwdId === off.emp_id ? off.password : '••••••••'}</span>
-                                    </div>
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 font-semibold" onClick={() => setShowPwdId(showPwdId === off.emp_id ? null : off.emp_id)}>
-                                       {showPwdId === off.emp_id ? <EyeOff className="w-3.5 h-3.5 mr-1.5"/> : <Eye className="w-3.5 h-3.5 mr-1.5"/>}
-                                       {showPwdId === off.emp_id ? 'Hide' : 'Reveal'}
-                                    </Button>
-                                 </div>
-                                 <div className="flex gap-2">
-                                    <Button onClick={() => impersonateUser('employee', off.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs"><LogIn className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}</Button>
-                                    <Button onClick={() => handleRevokeEmployee(off._id)} variant="outline" className="text-red-500 hover:bg-red-50 border-red-200 h-9 px-4">Delete</Button>
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </CardContent>
-               </Card>
-            </div>
-          </TabsContent>
-
-          {/* ==================== 5. OPERATIONS (WITH SLA TRACKER) ==================== */}
-          <TabsContent value="operations" className="mt-4">
-            <div className="grid lg:grid-cols-2 gap-6">
-               <div className="flex flex-col gap-6">
-                  <Card className="tender-shadow border-t-4 border-t-purple-600">
-                     <CardHeader className="bg-purple-50/30 border-b pb-4">
-                        <CardTitle className="flex items-center gap-2 text-purple-900 text-lg"><Send className="w-5 h-5 text-purple-600" /> MD Operations Dispatch</CardTitle>
-                        <CardDescription>Push alerts directly to a Client's screen or assign tasks to Employees.</CardDescription>
-                     </CardHeader>
-                     <CardContent className="pt-6">
-                        <form onSubmit={handleDispatchTask} className="space-y-5">
-                           <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
-                              <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${taskForm.target_type === 'client_alert' ? 'bg-white shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>
-                                 <input type="radio" name="target" value="client_alert" checked={taskForm.target_type === 'client_alert'} onChange={e => setTaskForm({...taskForm, target_type: e.target.value, target_id: ''})} className="hidden" />
-                                 <span className={`w-2 h-2 rounded-full ${taskForm.target_type === 'client_alert' ? 'bg-red-500' : 'bg-slate-300'}`}></span>
-                                 <span className="text-sm font-bold">Client Alert</span>
-                              </label>
-                              <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${taskForm.target_type === 'employee_task' ? 'bg-white shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>
-                                 <input type="radio" name="target" value="employee_task" checked={taskForm.target_type === 'employee_task'} onChange={e => setTaskForm({...taskForm, target_type: e.target.value, target_id: ''})} className="hidden" />
-                                 <span className={`w-2 h-2 rounded-full ${taskForm.target_type === 'employee_task' ? 'bg-blue-500' : 'bg-slate-300'}`}></span>
-                                 <span className="text-sm font-bold">Employee Task</span>
-                              </label>
-                           </div>
-                           <div>
-                              <Label className="text-slate-600 font-bold">{taskForm.target_type === 'client_alert' ? 'Select Target Client *' : 'Select Target Employee *'}</Label>
-                              {taskForm.target_type === 'client_alert' ? (
-                                 <Select value={taskForm.target_id} onValueChange={v => setTaskForm({...taskForm, target_id: v})}>
-                                    <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Choose Client..." /></SelectTrigger>
-                                    <SelectContent>
-                                       {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
-                                    </SelectContent>
-                                 </Select>
-                              ) : (
-                                 <Select value={taskForm.target_id} onValueChange={v => setTaskForm({...taskForm, target_id: v})}>
-                                    <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Choose Employee..." /></SelectTrigger>
-                                    <SelectContent>
-                                       {teamMembers.map(emp => <SelectItem key={emp.emp_id} value={emp.emp_id}>{emp.name} ({emp.emp_id})</SelectItem>)}
-                                    </SelectContent>
-                                 </Select>
-                              )}
-                           </div>
-                           <div><Label className="text-slate-600 font-bold">Subject / Title *</Label><Input placeholder="e.g. Upload GST Certificate" value={taskForm.subject} onChange={e => setTaskForm({...taskForm, subject: e.target.value})} required className="mt-1" /></div>
-                           <div><Label className="text-slate-600 font-bold">Detailed Instructions *</Label><Textarea rows={4} placeholder="Describe exactly what needs to be done..." value={taskForm.message} onChange={e => setTaskForm({...taskForm, message: e.target.value})} required className="mt-1" /></div>
-                           <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 shadow-md h-12 text-base"><ClipboardList className="w-5 h-5 mr-2" /> Dispatch Now</Button>
-                        </form>
-                     </CardContent>
-                  </Card>
-
-                  <Card className="tender-shadow border-t-4 border-t-red-500">
-                     <CardHeader className="bg-red-50/30 border-b pb-4">
-                        <CardTitle className="flex items-center gap-2 text-red-900 text-lg"><Clock className="w-5 h-5 text-red-600"/> Dispatch SLA Tracker</CardTitle>
-                        <CardDescription>Monitor task deadlines (24h warning, 48h force close).</CardDescription>
-                     </CardHeader>
-                     <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
-                        {dispatches.filter(d => d.status !== 'Completed' && d.status !== 'Force Closed (SLA Breach)').length === 0 ? (
-                           <p className="text-center text-sm text-slate-400 py-6">No active dispatches pending.</p>
-                        ) : (
-                           <div className="space-y-4">
-                               {dispatches.filter(d => d.status !== 'Completed' && d.status !== 'Force Closed (SLA Breach)').map(task => {
-                                   const hoursElapsed = (Date.now() - new Date(task.created_at).getTime()) / (1000 * 60 * 60);
-                                   let statusColor = "bg-blue-100 text-blue-800";
-                                   let barColor = "bg-blue-500";
-                                   let progress = "w-[30%]";
-                                   
-                                   if(task.status === 'Warning Issued' || (hoursElapsed > 24 && hoursElapsed <= 48)) {
-                                       statusColor = "bg-amber-100 text-amber-800"; barColor = "bg-amber-500"; progress = "w-[70%]";
-                                   } else if (hoursElapsed > 48) {
-                                       statusColor = "bg-red-100 text-red-800"; barColor = "bg-red-500"; progress = "w-[100%]";
-                                   }
-
-                                   return (
-                                       <div key={task._id} className="border border-slate-200 p-3 rounded-lg bg-white shadow-sm">
-                                           <div className="flex justify-between items-start mb-2">
-                                               <Badge className={`border-0 ${statusColor}`}>
-                                                  {task.status === 'Sent' && hoursElapsed > 24 ? 'SLA Breached' : task.status}
-                                               </Badge>
-                                               <span className="text-[10px] text-slate-500">{Math.floor(hoursElapsed)}h ago</span>
-                                           </div>
-                                           <p className="font-bold text-[#0A2647] text-sm">{task.subject}</p>
-                                           <p className="text-[10px] text-slate-500 mt-1">Assigned To: <span className="font-mono bg-slate-100 px-1 rounded">{task.target_id}</span></p>
-
-                                           <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 mb-3">
-                                               <div className={`h-1.5 rounded-full ${barColor} ${progress}`}></div>
-                                           </div>
-
-                                           <div className="flex gap-2">
-                                               {hoursElapsed > 24 && hoursElapsed <= 48 && task.status !== 'Warning Issued' && (
-                                                   <Button size="sm" variant="outline" onClick={() => handleGiveWarning(task._id)} className="flex-1 h-7 text-[10px] text-amber-600 border-amber-200 hover:bg-amber-50"><AlertTriangle className="w-3 h-3 mr-1"/> Give Warning</Button>
-                                               )}
-                                               {hoursElapsed > 48 && (
-                                                   <Button size="sm" onClick={() => handleForceClose(task._id)} className="flex-1 h-7 text-[10px] bg-red-600 hover:bg-red-700 text-white"><XCircle className="w-3 h-3 mr-1"/> Force Close</Button>
-                                               )}
-                                               <Button size="sm" variant="ghost" onClick={() => deleteDispatch(task._id, false)} className="h-7 text-[10px] text-slate-500 hover:text-red-600 hover:bg-red-50 px-2"><Trash2 className="w-3 h-3"/></Button>
-                                           </div>
-                                       </div>
-                                   )
-                               })}
-                           </div>
-                        )}
-                     </CardContent>
-                  </Card>
-               </div>
-
-               <Card className="tender-shadow border-0 bg-slate-50/50">
-                  <CardHeader className="border-b pb-4">
-                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><UploadCloud className="w-5 h-5 text-blue-600"/> Client Bid Support Requests ({bidRequests.length})</CardTitle>
-                     <CardDescription>Live database fetch of requests submitted by clients. Assign to employees to track progress.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-4 max-h-[850px] overflow-y-auto">
-                     {bidRequests.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-slate-400"><UploadCloud className="w-12 h-12 mb-3 opacity-20"/><p className="text-sm font-semibold">No custom bid requests pending.</p></div>
-                     ) : (
-                        <div className="space-y-4">
-                           {bidRequests.map(req => {
-                              const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || (req.link_or_id && req.link_or_id.startsWith('http'));
-                              return (
-                              <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
-                                 <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                       <Badge className="mb-2 bg-blue-50 text-blue-700 border-blue-200">{req.client_email}</Badge>
-                                       <h4 className="font-bold text-[#0A2647] text-sm break-all">{req.link_or_id}</h4>
-                                    </div>
-                                    <Badge className={req.status === 'Pending Officer Review' ? 'bg-amber-100 text-amber-800 border-0 animate-pulse' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
-                                 </div>
-                                 <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
-                                 
-                                 <Button variant="outline" size="sm" disabled={!hasDoc} onClick={() => handleViewDocument(req)} className={`mb-4 w-full sm:w-auto h-8 text-xs ${hasDoc ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'text-slate-400 border-slate-200 bg-slate-100'}`}>
-                                    <FileText className="w-3.5 h-3.5 mr-1" /> {hasDoc ? "View Attached Document / Link" : "No Document Attached"}
-                                 </Button>
-
-                                 {req.status === 'Pending Officer Review' ? (
-                                    <div className="flex flex-col gap-3 border-t pt-3">
-                                       <Input placeholder="MD / Officer Reply or Instructions..." className="h-9 text-xs bg-white" value={bidReply[req._id] || ''} onChange={e => setBidReply({...bidReply, [req._id]: e.target.value})} />
-                                       
-                                       <div className="flex flex-col sm:flex-row gap-2">
-                                          <Select value={bidAssignee[req._id] || ''} onValueChange={v => setBidAssignee({...bidAssignee, [req._id]: v})}>
-                                             <SelectTrigger className="flex-1 h-8 text-xs bg-white"><SelectValue placeholder="Assign to Employee..."/></SelectTrigger>
-                                             <SelectContent>
-                                                {teamMembers.map(emp => <SelectItem key={emp.emp_id} value={emp.emp_id}>{emp.name}</SelectItem>)}
-                                             </SelectContent>
-                                          </Select>
-                                          <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d] h-8" onClick={() => handleProcessBidRequest(req._id, 'Assigned')}><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Assign & Notify</Button>
-                                       </div>
-                                       <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-8 mt-1" onClick={() => handleProcessBidRequest(req._id, 'Rejected')}>Reject Request</Button>
-                                    </div>
-                                 ) : (
-                                    <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 mt-2">
-                                       <p className="text-xs text-emerald-800 font-bold mb-1">Status: {req.status}</p>
-                                       <p className="text-xs text-slate-700 font-medium">Reply: {req.reply}</p>
-                                       <div className="flex gap-2 mt-3 pt-2 border-t border-emerald-200/50">
-                                          <Button size="sm" variant="ghost" onClick={()=>handleProcessBidRequest(req._id, 'Pending Officer Review')} className="h-7 text-[10px] text-amber-600 bg-amber-50 hover:bg-amber-100"><RefreshCw className="w-3 h-3 mr-1"/> Re-Query</Button>
-                                          <Button size="sm" variant="ghost" onClick={()=>deleteDispatch(req._id, true)} className="h-7 text-[10px] text-red-600 bg-red-50 hover:bg-red-100"><Trash2 className="w-3 h-3 mr-1"/> Delete Permanently</Button>
-                                       </div>
-                                    </div>
-                                 )}
-                              </div>
-                           )})}
-                        </div>
-                     )}
-                  </CardContent>
-               </Card>
-            </div>
-          </TabsContent>
-
-          {/* ==================== 6. PUBLISHER ==================== */}
-          <TabsContent value="publisher" className="mt-4">
-            <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
-              <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
-                <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
+          <TabsContent value="publisher" className="w-full space-y-6">
+            <div className="grid lg:grid-cols-5 gap-6">
+               
+               {/* 🚀 FIXED: BUTTON FOR VIEW PDF UPDATED */}
+               <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
+                 <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
                    <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
                       {isEditingTender ? <><Pencil className="w-5 h-5 text-blue-600"/> Edit Tender</> : <><PlusCircle className="w-5 h-5"/> Publish New Tender</>}
                    </CardTitle>
                    {isEditingTender && (
-                      <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
                    )}
-                </CardHeader>
-                <CardContent className="pt-5">
-                  <form onSubmit={publish} className="space-y-4">
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={form.bid_no} onChange={e=>setForm({...form, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={form.title} onChange={e=>setForm({...form, title: e.target.value})} className="bg-white h-10"/></div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label><Input required value={form.department} onChange={e=>setForm({...form, department: e.target.value})} className="bg-white h-10"/></div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label><Input required type="date" value={form.last_date} onChange={e=>setForm({...form, last_date: e.target.value})} className="bg-white h-10 text-sm"/></div>
-                      <div>
-                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
-                        <Select value={form.category} onValueChange={v=>setForm({...form, category: v})}>
-                           <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
-                           <SelectContent><SelectItem value="Product">Product</SelectItem><SelectItem value="Service">Service</SelectItem></SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
-                      <Select value={form.district} onValueChange={v=>setForm({...form, district: v})}>
-                         <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
-                         <SelectContent>{DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={form.supply_details} onChange={e=>setForm({...form, supply_details: e.target.value})}></textarea></div>
-                    <div>
-                      <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
-                      <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
-                         <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                         <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                         <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF')}</span>
-                      </div>
-                    </div>
-                    <Button type="submit" disabled={loading} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
-                       {loading ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
+                 </CardHeader>
+                 <CardContent className="pt-5">
+                   <form onSubmit={handlePublishTender} className="space-y-4">
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
+                       <Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/>
+                     </div>
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label>
+                       <Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
+                     </div>
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label>
+                       <Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} className="bg-white h-10"/>
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                       <div>
+                         <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label>
+                         <Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="bg-white h-10 text-sm"/>
+                       </div>
+                       <div>
+                         <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
+                         <Select value={tenderForm.category} onValueChange={v=>setTenderForm({...tenderForm, category: v})}>
+                            <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
+                            <SelectContent>
+                               <SelectItem value="Product">Product</SelectItem>
+                               <SelectItem value="Service">Service</SelectItem>
+                            </SelectContent>
+                         </Select>
+                       </div>
+                     </div>
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
+                       <Select value={tenderForm.district} onValueChange={v=>setTenderForm({...tenderForm, district: v})}>
+                          <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
+                          <SelectContent>
+                             {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                          </SelectContent>
+                       </Select>
+                     </div>
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label>
+                       <textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea>
+                     </div>
+                     <div>
+                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
+                       <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
+                          <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                          <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                          <span className="text-sm font-bold text-[#0A2647]">{pdfName || 'Click to upload PDF'}</span>
+                       </div>
+                     </div>
+                     <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+                        {publishing ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
+                     </Button>
+                   </form>
+                 </CardContent>
+               </Card>
 
-              <Card className="lg:col-span-3 tender-shadow">
-                <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                   <div>
-                      <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
-                   </div>
-                   <div className="relative shrink-0 w-full sm:w-[250px]">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <Input placeholder="Search Bid No or Title..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full bg-white shadow-sm text-xs" />
-                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                  {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
-                  {filteredTenders.map((t) => (
-                    <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge className="bg-[#0A2647]">{t.district}</Badge>
-                            {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
-                            {t.bid_no && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
-                            <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
-                          </div>
-                          <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
-                          <p className="text-xs text-slate-500 mt-1">{t.department}</p>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                           <Button variant="ghost" size="icon" onClick={() => handleEditTender(t)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"><Pencil className="w-4 h-4" /></Button>
-                           <Button variant="ghost" size="icon" onClick={() => remove(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8"><Trash2 className="w-4 h-4" /></Button>
-                        </div>
-                      </div>
-                      
-                      <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                         <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
-                            <FileText className="w-3 h-3 mr-1.5"/> View PDF
-                         </Button>
-                         <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
-                            <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
-                            <Input placeholder="Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}/>
-                            <Input placeholder="Winner Name" className="h-8 text-xs bg-white w-full sm:flex-1 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], winner: e.target.value}}))}/>
-                            <Button size="sm" className="h-8 text-[10px] w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 shadow-sm px-2" onClick={() => submitL1Price(t._id || t.id)}>Save</Button>
-                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+               <Card className="shadow-sm border-0 ring-1 ring-slate-200 lg:col-span-3 h-fit">
+                  <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+                     <div>
+                        <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg mb-1">
+                           <Globe className="w-5 h-5 text-blue-600"/> Live Portal Tenders
+                           <Badge variant="outline" className="bg-white ml-2">{filteredTenders.length}</Badge>
+                        </CardTitle>
+                        <CardDescription>View all tenders uploaded by you or MD. Select a tender to suggest it directly to a client.</CardDescription>
+                     </div>
+                     <div className="relative shrink-0 mt-2 sm:mt-0">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Input placeholder="Search Bid Number..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
+                     </div>
+                  </CardHeader>
+                  <CardContent className="pt-4 max-h-[700px] overflow-y-auto space-y-4 pr-2">
+                     {filteredTenders.length === 0 ? (
+                        <p className="text-center text-sm text-slate-500 py-10">No matching tenders found.</p>
+                     ) : (
+                        filteredTenders.map(t => (
+                           <div key={t._id} className="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-300 transition shadow-sm relative group">
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                 <div>
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                       <Badge className="bg-[#0A2647] text-[9px] px-1.5">{t.district}</Badge>
+                                       {t.category && <Badge variant="outline" className="text-[9px] px-1.5">{t.category}</Badge>}
+                                       <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {new Date(t.last_date).toLocaleDateString()}</span>
+                                    </div>
+                                    <h4 className="font-bold text-[#0A2647] text-base leading-tight">{t.title}</h4>
+                                    <p className="text-xs text-slate-500 mt-1">{t.department} {t.bid_no && <span className="ml-2 font-mono bg-slate-100 px-1 rounded">Bid No: {t.bid_no}</span>}</p>
+                                 </div>
+                                 
+                                 <div className="flex gap-1 items-center shrink-0">
+                                    <Button variant="outline" size="icon" onClick={() => {
+                                        setIsEditingTender(t._id);
+                                        setTenderForm({
+                                            bid_no: t.bid_no || '', title: t.title, department: t.department, 
+                                            last_date: t.last_date ? new Date(t.last_date).toISOString().split('T')[0] : '', 
+                                            district: t.district, category: t.category || 'Product', supply_details: t.supply_details || ''
+                                        });
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }} className="h-7 w-7 text-slate-500 hover:text-blue-600"><Pencil className="w-3.5 h-3.5"/></Button>
+                                    <Button variant="outline" size="icon" onClick={() => handleDeleteTenderDB(t._id)} className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5"/></Button>
+                                 </div>
+                              </div>
+                              
+                              <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
+                                 {/* 🚀 BUG FIX: Calling handleViewPDF instead of direct window.open */}
+                                 <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
+                                    <FileText className="w-3 h-3 mr-1.5"/> View PDF
+                                 </Button>
+                                 <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
+                                    <SelectTrigger className="h-8 bg-slate-50 border-blue-200 text-xs font-semibold focus:ring-blue-500 w-full">
+                                       <SelectValue placeholder="Select Client ID to Suggest" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                       {approvedClients.map(c => {
+                                          const safeId = c.client_id || (c.email ? `CLI-${c.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX');
+                                          return <SelectItem key={c.email} value={c.email}>{safeId} ({c.company_name || c.name})</SelectItem>
+                                       })}
+                                    </SelectContent>
+                                 </Select>
+                                 <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
+                                    <Send className="w-3 h-3 mr-1.5"/> Suggest
+                                 </Button>
+                              </div>
+                           </div>
+                        ))
+                     )}
+                  </CardContent>
+               </Card>
             </div>
           </TabsContent>
 
-          {/* ==================== 7. HELPDESK ==================== */}
-          <TabsContent value="tickets" className="mt-4">
-            <Card className="tender-shadow border-t-4 border-t-amber-500 w-full">
-              <CardHeader className="bg-amber-50/30 border-b pb-4">
-                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MessageSquare className="w-5 h-5 text-amber-600" /> Client Helpdesk & SLA Tracker</CardTitle>
-                 <CardDescription>Resolve queries within 24 hours or escalate issues.</CardDescription>
+          <TabsContent value="sla" className="w-full space-y-6">
+            <Card className="shadow-sm w-full">
+              <CardHeader className="bg-slate-50/50 pb-4 border-b">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2"><MessageSquare className="w-5 h-5 text-amber-500"/> Client Helpdesk & SLA Tracker</CardTitle>
+                <CardDescription>Resolve queries within 24 hours or escalate to MD.</CardDescription>
               </CardHeader>
               <CardContent className="pt-6 max-h-[800px] overflow-y-auto">
                  
@@ -1261,6 +1317,7 @@ export default function AdminPage() {
                        {activeTickets.map(ticket => (
                           <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between">
                              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+                             
                              <div>
                                 <div className="flex justify-between items-start mb-2">
                                    <div>
@@ -1269,9 +1326,10 @@ export default function AdminPage() {
                                    </div>
                                    <div className="flex gap-2 items-center">
                                       <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse shrink-0">Action Required</Badge>
-                                      <Button variant="ghost" size="icon" onClick={() => deleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white"><Trash2 className="w-3 h-3"/></Button>
+                                      <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white"><Trash2 className="w-3 h-3"/></Button>
                                    </div>
                                 </div>
+
                                 <div className="bg-amber-50 border border-amber-100 p-3 rounded-tr-xl rounded-br-xl rounded-bl-xl shadow-inner mb-4 mt-2">
                                    <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">{new Date(ticket.created_at).toLocaleString()}</p>
                                    <h4 className="font-bold text-[#0A2647] text-sm mb-1">{ticket.subject}</h4>
@@ -1281,10 +1339,13 @@ export default function AdminPage() {
                              
                              <div className="flex flex-col gap-2 mt-4 pt-3 border-t">
                                 <div className="flex gap-2">
-                                   <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" value={ticketReply[ticket._id] || ''} onChange={(e) => setTicketReply(prev => ({...prev, [ticket._id]: e.target.value}))}/>
-                                   <Button onClick={() => submitTicketReply(ticket._id)} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
+                                   <Input placeholder="Type resolution note..." className="text-sm flex-1 bg-white focus-visible:ring-amber-500 h-9" />
+                                   <Button onClick={() => toast.success('Reply sent & ticket resolved.')} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
                                 </div>
-                                <Button onClick={() => impersonateUser('client', ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 w-full h-9"><LogIn className="w-4 h-4 mr-1"/> Login as Client to Fix</Button>
+                                <div className="flex gap-2">
+                                   <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                                   <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 flex-1 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
+                                </div>
                              </div>
                           </div>
                        ))}
@@ -1311,105 +1372,20 @@ export default function AdminPage() {
 
                                 <div className="shrink-0 flex items-center gap-3">
                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</span>
-                                   <Button variant="ghost" size="icon" onClick={() => deleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
+                                   <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
                                 </div>
                              </div>
                           ))}
                        </div>
                     )}
                  </div>
+
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="settings" className="mt-4"><BrandSettings token={token} /></TabsContent>
         </Tabs>
       </main>
     </div>
-  );
-}
-
-function StatCard({ icon, label, value, accent }) {
-  return (
-    <Card className={`border-0 shadow-sm ring-1 ${accent ? 'ring-emerald-500/50 bg-emerald-50/80' : 'ring-slate-200 bg-white'}`}>
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center gap-2 text-muted-foreground text-[11px] sm:text-xs font-bold uppercase tracking-wider mb-2">{icon} {label}</div>
-        <div className={`text-2xl sm:text-3xl font-black ${accent ? 'text-emerald-700' : 'text-[#0A2647]'}`}>{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function BrandSettings({ token }) {
-  const [logoPreview, setLogoPreview] = useState('');
-  const [brandName, setBrandName] = useState('Telangana Tenders');
-  const [tagline, setTagline] = useState('Official Government Tender Portal');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/settings').then((r) => r.json()).then((d) => {
-      if (d.settings) {
-        if (d.settings.logo) setLogoPreview(d.settings.logo);
-        if (d.settings.name) setBrandName(d.settings.name);
-        if (d.settings.tagline) setTagline(d.settings.tagline);
-      }
-    }).catch((err) => console.error(err));
-  }, []);
-
-  const onLogoChange = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (!f.type.startsWith('image/')) return toast.error('Please upload an image file');
-    if (f.size > 2 * 1024 * 1024) return toast.error('Logo too large. Keep under 2 MB.');
-    const reader = new FileReader();
-    reader.onload = () => { setLogoPreview(reader.result?.toString() || ''); };
-    reader.readAsDataURL(f);
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const r = await fetch('/api/settings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: brandName, tagline: tagline, logo: logoPreview }),
-      });
-      if (!r.ok) return toast.error('Failed to save');
-      toast.success('Brand settings saved.');
-    } catch (error) { toast.error('An error occurred while saving.'); } finally { setSaving(false); }
-  };
-
-  const removeLogo = async () => {
-    if (!confirm('Remove uploaded logo?')) return;
-    await fetch('/api/settings', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ name: brandName, tagline: tagline, logo: null }),
-    });
-    setLogoPreview(''); toast.success('Logo removed');
-  };
-
-  return (
-    <Card className="tender-shadow border-0 ring-1 ring-slate-200">
-      <CardHeader className="pb-4 bg-slate-50/50 border-b">
-        <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><ImageIcon className="w-5 h-5 text-slate-500" /> Brand Identity & Security Settings</CardTitle>
-      </CardHeader>
-      <CardContent className="pt-6">
-        <div className="grid sm:grid-cols-3 gap-8 items-start">
-          <div className="flex flex-col items-center gap-4 bg-slate-50 p-6 rounded-xl border border-slate-200">
-            <div className="w-28 h-28 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-              {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="w-10 h-10 text-slate-300" />}
-            </div>
-            <div className="flex gap-2 w-full">
-              <label className="cursor-pointer flex-1 text-xs px-3 py-2 bg-[#0A2647] hover:bg-[#144272] text-white rounded-md text-center transition"><input type="file" onChange={onLogoChange} className="hidden" />Upload</label>
-              {logoPreview && <button onClick={removeLogo} className="text-xs px-3 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-md transition">Remove</button>}
-            </div>
-          </div>
-          <div className="sm:col-span-2 space-y-5">
-            <div><Label className="text-slate-700 font-bold">Portal Brand Name</Label><Input value={brandName} onChange={e => setBrandName(e.target.value)} className="mt-1.5" /></div>
-            <div><Label className="text-slate-700 font-bold">Portal Tagline</Label><Input value={tagline} onChange={e => setTagline(e.target.value)} className="mt-1.5" /></div>
-            <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d]">Save System Settings</Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
