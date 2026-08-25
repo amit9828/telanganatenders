@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { useSession, signIn, signOut } from 'next/auth/react';
+// FIXED: Changed 'next/auth/react' to 'next-auth/react'
+import { useSession, signIn, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,6 @@ import { load } from '@cashfreepayments/cashfree-js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
-// FIXED: Added Loader2 and removed Textarea from lucide-react to fix Vercel Build Errors
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
   Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, PhoneCall, Award, TrendingUp, Users, Youtube, Instagram, MessageCircle, Loader2, Star
@@ -568,7 +568,6 @@ export default function App() {
                 </div>
                 <div>
                   <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Your Query</Label>
-                  {/* FIXED: Standard HTML textarea to fix Lucide error */}
                   <textarea required placeholder="What do you need help with?" value={queryForm.query} onChange={e => setQueryForm({...queryForm, query: e.target.value})} className="flex w-full rounded-md bg-white/10 border border-white/20 px-3 py-2 text-white placeholder:text-slate-400 resize-none h-20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                 </div>
                 <Button type="submit" disabled={submittingLead} className="bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black w-full shadow-lg mt-2 h-11">
