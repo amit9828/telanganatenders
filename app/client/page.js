@@ -17,7 +17,8 @@ import {
   Briefcase, CheckCircle2, AlertTriangle, FileText, Clock, ShieldAlert, Send, 
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
-  Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle
+  Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
+  IndianRupee // <--- దీన్ని ఇక్కడ కొత్తగా జత చేయాలి
 } from 'lucide-react';
 
 const DEFAULT_VAULT_DOCS = [
