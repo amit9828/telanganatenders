@@ -11,12 +11,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; // 🚀 Added for Publish Win Modal
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; 
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -73,10 +73,13 @@ export default function EmployeeDashboard() {
   const [editingBid, setEditingBid] = useState(null); 
   const [suggestForm, setSuggestForm] = useState({}); 
 
-  // 🚀 Publish Win Modal State
   const [publishWinModalOpen, setPublishWinModalOpen] = useState(false);
   const [winForm, setWinForm] = useState({ bid_id: null, contract_value: '', validity: '' });
   const [processingWin, setProcessingWin] = useState(false);
+
+  // 🚀 FIX: New States for MD Tasks Reply & Client Vault Docs
+  const [mdTaskReply, setMdTaskReply] = useState({});
+  const [viewClientDocs, setViewClientDocs] = useState(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -89,6 +92,12 @@ export default function EmployeeDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: finalEmail, action: 'LOGIN', details: 'Employee started session on portal.' })
     }).catch(err => console.log('Attendance log failed', err));
+
+    // 🚀 FIX: Live Auto-Refresh every 15 seconds
+    const interval = setInterval(() => {
+        fetchLiveOperationsData(finalEmail);
+    }, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchLiveOperationsData = async (userEmail) => {
@@ -102,8 +111,6 @@ export default function EmployeeDashboard() {
         const tData = await tasksRes.json();
         const allDispatches = tData.dispatches || [];
         setMdTasks(allDispatches.filter(d => d.target_type === 'employee_task'));
-        
-        // 🚀 BUG FIX: Get Suggestions only (These are still pending "Both Agree" handshake)
         setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed' && d.client_reply !== 'Client Accepted the Tender'));
       }
       if (bidsRes.ok) {
@@ -147,35 +154,10 @@ export default function EmployeeDashboard() {
     reader.readAsDataURL(file);
   };
 
+  // 🚀 FIX: Prevent 4MB Network Error by opening PDF directly in browser
   const handleViewPDF = async (tenderId) => {
-    const toastId = toast.loading('Opening PDF Document...');
-    try {
-      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`);
-      const data = await res.json();
-      
-      if (!res.ok) {
-        toast.error(data.error || 'Failed to load PDF', { id: toastId });
-        return;
-      }
-
-      if (data.pdf_base64) {
-        const byteCharacters = atob(data.pdf_base64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], {type: 'application/pdf'});
-        
-        const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, '_blank');
-        toast.success('PDF Opened Successfully', { id: toastId });
-      } else {
-        toast.error('PDF data not found', { id: toastId });
-      }
-    } catch (err) {
-      toast.error('Network Error while opening PDF', { id: toastId });
-    }
+    window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`, '_blank');
+    toast.success('Opening PDF Document...');
   };
 
   const handlePublishTender = async (e) => {
@@ -248,9 +230,7 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // 🚀 BOTH AGREE HANDSHAKE LOGIC: Move from Suggestion to Active Bid Tracker ONLY if Client accepted.
   const handleConvertSuggestionToBid = async (sug) => {
-      // Security Check
       if (sug.client_reply !== 'Client Accepted the Tender') {
          return toast.error("Cannot move to tracker until the client actively accepts the suggestion.");
       }
@@ -269,14 +249,12 @@ export default function EmployeeDashboard() {
       }
 
       try {
-          // 1. Add to Bids Collection
           const res = await fetch('/api/bids', {
              method: 'POST', headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ bid_no: extractedBidNo, description: extractedDesc, status: 'Bid Allocated', client_email: sug.target_id, submitted_date: '' })
           });
           
           if (res.ok) {
-             // 2. Mark Suggestion as fully Completed so it leaves the suggestions board
              await fetch('/api/dispatches/complete', {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ task_id: sug._id })
@@ -364,7 +342,6 @@ export default function EmployeeDashboard() {
      } catch(e) { toast.error("Network error"); }
   }
 
-  // 🚀 PUBLISH WIN TO CLIENT LEDGER
   const handlePublishWin = async (e) => {
       e.preventDefault();
       if (!winForm.contract_value || !winForm.validity) return toast.error("Please fill in contract value and validity.");
@@ -456,7 +433,6 @@ export default function EmployeeDashboard() {
   };
 
   const updateBidStatus = async (id, newStatus) => {
-    // If setting to WON, open the modal instead of instantly updating
     if (newStatus === 'Won') {
         setWinForm({ bid_id: id, contract_value: '', validity: '' });
         setPublishWinModalOpen(true);
@@ -480,16 +456,19 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // 🚀 FIX: Employee Reply to MD Tasks logic
   const markTaskDone = async (taskId) => {
-    setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed' } : t));
+    const replyText = mdTaskReply[taskId] || 'Completed by Employee';
+    setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed', employee_reply: replyText } : t));
     try {
-      const res = await fetch('/api/dispatches/complete', {
+      const res = await fetch('/api/dispatches/update', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId })
+        body: JSON.stringify({ task_id: taskId, status: 'Completed', reply: replyText })
       });
       if (res.ok) {
-        toast.success('Task marked completed & removed.');
+        toast.success('Task marked completed & replied to MD.');
         logActivity('COMPLETED_TASK', `Task ${taskId} marked as done`);
+        setMdTaskReply(prev => ({...prev, [taskId]: ''}));
         fetchLiveOperationsData(email); 
       }
     } catch (err) {
@@ -639,16 +618,23 @@ export default function EmployeeDashboard() {
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
               ) : (
                  mdTasks.map(task => (
-                    <div key={task._id || task.id} className="flex justify-between items-center bg-slate-50 border p-3 rounded-lg shadow-sm">
-                       <div>
-                          <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>Priority Task</Badge>
-                          <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
-                          <p className="text-xs text-slate-500 mt-1">{task.message}</p>
+                    // 🚀 FIX: Flex-col wrapper to accommodate the text box neatly
+                    <div key={task._id || task.id} className="flex flex-col bg-slate-50 border p-3 rounded-lg shadow-sm">
+                       <div className="flex justify-between items-start">
+                          <div>
+                             <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>Priority Task</Badge>
+                             <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
+                             <p className="text-xs text-slate-500 mt-1">{task.message}</p>
+                          </div>
+                          {task.status === 'Completed' && <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>}
                        </div>
-                       {task.status !== 'Completed' ? (
-                          <Button size="sm" onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0">Mark Done</Button>
-                       ) : (
-                          <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>
+                       
+                       {/* 🚀 FIX: Employee Reply Textbox & Button added here */}
+                       {task.status !== 'Completed' && (
+                          <div className="flex flex-col sm:flex-row gap-2 mt-3 border-t border-slate-200 pt-3">
+                             <Input placeholder="Type your reply to MD..." className="h-8 text-xs bg-white flex-1" value={mdTaskReply[task._id || task.id] || ''} onChange={(e) => setMdTaskReply({...mdTaskReply, [task._id || task.id]: e.target.value})} />
+                             <Button size="sm" onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Send Reply & Close</Button>
+                          </div>
                        )}
                     </div>
                  ))
@@ -883,7 +869,6 @@ export default function EmployeeDashboard() {
                                           <h4 className="font-bold text-[#0A2647] mt-1 mb-2 text-sm leading-relaxed border border-slate-100 bg-slate-50 p-3 rounded-md">
                                              {displayDesc}
                                           </h4>
-                                          {/* 🚀 BUG FIX: Display client's response if any */}
                                           {sug.client_reply ? (
                                               <Badge className={`w-full justify-center ${sug.client_reply.includes('Accepted') ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
                                                   Client Status: {sug.client_reply}
@@ -893,7 +878,6 @@ export default function EmployeeDashboard() {
                                           )}
                                        </div>
                                        <div className="flex gap-2 border-t border-slate-100 pt-3 mt-3">
-                                          {/* 🚀 "BOTH AGREE" LOGIC IMPLEMENTATION */}
                                           <Button size="sm" onClick={() => handleConvertSuggestionToBid(sug)} className={`flex-1 h-9 text-xs shadow-sm ${sug.client_reply === 'Client Accepted the Tender' ? 'bg-[#16a34a] hover:bg-[#15803d]' : 'bg-slate-300 cursor-not-allowed opacity-50'}`}>
                                              <CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Add to Tracker
                                           </Button>
@@ -1050,16 +1034,16 @@ export default function EmployeeDashboard() {
                                 </div>
                              </div>
                              
+                             {/* 🚀 FIX: Added "View Vault Docs" Button to view Client's Document Uploads */}
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
+                                <Button size="sm" onClick={() => setViewClientDocs(client)} variant="outline" className="flex-1 text-purple-600 border-purple-200 hover:bg-purple-50 h-9">
+                                   <FileText className="w-4 h-4 mr-2" /> View Vault Docs
+                                </Button>
                                 {client.drive_folder_link || client.drive_link ? (
                                    <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
-                                ) : (
-                                   <Button size="sm" onClick={() => toast.info('MD must sync drive first')} variant="outline" className="flex-1 text-slate-400 border-slate-200 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> No Drive Setup
-                                   </Button>
-                                )}
+                                ) : null}
                                 <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -1267,7 +1251,7 @@ export default function EmployeeDashboard() {
                          </div>
                          <div className="flex flex-col gap-2">
                             <Button variant="ghost" size="icon" onClick={() => handleEditTender(t)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"><Pencil className="w-4 h-4" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => remove(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8"><Trash2 className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTenderDB(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8"><Trash2 className="w-4 h-4" /></Button>
                          </div>
                        </div>
                        
@@ -1368,7 +1352,7 @@ export default function EmployeeDashboard() {
 
                                 <div className="shrink-0 flex items-center gap-3">
                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</span>
-                                   <Button variant="ghost" size="icon" onClick={() => deleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
+                                   <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
                                 </div>
                              </div>
                           ))}
@@ -1382,7 +1366,6 @@ export default function EmployeeDashboard() {
         </Tabs>
       </main>
 
-      {/* 🚀 NEW: PUBLISH WIN MODAL */}
       <Dialog open={publishWinModalOpen} onOpenChange={setPublishWinModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1407,6 +1390,44 @@ export default function EmployeeDashboard() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🚀 NEW: CLIENT VAULT DOCUMENTS MODAL */}
+      <Dialog open={!!viewClientDocs} onOpenChange={() => setViewClientDocs(null)}>
+        <DialogContent className="sm:max-w-2xl bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black text-[#0A2647] flex items-center gap-2"><FolderPlus className="w-5 h-5 text-purple-600"/> Client Vault Documents</DialogTitle>
+            <DialogDescription>Documents securely uploaded by {viewClientDocs?.company_name}</DialogDescription>
+          </DialogHeader>
+          <div className="grid sm:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1">
+            {!viewClientDocs?.vault_docs || viewClientDocs.vault_docs.length === 0 ? (
+              <p className="text-sm text-slate-500 col-span-2 text-center py-6">No documents uploaded by this client yet.</p>
+            ) : (
+              viewClientDocs.vault_docs.map(doc => (
+                 <div key={doc.id} className="border border-slate-200 p-3 rounded-lg bg-slate-50 flex flex-col justify-between gap-3 shadow-sm hover:border-purple-300 transition">
+                    <div>
+                       <p className="font-bold text-slate-800 text-sm">{doc.name}</p>
+                       <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
+                       <Badge className={`mt-2 ${doc.status === 'verified' ? 'bg-emerald-100 text-emerald-800' : doc.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'} border-0`}>{doc.status}</Badge>
+                    </div>
+                    <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => {
+                        if (doc.file_base64) {
+                            const byteCharacters = atob(doc.file_base64);
+                            const byteNumbers = new Array(byteCharacters.length);
+                            for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                            const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+                            window.open(URL.createObjectURL(blob), '_blank');
+                        } else {
+                            toast.error("File is corrupted or not a valid PDF.");
+                        }
+                    }}>
+                       <Eye className="w-4 h-4 mr-2"/> View Document
+                    </Button>
+                 </div>
+              ))
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
