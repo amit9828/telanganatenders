@@ -19,7 +19,7 @@ import {
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
-  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2 // 🚀 FIX: IMPORTED Building2 HERE
+  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool // 🚀 FIX: Added Building2 and PenTool
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -56,7 +56,7 @@ export default function AdminPage() {
   const [tenders, setTenders] = useState([]);
   const [stats, setStats] = useState({ tenders: 0, users: 0, payments: 0, revenue: 0 });
   const [tickets, setTickets] = useState([]);
-  const [guestQueries, setGuestQueries] = useState([]); // 🚀 Added state for Guest Queries
+  const [guestQueries, setGuestQueries] = useState([]);
   const [ticketReply, setTicketReply] = useState({}); 
   const [l1Data, setL1Data] = useState({}); 
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -124,7 +124,7 @@ export default function AdminPage() {
         fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
         fetch(`/api/employees?t=${Date.now()}`, { headers }), 
         fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }),
-        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) // 🚀 FETCH GUEST QUERIES
+        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) 
       ]);
       
       if (tRes.status === 401) return logout();
@@ -138,12 +138,12 @@ export default function AdminPage() {
       const dispJson = dispRes.ok ? await dispRes.json() : { dispatches: [] };
       const empJson = empRes.ok ? await empRes.json() : { team: [] };
       const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
-      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; // 🚀 Extract Guest Queries
+      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; 
 
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
       setTickets(tkJson.tickets || []);
-      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); // 🚀 Save Guest Queries
+      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); 
       setPendingUsers(uJson.users || []);
       setApprovedClients(aJson.users || []); 
       setBidRequests(reqJson.requests || []);
@@ -151,7 +151,6 @@ export default function AdminPage() {
       setTeamMembers(empJson.team || []);
       setLedgerTxns(ledgerJson.transactions || []);
       
-      // 🚀 FIX: Live Net Balance (Manual + Cashfree Online)
       const onlineRevenue = sJson.revenue || 0;
       setLedgerBalance((ledgerJson.balance || 0) + onlineRevenue);
 
@@ -160,11 +159,10 @@ export default function AdminPage() {
          total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
       })));
       
-      // 🚀 FIX: Live Employee Efficiency Calculation
       setEmployeeReports((empJson.team || []).map(e => {
          const completedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
          const assignedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id).length || 1;
-         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); // Base 20%
+         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); 
          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
       }));
     } catch (err) { console.error('Refresh failed:', err); }
@@ -297,7 +295,6 @@ export default function AdminPage() {
 
   const impersonateUser = async (type, email_or_id) => {
     toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
-    
     try {
         const res = await signIn('impersonate', { 
            email: email_or_id, 
@@ -570,6 +567,7 @@ export default function AdminPage() {
             <TabsTrigger value="settings" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Setup</TabsTrigger>
           </TabsList>
 
+          {/* ==================== 1. MASTER REPORTS ==================== */}
           <TabsContent value="reports" className="space-y-4">
             <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
                <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
@@ -612,7 +610,7 @@ export default function AdminPage() {
                                 <tr key={emp.id} className="hover:bg-slate-50">
                                    <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
                                    <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
-                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
+                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
                                 </tr>
                              ))}
                           </tbody>
@@ -645,7 +643,9 @@ export default function AdminPage() {
             </div>
           </TabsContent>
 
+          {/* ==================== 2. CLIENT CRM & VAULT VERIFICATION ==================== */}
           <TabsContent value="clients" className="mt-4">
+            
             <Card className="tender-shadow border-t-4 border-t-orange-500 mb-6">
               <CardHeader className="bg-orange-50/50 border-b pb-4">
                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Database className="w-5 h-5 text-orange-600" /> Pending Vault Approvals</CardTitle>
@@ -818,6 +818,7 @@ export default function AdminPage() {
             </Card>
           </TabsContent>
 
+          {/* ==================== 3. FINANCE HUB ==================== */}
           <TabsContent value="finance" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6 mb-6">
               <Card className="shadow-sm border-t-4 border-t-blue-600 h-fit">
@@ -1495,28 +1496,30 @@ function StatCard({ icon, label, value, accent }) {
 function BrandSettings({ token }) {
   const [logoPreview, setLogoPreview] = useState('');
   const [gemLogoPreview, setGemLogoPreview] = useState('');
+  const [mdSignaturePreview, setMdSignaturePreview] = useState(''); // 🚀 NEW STATE FOR SIGNATURE
   const [brandName, setBrandName] = useState('Telangana Tenders');
   const [tagline, setTagline] = useState('Official Government Tender Portal');
   const [visionText, setVisionText] = useState('');
   const [banners, setBanners] = useState([]);
   const [leaders, setLeaders] = useState([]);
-  const [clients, setClients] = useState([]); // 🚀 NEW: State for Clients Showcase
+  const [clients, setClients] = useState([]); 
   const [saving, setSaving] = useState(false);
 
   const [newLeader, setNewLeader] = useState({ name: '', role: '', image: '', phone: '', email: '' });
-  const [newClient, setNewClient] = useState({ client_name: '', company_name: '', udyam_no: '', image: '' }); // 🚀 NEW: Form for Clients
+  const [newClient, setNewClient] = useState({ client_name: '', company_name: '', udyam_no: '', image: '' });
 
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => {
       if (d.settings) {
         if (d.settings.logo) setLogoPreview(d.settings.logo);
         if (d.settings.gem_logo) setGemLogoPreview(d.settings.gem_logo);
+        if (d.settings.md_signature) setMdSignaturePreview(d.settings.md_signature); // 🚀 LOAD SIGNATURE
         if (d.settings.name) setBrandName(d.settings.name);
         if (d.settings.tagline) setTagline(d.settings.tagline);
         if (d.settings.vision_text) setVisionText(d.settings.vision_text);
         if (d.settings.banners) setBanners(d.settings.banners);
         if (d.settings.leaders) setLeaders(d.settings.leaders);
-        if (d.settings.clients) setClients(d.settings.clients); // 🚀 NEW: Load Clients
+        if (d.settings.clients) setClients(d.settings.clients);
       }
     }).catch((err) => console.error(err));
   }, []);
@@ -1557,7 +1560,6 @@ function BrandSettings({ token }) {
     setLeaders(prev => prev.filter((_, i) => i !== index));
   };
 
-  // 🚀 NEW: Add & Remove Clients Logic
   const addClient = () => {
     if (!newClient.client_name || !newClient.company_name || !newClient.image) return toast.error('Client Name, Company, and Photo are required!');
     setClients(prev => [...prev, newClient]);
@@ -1578,10 +1580,11 @@ function BrandSettings({ token }) {
         tagline: tagline, 
         logo: logoPreview, 
         gem_logo: gemLogoPreview,
+        md_signature: mdSignaturePreview, // 🚀 SAVE SIGNATURE TO DB
         vision_text: visionText,
         banners: banners,
         leaders: leaders,
-        clients: clients // 🚀 NEW: Save Clients to DB
+        clients: clients 
       };
 
       const r = await fetch('/api/settings', {
@@ -1602,27 +1605,41 @@ function BrandSettings({ token }) {
         </CardHeader>
         <CardContent className="pt-6">
           <div className="grid lg:grid-cols-2 gap-8 items-start">
-            <div className="flex gap-4">
-               <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
-                 <p className="text-xs font-bold text-slate-500 uppercase">Main Logo</p>
-                 <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-                   {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
-                 </div>
-                 <div className="flex gap-2 w-full">
-                   <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setLogoPreview)} className="hidden" />Upload</label>
-                   {logoPreview && <button onClick={() => {if(confirm('Remove?')) setLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
-                 </div>
+            <div className="flex flex-col gap-4">
+               <div className="flex gap-4">
+                  <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
+                    <p className="text-xs font-bold text-slate-500 uppercase">Main Logo</p>
+                    <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                      {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
+                    </div>
+                    <div className="flex gap-2 w-full">
+                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setLogoPreview)} className="hidden" />Upload</label>
+                      {logoPreview && <button onClick={() => {if(confirm('Remove?')) setLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
+                    <p className="text-xs font-bold text-slate-500 uppercase">GeM / Partner Logo</p>
+                    <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                      {gemLogoPreview ? <img src={gemLogoPreview} alt="gem logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
+                    </div>
+                    <div className="flex gap-2 w-full">
+                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setGemLogoPreview)} className="hidden" />Upload</label>
+                      {gemLogoPreview && <button onClick={() => {if(confirm('Remove?')) setGemLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                    </div>
+                  </div>
                </div>
                
+               {/* 🚀 NEW: MD SIGNATURE UPLOAD */}
                <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
-                 <p className="text-xs font-bold text-slate-500 uppercase">GeM / Partner Logo</p>
-                 <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-                   {gemLogoPreview ? <img src={gemLogoPreview} alt="gem logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
-                 </div>
-                 <div className="flex gap-2 w-full">
-                   <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setGemLogoPreview)} className="hidden" />Upload</label>
-                   {gemLogoPreview && <button onClick={() => {if(confirm('Remove?')) setGemLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
-                 </div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">MD Signature (For Agreements)</p>
+                  <div className="w-full h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                    {mdSignaturePreview ? <img src={mdSignaturePreview} alt="MD Signature" className="w-full h-full object-contain p-2" /> : <PenTool className="w-8 h-8 text-slate-300" />}
+                  </div>
+                  <div className="flex gap-2 w-full">
+                    <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setMdSignaturePreview)} className="hidden" />Upload</label>
+                    {mdSignaturePreview && <button onClick={() => {if(confirm('Remove?')) setMdSignaturePreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                  </div>
                </div>
             </div>
             
@@ -1700,7 +1717,6 @@ function BrandSettings({ token }) {
         </CardContent>
       </Card>
 
-      {/* 🚀 NEW: OUR CLIENTS SHOWCASE SETTINGS */}
       <Card className="tender-shadow border-0 ring-1 ring-slate-200">
         <CardHeader className="pb-4 bg-slate-50/50 border-b">
           <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Building2 className="w-5 h-5 text-emerald-600" /> "Our Clients" Showcase</CardTitle>
