@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,16 +15,16 @@ import { toast } from 'sonner';
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
   Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, Award, TrendingUp, Loader2, Star,
-  FileBadge, Activity
+  FileBadge, Activity, Eye, User, Sparkles, X
 } from 'lucide-react';
 
 const TS_DISTRICTS = ['Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy', 'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy', 'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad'];
 const AP_DISTRICTS = ['Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore', 'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru', 'Srikakulam', 'Vizianagaram', 'Prakasam'];
 
 const PLANS = [
-  { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
-  { id: 'month', name: 'Monthly Premium', price: 149, desc: 'Auto-renews every 30 days', perks: ['Every tender unlocked', 'Full archive access', 'Cancel anytime'], cta: 'Subscribe ₹149/mo', highlight: true },
-  { id: 'year', name: 'Yearly Premium', price: 1499, desc: 'Save big on yearly', perks: ['Everything in Monthly', 'Save ₹289 vs 12× monthly'], cta: 'Subscribe ₹1499/yr' },
+  { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
+  { id: 'month', name: 'Monthly Premium', price: 149, desc: 'Auto-renews every 30 days', mode: 'subscription', perks: ['Every tender unlocked', 'Full archive access', 'Cancel anytime'], cta: 'Subscribe ₹149/mo', highlight: true },
+  { id: 'year', name: 'Yearly Premium', price: 1499, desc: 'Save big on yearly', mode: 'subscription', perks: ['Everything in Monthly', 'Save ₹289 vs 12× monthly', 'Cancel anytime'], cta: 'Subscribe ₹1499/yr' },
 ];
 
 const monthName = (m) => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m];
@@ -36,6 +37,7 @@ export default function App() {
 
   const [userData, setUserData] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [subscription, setSubscription] = useState(null);
   
   // Auth Modals
   const [mainLoginModal, setMainLoginModal] = useState(false);
@@ -52,7 +54,7 @@ export default function App() {
   const [onboardForm, setOnboardForm] = useState({
     client_name: '', company_name: '', phone: '', company_type: 'Proprietor (Individual)', service: '', 
     has_gst: false, has_esi: false, has_epf: false, has_iso: false, has_bank: false, has_pan: false, 
-    has_aadhar: false, has_dsc: false, has_ifsc: false, has_fssai: false, has_cer: false, has_turnover: false, has_annual_returns: false
+    has_aadhar: false, has_dsc: false, has_ifsc: false, has_fssai: false, has_cer: false, has_turnover: false, has_annual_returns: false, has_msme: false
   });
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
 
@@ -98,7 +100,7 @@ export default function App() {
 
   const [policyModal, setPolicyModal] = useState(null);
 
-  // Auto-Slide Logic for Banners (LIVE)
+  // Auto-Slide Logic for Banners
   useEffect(() => {
     if (brandSettings.banners && brandSettings.banners.length > 0) {
       const bannerTimer = setInterval(() => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length), 5000);
@@ -113,16 +115,20 @@ export default function App() {
     if(brandSettings.banners?.length > 0) setActiveBanner(p => (p + 1) % brandSettings.banners.length);
   }
 
-  // URL Intent
+  // URL Intent Tracking (Guarantees data won't be lost after Google redirect)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const urlIntent = urlParams.get('intent');
       if (urlIntent) {
-        localStorage.setItem('tt_intent', urlIntent); setIntent(urlIntent);
-        const newUrl = new URL(window.location.href); newUrl.searchParams.delete('intent');
+        localStorage.setItem('tt_intent', urlIntent); 
+        setIntent(urlIntent);
+        const newUrl = new URL(window.location.href); 
+        newUrl.searchParams.delete('intent');
         window.history.replaceState({}, document.title, newUrl.pathname + newUrl.search);
-      } else { setIntent(localStorage.getItem('tt_intent') || ''); }
+      } else { 
+        setIntent(localStorage.getItem('tt_intent') || ''); 
+      }
     }
   }, []);
 
@@ -135,11 +141,25 @@ export default function App() {
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
-      setEmail(e); localStorage.setItem('tt_email', e);
-      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, { cache: 'no-store' })
-        .then((r) => r.json()).then((d) => { setUserData(d); setLoadingUser(false); }).catch(() => setLoadingUser(false));
+      setEmail(e); 
+      localStorage.setItem('tt_email', e);
+      fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, { 
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
+        .then((r) => r.json()).then((d) => { 
+          setUserData(d); 
+          setSubscription(d.subscription || null);
+          setLoadingUser(false); 
+        }).catch(() => setLoadingUser(false));
     } else if (status === 'unauthenticated') {
-      setEmail(''); setUserData(null); setLoadingUser(false);
+      if (typeof window !== 'undefined') localStorage.removeItem('tt_email');
+      setEmail(''); 
+      setUserData(null); 
+      setLoadingUser(false);
     }
   }, [session, status]);
 
@@ -160,7 +180,7 @@ export default function App() {
     await signOut({ callbackUrl: '/' }); 
   };
 
-  // LIVE API: Fetch Tenders based on Filter (INCLUDING MONTH)
+  // LIVE API: Fetch Tenders based on Filter (INCLUDING SCOPE ALL FOR SEARCH)
   const fetchTenders = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return; 
     setLoading(true);
@@ -168,17 +188,23 @@ export default function App() {
       const params = new URLSearchParams();
       if (district !== 'all') params.set('district', district);
       if (category !== 'all') params.set('category', category);
-      params.set('month', String(month)); params.set('year', String(year));
-      if (searchQ.trim()) params.set('q', searchQ.trim());
+      params.set('month', String(month)); 
+      params.set('year', String(year));
+      if (searchQ.trim()) {
+        params.set('q', searchQ.trim());
+        params.set('scope', 'all'); // Deep connection from code 2
+      }
       const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
-      const d = await r.json(); setTenders(d.tenders || []);
+      const d = await r.json(); 
+      setTenders(d.tenders || []);
     } finally { setLoading(false); }
   };
 
   const fetchCalendar = async () => {
     if (intent === 'client' && status === 'authenticated' && (!userData || !userData.onboarding_complete)) return;
     const r = await fetch(`/api/tenders/calendar?month=${month}&year=${year}&t=${Date.now()}`, { cache: 'no-store' });
-    const d = await r.json(); setCalDays(d.days || {});
+    const d = await r.json(); 
+    setCalDays(d.days || {});
   };
 
   useEffect(() => { fetchTenders(); fetchCalendar(); }, [month, year, district, category, searchQ]);
@@ -208,7 +234,6 @@ export default function App() {
     signIn('google', { callbackUrl: `${window.location.origin}/?intent=subscribe` }, { prompt: 'select_account' });
   };
 
-  // 🚀 Employee Login redirects to NEW TAB
   const handleEmployeeLogin = async (e) => {
     e.preventDefault(); setEmpLoading(true);
     try {
@@ -216,14 +241,14 @@ export default function App() {
       const d = await r.json();
       if (r.ok) { 
         localStorage.setItem('tt_admin', d.token); 
-        window.open('/admin', '_blank'); // NEW TAB
+        window.open('/admin', '_blank');
         setEmpModalOpen(false);
         return; 
       } 
       if (empPwd === 'emp123') { 
         localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); 
         localStorage.setItem('tt_role', 'employee'); 
-        window.open('/employee', '_blank'); // NEW TAB
+        window.open('/employee', '_blank');
         setEmpModalOpen(false);
         return; 
       }
@@ -231,7 +256,6 @@ export default function App() {
     } catch (err) { toast.error('Login failed'); } finally { setEmpLoading(false); }
   };
 
-  // 🚀 Live Client Pre-registration API
   const handleClientReg = async (e) => {
     e.preventDefault();
     if (!clientRegForm.phone || clientRegForm.phone.length < 10) return toast.error("Enter a valid phone number");
@@ -244,7 +268,6 @@ export default function App() {
     } catch (err) { toast.error("Failed to register. Try again."); } finally { setSubmittingClientReg(false); }
   };
 
-  // 🚀 Live Guest Query API (SMS Request)
   const handleGuestQuery = async (e) => {
     e.preventDefault();
     if (!queryForm.phone || queryForm.phone.length < 10) return toast.error("Enter a valid phone number");
@@ -268,20 +291,34 @@ export default function App() {
     const d = await r.json(); setPdfData(d);
   };
 
-  // 🚀 Live Cashfree API
+  // Automated Cashfree Subscriptions Integration (From Code 2)
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
     setBuying(true); setGuestPayModal(false);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const isSubscription = planId === 'month' || planId === 'year';
+    
     try {
-      const endpoint = (planId === 'month' || planId === 'year') ? '/api/subscription/create' : '/api/payment/order';
+      const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
       const r1 = await fetch(endpoint, { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ email: userEmail, phone: userPhone, plan: planId, tenderId: pendingTender?._id || pendingTender?.id }) 
       });
       const d1 = await r1.json();
-      if (!r1.ok) return toast.error(d1.error || 'Failed to initialize payment');
+      
+      if (!r1.ok || (!d1.payment_session_id && !d1.order?.payment_session_id)) {
+         toast.error(d1.error || 'Failed to initialize payment');
+         setBuying(false);
+         return;
+      }
       
       const cashfree = await load({ mode: "production" });
-      await cashfree.checkout({ paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id, returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}" });
+      const checkoutOptions = {
+        paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
+        returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}",
+      };
+      
+      await cashfree.checkout(checkoutOptions);
     } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
   };
 
@@ -301,6 +338,7 @@ export default function App() {
     executePayment('single', guestPayForm.email, guestPayForm.phone);
   };
 
+  // Full Database Automation Form Submission (From Code 2)
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
@@ -308,7 +346,17 @@ export default function App() {
     try {
       await fetch('/api/users/profile', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, client_name: onboardForm.client_name, company_name: onboardForm.company_name, phone: onboardForm.phone, company_type: onboardForm.company_type, service_category: onboardForm.service, documents: { ...onboardForm }, status: 'pending' })
+        body: JSON.stringify({ 
+          email, client_name: onboardForm.client_name, company_name: onboardForm.company_name, phone: onboardForm.phone, 
+          company_type: onboardForm.company_type, service_category: onboardForm.service, 
+          documents: { 
+            has_gst: onboardForm.has_gst, has_esi: onboardForm.has_esi, has_epf: onboardForm.has_epf, has_iso: onboardForm.has_iso,
+            has_bank: onboardForm.has_bank, has_pan: onboardForm.has_pan, has_aadhar: onboardForm.has_aadhar, has_dsc: onboardForm.has_dsc,
+            has_ifsc: onboardForm.has_ifsc, has_fssai: onboardForm.has_fssai, has_cer: onboardForm.has_cer, 
+            has_turnover: onboardForm.has_turnover, has_annual_returns: onboardForm.has_annual_returns, has_msme: onboardForm.has_msme
+          }, 
+          status: 'pending' // STRICT: Always pending for new clients
+        })
       });
       toast.success('Profile created successfully! Sent for MD Approval.');
       setUserData(prev => ({ ...prev, onboarding_complete: true, is_approved: false }));
@@ -339,6 +387,8 @@ export default function App() {
                       <option value="Proprietor (Individual)">Proprietor (Individual)</option>
                       <option value="Partnership">Partnership</option>
                       <option value="Private Limited">Private Limited</option>
+                      <option value="Public Limited">Public Limited</option>
+                      <option value="LLP">LLP</option>
                     </select>
                   </div>
                   <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
@@ -349,7 +399,17 @@ export default function App() {
                     <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card</label>
                     <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate</label>
                     <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_bank} onChange={e => setOnboardForm({...onboardForm, has_bank: e.target.checked})} /> Bank Account</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_ifsc} onChange={e => setOnboardForm({...onboardForm, has_ifsc: e.target.checked})} /> IFSC Details</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate</label>
                     <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_dsc} onChange={e => setOnboardForm({...onboardForm, has_dsc: e.target.checked})} /> DSC Class 3</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_fssai} onChange={e => setOnboardForm({...onboardForm, has_fssai: e.target.checked})} /> FSSAI</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.</label>
+                    <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_annual_returns} onChange={e => setOnboardForm({...onboardForm, has_annual_returns: e.target.checked})} /> Annual Returns</label>
                   </div>
                 </div>
                 <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-6 shadow-sm">
@@ -387,7 +447,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20 relative font-sans w-full overflow-x-hidden">
       
-      {/* 🚀 HEADER WITH BIGGER GeM LOGO */}
+      {/* 🚀 HEADER WITH SUBSCRIPTION BADGE */}
       <header className="border-b bg-white sticky top-0 z-40 shadow-sm w-full">
         <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -405,7 +465,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* 🚀 GeM Logo & Bidding Service Text ENLARGED */}
             <div className="hidden lg:flex flex-col items-end border-r pr-4 mr-1 border-slate-200">
               {brandSettings.gem_logo ? (
                  <img src={brandSettings.gem_logo} alt="GeM Logo" className="h-14 md:h-16 object-contain" />
@@ -414,6 +473,13 @@ export default function App() {
               )}
               <span className="text-xs font-black text-[#0A2647] uppercase mt-1 tracking-wide">Bidding Service</span>
             </div>
+
+            {subscription && subscription.status === 'active' ? (
+              <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white text-[10px] sm:text-xs">
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                {subscription.plan === 'year' ? 'Pro' : 'Monthly'}
+              </Badge>
+            ) : null}
 
             {status === 'authenticated' ? (
               <div className="flex items-center gap-3">
@@ -498,7 +564,6 @@ export default function App() {
         {/* Left Column: Tenders List */}
         <div className="lg:col-span-3 space-y-6 w-full min-w-0">
           <div className="flex items-center justify-between">
-            {/* 🚀 FIXED: Removed (August) Brackets */}
             <h3 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
               {appliedDay ? `Closing on ${appliedDay} ${monthName(month - 1)}` : `Active Tenders`}
             </h3>
@@ -809,12 +874,47 @@ export default function App() {
       </Dialog>
 
       <Dialog open={pdfModal} onOpenChange={setPdfModal}>
-        <DialogContent className="max-w-4xl w-[95vw] h-[90vh] flex flex-col p-4">
-           {pdfData?.pdf_base64 ? (
-             <iframe src={`data:application/pdf;base64,${pdfData.pdf_base64}`} className="w-full h-full rounded border" />
-           ) : (
-             <div className="flex-1 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-600"/></div>
-           )}
+        <DialogContent className="max-w-4xl w-[95vw] h-[90vh] flex flex-col p-4 sm:p-6">
+          <DialogHeader>
+             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg pr-6">
+                <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span className="truncate">{pdfData ? pdfData.title : 'Loading Document...'}</span>
+             </DialogTitle>
+             {pdfData?.watermarked && (
+               <div className="flex flex-col sm:flex-row items-center gap-2 p-3 bg-emerald-50 rounded border border-emerald-100 mt-2 shadow-sm">
+                 <div className="flex items-center gap-2 border-b sm:border-b-0 sm:border-r border-emerald-200 pb-2 sm:pb-0 sm:pr-3">
+                   {brandSettings.logo && <img src={brandSettings.logo} className="w-6 h-6 object-contain" alt="Logo" />}
+                   <span className="font-bold text-[#0A2647] text-sm">{brandSettings.name}</span>
+                 </div>
+                 <div className="flex items-center gap-1 text-emerald-800 text-xs font-medium">
+                   <Lock className="w-3 h-3" />
+                   <span>Licensed to: <strong>{email || guestPayForm.email}</strong></span>
+                 </div>
+               </div>
+             )}
+          </DialogHeader>
+          <div className="flex-1 rounded-md border overflow-hidden bg-slate-100 flex items-center justify-center">
+             {!pdfData ? (
+               <div className="flex flex-col items-center justify-center p-10">
+                 <Loader2 className="w-12 h-12 text-emerald-600 animate-spin mb-4" />
+                 <p className="text-[#0A2647] font-semibold text-lg">Fetching your PDF...</p>
+                 <p className="text-muted-foreground text-sm">Please wait a moment...</p>
+               </div>
+             ) : pdfData.pdf_base64 ? (
+               <iframe title="tender-pdf" src={`data:application/pdf;base64,${pdfData.pdf_base64}`} className="w-full h-full" />
+             ) : (
+               <div className="p-10 text-center text-muted-foreground">No PDF uploaded for this tender yet.</div>
+             )}
+          </div>
+          <DialogFooter>
+             {pdfData?.pdf_base64 && (
+               <a href={`data:application/pdf;base64,${pdfData.pdf_base64}`} download={pdfData.pdf_filename} className="w-full sm:w-auto">
+                 <Button className="bg-[#0A2647] hover:bg-[#144272] w-full text-white font-bold">
+                   Download Watermarked PDF
+                 </Button>
+               </a>
+             )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
