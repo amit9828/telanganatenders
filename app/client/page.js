@@ -18,7 +18,7 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee // <--- దీన్ని ఇక్కడ కొత్తగా జత చేయాలి
+  IndianRupee, PenTool
 } from 'lucide-react';
 
 const DEFAULT_VAULT_DOCS = [
@@ -61,6 +61,13 @@ export default function ClientDashboard() {
   // --- Query Reply State --- 
   const [queryForm, setQueryForm] = useState({ description: '', file: null });
   const [submittingQuery, setSubmittingQuery] = useState(false);
+
+  // 🚀 FIX: Custom Vault Document State
+  const [customDocForm, setCustomDocForm] = useState({ name: '', file: null });
+  const [uploadingCustom, setUploadingCustom] = useState(false);
+
+  // 🚀 FIX: Legal Agreement State
+  const [submittingAgreement, setSubmittingAgreement] = useState(false);
 
   // --- Dynamic Business Profile State ---
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -106,7 +113,9 @@ export default function ClientDashboard() {
                 const found = d.vault_docs.find(bd => bd.id === defaultDoc.id);
                 return found ? found : defaultDoc;
             });
-            setVaultDocs(mergedDocs);
+            // Append any custom documents uploaded by the client
+            const customDocs = d.vault_docs.filter(bd => !DEFAULT_VAULT_DOCS.some(def => def.id === bd.id));
+            setVaultDocs([...mergedDocs, ...customDocs]);
         } else {
             setVaultDocs(DEFAULT_VAULT_DOCS);
         }
@@ -141,7 +150,6 @@ export default function ClientDashboard() {
     } catch (err) { console.error(err); }
   };
 
-  // 🚀 HIGHLIGHT & SCROLL LOGIC
   const handleCardClick = (targetTab, targetSectionId) => {
      setActiveTab(targetTab);
      if (targetSectionId) {
@@ -150,14 +158,12 @@ export default function ClientDashboard() {
            if (element) {
               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
               setHighlightedSection(targetSectionId);
-              // Remove highlight after 2 seconds
               setTimeout(() => setHighlightedSection(''), 2000);
            }
-        }, 300); // Wait for tab to render
+        }, 300);
      }
   };
 
-  // 🚀 LIVE TENDERS PDF VIEW LOGIC
   const handleViewPDF = async (tenderId) => {
     const toastId = toast.loading('Opening PDF Document...');
     try {
@@ -189,7 +195,6 @@ export default function ClientDashboard() {
 
   const bypassLockScreen = () => setUserData(prev => ({ ...prev, is_approved: true }));
 
-  // Profile Methods
   const addServiceRow = () => setProfileForm(prev => ({...prev, services: [...prev.services, { type: 'Service', name: '' }]}));
   const updateService = (index, key, value) => {
     const newServices = [...profileForm.services];
@@ -221,7 +226,7 @@ export default function ClientDashboard() {
     } catch(err) { toast.error("Network Error."); }
   };
 
-  const handleFileUpload = async (docId, e) => {
+  const handleFileUpload = async (docId, e, customName = null) => {
     const file = e?.target?.files?.[0];
     if(file) {
       toast.info(`Uploading ${file.name} to Secure Vault...`);
@@ -230,15 +235,36 @@ export default function ClientDashboard() {
       formData.append('docId', docId);
       formData.append('email', email);
       formData.append('clientName', profileForm.companyName || profileForm.clientName); 
+      if (customName) formData.append('customName', customName);
 
       try {
         const res = await fetch('/api/vault/upload', { method: 'POST', body: formData });
         if(res.ok) {
           toast.success(`Document uploaded successfully! Pending MD Approval.`);
+          if(customName) setCustomDocForm({ name: '', file: null });
           fetchClientData(email); 
         } else { toast.error('Upload failed. Please try again.'); }
       } catch (err) { toast.error('Network Error during upload.'); }
     }
+  };
+
+  // 🚀 FIX: Submit Legal Agreement logic
+  const handleSignAgreement = async (e) => {
+      e.preventDefault();
+      setSubmittingAgreement(true);
+      try {
+          const res = await fetch('/api/users/profile', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
+          });
+          if(res.ok) {
+              toast.success("Legal Agreement Signed. Welcome to your Dashboard!");
+              setUserData(prev => ({...prev, agreement_signed: true}));
+          }
+      } catch(err) {
+          toast.error("Network error saving agreement.");
+      }
+      setSubmittingAgreement(false);
   };
 
   const handleCustomTenderSubmit = async (e) => { 
@@ -398,10 +424,61 @@ export default function ClientDashboard() {
     );
   }
 
-  const queries = userData?.officer_queries || [];
+  // 🚀 FIX: Legal Agreement Gateway
+  if (userData && userData.is_approved && !userData.agreement_signed) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
+          <Card className="max-w-3xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white">
+             <CardHeader className="border-b bg-emerald-50/50 pb-6 text-center">
+                <ShieldCheck className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
+                <CardTitle className="text-2xl font-black text-[#0A2647]">B2B Legal Agreement</CardTitle>
+                <CardDescription>Mandatory Partnership Declaration before Dashboard Access</CardDescription>
+             </CardHeader>
+             <CardContent className="pt-6 space-y-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-5 text-sm text-slate-700 h-64 overflow-y-auto leading-relaxed">
+                   <h4 className="font-bold text-slate-800 mb-2 uppercase">Service Agreement between Telangana Tenders & {profileForm.companyName || 'Client'}</h4>
+                   <p className="mb-3">This agreement officially commences the B2B consultancy service. Telangana Tenders agrees to provide comprehensive bid analysis, documentation support, and operational management.</p>
+                   <h5 className="font-bold mt-4 mb-1">1. Confidentiality</h5>
+                   <p className="mb-3">All financial and proprietary documents uploaded to the Corporate Vault shall remain strictly confidential and accessed solely for tender fulfillment purposes.</p>
+                   <h5 className="font-bold mt-4 mb-1">2. Payment & Liability</h5>
+                   <p className="mb-3">The Client agrees that initial consultation, processing fees, and document unlock fees (including EMD deposits where requested) are required as per project demand. Failure to declare correct financials absolves the consultancy of failed bid liabilities.</p>
+                   <h5 className="font-bold mt-4 mb-1">3. Authorization</h5>
+                   <p className="mb-3">The Client authorizes the consultancy's MD and assigned Officers to represent their firm digitally on government portals (GeM, eProcurement) strictly for the scope of the assigned tenders.</p>
+                   <div className="mt-8 border-t border-slate-300 pt-4 flex justify-between items-end">
+                       <div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Digitally Signed By Managing Director</p>
+                          <p className="font-black text-blue-900 text-lg font-signature">B. Esak</p>
+                          <p className="text-xs font-semibold text-slate-500">Telangana Tenders</p>
+                       </div>
+                       <div className="text-right">
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Authorised Client Signatory</p>
+                          <p className="font-black text-slate-800 text-lg">{profileForm.clientName || 'Pending'}</p>
+                          <p className="text-xs font-semibold text-slate-500">{profileForm.companyName || 'Company'}</p>
+                       </div>
+                   </div>
+                </div>
+                <form onSubmit={handleSignAgreement} className="pt-4 flex flex-col items-center gap-4">
+                   <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" required className="w-5 h-5 accent-emerald-600 cursor-pointer" />
+                      <span className="font-bold text-slate-700 text-sm">I have read and legally accept the terms of this B2B Partnership Agreement.</span>
+                   </label>
+                   <Button type="submit" disabled={submittingAgreement} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10 shadow-lg">
+                      {submittingAgreement ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <PenTool className="w-5 h-5 mr-2"/>}
+                      {submittingAgreement ? 'Processing...' : 'Digitally Sign & Enter Dashboard'}
+                   </Button>
+                </form>
+             </CardContent>
+          </Card>
+        </div>
+      );
+  }
 
-  if (userData && userData.is_approved && queries.length > 0) {
-    const q = queries[0]; 
+  // 🚀 FIX: Show active lock screen ONLY if there's a blocking query that hasn't been replied to yet
+  const queries = userData?.officer_queries || [];
+  const activeLockingQuery = queries.find(q => !q.reply_submitted);
+
+  if (userData && userData.is_approved && userData.agreement_signed && activeLockingQuery) {
+    const q = activeLockingQuery; 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
         <Card className="max-w-2xl w-full shadow-2xl border-t-8 border-t-red-600 bg-white">
@@ -812,21 +889,47 @@ export default function ClientDashboard() {
                                   <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
                                </div>
                                <div className="flex items-center gap-2 mt-1">
-                                  {doc.view_url && (
-                                    <a href={doc.view_url} target="_blank" rel="noreferrer" className="flex-1">
-                                      <Button size="sm" variant="ghost" className="w-full h-7 text-[10px] px-2 font-bold bg-slate-100 hover:bg-slate-200 text-[#0A2647]"><Eye className="w-3 h-3 mr-1"/> View</Button>
-                                    </a>
-                                  )}
-                                  {doc.download_url && (
-                                    <a href={doc.download_url} target="_blank" rel="noreferrer" className="flex-1">
-                                      <Button size="sm" variant="outline" className="w-full h-7 text-[10px] border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-2 font-bold"><Download className="w-3 h-3 mr-1"/> Download</Button>
-                                    </a>
-                                  )}
+                                  <Button size="sm" variant="ghost" onClick={() => {
+                                      if (doc.file_base64) {
+                                          const byteCharacters = atob(doc.file_base64);
+                                          const byteNumbers = new Array(byteCharacters.length);
+                                          for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                          const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+                                          window.open(URL.createObjectURL(blob), '_blank');
+                                      } else { toast.error("Document data not found"); }
+                                  }} className="w-full h-7 text-[10px] px-2 font-bold bg-slate-100 hover:bg-slate-200 text-[#0A2647]"><Eye className="w-3 h-3 mr-1"/> View</Button>
                                </div>
                             </div>
                          </div>
                        ))}
                     </div>
+                 </div>
+
+                 {/* 🚀 FIX: CUSTOM DOCUMENT UPLOAD AREA ADDED */}
+                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mt-6 shadow-sm">
+                    <h4 className="font-bold text-[#0A2647] flex items-center gap-2 mb-4"><Plus className="w-4 h-4 text-blue-600"/> Add Additional Custom Document</h4>
+                    <form onSubmit={(e) => {
+                       e.preventDefault();
+                       if (!customDocForm.name || !customDocForm.file) return toast.error("Please provide both name and file.");
+                       const customDocId = `custom_${Date.now()}`;
+                       handleFileUpload(customDocId, { target: { files: [customDocForm.file] } }, customDocForm.name);
+                    }} className="flex flex-col sm:flex-row gap-4 items-end">
+                       <div className="flex-1 w-full">
+                          <Label className="text-xs font-bold text-slate-600 mb-1 block">Custom Document Name *</Label>
+                          <Input required placeholder="e.g. Character Certificate" value={customDocForm.name} onChange={e=>setCustomDocForm({...customDocForm, name: e.target.value})} className="h-10 bg-white" />
+                       </div>
+                       <div className="flex-1 w-full">
+                          <Label className="text-xs font-bold text-slate-600 mb-1 block">Select File (PDF/Image) *</Label>
+                          <div className="border border-slate-300 bg-white h-10 rounded-md flex items-center px-3 cursor-pointer hover:bg-slate-50 transition relative">
+                             <input type="file" required accept=".pdf, image/*" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={e => setCustomDocForm({...customDocForm, file: e.target.files[0]})} />
+                             <UploadCloud className="w-4 h-4 text-slate-400 mr-2 shrink-0"/>
+                             <span className="text-sm text-slate-600 truncate">{customDocForm.file ? customDocForm.file.name : 'Choose file...'}</span>
+                          </div>
+                       </div>
+                       <Button type="submit" disabled={uploadingCustom} className="bg-blue-600 hover:bg-blue-700 h-10 w-full sm:w-auto shadow-sm">
+                          {uploadingCustom ? 'Uploading...' : 'Upload to Vault'}
+                       </Button>
+                    </form>
                  </div>
 
               </CardContent>
@@ -1074,60 +1177,108 @@ export default function ClientDashboard() {
           </TabsContent>
 
           {/* ============================================================================== */}
-          {/* TAB 6: FINANCE & SLA */}
+          {/* TAB 6: FINANCE & SLA (ALERTS AND QUERIES COMBINED HERE) */}
           {/* ============================================================================== */}
-          <TabsContent value="finance" className="space-y-6 grid lg:grid-cols-2 gap-6">
-            <Card className="tender-shadow border-t-4 border-t-amber-500 h-fit">
-              <CardHeader className="pb-4 border-b bg-amber-50/30">
-                <CardTitle className="text-lg flex items-center gap-2"><Banknote className="w-5 h-5 text-amber-600"/> Financial Ledger</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-4">
-                   <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
-                      <span className="text-sm font-semibold text-slate-700">Total EMD Paid</span>
-                      <span className="text-lg font-black text-slate-800">₹{totalEmd.toLocaleString()}</span>
-                   </div>
-                   <div className="border-t pt-4">
-                      <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
-                      {!pendingPayments || pendingPayments.length === 0 ? (
-                         <p className="text-xs text-slate-500 text-center py-2">No pending fees requested.</p>
-                      ) : (
-                        pendingPayments.map((pay, i) => (
-                          <div key={i} className="mb-2 border border-red-200 bg-red-50 p-3 rounded-lg flex flex-col gap-2">
-                             <div className="flex justify-between items-center text-sm">
-                                <span className="font-semibold text-red-900">{pay.reason}</span>
-                                <span className="font-bold text-red-700">₹{pay.amount}</span>
-                             </div>
-                             <Button onClick={() => executePayment(pay)} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-9 shadow-md">
-                               {buying ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <IndianRupee className="w-4 h-4 mr-2"/>} 
-                               {buying ? 'Connecting...' : 'Pay via Cashfree'}
-                             </Button>
-                          </div>
-                        ))
-                      )}
-                   </div>
-              </CardContent>
-            </Card>
+          <TabsContent value="finance" className="space-y-6">
+             <div className="grid lg:grid-cols-2 gap-6">
+                <Card className="tender-shadow border-t-4 border-t-amber-500 h-fit">
+                  <CardHeader className="pb-4 border-b bg-amber-50/30">
+                    <CardTitle className="text-lg flex items-center gap-2"><Banknote className="w-5 h-5 text-amber-600"/> Financial Ledger</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4 space-y-4">
+                       <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
+                          <span className="text-sm font-semibold text-slate-700">Total EMD Paid</span>
+                          <span className="text-lg font-black text-slate-800">₹{totalEmd.toLocaleString()}</span>
+                       </div>
+                       <div className="border-t pt-4">
+                          <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
+                          {!pendingPayments || pendingPayments.length === 0 ? (
+                             <p className="text-xs text-slate-500 text-center py-2">No pending fees requested.</p>
+                          ) : (
+                            pendingPayments.map((pay, i) => (
+                              <div key={i} className="mb-2 border border-red-200 bg-red-50 p-3 rounded-lg flex flex-col gap-2">
+                                 <div className="flex justify-between items-center text-sm">
+                                    <span className="font-semibold text-red-900">{pay.reason}</span>
+                                    <span className="font-bold text-red-700">₹{pay.amount}</span>
+                                 </div>
+                                 <Button onClick={() => executePayment(pay)} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-9 shadow-md">
+                                   {buying ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <IndianRupee className="w-4 h-4 mr-2"/>} 
+                                   {buying ? 'Connecting...' : 'Pay via Cashfree'}
+                                 </Button>
+                              </div>
+                            ))
+                          )}
+                       </div>
+                  </CardContent>
+                </Card>
 
-            <Card className="tender-shadow border-t-4 border-t-slate-800 h-fit">
-              <CardHeader className="pb-4 bg-slate-50 border-b">
-                <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-slate-700"/> 24/7 SLA Support Desk</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-5">
-                <form onSubmit={handleTicketSubmit} className="space-y-4">
-                  <div>
-                    <Label className="text-xs text-slate-600 font-bold">Ticket Subject *</Label>
-                    <Input placeholder="e.g., Portal Login Issue" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} required className="mt-1" />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-slate-600 font-bold">Describe Issue *</Label>
-                    <textarea className="w-full border border-slate-200 rounded-md p-2 text-sm h-24 mt-1 focus:ring-2 focus:ring-slate-800 outline-none" placeholder="Describe requirement..." value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} required></textarea>
-                  </div>
-                  <Button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 h-11">
-                    <Send className="w-4 h-4 mr-2"/> Submit Ticket
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
+                <Card className="tender-shadow border-t-4 border-t-slate-800 h-fit">
+                  <CardHeader className="pb-4 bg-slate-50 border-b">
+                    <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-slate-700"/> 24/7 SLA Support Desk</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-5">
+                    <form onSubmit={handleTicketSubmit} className="space-y-4">
+                      <div>
+                        <Label className="text-xs text-slate-600 font-bold">Ticket Subject *</Label>
+                        <Input placeholder="e.g., Portal Login Issue" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} required className="mt-1" />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-slate-600 font-bold">Describe Issue *</Label>
+                        <textarea className="w-full border border-slate-200 rounded-md p-2 text-sm h-24 mt-1 focus:ring-2 focus:ring-slate-800 outline-none" placeholder="Describe requirement..." value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} required></textarea>
+                      </div>
+                      <Button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 h-11">
+                        <Send className="w-4 h-4 mr-2"/> Submit Ticket
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+             </div>
+
+             {/* 🚀 FIX: QUERY TRACKING UI - ALLOWS CLIENTS TO TRACK PREVIOUS QUERIES */}
+             <Card className="tender-shadow border-t-4 border-t-orange-500">
+               <CardHeader className="pb-4 border-b bg-orange-50/50">
+                  <CardTitle className="text-lg flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-orange-600"/> Officer Document Queries Tracker</CardTitle>
+                  <CardDescription>Track the status of documentation requested by the operations team.</CardDescription>
+               </CardHeader>
+               <CardContent className="pt-5">
+                  {userData?.officer_queries?.length === 0 ? (
+                      <p className="text-sm text-slate-500 py-6 text-center">No queries pending from operations.</p>
+                  ) : (
+                      <div className="space-y-4">
+                         {userData?.officer_queries?.map((q, idx) => (
+                            <div key={idx} className="border border-orange-200 bg-orange-50/50 rounded-xl p-4 flex flex-col gap-3">
+                               <div className="flex justify-between items-start">
+                                  <h4 className="font-bold text-[#0A2647]">{q.subject}</h4>
+                                  <Badge className={q.reply_submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800 animate-pulse'}>
+                                     {q.reply_submitted ? 'Reply Sent' : 'Action Required'}
+                                  </Badge>
+                               </div>
+                               <p className="text-sm text-slate-700 bg-white p-3 rounded border border-orange-100">"{q.message}"</p>
+                               
+                               {q.reply_submitted ? (
+                                  <p className="text-xs text-emerald-600 font-bold bg-emerald-50 p-2 rounded">✓ You have submitted the explanation/document. Pending MD verification.</p>
+                               ) : (
+                                  <form onSubmit={(e) => handleQuerySubmit(e, q.id)} className="border-t border-orange-100 pt-3 mt-1 space-y-3">
+                                     <Textarea required placeholder="Provide explanation or details..." value={queryForm.description} onChange={e => setQueryForm({...queryForm, description: e.target.value})} className="bg-white focus:ring-orange-500"/>
+                                     <div className="flex flex-col sm:flex-row gap-3">
+                                        <div className="flex-1 relative border border-slate-300 bg-white rounded-md flex items-center px-3 cursor-pointer hover:bg-slate-50 h-10">
+                                           <input type="file" accept=".pdf,.jpg,.png,.zip" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={e => setQueryForm({...queryForm, file: e.target.files[0]})} />
+                                           <UploadCloud className="w-4 h-4 text-slate-400 mr-2 shrink-0"/>
+                                           <span className="text-xs text-slate-600 truncate">{queryForm.file ? queryForm.file.name : "Attach Document (Optional)"}</span>
+                                        </div>
+                                        <Button type="submit" disabled={submittingQuery} className="bg-orange-600 hover:bg-orange-700 sm:w-auto w-full h-10 shrink-0">
+                                           {submittingQuery ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Send Reply'}
+                                        </Button>
+                                     </div>
+                                  </form>
+                               )}
+                            </div>
+                         ))}
+                      </div>
+                  )}
+               </CardContent>
+             </Card>
+
           </TabsContent>
 
         </Tabs>
