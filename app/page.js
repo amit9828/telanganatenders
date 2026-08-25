@@ -258,26 +258,47 @@ export default function App() {
     signIn('google', { callbackUrl: `${window.location.origin}/?intent=subscribe` }, { prompt: 'select_account' });
   };
 
+  // 🚀 PROPER FIX: Employee & Admin Database Login
   const handleEmployeeLogin = async (e) => {
-    e.preventDefault(); setEmpLoading(true);
+    e.preventDefault(); 
+    setEmpLoading(true);
     try {
-      const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: empEmail, password: empPwd }) });
+      // 1. Check if it's the Admin/MD first
+      const r = await fetch('/api/admin/login', { 
+         method: 'POST', 
+         headers: { 'Content-Type': 'application/json' }, 
+         body: JSON.stringify({ email: empEmail, password: empPwd }) 
+      });
       const d = await r.json();
+      
       if (r.ok) { 
         localStorage.setItem('tt_admin', d.token); 
         window.open('/admin', '_blank');
         setEmpModalOpen(false);
+        setEmpLoading(false);
         return; 
       } 
-      if (empPwd === 'emp123') { 
-        localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); 
-        localStorage.setItem('tt_role', 'employee'); 
-        window.open('/employee', '_blank');
-        setEmpModalOpen(false);
-        return; 
+      
+      // 2. Not Admin, so check the Real Employee Database via NextAuth
+      const res = await signIn('employee-login', {
+         redirect: false,
+         email: empEmail, // Now accepts EMP-XXXX or email
+         password: empPwd
+      });
+
+      if (res?.error) {
+         toast.error("Invalid Credentials. Please check your ID and Password.");
+      } else {
+         localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); 
+         localStorage.setItem('tt_role', 'employee'); 
+         window.open('/employee', '_blank');
+         setEmpModalOpen(false);
       }
-      toast.error('Invalid Credentials');
-    } catch (err) { toast.error('Login failed'); } finally { setEmpLoading(false); }
+    } catch (err) { 
+      toast.error('Login system failed. Check Network.'); 
+    } finally { 
+      setEmpLoading(false); 
+    }
   };
 
   const handleClientReg = async (e) => {
@@ -578,7 +599,6 @@ export default function App() {
         <Card className="shadow-2xl border-0 bg-white rounded-xl">
           <CardContent className="p-4 sm:p-6 space-y-4">
             
-            {/* 🚀 FIXED: LOADING SPINNER IN SEARCH */}
             <div className="flex bg-slate-50 border border-slate-200 rounded-lg p-3 items-center shadow-inner w-full">
                {loading ? <Loader2 className="w-5 h-5 text-blue-600 ml-2 mr-3 animate-spin shrink-0" /> : <Search className="w-5 h-5 text-blue-600 ml-2 mr-3 shrink-0" />}
                <input type="text" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search tenders by keywords..." className="flex-1 bg-transparent border-0 outline-none text-slate-700 font-bold min-w-0" />
@@ -908,8 +928,15 @@ export default function App() {
             <DialogTitle className="text-xl font-black text-[#0A2647] flex items-center gap-2"><UserCog className="w-5 h-5 text-blue-600"/> Employee Access</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEmployeeLogin} className="space-y-4 pt-4">
-             <div><Label className="font-bold text-slate-700">Employee Email ID</Label><Input type="email" value={empEmail} onChange={e=>setEmpEmail(e.target.value)} required className="mt-1 border-2 h-11" /></div>
-             <div><Label className="font-bold text-slate-700">Password</Label><Input type="password" value={empPwd} onChange={e=>setEmpPwd(e.target.value)} required className="mt-1 border-2 h-11" /></div>
+             {/* 🚀 FIXED: HTML FORM INPUT TYPE CHANGED TO TEXT FOR EMP-ID */}
+             <div>
+                <Label className="font-bold text-slate-700">Employee ID or Email</Label>
+                <Input type="text" placeholder="e.g. EMP-1001 or email@tgtenders.in" value={empEmail} onChange={e=>setEmpEmail(e.target.value)} required className="mt-1 border-2 h-11" />
+             </div>
+             <div>
+                <Label className="font-bold text-slate-700">Password</Label>
+                <Input type="password" value={empPwd} onChange={e=>setEmpPwd(e.target.value)} required className="mt-1 border-2 h-11" />
+             </div>
              <Button type="submit" disabled={empLoading} className="w-full bg-[#0A2647] hover:bg-[#144272] h-12 mt-2 font-bold text-lg">
                 {empLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Secure Login'}
              </Button>
@@ -917,7 +944,7 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {/* 🚀 FIXED: GUEST PAY MODAL (Now only asks for Name and Phone) */}
+      {/* 🚀 FIXED: GUEST PAY MODAL (Name and Phone) */}
       <Dialog open={guestPayModal} onOpenChange={setGuestPayModal}>
         <DialogContent className="sm:max-w-md border-0 shadow-2xl">
           <DialogHeader>
