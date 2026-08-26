@@ -68,7 +68,7 @@ export default function ClientDashboard() {
 
   const [submittingAgreement, setSubmittingAgreement] = useState(false);
 
-  // 🚀 FIX: Onboarding Profile State
+  // --- Onboarding Profile State ---
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
   const [onboardForm, setOnboardForm] = useState({
     client_name: '', company_name: '', phone: '', company_type: 'Proprietor (Individual)', service: '', 
@@ -103,6 +103,7 @@ export default function ClientDashboard() {
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, [session, status]);
 
+  // 🚀 LIVE POLLING: Auto-Refresh every 15 seconds without reloading page
   useEffect(() => {
     if (status === "loading" || !email) return;
     const interval = setInterval(() => { fetchClientData(email); }, 15000);
@@ -114,6 +115,11 @@ export default function ClientDashboard() {
       const r = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`);
       if(r.ok) {
         const d = await r.json();
+        
+        // 🚀 FIX: Permanently check if Legal Agreement exists in Vault!
+        const hasSignedAgreement = d.vault_docs?.some(doc => doc.id === 'signed_agreement') || false;
+        d.agreement_signed = hasSignedAgreement;
+
         setUserData(d);
         setClientId(d.client_id || `CLI-${userEmail.substring(0,4).toUpperCase()}X`);
 
@@ -129,7 +135,7 @@ export default function ClientDashboard() {
                 const found = d.vault_docs.find(bd => bd.id === defaultDoc.id);
                 return found ? found : defaultDoc;
             });
-            const customDocs = d.vault_docs.filter(bd => !DEFAULT_VAULT_DOCS.some(def => def.id === bd.id));
+            const customDocs = d.vault_docs.filter(bd => !DEFAULT_VAULT_DOCS.some(def => def.id === bd.id) && bd.id !== 'signed_agreement');
             setVaultDocs([...mergedDocs, ...customDocs]);
         } else {
             setVaultDocs(DEFAULT_VAULT_DOCS);
@@ -155,7 +161,7 @@ export default function ClientDashboard() {
           
           setOnboardForm(prev => ({
             ...prev,
-            client_name: d.profile.client_name || '',
+            client_name: d.profile.client_name || session?.user?.name || '',
             company_name: d.profile.company_name || '',
             phone: d.profile.phone || '',
             service: d.profile.service_category || '',
@@ -189,8 +195,32 @@ export default function ClientDashboard() {
   };
 
   const handleViewPDF = async (tenderId) => {
-    window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=client`, '_blank');
-    toast.success('Opening PDF Document...');
+    const toastId = toast.loading('Opening PDF Document...');
+    try {
+      const res = await fetch(`/api/tenders/${tenderId}/pdf?email=${email}&role=client`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        if (res.status === 402) {
+          toast.dismiss(toastId);
+          return toast.error("Premium Tender: You need an active subscription or single document access to view this PDF.");
+        }
+        return toast.error(data.error || 'Failed to load PDF', { id: toastId });
+      }
+
+      if (data.pdf_base64) {
+        const byteCharacters = atob(data.pdf_base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+        const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+        window.open(URL.createObjectURL(blob), '_blank');
+        toast.success('PDF Opened Successfully', { id: toastId });
+      } else { 
+        toast.error('PDF data not found', { id: toastId }); 
+      }
+    } catch (err) { 
+      toast.error('Network Error while opening PDF', { id: toastId }); 
+    }
   };
 
   const bypassLockScreen = () => setUserData(prev => ({ ...prev, is_approved: true }));
@@ -248,38 +278,42 @@ export default function ClientDashboard() {
     }
   };
 
-  // 🚀 FIX: Submit Legal Agreement logic & Never reflect again
+  // 🚀 FIX: Auto-Download Agreement & Save Permanently to Vault
   const handleSignAgreement = async (e) => {
       e.preventDefault();
       setSubmittingAgreement(true);
+      
       try {
-          const agreementText = `B2B LEGAL SERVICE AGREEMENT\n\nClient: ${profileForm.clientName}\nCompany: ${profileForm.companyName}\nDate: ${new Date().toLocaleDateString()}\n\nAgreed to Terms & Conditions for Bid Analysis, Documentation Support, and Operations.\n\nDigitally Signed by: B. Esak (MD, Telangana Tenders)\nDigitally Signed by: ${profileForm.clientName}`;
+          const agreementText = `=======================================================\n                TELANGANA TENDERS\n     CONSULTANCY SERVICES & CORPORATE APPROVALS\n=======================================================\n\nB2B LEGAL SERVICE AGREEMENT\n\nThis B2B Legal Service Agreement ("Agreement") is entered into by and between Telangana Tenders (hereinafter referred to as the "Consultancy") and ${onboardForm.company_name || 'The Client'} (hereinafter referred to as the "Client"), effective as of ${new Date().toLocaleDateString()}.\n\n1. SCOPE OF SERVICES & VAULT ACCESS\nThe Consultancy agrees to provide comprehensive bid analysis, documentation support, and operational tender management. All financial and proprietary documents uploaded by the Client to the Corporate Vault shall remain strictly confidential, stored securely via 256-bit encryption, and accessed solely for tender fulfillment purposes on government portals.\n\n2. PROFESSIONAL FEES & CONSULTANCY CHARGES\nThe Client agrees to pay the stipulated processing fees, document unlock fees, and post-win success fees (consultancy charges) as mutually agreed upon for each respective tender. The Client is also solely responsible for depositing Earnest Money Deposits (EMD) directly or via the Consultancy within the stipulated timeframe.\n\n3. DEFAULT OF PAYMENT & LEGAL RECOURSE\nIn the event of non-payment, delayed payment, or refusal to disburse consultancy charges post-service delivery or successful contract award, the Consultancy reserves the absolute right to initiate immediate legal proceedings. This includes, but is not limited to, recovery actions under Section 73 of the Indian Contract Act, 1872 (Compensation for loss or damage caused by breach of contract) and Section 138 of the Negotiable Instruments Act, 1881 (in the event of any dishonored payments). The Client shall be held strictly liable for all legal recovery costs, attorney fees, and an interest penalty of 18% per annum on the outstanding amount until full realization.\n\n4. OFFICIAL REPRESENTATION & AUTHORIZATION\nThe Client legally authorizes the Consultancy's Managing Director (MD) and assigned Operations Officers to represent their firm digitally on government procurement portals (including GeM and eProcurement) strictly for the scope of the assigned tenders. The Consultancy is absolved of any liabilities arising from false documents or misrepresented financial data provided by the Client.\n\n-------------------------------------------------------\nDIGITALLY SIGNED BY MANAGING DIRECTOR:\nB. Esak\nTelangana Tenders\n+91 6304486770\n\nAUTHORISED CLIENT SIGNATORY:\n${onboardForm.client_name || 'Authorised Signatory'}\n${onboardForm.company_name || 'Company Name'}\nDate: ${new Date().toLocaleDateString()}\n=======================================================`;
           const blob = new Blob([agreementText], { type: 'text/plain' });
-          const file = new File([blob], "Signed_Legal_Service_Agreement.txt", { type: "text/plain" });
+          const file = new File([blob], "Signed_B2B_Legal_Agreement.txt", { type: "text/plain" });
           
           const formData = new FormData();
           formData.append('file', file);
           formData.append('docId', 'signed_agreement');
           formData.append('email', email);
-          formData.append('clientName', profileForm.companyName || profileForm.clientName); 
+          formData.append('clientName', onboardForm.company_name || onboardForm.client_name); 
+          
+          // Force upload to Vault (This acts as the permanent lock bypass!)
           await fetch('/api/vault/upload', { method: 'POST', body: formData });
 
-          const res = await fetch('/api/users/profile', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
-          });
-          
-          if(res.ok) {
-              toast.success("Legal Agreement Signed. Proceeding to Profile Completion.");
-              setUserData(prev => ({...prev, agreement_signed: true}));
-          }
+          // 🚀 FIX: Auto-Download to device
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = "Signed_B2B_Legal_Agreement.txt";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          toast.success("Legal Agreement Signed & Downloaded. Proceeding to Profile Setup.");
+          setUserData(prev => ({...prev, agreement_signed: true}));
       } catch(err) {
           toast.error("Network error saving agreement.");
       }
       setSubmittingAgreement(false);
   };
 
-  // 🚀 FIX: Handle Onboarding Profile Submission
+  // 🚀 FIX: Strict Profile Completion Route (Locks until Onboarding is done)
   const submitOnboarding = async (e) => {
     e.preventDefault();
     if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
@@ -296,7 +330,7 @@ export default function ClientDashboard() {
             has_ifsc: onboardForm.has_ifsc, has_fssai: onboardForm.has_fssai, has_cer: onboardForm.has_cer, 
             has_turnover: onboardForm.has_turnover, has_annual_returns: onboardForm.has_annual_returns, has_msme: onboardForm.has_msme
           }, 
-          onboarding_complete: true
+          status: 'active'
         })
       });
       if(res.ok) {
@@ -537,7 +571,7 @@ export default function ClientDashboard() {
 
                 <div className="text-sm text-slate-700 leading-relaxed text-justify font-medium">
                    <p className="mb-4">
-                     This B2B Legal Service Agreement ("Agreement") is entered into by and between <strong>Telangana Tenders</strong> (hereinafter referred to as the "Consultancy") and <strong>{profileForm.companyName || 'The Client'}</strong> (hereinafter referred to as the "Client"), effective as of <strong>{new Date().toLocaleDateString()}</strong>.
+                     This B2B Legal Service Agreement ("Agreement") is entered into by and between <strong>Telangana Tenders</strong> (hereinafter referred to as the "Consultancy") and <strong>{onboardForm.company_name || 'The Client'}</strong> (hereinafter referred to as the "Client"), effective as of <strong>{new Date().toLocaleDateString()}</strong>.
                    </p>
                    
                    <h5 className="font-black text-slate-900 mt-6 mb-2">1. Scope of Services & Vault Access</h5>
@@ -548,7 +582,7 @@ export default function ClientDashboard() {
                    
                    <h5 className="font-black text-slate-900 mt-6 mb-2">3. Default of Payment & Legal Recourse</h5>
                    <p className="mb-4">
-                     In the event of non-payment or delayed payment of consultancy charges post-service delivery, the Consultancy reserves the absolute right to initiate legal proceedings. This includes recovery actions under <strong>Section 73 of the Indian Contract Act, 1872</strong> (Compensation for loss or damage caused by breach of contract) and <strong>Section 138 of the Negotiable Instruments Act, 1881</strong> (in the event of any dishonored payments or cheques). The Client shall be strictly liable for all legal recovery costs, attorney fees, and an interest penalty of 18% per annum on the outstanding amount until full realization.
+                     In the event of non-payment, delayed payment, or refusal to disburse consultancy charges post-service delivery or successful contract award, the Consultancy reserves the absolute right to initiate immediate legal proceedings. This includes, but is not limited to, recovery actions under <strong>Section 73 of the Indian Contract Act, 1872</strong> (Compensation for loss or damage caused by breach of contract) and <strong>Section 138 of the Negotiable Instruments Act, 1881</strong> (in the event of any dishonored payments or cheques). The Client shall be strictly liable for all legal recovery costs, attorney fees, and an interest penalty of 18% per annum on the outstanding amount until full realization.
                    </p>
 
                    <h5 className="font-black text-slate-900 mt-6 mb-2">4. Official Representation & Authorization</h5>
@@ -568,8 +602,8 @@ export default function ClientDashboard() {
                        </div>
                        <div className="text-right">
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">Authorised Client Signatory</p>
-                          <p className="font-black text-slate-800 text-xl italic font-serif mb-2">{profileForm.clientName || 'Pending'}</p>
-                          <p className="text-sm font-black text-slate-800">{profileForm.companyName || 'Company Name'}</p>
+                          <p className="font-black text-slate-800 text-xl italic font-serif mb-2">{onboardForm.client_name || 'Pending'}</p>
+                          <p className="text-sm font-black text-slate-800">{onboardForm.company_name || 'Company Name'}</p>
                           <p className="text-[10px] font-semibold text-slate-500">Date: {new Date().toLocaleDateString()}</p>
                        </div>
                    </div>
@@ -581,7 +615,7 @@ export default function ClientDashboard() {
                          <input type="checkbox" required className="w-6 h-6 accent-emerald-600 cursor-pointer" />
                          <span className="font-bold text-emerald-900 text-sm">I have read, understood, and legally accept the terms of this B2B Agreement.</span>
                       </label>
-                      <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                      <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto mt-2">
                          <Button type="button" onClick={() => window.print()} variant="outline" className="border-slate-300 text-slate-700 font-bold h-12 px-6">
                             <Printer className="w-5 h-5 mr-2"/> Download / Print Agreement
                          </Button>
@@ -613,7 +647,7 @@ export default function ClientDashboard() {
           <CardContent className="p-6 bg-slate-50/50">
              <form onSubmit={submitOnboarding}>
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <div><Label>Client Name *</Label><Input required value={onboardForm.client_name} onChange={e => setOnboardForm({...onboardForm, client_name: e.target.value})} className="mt-1"/></div>
+                  <div><Label>Client / Owner Name *</Label><Input required value={onboardForm.client_name} onChange={e => setOnboardForm({...onboardForm, client_name: e.target.value})} className="mt-1"/></div>
                   <div><Label>Contact Number *</Label><Input required type="tel" value={onboardForm.phone} onChange={e => setOnboardForm({...onboardForm, phone: e.target.value})} className="mt-1"/></div>
                   <div className="sm:col-span-2"><Label>Company / Firm Name *</Label><Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} className="mt-1"/></div>
                   <div>
@@ -1371,6 +1405,7 @@ export default function ClientDashboard() {
                         <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0 w-full sm:w-auto">
                            <FileText className="w-3 h-3 mr-1.5"/> View PDF Document
                         </Button>
+                        {/* 🚀 FIX: Request MD to Bid Feature Restored */}
                         <Button size="sm" onClick={() => requestBidSupportForTender(t)} className="bg-[#0A2647] hover:bg-[#144272] h-8 text-xs flex-1 w-full shadow-sm text-white">
                            <UploadCloud className="w-3 h-3 mr-1.5"/> Request MD to Bid This
                         </Button>
@@ -1415,6 +1450,7 @@ export default function ClientDashboard() {
                           )}
                        </div>
                        
+                       {/* 🚀 FIX: Payment History & Gross Revenue */}
                        <div className="border-t pt-4 mt-4">
                           <h4 className="font-bold text-slate-700 mb-3 flex items-center justify-between">
                              Payment History
@@ -1464,7 +1500,7 @@ export default function ClientDashboard() {
                       </Button>
                     </form>
 
-                    {/* 🚀 FIX: Client Side Active & Resolved Ticket Management (Reply Again Option) */}
+                    {/* 🚀 FIX: Client Side Active & Resolved Ticket Management */}
                     <div>
                        <h4 className="font-bold text-slate-700 mb-3">Your Tickets History</h4>
                        {userData?.tickets && userData.tickets.length > 0 ? (
