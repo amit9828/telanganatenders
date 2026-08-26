@@ -944,7 +944,7 @@ export async function POST(request, { params }) {
        }
     }
 
-    if (path === 'payment/order' || path === 'api/payment/order') {
+   if (path === 'payment/order' || path === 'api/payment/order') {
       const plan = body.plan;
       let amount = 12; 
       if (plan === 'month') amount = 14900;
@@ -965,7 +965,8 @@ export async function POST(request, { params }) {
           body: JSON.stringify({
             order_amount: amount/100, order_currency: 'INR', order_id: orderId,
             customer_details: { customer_id: customerId, customer_email: body.email || 'guest@example.com', customer_phone: '9999999999' },
-            order_meta: { return_url: "https://www.tgtenders.in/payment-status?order_id={order_id}" }
+            // 🚀 FIX: This line now redirects them back to the Finance Dashboard
+            order_meta: { return_url: "https://www.tgtenders.in/client?tab=finance" }
           })
         });
 
@@ -983,7 +984,6 @@ export async function POST(request, { params }) {
         return json({ error: 'Cashfree Error' }, 500);
       }
     }
-
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       const orderId = body.order_id;
       if (!orderId) return json({ error: 'Missing ID' }, 400);
