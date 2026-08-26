@@ -77,6 +77,7 @@ export default function AdminPage() {
   const [financialRequests, setFinancialRequests] = useState([]);
   const [ledgerTxns, setLedgerTxns] = useState([]);
   const [ledgerBalance, setLedgerBalance] = useState(0);
+  const [breakdown, setBreakdown] = useState({ offline: 0, online: 0 }); // 🚀 FIX: For Balance Breakdown
   const [ledgerForm, setLedgerForm] = useState({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' });
   const [ledgerProof, setLedgerProof] = useState('');
   const [ledgerProofName, setLedgerProofName] = useState('');
@@ -100,7 +101,7 @@ export default function AdminPage() {
 
   const [rejectReason, setRejectReason] = useState({});
 
-  // 🚀 NEW: State for aggregating all successful payments live
+  // State for aggregating all successful payments live
   const [successfulPaymentsLog, setSuccessfulPaymentsLog] = useState([]);
 
   useEffect(() => {
@@ -109,8 +110,13 @@ export default function AdminPage() {
     setAuthChecking(false);
   }, []);
 
+  // 🚀 FIX: Live Polling (Refresh without reloading the page) every 12 seconds
   useEffect(() => {
-    if (token) refresh();
+    if (token) {
+      refresh();
+      const interval = setInterval(() => { refresh(); }, 12000); 
+      return () => clearInterval(interval);
+    }
     // eslint-disable-next-line
   }, [token]);
 
@@ -156,10 +162,8 @@ export default function AdminPage() {
       setTeamMembers(empJson.team || []);
       setLedgerTxns(ledgerJson.transactions || []);
       
-      // 🚀 FIX: Automatically filter out 'SUCCESS' status from pending list
       setFinancialRequests((finReqJson.requests || []).filter(r => r.status !== 'SUCCESS' && r.status !== 'PAID')); 
       
-      // 🚀 FIX: Aggregate all successful payments from all approved clients to create a live ledger
       const allSuccess = [];
       (aJson.users || []).forEach(client => {
           if (client.payments && client.payments.length > 0) {
@@ -170,10 +174,12 @@ export default function AdminPage() {
       });
       setSuccessfulPaymentsLog(allSuccess.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
 
+      // 🚀 FIX: Balance Sheet Breakdown Logic
       const onlineRevenue = sJson.revenue || 0;
-      setLedgerBalance((ledgerJson.balance || 0) + onlineRevenue);
+      const offlineBal = ledgerJson.balance || 0;
+      setBreakdown({ offline: offlineBal, online: onlineRevenue });
+      setLedgerBalance(offlineBal + onlineRevenue);
 
-      // 🚀 FIX: Dynamic Stats Calculation for Client Reports
       setClientReports((aJson.users || []).map(c => {
          const wonBids = (c.bids || []).filter(b => b.status === 'Won').length || c.stats?.won || 0;
          const participated = (c.bids || []).length || c.stats?.participated || 0;
@@ -339,7 +345,6 @@ export default function AdminPage() {
     }
   };
 
-  // 🚀 FIX: Prevent Base64 Crash. Uses backend API to stream document or Google Drive link.
   const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
       let reason = '';
       if (status === 'rejected') {
@@ -585,6 +590,7 @@ export default function AdminPage() {
              </div>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-slate-800"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-slate-600 text-slate-200 hover:text-white hover:bg-slate-800">View Public Site</Button>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-400 hover:text-red-300 hover:bg-red-900/50"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
           </div>
@@ -722,7 +728,6 @@ export default function AdminPage() {
                                          <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
                                       </div>
                                       
-                                      {/* 🚀 FIX: Document Viewing logic uses backend endpoint, avoiding Base64 crash */}
                                       <Button size="sm" variant="outline" className={`w-full ${doc.id === 'signed_agreement' ? 'text-emerald-700 border-emerald-300 hover:bg-emerald-100' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`} onClick={() => {
                                           if (doc.drive_link) {
                                               window.open(doc.drive_link, '_blank');
@@ -814,7 +819,6 @@ export default function AdminPage() {
                     <div className="grid xl:grid-cols-2 gap-4">
                        {approvedClients.map(client => {
                           const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                          // 🚀 FIX: Dynamic Stats Calculation
                           const wonBidsCount = client.bids ? client.bids.filter(b => b.status === 'Won').length : (client.stats?.won || 0);
                           const totalRevenue = client.payments ? client.payments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (Number(p.amount) || 0), 0) : (client.stats?.total_paid || 0);
 
@@ -926,6 +930,8 @@ export default function AdminPage() {
                     <div className="text-right">
                        <p className="text-[10px] text-slate-500 uppercase font-bold">Net Balance</p>
                        <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{ledgerBalance.toLocaleString()}</h3>
+                       {/* 🚀 FIX: Breakdown showing Offline + Online revenue clearly */}
+                       <p className="text-[9px] text-slate-400 font-mono mt-1">Offline: ₹{breakdown.offline.toLocaleString()} | Online: ₹{breakdown.online.toLocaleString()}</p>
                     </div>
                  </CardHeader>
                  <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
@@ -943,7 +949,20 @@ export default function AdminPage() {
                                    <td className="p-2 align-top">
                                       <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
                                       {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
-                                      {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer" onClick={()=>window.open(txn.proof_base64.startsWith('http') ? txn.proof_base64 : `data:image/png;base64,${txn.proof_base64}`)}>View Proof</Badge>}
+                                      
+                                      {/* 🚀 FIX: Robust Proof image viewer that works with base64 without prefix crashing */}
+                                      {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer hover:bg-blue-100" onClick={() => {
+                                          let finalUrl = txn.proof_base64;
+                                          if (!finalUrl.startsWith('http') && !finalUrl.startsWith('data:') && !finalUrl.startsWith('/')) {
+                                              finalUrl = `data:image/jpeg;base64,${finalUrl}`;
+                                          }
+                                          if (finalUrl.startsWith('data:')) {
+                                              const newTab = window.open();
+                                              if (newTab) newTab.document.write(`<iframe src="${finalUrl}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                                          } else {
+                                              window.open(finalUrl, '_blank');
+                                          }
+                                      }}>View Proof</Badge>}
                                    </td>
                                    <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
                                       {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
@@ -1029,13 +1048,13 @@ export default function AdminPage() {
                                           </div>
                                           <div className="flex flex-col items-center gap-1.5">
                                              <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                               {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
+                                                {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
                                              </div>
                                              <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
                                           </div>
                                           <div className="flex flex-col items-center gap-1.5">
                                              <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                               {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
+                                                {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
                                              </div>
                                              <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span><span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
                                           </div>
@@ -1053,7 +1072,6 @@ export default function AdminPage() {
                      </CardContent>
                   </Card>
 
-                  {/* 🚀 FIX: Live History of Successful Payments */}
                   <Card className="shadow-sm border-t-4 border-t-emerald-500">
                      <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
                         <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Payments</CardTitle>
@@ -1291,7 +1309,6 @@ export default function AdminPage() {
                            {bidRequests.map(req => {
                               const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || (req.link_or_id && req.link_or_id.startsWith('http'));
                               
-                              // 🚀 FIX: Cross-reference bid_no with public tenders to get the true PDF link if available
                               const matchedTender = tenders.find(t => t.bid_no === req.link_or_id);
 
                               return (
@@ -1305,7 +1322,6 @@ export default function AdminPage() {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
-                                 {/* 🚀 FIX: Enhanced View Document Logic */}
                                  <Button variant="outline" size="sm" disabled={!hasDoc && !matchedTender} onClick={() => {
                                      if (matchedTender) {
                                          handleViewPDF(matchedTender._id || matchedTender.id);
