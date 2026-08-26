@@ -893,8 +893,52 @@ const handleViewDocument = (req) => {
         <CardDescription>Record manual transactions (Cash/PhonePe/Bank Transfer).</CardDescription>
       </CardHeader>
       <CardContent className="pt-6">
-         {/* మీ పాత ఫారం కోడ్ ఇక్కడ యధావిధిగా ఉంటుంది. అందులో ఎలాంటి తప్పు లేదు. */}
-         {/* ... (Keep your existing Offline Ledger Form here) ... */}
+        <form onSubmit={handleLedgerSubmit} className="space-y-4">
+          <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
+            <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${ledgerForm.type === 'CREDIT' ? 'bg-white shadow-sm border border-slate-200 text-emerald-700' : 'text-slate-500 hover:bg-slate-200'}`}>
+              <input type="radio" name="ledgerType" value="CREDIT" checked={ledgerForm.type === 'CREDIT'} onChange={e => setLedgerForm({...ledgerForm, type: e.target.value})} className="hidden" />
+              <ArrowDownRight className="w-4 h-4"/> <span className="text-sm font-bold">Credit (Income)</span>
+            </label>
+            <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${ledgerForm.type === 'DEBIT' ? 'bg-white shadow-sm border border-slate-200 text-red-600' : 'text-slate-500 hover:bg-slate-200'}`}>
+              <input type="radio" name="ledgerType" value="DEBIT" checked={ledgerForm.type === 'DEBIT'} onChange={e => setLedgerForm({...ledgerForm, type: e.target.value})} className="hidden" />
+              <ArrowUpRight className="w-4 h-4"/> <span className="text-sm font-bold">Debit (Expense)</span>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 sm:col-span-1">
+              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
+              <Input type="number" placeholder="5000" value={ledgerForm.amount} onChange={e => setLedgerForm({...ledgerForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647]" />
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <Label className="font-bold text-slate-700">Client / Ref (Optional)</Label>
+              <Select value={ledgerForm.client_id} onValueChange={v => setLedgerForm({...ledgerForm, client_id: v})}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select Client" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="N/A">General / Office Expense</SelectItem>
+                  {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label className="font-bold text-slate-700">Reason / Description *</Label>
+            <Input placeholder="e.g. Received Cash for DSC, Paid Internet Bill..." value={ledgerForm.reason} onChange={e => setLedgerForm({...ledgerForm, reason: e.target.value})} required className="mt-1" />
+          </div>
+          <div>
+            <Label className="font-bold text-slate-700">Attach Proof (Receipt / Screenshot)</Label>
+            <div className="mt-1 border-2 border-dashed rounded-md p-3 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer">
+              <input type="file" accept="image/*,application/pdf" onChange={onLedgerProofChange} className="hidden" id="proof-input" />
+              <label htmlFor="proof-input" className="cursor-pointer flex flex-col items-center">
+                <FileUp className="w-5 h-5 text-slate-400 mb-1" />
+                <span className="text-xs font-medium text-[#0A2647]">{ledgerProofName || 'Upload Image/PDF'}</span>
+              </label>
+            </div>
+          </div>
+          <Button type="submit" className={`w-full h-11 text-base shadow-md ${ledgerForm.type === 'CREDIT' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}>
+            {editingLedgerId ? 'Update Entry' : (ledgerForm.type === 'CREDIT' ? '+ Add Income to Ledger' : '- Record Expense')}
+          </Button>
+          {editingLedgerId && <Button type="button" variant="outline" className="w-full mt-2" onClick={() => { setEditingLedgerId(null); setLedgerForm({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' }); }}>Cancel Edit</Button>}
+        </form>
       </CardContent>
     </Card>
 
@@ -924,18 +968,29 @@ const handleViewDocument = (req) => {
                     <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
                     {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
                     
-                    {/* 🚀 FIX: అప్పటి Running Balance ఇక్కడ చూపిస్తున్నాం */}
                     <p className="text-[10px] font-bold text-slate-500 mt-1">
                       Balance: <span className={txn.running_balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>₹{txn.running_balance?.toLocaleString() || '---'}</span>
                     </p>
 
-                    {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer hover:bg-blue-100">View Proof</Badge>}
+                    {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer hover:bg-blue-100" onClick={() => {
+                        let finalUrl = txn.proof_base64;
+                        if (!finalUrl.startsWith('http') && !finalUrl.startsWith('data:') && !finalUrl.startsWith('/')) {
+                            finalUrl = `data:image/jpeg;base64,${finalUrl}`;
+                        }
+                        if (finalUrl.startsWith('data:')) {
+                            const newTab = window.open();
+                            if (newTab) newTab.document.write(`<iframe src="${finalUrl}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                        } else {
+                            window.open(finalUrl, '_blank');
+                        }
+                    }}>View Proof</Badge>}
                   </td>
                   <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
                     {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
                   </td>
                   <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    {/* Edit / Delete Buttons */}
+                    <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
+                    <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
                   </td>
                 </tr>
               ))}
@@ -951,16 +1006,33 @@ const handleViewDocument = (req) => {
     {/* --- 3. DISPATCH PAYMENT LINK (Push to Client Dashboard) --- */}
     <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
       <CardHeader className="bg-emerald-50/50 border-b pb-4">
-        {/* 🚀 FIX: Email/SMS కాదు కాబట్టి టెక్స్ట్ మార్చాను */}
         <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg"><IndianRupee className="w-5 h-5 text-emerald-600" /> Request Payment (Cashfree)</CardTitle>
         <CardDescription>Push a payment request directly to the client's dashboard.</CardDescription>
       </CardHeader>
       <CardContent className="pt-6">
         <form onSubmit={handleSendPaymentRequest} className="space-y-4">
-           {/* మీ పాత Select Client, Amount, Reason కోడ్ ఇక్కడ ఉంటుంది */}
-           {/* ... */}
+          <div>
+            <Label className="font-bold text-slate-700">Select Client *</Label>
+            <Select value={paymentRequestForm.client_id} onValueChange={v => setPaymentRequestForm({...paymentRequestForm, client_id: v})}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="Choose client..." /></SelectTrigger>
+              <SelectContent>
+                {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 sm:col-span-1">
+              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
+              <Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" />
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              {/* మీ రిక్వెస్ట్ ప్రకారం ఇక్కడ డ్రాప్ డౌన్ తీసేసి మాన్యువల్ ఇన్‌పుట్ పెట్టాను */}
+              <Label className="font-bold text-slate-700">Reason / Purpose *</Label>
+              <Input placeholder="Enter purpose of payment..." value={paymentRequestForm.reason} onChange={e => setPaymentRequestForm({...paymentRequestForm, reason: e.target.value})} required className="mt-1 bg-white border-slate-300" />
+            </div>
+          </div>
           <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base shadow-md">
-             <Send className="w-4 h-4 mr-2" /> Push to Client App
+            <Send className="w-4 h-4 mr-2" /> Push to Client App
           </Button>
         </form>
       </CardContent>
@@ -974,7 +1046,6 @@ const handleViewDocument = (req) => {
           <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking (Pending)</CardTitle>
         </CardHeader>
         <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
-          {/* 🚀 FIX: ఫ్రంట్‌ఎండ్‌లో కేవలం pending లేదా opened మాత్రమే ఇక్కడ కనిపించేలా ఫిల్టర్ చేయాలి */}
           {financialRequests.filter(req => req.status !== 'paid').length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
@@ -984,8 +1055,29 @@ const handleViewDocument = (req) => {
             <div className="space-y-6">
               {financialRequests.filter(req => req.status !== 'paid').map(req => (
                 <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
-                  {/* మీ పాత లైవ్ ట్రాకింగ్ కార్డు డిజైన్ (Sent -> Opened) ఇక్కడ ఉంటుంది */}
-                  {/* ఇందులో Paid ఆప్షన్ తీసేయండి, ఎందుకంటే Paid అయితే ఇది కింద ఉన్న Successful లిస్ట్‌లోకి వెళ్లిపోతుంది */}
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
+                    <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
+                  </div>
+                  <div className="relative pt-2 pb-1 mx-2">
+                    <div className="absolute top-4 left-0 right-0 h-1.5 bg-slate-100 rounded-full z-0"></div>
+                    <div className={`absolute top-4 left-0 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
+                    <div className="relative z-10 flex justify-between px-1">
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
+                        <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span><span className="text-[9px] text-slate-400 font-mono">{req.sent_time || '--:--'}</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
+                          {req.status === 'opened' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
+                        </div>
+                        <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
+                    <Button size="sm" onClick={() => handleCancelPayment(req.id)} variant="outline" className="w-full text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs shadow-sm"><X className="w-3 h-3 mr-1"/> Cancel Request</Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -996,7 +1088,6 @@ const handleViewDocument = (req) => {
       {/* --- 5. SUCCESSFUL PAYMENTS (Online Only) --- */}
       <Card className="shadow-sm border-t-4 border-t-emerald-500">
         <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
-          {/* 🚀 FIX: ఇది కేవలం ఆన్‌లైన్ సక్సెస్ అయిన వాటి కోసమే అని స్పష్టంగా రాశాను */}
           <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Online Payments</CardTitle>
           <Badge className="bg-emerald-600 text-white border-0">Total: ₹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
         </CardHeader>
@@ -1025,7 +1116,6 @@ const handleViewDocument = (req) => {
     </div>
   </div>
 </TabsContent>
-
           {/* ==================== 4. TEAM DIRECTORY ==================== */}
           <TabsContent value="team" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
