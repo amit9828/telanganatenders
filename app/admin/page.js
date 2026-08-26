@@ -19,7 +19,7 @@ import {
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
-  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool // 🚀 FIX: Added Building2 and PenTool
+  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -114,7 +114,7 @@ export default function AdminPage() {
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes] = await Promise.all([
         fetch(`/api/tenders?t=${Date.now()}`, { headers }),
         fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
         fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
@@ -124,7 +124,9 @@ export default function AdminPage() {
         fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
         fetch(`/api/employees?t=${Date.now()}`, { headers }), 
         fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }),
-        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }) 
+        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }),
+        // 🚀 FIX: Fetching financial requests so the list is not empty
+        fetch(`/api/payments/requests?t=${Date.now()}`, { headers }).catch(() => ({ ok: false }))
       ]);
       
       if (tRes.status === 401) return logout();
@@ -139,6 +141,7 @@ export default function AdminPage() {
       const empJson = empRes.ok ? await empRes.json() : { team: [] };
       const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
       const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; 
+      const finReqJson = finReqRes.ok ? await finReqRes.json() : { requests: [] };
 
       setTenders(tJson.tenders || []);
       setStats(sJson || {});
@@ -150,6 +153,7 @@ export default function AdminPage() {
       setDispatches(dispJson.dispatches || []);
       setTeamMembers(empJson.team || []);
       setLedgerTxns(ledgerJson.transactions || []);
+      setFinancialRequests(finReqJson.requests || []); 
       
       const onlineRevenue = sJson.revenue || 0;
       setLedgerBalance((ledgerJson.balance || 0) + onlineRevenue);
@@ -258,16 +262,17 @@ export default function AdminPage() {
   );
 
   const handleSyncDrive = async (email, companyName) => {
-     toast.loading("Creating Google Drive Workspace...");
+     // 🚀 FIX: Capturing toast ID to prevent hanging spinner
+     const toastId = toast.loading("Creating Google Drive Workspace...");
      try {
         const res = await fetch('/api/drive/create-folder', {
            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
            body: JSON.stringify({ email, folderName: `Client - ${companyName}` })
         });
         const data = await res.json();
-        if(res.ok) { toast.success("Drive Synced & Created Successfully!"); refresh(); } 
-        else { toast.error(data.error || "Drive Sync Failed."); }
-     } catch(e) { toast.error("Network Error."); }
+        if(res.ok) { toast.success("Drive Synced & Created Successfully!", { id: toastId }); refresh(); } 
+        else { toast.error(data.error || "Drive Sync Failed.", { id: toastId }); }
+     } catch(e) { toast.error("Network Error.", { id: toastId }); }
   };
 
   const approveClient = async (email) => {
@@ -278,7 +283,7 @@ export default function AdminPage() {
   };
 
   const deleteClientPermanently = async (email) => {
-    if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data (Bids, Tickets, Requests)? This action CANNOT be undone.")) return;
+    if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data? This action CANNOT be undone.")) return;
     try {
       const res = await fetch(`/api/users?email=${encodeURIComponent(email)}`, { 
          method: 'DELETE', 
@@ -294,7 +299,8 @@ export default function AdminPage() {
   };
 
   const impersonateUser = async (type, email_or_id) => {
-    toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
+    // 🚀 FIX: Capturing toast ID to prevent hanging spinner
+    const toastId = toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
     try {
         const res = await signIn('impersonate', { 
            email: email_or_id, 
@@ -303,15 +309,15 @@ export default function AdminPage() {
         });
 
         if (res?.error) {
-           toast.error("Bypass Authentication Failed!");
+           toast.error("Bypass Authentication Failed!", { id: toastId });
         } else {
-           toast.success("Bypass Successful! Opening Real Dashboard...");
+           toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
            setTimeout(() => {
               window.open(`/${type}`, '_blank');
            }, 800);
         }
     } catch (e) {
-        toast.error("Network Error during authentication.");
+        toast.error("Network Error during authentication.", { id: toastId });
     }
   };
 
@@ -506,9 +512,22 @@ export default function AdminPage() {
       } catch(e) { toast.error("Network Error"); }
   };
 
-  const handleCancelPayment = (reqId) => {
-      setFinancialRequests(prev => prev.filter(r => r.id !== reqId));
-      toast.info("Payment Link Cancelled & Removed");
+  const handleCancelPayment = async (reqId) => {
+      if(!confirm("Are you sure you want to cancel this payment link?")) return;
+      try {
+          // 🚀 FIX: Now successfully calling API to delete the request from DB before removing in UI
+          const res = await fetch(`/api/payments/requests?id=${reqId}`, { 
+              method: 'DELETE', headers: { Authorization: `Bearer ${token}` } 
+          });
+          if(res.ok) {
+              setFinancialRequests(prev => prev.filter(r => r.id !== reqId));
+              toast.success("Payment Link Cancelled & Removed");
+          } else {
+              toast.error("Failed to cancel payment.");
+          }
+      } catch(e) {
+          toast.error("Network Error");
+      }
   };
 
   const handleCreateTeamMember = async (e) => {
@@ -696,7 +715,7 @@ export default function AdminPage() {
                                       </Button>
 
                                       <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
-                                         <Input placeholder="Rejection reason (if rejecting)..." className="h-8 text-xs bg-white" value={rejectReason[`${client.email}_${doc.id}`] || ''} onChange={e => setRejectReason({...rejectReason, [`${client.email}_${doc.id}`]: e.target.value})} />
+                                         <Input placeholder="Rejection reason (if rejecting)..." className="h-8 text-xs bg-white" value={rejectReason[`${client.email}_${doc.id}`] || ''} onChange={e => setRejectReason(prev => ({...prev, [`${client.email}_${doc.id}`]: e.target.value}))} />
                                          <div className="flex gap-2">
                                             <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'verified')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
                                             <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs"><XCircle className="w-3.5 h-3.5 mr-1"/> Reject</Button>
@@ -1354,8 +1373,8 @@ export default function AdminPage() {
                          </Button>
                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
                             <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
-                            <Input placeholder="Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], price: e.target.value}}))}/>
-                            <Input placeholder="Winner Name" className="h-8 text-xs bg-white w-full sm:flex-1 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...prev[t._id || t.id], winner: e.target.value}}))}/>
+                            <Input placeholder="Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), price: e.target.value}}))}/>
+                            <Input placeholder="Winner Name" className="h-8 text-xs bg-white w-full sm:flex-1 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), winner: e.target.value}}))}/>
                             <Button size="sm" className="h-8 text-[10px] w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 shadow-sm px-2" onClick={() => submitL1Price(t._id || t.id)}>Save</Button>
                          </div>
                       </div>
