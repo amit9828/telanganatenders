@@ -100,6 +100,9 @@ export default function AdminPage() {
 
   const [rejectReason, setRejectReason] = useState({});
 
+  // 🚀 NEW: State for aggregating all successful payments live
+  const [successfulPaymentsLog, setSuccessfulPaymentsLog] = useState([]);
+
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
     if (t) setToken(t);
@@ -125,7 +128,6 @@ export default function AdminPage() {
         fetch(`/api/employees?t=${Date.now()}`, { headers }), 
         fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }),
         fetch(`/api/guest-queries?t=${Date.now()}`, { headers }),
-        // 🚀 FIX: Fetching financial requests so the list is not empty
         fetch(`/api/payments/requests?t=${Date.now()}`, { headers }).catch(() => ({ ok: false }))
       ]);
       
@@ -153,15 +155,33 @@ export default function AdminPage() {
       setDispatches(dispJson.dispatches || []);
       setTeamMembers(empJson.team || []);
       setLedgerTxns(ledgerJson.transactions || []);
-      setFinancialRequests(finReqJson.requests || []); 
       
+      // 🚀 FIX: Automatically filter out 'SUCCESS' status from pending list
+      setFinancialRequests((finReqJson.requests || []).filter(r => r.status !== 'SUCCESS' && r.status !== 'PAID')); 
+      
+      // 🚀 FIX: Aggregate all successful payments from all approved clients to create a live ledger
+      const allSuccess = [];
+      (aJson.users || []).forEach(client => {
+          if (client.payments && client.payments.length > 0) {
+              client.payments.filter(p => p.status === 'SUCCESS').forEach(p => {
+                  allSuccess.push({ ...p, client_name: client.company_name || client.name, email: client.email });
+              });
+          }
+      });
+      setSuccessfulPaymentsLog(allSuccess.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+
       const onlineRevenue = sJson.revenue || 0;
       setLedgerBalance((ledgerJson.balance || 0) + onlineRevenue);
 
-      setClientReports((aJson.users || []).map(c => ({
-         id: c.email, name: c.company_name || c.name || 'Unknown',
-         total: c.stats?.participated || 0, won: c.stats?.won || 0, lost: (c.stats?.participated || 0) - (c.stats?.won || 0)
-      })));
+      // 🚀 FIX: Dynamic Stats Calculation for Client Reports
+      setClientReports((aJson.users || []).map(c => {
+         const wonBids = (c.bids || []).filter(b => b.status === 'Won').length || c.stats?.won || 0;
+         const participated = (c.bids || []).length || c.stats?.participated || 0;
+         return {
+             id: c.email, name: c.company_name || c.name || 'Unknown',
+             total: participated, won: wonBids, lost: participated - wonBids
+         };
+      }));
       
       setEmployeeReports((empJson.team || []).map(e => {
          const completedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
@@ -262,7 +282,6 @@ export default function AdminPage() {
   );
 
   const handleSyncDrive = async (email, companyName) => {
-     // 🚀 FIX: Capturing toast ID to prevent hanging spinner
      const toastId = toast.loading("Creating Google Drive Workspace...");
      try {
         const res = await fetch('/api/drive/create-folder', {
@@ -299,7 +318,6 @@ export default function AdminPage() {
   };
 
   const impersonateUser = async (type, email_or_id) => {
-    // 🚀 FIX: Capturing toast ID to prevent hanging spinner
     const toastId = toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
     try {
         const res = await signIn('impersonate', { 
@@ -321,6 +339,7 @@ export default function AdminPage() {
     }
   };
 
+  // 🚀 FIX: Prevent Base64 Crash. Uses backend API to stream document or Google Drive link.
   const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
       let reason = '';
       if (status === 'rejected') {
@@ -515,7 +534,6 @@ export default function AdminPage() {
   const handleCancelPayment = async (reqId) => {
       if(!confirm("Are you sure you want to cancel this payment link?")) return;
       try {
-          // 🚀 FIX: Now successfully calling API to delete the request from DB before removing in UI
           const res = await fetch(`/api/payments/requests?id=${reqId}`, { 
               method: 'DELETE', headers: { Authorization: `Bearer ${token}` } 
           });
@@ -693,36 +711,37 @@ export default function AdminPage() {
                              </div>
                              
                              <div className="grid md:grid-cols-2 gap-4">
-                                {pendingDocs.map(doc => (
-                                   <div key={doc.id} className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex flex-col justify-between gap-3">
+                                {pendingDocs.map(doc => {
+                                   let formattedName = doc.name;
+                                   if (doc.id === 'signed_agreement') formattedName = `${client.company_name || client.client_name} - Legal Agreement`;
+
+                                   return (
+                                   <div key={doc.id} className={`p-3 rounded-lg flex flex-col justify-between gap-3 ${doc.id === 'signed_agreement' ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-200'}`}>
                                       <div>
-                                         <p className="font-bold text-slate-800 text-sm">{doc.name}</p>
+                                         <p className="font-bold text-slate-800 text-sm">{formattedName}</p>
                                          <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
                                       </div>
                                       
-                                      <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => {
-                                          if (doc.file_base64) {
-                                              const byteCharacters = atob(doc.file_base64);
-                                              const byteNumbers = new Array(byteCharacters.length);
-                                              for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                              const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-                                              window.open(URL.createObjectURL(blob), '_blank');
+                                      {/* 🚀 FIX: Document Viewing logic uses backend endpoint, avoiding Base64 crash */}
+                                      <Button size="sm" variant="outline" className={`w-full ${doc.id === 'signed_agreement' ? 'text-emerald-700 border-emerald-300 hover:bg-emerald-100' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`} onClick={() => {
+                                          if (doc.drive_link) {
+                                              window.open(doc.drive_link, '_blank');
                                           } else {
-                                              toast.error("File is corrupted or not a valid PDF.");
+                                              window.open(`/api/vault/document?email=${client.email}&docId=${doc.id}`, '_blank');
                                           }
                                       }}>
                                          <Eye className="w-4 h-4 mr-2"/> View Document
                                       </Button>
 
                                       <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
-                                         <Input placeholder="Rejection reason (if rejecting)..." className="h-8 text-xs bg-white" value={rejectReason[`${client.email}_${doc.id}`] || ''} onChange={e => setRejectReason(prev => ({...prev, [`${client.email}_${doc.id}`]: e.target.value}))} />
+                                         <Input placeholder="Rejection reason (if rejecting)..." className="h-8 text-xs bg-white" value={rejectReason[`${client.email}_${doc.id}`] || ''} onChange={e => setRejectReason({...rejectReason, [`${client.email}_${doc.id}`]: e.target.value})} />
                                          <div className="flex gap-2">
                                             <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'verified')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
                                             <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs"><XCircle className="w-3.5 h-3.5 mr-1"/> Reject</Button>
                                          </div>
                                       </div>
                                    </div>
-                                ))}
+                                )})}
                              </div>
                           </div>
                           );
@@ -795,6 +814,10 @@ export default function AdminPage() {
                     <div className="grid xl:grid-cols-2 gap-4">
                        {approvedClients.map(client => {
                           const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
+                          // 🚀 FIX: Dynamic Stats Calculation
+                          const wonBidsCount = client.bids ? client.bids.filter(b => b.status === 'Won').length : (client.stats?.won || 0);
+                          const totalRevenue = client.payments ? client.payments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (Number(p.amount) || 0), 0) : (client.stats?.total_paid || 0);
+
                           return (
                           <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
                              <div>
@@ -807,8 +830,8 @@ export default function AdminPage() {
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{client.stats?.won || 0}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(client.stats?.total_paid || 0).toLocaleString()}</span></div>
+                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{wonBidsCount}</span></div>
+                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{totalRevenue.toLocaleString()}</span></div>
                                 </div>
                              </div>
                              
@@ -976,58 +999,88 @@ export default function AdminPage() {
                   </CardContent>
                </Card>
 
-               <Card className="shadow-sm h-fit">
-                  <CardHeader className="bg-slate-50 border-b pb-4">
-                     <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
-                     {financialRequests.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400">
-                           <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                           <p className="text-sm font-semibold">No recent payment links dispatched.</p>
-                        </div>
-                     ) : (
-                        <div className="space-y-6">
-                           {financialRequests.map(req => (
-                              <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
-                                 <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
-                                    <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
-                                 </div>
-                                 
-                                 <div className="relative pt-2 pb-1 mx-2">
-                                    <div className="absolute top-4 left-0 right-0 h-1.5 bg-slate-100 rounded-full z-0"></div>
-                                    <div className={`absolute top-4 left-0 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[100%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
-                                    <div className="relative z-10 flex justify-between px-1">
-                                       <div className="flex flex-col items-center gap-1.5">
-                                          <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
-                                          <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span><span className="text-[9px] text-slate-400 font-mono">{req.sent_time}</span>
-                                       </div>
-                                       <div className="flex flex-col items-center gap-1.5">
-                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                            {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
+               <div className="flex flex-col gap-6">
+                  <Card className="shadow-sm h-fit">
+                     <CardHeader className="bg-slate-50 border-b pb-4">
+                        <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
+                     </CardHeader>
+                     <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
+                        {financialRequests.length === 0 ? (
+                           <div className="text-center py-12 text-slate-400">
+                              <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                              <p className="text-sm font-semibold">No pending payment links dispatched.</p>
+                           </div>
+                        ) : (
+                           <div className="space-y-6">
+                              {financialRequests.map(req => (
+                                 <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
+                                    <div className="flex justify-between items-center mb-4">
+                                       <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
+                                       <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
+                                    </div>
+                                    
+                                    <div className="relative pt-2 pb-1 mx-2">
+                                       <div className="absolute top-4 left-0 right-0 h-1.5 bg-slate-100 rounded-full z-0"></div>
+                                       <div className={`absolute top-4 left-0 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[100%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
+                                       <div className="relative z-10 flex justify-between px-1">
+                                          <div className="flex flex-col items-center gap-1.5">
+                                             <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
+                                             <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span><span className="text-[9px] text-slate-400 font-mono">{req.sent_time}</span>
                                           </div>
-                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
-                                       </div>
-                                       <div className="flex flex-col items-center gap-1.5">
-                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                            {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
+                                          <div className="flex flex-col items-center gap-1.5">
+                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
+                                               {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
+                                             </div>
+                                             <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
                                           </div>
-                                          <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span><span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
+                                          <div className="flex flex-col items-center gap-1.5">
+                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
+                                               {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
+                                             </div>
+                                             <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span><span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
+                                          </div>
                                        </div>
                                     </div>
-                                 </div>
 
-                                 <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                                    <Button size="sm" onClick={() => handleOfflinePayment(req)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 h-8 text-xs shadow-sm"><IndianRupee className="w-3 h-3 mr-1"/> Mark Paid Offline</Button>
-                                    <Button size="sm" onClick={() => handleCancelPayment(req.id)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs shadow-sm"><X className="w-3 h-3 mr-1"/> Cancel Link</Button>
+                                    <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
+                                       <Button size="sm" onClick={() => handleOfflinePayment(req)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 h-8 text-xs shadow-sm"><IndianRupee className="w-3 h-3 mr-1"/> Mark Paid Offline</Button>
+                                       <Button size="sm" onClick={() => handleCancelPayment(req.id)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs shadow-sm"><X className="w-3 h-3 mr-1"/> Cancel Link</Button>
+                                    </div>
                                  </div>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </CardContent>
-               </Card>
+                              ))}
+                           </div>
+                        )}
+                     </CardContent>
+                  </Card>
+
+                  {/* 🚀 FIX: Live History of Successful Payments */}
+                  <Card className="shadow-sm border-t-4 border-t-emerald-500">
+                     <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
+                        <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Payments</CardTitle>
+                        <Badge className="bg-emerald-600 text-white border-0">Total Gross: ₹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
+                     </CardHeader>
+                     <CardContent className="pt-4 max-h-[300px] overflow-y-auto">
+                        {successfulPaymentsLog.length === 0 ? (
+                           <p className="text-xs text-slate-500 text-center py-4">No successful payments logged yet.</p>
+                        ) : (
+                           <div className="space-y-3">
+                              {successfulPaymentsLog.map((pay, i) => (
+                                 <div key={i} className="bg-slate-50 border border-emerald-100 p-3 rounded-lg shadow-sm flex flex-col gap-2">
+                                    <div className="flex justify-between items-center">
+                                       <span className="text-xs font-bold text-[#0A2647]">{pay.client_name} <span className="text-slate-400 font-normal">({pay.email})</span></span>
+                                       <span className="font-black text-emerald-600">₹{pay.amount}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
+                                       <span>{pay.reason || 'Service Fee'}</span>
+                                       <span>{new Date(pay.paid_at || pay.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                     </CardContent>
+                  </Card>
+               </div>
             </div>
           </TabsContent>
 
@@ -1237,6 +1290,10 @@ export default function AdminPage() {
                         <div className="space-y-4">
                            {bidRequests.map(req => {
                               const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || (req.link_or_id && req.link_or_id.startsWith('http'));
+                              
+                              // 🚀 FIX: Cross-reference bid_no with public tenders to get the true PDF link if available
+                              const matchedTender = tenders.find(t => t.bid_no === req.link_or_id);
+
                               return (
                               <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
                                  <div className="flex justify-between items-start mb-2">
@@ -1248,8 +1305,15 @@ export default function AdminPage() {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
-                                 <Button variant="outline" size="sm" disabled={!hasDoc} onClick={() => handleViewDocument(req)} className={`mb-4 w-full sm:w-auto h-8 text-xs ${hasDoc ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'text-slate-400 border-slate-200 bg-slate-100'}`}>
-                                    <FileText className="w-3.5 h-3.5 mr-1" /> {hasDoc ? "View Attached Document / Link" : "No Document Attached"}
+                                 {/* 🚀 FIX: Enhanced View Document Logic */}
+                                 <Button variant="outline" size="sm" disabled={!hasDoc && !matchedTender} onClick={() => {
+                                     if (matchedTender) {
+                                         handleViewPDF(matchedTender._id || matchedTender.id);
+                                     } else {
+                                         handleViewDocument(req);
+                                     }
+                                 }} className={`mb-4 w-full sm:w-auto h-8 text-xs ${hasDoc || matchedTender ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'text-slate-400 border-slate-200 bg-slate-100'}`}>
+                                    <FileText className="w-3.5 h-3.5 mr-1" /> {(hasDoc || matchedTender) ? "View Original Tender PDF" : "No Document Attached"}
                                  </Button>
 
                                  {req.status === 'Pending Officer Review' ? (
@@ -1515,7 +1579,7 @@ function StatCard({ icon, label, value, accent }) {
 function BrandSettings({ token }) {
   const [logoPreview, setLogoPreview] = useState('');
   const [gemLogoPreview, setGemLogoPreview] = useState('');
-  const [mdSignaturePreview, setMdSignaturePreview] = useState(''); // 🚀 NEW STATE FOR SIGNATURE
+  const [mdSignaturePreview, setMdSignaturePreview] = useState(''); 
   const [brandName, setBrandName] = useState('Telangana Tenders');
   const [tagline, setTagline] = useState('Official Government Tender Portal');
   const [visionText, setVisionText] = useState('');
@@ -1532,7 +1596,7 @@ function BrandSettings({ token }) {
       if (d.settings) {
         if (d.settings.logo) setLogoPreview(d.settings.logo);
         if (d.settings.gem_logo) setGemLogoPreview(d.settings.gem_logo);
-        if (d.settings.md_signature) setMdSignaturePreview(d.settings.md_signature); // 🚀 LOAD SIGNATURE
+        if (d.settings.md_signature) setMdSignaturePreview(d.settings.md_signature); 
         if (d.settings.name) setBrandName(d.settings.name);
         if (d.settings.tagline) setTagline(d.settings.tagline);
         if (d.settings.vision_text) setVisionText(d.settings.vision_text);
@@ -1599,7 +1663,7 @@ function BrandSettings({ token }) {
         tagline: tagline, 
         logo: logoPreview, 
         gem_logo: gemLogoPreview,
-        md_signature: mdSignaturePreview, // 🚀 SAVE SIGNATURE TO DB
+        md_signature: mdSignaturePreview,
         vision_text: visionText,
         banners: banners,
         leaders: leaders,
@@ -1649,7 +1713,6 @@ function BrandSettings({ token }) {
                   </div>
                </div>
                
-               {/* 🚀 NEW: MD SIGNATURE UPLOAD */}
                <div className="flex flex-col items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 w-full">
                   <p className="text-xs font-bold text-slate-500 uppercase">MD Signature (For Agreements)</p>
                   <div className="w-full h-24 rounded-lg border-2 border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
