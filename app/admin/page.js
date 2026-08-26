@@ -458,16 +458,19 @@ export default function AdminPage() {
       toast.success("Task force closed."); refresh();
     } catch(e) { toast.error("Network error"); }
   };
-
-  const handleViewDocument = (req) => {
-    const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
+const handleViewDocument = (req) => {
+    // 🚀 FIX: MongoDB లో క్లయింట్ ఫైల్ సేవ్ అయ్యే అన్ని రకాల పేర్లను ఇక్కడ యాడ్ చేశాను
+    const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file;
+    
     if (docLink) {
        const finalUrl = docLink.startsWith('http') ? docLink : (docLink.startsWith('/') ? docLink : `/uploads/${docLink}`);
        window.open(finalUrl, '_blank');
     } else if (req.link_or_id && req.link_or_id.startsWith('http')) {
        window.open(req.link_or_id, '_blank');
-    } else { toast.info("No file attached. The link/ID reference is shown above."); }
-  };
+    } else { 
+       toast.info("No file attached. The link/ID reference is shown above."); 
+    }
+  };;
 
   const handleLedgerSubmit = async (e) => {
     e.preventDefault();
@@ -502,7 +505,7 @@ export default function AdminPage() {
       toast.success("Entry Deleted"); refresh();
   };
 
-  const handleSendPaymentRequest = async (e) => {
+ const handleSendPaymentRequest = async (e) => {
     e.preventDefault();
     if(!paymentRequestForm.client_id || !paymentRequestForm.amount || !paymentRequestForm.reason) return toast.error("Fill all details");
     
@@ -512,10 +515,24 @@ export default function AdminPage() {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ email: paymentRequestForm.client_id, amount: paymentRequestForm.amount, reason: paymentRequestForm.reason })
         });
+        
         if (res.ok) {
-            toast.success(`Cashfree payment link dispatched securely!`);
+            const data = await res.json(); // Backend పంపే రెస్పాన్స్ చదవడం
+            toast.success(`Online payment link dispatched securely to client!`);
+            
+            // 🚀 FIX: డిస్పాచ్ చేయగానే Live Tracking లో వెంటనే కనిపించడానికి ఆటోమేటిక్ అప్‌డేట్
+            const newReq = {
+                id: data.id || Date.now(),
+                client_id: paymentRequestForm.client_id,
+                amount: paymentRequestForm.amount,
+                reason: paymentRequestForm.reason,
+                status: 'sent',
+                sent_time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+            };
+            setFinancialRequests(prev => [newReq, ...prev]);
+            
             setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
-            refresh();
+            refresh(); // ఇది బ్యాలెన్స్ షీట్ మరియు ఇతర డేటాను అప్‌డేట్ చేస్తుంది
         } else {
             toast.error("Failed to dispatch payment link.");
         }
@@ -863,244 +880,151 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           </TabsContent>
+{/* ==================== 3. FINANCE HUB ==================== */}
+<TabsContent value="finance" className="mt-4">
+  <div className="grid lg:grid-cols-2 gap-6 mb-6">
+    
+    {/* --- 1. OFFLINE LEDGER ENTRY --- */}
+    <Card className="shadow-sm border-t-4 border-t-blue-600 h-fit">
+      <CardHeader className="bg-blue-50/50 border-b pb-4">
+        <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
+          <Wallet className="w-5 h-5 text-blue-600" /> {editingLedgerId ? 'Update Ledger Entry' : 'Offline Ledger Entry'}
+        </CardTitle>
+        <CardDescription>Record manual transactions (Cash/PhonePe/Bank Transfer).</CardDescription>
+      </CardHeader>
+      <CardContent className="pt-6">
+         {/* మీ పాత ఫారం కోడ్ ఇక్కడ యధావిధిగా ఉంటుంది. అందులో ఎలాంటి తప్పు లేదు. */}
+         {/* ... (Keep your existing Offline Ledger Form here) ... */}
+      </CardContent>
+    </Card>
 
-          {/* ==================== 3. FINANCE HUB ==================== */}
-          <TabsContent value="finance" className="mt-4">
-            <div className="grid lg:grid-cols-2 gap-6 mb-6">
-              <Card className="shadow-sm border-t-4 border-t-blue-600 h-fit">
-                 <CardHeader className="bg-blue-50/50 border-b pb-4">
-                    <CardTitle className="flex items-center gap-2 text-blue-900 text-lg">
-                       <Wallet className="w-5 h-5 text-blue-600" /> {editingLedgerId ? 'Update Ledger Entry' : 'Offline Ledger Entry'}
-                    </CardTitle>
-                    <CardDescription>Record manual transactions (Cash/PhonePe/Bank Transfer).</CardDescription>
-                 </CardHeader>
-                 <CardContent className="pt-6">
-                    <form onSubmit={handleLedgerSubmit} className="space-y-4">
-                       <div className="flex gap-4 p-1 bg-slate-100 rounded-lg">
-                          <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${ledgerForm.type === 'CREDIT' ? 'bg-white shadow-sm border border-slate-200 text-emerald-700' : 'text-slate-500 hover:bg-slate-200'}`}>
-                             <input type="radio" name="ledgerType" value="CREDIT" checked={ledgerForm.type === 'CREDIT'} onChange={e => setLedgerForm({...ledgerForm, type: e.target.value})} className="hidden" />
-                             <ArrowDownRight className="w-4 h-4"/> <span className="text-sm font-bold">Credit (Income)</span>
-                          </label>
-                          <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer p-2.5 rounded-md transition ${ledgerForm.type === 'DEBIT' ? 'bg-white shadow-sm border border-slate-200 text-red-600' : 'text-slate-500 hover:bg-slate-200'}`}>
-                             <input type="radio" name="ledgerType" value="DEBIT" checked={ledgerForm.type === 'DEBIT'} onChange={e => setLedgerForm({...ledgerForm, type: e.target.value})} className="hidden" />
-                             <ArrowUpRight className="w-4 h-4"/> <span className="text-sm font-bold">Debit (Expense)</span>
-                          </label>
-                       </div>
-                       <div className="grid grid-cols-2 gap-4">
-                          <div className="col-span-2 sm:col-span-1">
-                             <Label className="font-bold text-slate-700">Amount (₹) *</Label>
-                             <Input type="number" placeholder="5000" value={ledgerForm.amount} onChange={e => setLedgerForm({...ledgerForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647]" />
-                          </div>
-                          <div className="col-span-2 sm:col-span-1">
-                             <Label className="font-bold text-slate-700">Client / Ref (Optional)</Label>
-                             <Select value={ledgerForm.client_id} onValueChange={v => setLedgerForm({...ledgerForm, client_id: v})}>
-                               <SelectTrigger className="mt-1"><SelectValue placeholder="Select Client" /></SelectTrigger>
-                               <SelectContent>
-                                 <SelectItem value="N/A">General / Office Expense</SelectItem>
-                                 {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
-                               </SelectContent>
-                             </Select>
-                          </div>
-                       </div>
-                       <div>
-                          <Label className="font-bold text-slate-700">Reason / Description *</Label>
-                          <Input placeholder="e.g. Received Cash for DSC, Paid Internet Bill..." value={ledgerForm.reason} onChange={e => setLedgerForm({...ledgerForm, reason: e.target.value})} required className="mt-1" />
-                       </div>
-                       <div>
-                          <Label className="font-bold text-slate-700">Attach Proof (Receipt / Screenshot)</Label>
-                          <div className="mt-1 border-2 border-dashed rounded-md p-3 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer">
-                             <input type="file" accept="image/*,application/pdf" onChange={onLedgerProofChange} className="hidden" id="proof-input" />
-                             <label htmlFor="proof-input" className="cursor-pointer flex flex-col items-center">
-                               <FileUp className="w-5 h-5 text-slate-400 mb-1" />
-                               <span className="text-xs font-medium text-[#0A2647]">{ledgerProofName || 'Upload Image/PDF'}</span>
-                             </label>
-                          </div>
-                       </div>
-                       <Button type="submit" className={`w-full h-11 text-base shadow-md ${ledgerForm.type === 'CREDIT' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}>
-                          {editingLedgerId ? 'Update Entry' : (ledgerForm.type === 'CREDIT' ? '+ Add Income to Ledger' : '- Record Expense')}
-                       </Button>
-                       {editingLedgerId && <Button type="button" variant="outline" className="w-full mt-2" onClick={() => { setEditingLedgerId(null); setLedgerForm({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' }); }}>Cancel Edit</Button>}
-                    </form>
-                 </CardContent>
-              </Card>
+    {/* --- 2. BALANCE SHEET BOOK (With Running Balance) --- */}
+    <Card className="shadow-sm border-t-4 border-t-slate-800">
+      <CardHeader className="bg-slate-50 border-b pb-4 flex flex-row items-center justify-between">
+        <CardTitle className="text-[#0A2647] text-lg">Balance Sheet Book</CardTitle>
+        <div className="text-right">
+          <p className="text-[10px] text-slate-500 uppercase font-bold">Net Balance</p>
+          <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{ledgerBalance.toLocaleString()}</h3>
+          <p className="text-[9px] text-slate-400 font-mono mt-1">Offline: ₹{breakdown.offline.toLocaleString()} | Online: ₹{breakdown.online.toLocaleString()}</p>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
+        {ledgerTxns.length === 0 ? (
+          <div className="text-center py-12 text-slate-400"><Database className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No ledger entries found.</p></div>
+        ) : (
+          <table className="w-full text-sm text-left">
+            <thead className="text-[10px] uppercase bg-slate-100 text-slate-500 sticky top-0 z-10">
+              <tr><th className="p-2">Date</th><th className="p-2">Desc & Ref</th><th className="p-2 text-right">Amount</th><th className="p-2 w-10"></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {ledgerTxns.map((txn) => (
+                <tr key={txn._id} className="hover:bg-slate-50 group">
+                  <td className="p-2 text-xs text-slate-500 whitespace-nowrap align-top">{new Date(txn.created_at).toLocaleDateString()}</td>
+                  <td className="p-2 align-top">
+                    <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
+                    {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
+                    
+                    {/* 🚀 FIX: అప్పటి Running Balance ఇక్కడ చూపిస్తున్నాం */}
+                    <p className="text-[10px] font-bold text-slate-500 mt-1">
+                      Balance: <span className={txn.running_balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>₹{txn.running_balance?.toLocaleString() || '---'}</span>
+                    </p>
 
-              <Card className="shadow-sm border-t-4 border-t-slate-800">
-                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-row items-center justify-between">
-                    <CardTitle className="text-[#0A2647] text-lg">Balance Sheet Book</CardTitle>
-                    <div className="text-right">
-                       <p className="text-[10px] text-slate-500 uppercase font-bold">Net Balance</p>
-                       <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{ledgerBalance.toLocaleString()}</h3>
-                       {/* 🚀 FIX: Breakdown showing Offline + Online revenue clearly */}
-                       <p className="text-[9px] text-slate-400 font-mono mt-1">Offline: ₹{breakdown.offline.toLocaleString()} | Online: ₹{breakdown.online.toLocaleString()}</p>
-                    </div>
-                 </CardHeader>
-                 <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
-                    {ledgerTxns.length === 0 ? (
-                       <div className="text-center py-12 text-slate-400"><Database className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No ledger entries found.</p></div>
-                    ) : (
-                       <table className="w-full text-sm text-left">
-                          <thead className="text-[10px] uppercase bg-slate-100 text-slate-500 sticky top-0 z-10">
-                             <tr><th className="p-2">Date</th><th className="p-2">Desc & Ref</th><th className="p-2 text-right">Amount</th><th className="p-2 w-10"></th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                             {ledgerTxns.map((txn) => (
-                                <tr key={txn._id} className="hover:bg-slate-50 group">
-                                   <td className="p-2 text-xs text-slate-500 whitespace-nowrap align-top">{new Date(txn.created_at).toLocaleDateString()}</td>
-                                   <td className="p-2 align-top">
-                                      <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
-                                      {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
-                                      
-                                      {/* 🚀 FIX: Robust Proof image viewer that works with base64 without prefix crashing */}
-                                      {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer hover:bg-blue-100" onClick={() => {
-                                          let finalUrl = txn.proof_base64;
-                                          if (!finalUrl.startsWith('http') && !finalUrl.startsWith('data:') && !finalUrl.startsWith('/')) {
-                                              finalUrl = `data:image/jpeg;base64,${finalUrl}`;
-                                          }
-                                          if (finalUrl.startsWith('data:')) {
-                                              const newTab = window.open();
-                                              if (newTab) newTab.document.write(`<iframe src="${finalUrl}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                                          } else {
-                                              window.open(finalUrl, '_blank');
-                                          }
-                                      }}>View Proof</Badge>}
-                                   </td>
-                                   <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
-                                      {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
-                                   </td>
-                                   <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                      <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
-                                      <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
-                                   </td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                    )}
-                 </CardContent>
-              </Card>
+                    {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer hover:bg-blue-100">View Proof</Badge>}
+                  </td>
+                  <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
+                  </td>
+                  <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                    {/* Edit / Delete Buttons */}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  </div>
+
+  <div className="grid lg:grid-cols-2 gap-6">
+    
+    {/* --- 3. DISPATCH PAYMENT LINK (Push to Client Dashboard) --- */}
+    <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
+      <CardHeader className="bg-emerald-50/50 border-b pb-4">
+        {/* 🚀 FIX: Email/SMS కాదు కాబట్టి టెక్స్ట్ మార్చాను */}
+        <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg"><IndianRupee className="w-5 h-5 text-emerald-600" /> Request Payment (Cashfree)</CardTitle>
+        <CardDescription>Push a payment request directly to the client's dashboard.</CardDescription>
+      </CardHeader>
+      <CardContent className="pt-6">
+        <form onSubmit={handleSendPaymentRequest} className="space-y-4">
+           {/* మీ పాత Select Client, Amount, Reason కోడ్ ఇక్కడ ఉంటుంది */}
+           {/* ... */}
+          <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base shadow-md">
+             <Send className="w-4 h-4 mr-2" /> Push to Client App
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+
+    <div className="flex flex-col gap-6">
+      
+      {/* --- 4. LIVE TRACKING (Only shows Pending/Opened) --- */}
+      <Card className="shadow-sm h-fit">
+        <CardHeader className="bg-slate-50 border-b pb-4">
+          <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking (Pending)</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
+          {/* 🚀 FIX: ఫ్రంట్‌ఎండ్‌లో కేవలం pending లేదా opened మాత్రమే ఇక్కడ కనిపించేలా ఫిల్టర్ చేయాలి */}
+          {financialRequests.filter(req => req.status !== 'paid').length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-semibold">No pending payment requests.</p>
             </div>
-            
-            <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="shadow-sm border-t-4 border-t-emerald-500 h-fit">
-                  <CardHeader className="bg-emerald-50/50 border-b pb-4">
-                     <CardTitle className="flex items-center gap-2 text-emerald-900 text-lg"><IndianRupee className="w-5 h-5 text-emerald-600" /> Dispatch Online Payment Link</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                     <form onSubmit={handleSendPaymentRequest} className="space-y-4">
-                        <div>
-                           <Label className="font-bold text-slate-700">Select Client *</Label>
-                           <Select value={paymentRequestForm.client_id} onValueChange={v => setPaymentRequestForm({...paymentRequestForm, client_id: v})}>
-                             <SelectTrigger className="mt-1"><SelectValue placeholder="Choose client..." /></SelectTrigger>
-                             <SelectContent>
-                               {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.email})</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
-                              <Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" />
-                           </div>
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">Reason / Purpose *</Label>
-                              <Select value={paymentRequestForm.reason} onValueChange={v => setPaymentRequestForm({...paymentRequestForm, reason: v})}>
-                                 <SelectTrigger className="mt-1 bg-white border-slate-300"><SelectValue placeholder="Select Type" /></SelectTrigger>
-                                 <SelectContent>
-                                    <SelectItem value="Subscription Renewal">Subscription Renew</SelectItem>
-                                    <SelectItem value="Document Preparation Fee">Document Prep Fee</SelectItem>
-                                    <SelectItem value="EMD Deposit">EMD Deposit</SelectItem>
-                                 </SelectContent>
-                              </Select>
-                           </div>
-                        </div>
-                        <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base shadow-md"><Send className="w-4 h-4 mr-2" /> Dispatch Secure Link</Button>
-                     </form>
-                  </CardContent>
-               </Card>
-
-               <div className="flex flex-col gap-6">
-                  <Card className="shadow-sm h-fit">
-                     <CardHeader className="bg-slate-50 border-b pb-4">
-                        <CardTitle className="text-[#0A2647] text-lg">Live Payment Tracking Status</CardTitle>
-                     </CardHeader>
-                     <CardContent className="pt-4 max-h-[400px] overflow-y-auto">
-                        {financialRequests.length === 0 ? (
-                           <div className="text-center py-12 text-slate-400">
-                              <IndianRupee className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                              <p className="text-sm font-semibold">No pending payment links dispatched.</p>
-                           </div>
-                        ) : (
-                           <div className="space-y-6">
-                              {financialRequests.map(req => (
-                                 <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
-                                    <div className="flex justify-between items-center mb-4">
-                                       <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
-                                       <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
-                                    </div>
-                                    
-                                    <div className="relative pt-2 pb-1 mx-2">
-                                       <div className="absolute top-4 left-0 right-0 h-1.5 bg-slate-100 rounded-full z-0"></div>
-                                       <div className={`absolute top-4 left-0 h-1.5 rounded-full z-0 transition-all duration-1000 ${req.status === 'paid' ? 'w-[100%] bg-emerald-500' : req.status === 'opened' ? 'w-[50%] bg-blue-500' : 'w-0'}`}></div>
-                                       <div className="relative z-10 flex justify-between px-1">
-                                          <div className="flex flex-col items-center gap-1.5">
-                                             <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center shadow ring-4 ring-white"><CheckCircle2 className="w-3.5 h-3.5"/></div>
-                                             <span className="text-[10px] font-bold text-slate-600 uppercase">Sent</span><span className="text-[9px] text-slate-400 font-mono">{req.sent_time}</span>
-                                          </div>
-                                          <div className="flex flex-col items-center gap-1.5">
-                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'opened' || req.status === 'paid' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                                {req.status === 'opened' || req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
-                                             </div>
-                                             <span className={`text-[10px] font-bold uppercase ${req.status === 'opened' || req.status === 'paid' ? 'text-slate-600' : 'text-slate-400'}`}>Opened</span><span className="text-[9px] text-slate-400 font-mono">{req.open_time || '--:--'}</span>
-                                          </div>
-                                          <div className="flex flex-col items-center gap-1.5">
-                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow ring-4 ring-white transition ${req.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                                {req.status === 'paid' ? <CheckCircle2 className="w-3.5 h-3.5"/> : <Clock className="w-3 h-3"/>}
-                                             </div>
-                                             <span className={`text-[10px] font-bold uppercase ${req.status === 'paid' ? 'text-emerald-700' : 'text-slate-400'}`}>Paid</span><span className="text-[9px] text-slate-400 font-mono">{req.paid_time || '--:--'}</span>
-                                          </div>
-                                       </div>
-                                    </div>
-
-                                    <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                                       <Button size="sm" onClick={() => handleOfflinePayment(req)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 h-8 text-xs shadow-sm"><IndianRupee className="w-3 h-3 mr-1"/> Mark Paid Offline</Button>
-                                       <Button size="sm" onClick={() => handleCancelPayment(req.id)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs shadow-sm"><X className="w-3 h-3 mr-1"/> Cancel Link</Button>
-                                    </div>
-                                 </div>
-                              ))}
-                           </div>
-                        )}
-                     </CardContent>
-                  </Card>
-
-                  <Card className="shadow-sm border-t-4 border-t-emerald-500">
-                     <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
-                        <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Payments</CardTitle>
-                        <Badge className="bg-emerald-600 text-white border-0">Total Gross: ₹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
-                     </CardHeader>
-                     <CardContent className="pt-4 max-h-[300px] overflow-y-auto">
-                        {successfulPaymentsLog.length === 0 ? (
-                           <p className="text-xs text-slate-500 text-center py-4">No successful payments logged yet.</p>
-                        ) : (
-                           <div className="space-y-3">
-                              {successfulPaymentsLog.map((pay, i) => (
-                                 <div key={i} className="bg-slate-50 border border-emerald-100 p-3 rounded-lg shadow-sm flex flex-col gap-2">
-                                    <div className="flex justify-between items-center">
-                                       <span className="text-xs font-bold text-[#0A2647]">{pay.client_name} <span className="text-slate-400 font-normal">({pay.email})</span></span>
-                                       <span className="font-black text-emerald-600">₹{pay.amount}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
-                                       <span>{pay.reason || 'Service Fee'}</span>
-                                       <span>{new Date(pay.paid_at || pay.created_at).toLocaleDateString()}</span>
-                                    </div>
-                                 </div>
-                              ))}
-                           </div>
-                        )}
-                     </CardContent>
-                  </Card>
-               </div>
+          ) : (
+            <div className="space-y-6">
+              {financialRequests.filter(req => req.status !== 'paid').map(req => (
+                <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
+                  {/* మీ పాత లైవ్ ట్రాకింగ్ కార్డు డిజైన్ (Sent -> Opened) ఇక్కడ ఉంటుంది */}
+                  {/* ఇందులో Paid ఆప్షన్ తీసేయండి, ఎందుకంటే Paid అయితే ఇది కింద ఉన్న Successful లిస్ట్‌లోకి వెళ్లిపోతుంది */}
+                </div>
+              ))}
             </div>
-          </TabsContent>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* --- 5. SUCCESSFUL PAYMENTS (Online Only) --- */}
+      <Card className="shadow-sm border-t-4 border-t-emerald-500">
+        <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
+          {/* 🚀 FIX: ఇది కేవలం ఆన్‌లైన్ సక్సెస్ అయిన వాటి కోసమే అని స్పష్టంగా రాశాను */}
+          <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Online Payments</CardTitle>
+          <Badge className="bg-emerald-600 text-white border-0">Total: ₹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
+        </CardHeader>
+        <CardContent className="pt-4 max-h-[300px] overflow-y-auto">
+          {successfulPaymentsLog.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-4">No successful online payments yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {successfulPaymentsLog.map((pay, i) => (
+                <div key={i} className="bg-slate-50 border border-emerald-100 p-3 rounded-lg shadow-sm flex flex-col gap-2 border-l-4 border-l-emerald-500">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-[#0A2647]">{pay.client_name} <span className="text-slate-400 font-normal">({pay.email})</span></span>
+                    <span className="font-black text-emerald-600">₹{pay.amount}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
+                    <span>{pay.reason || 'Service Fee'} (Cashfree)</span>
+                    <span>{new Date(pay.paid_at || pay.created_at).toLocaleString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+    </div>
+  </div>
+</TabsContent>
 
           {/* ==================== 4. TEAM DIRECTORY ==================== */}
           <TabsContent value="team" className="mt-4">
@@ -1307,9 +1231,12 @@ export default function AdminPage() {
                      ) : (
                         <div className="space-y-4">
                            {bidRequests.map(req => {
-                              const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || (req.link_or_id && req.link_or_id.startsWith('http'));
+                              // 🚀 FIX: ఇక్కడ క్లయింట్ డాక్యుమెంట్ అప్‌లోడ్ చేశాడో లేదో ఖచ్చితంగా చెక్ చేస్తుంది
+                              const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file || (req.link_or_id && req.link_or_id.startsWith('http'));
                               
                               const matchedTender = tenders.find(t => t.bid_no === req.link_or_id);
+                              // 🚀 FIX: ఇది టెండర్ కాదు, క్లయింట్ సొంతంగా పెట్టిన ఫైల్ అని గుర్తుపట్టడానికి
+                              const isClientUpload = hasDoc && !matchedTender;
 
                               return (
                               <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
@@ -1322,14 +1249,16 @@ export default function AdminPage() {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
+                                 {/* 🚀 FIX: క్లయింట్ అప్‌లోడ్ చేస్తే "View Uploaded Document", లేకపోతే "View Original Tender PDF" */}
                                  <Button variant="outline" size="sm" disabled={!hasDoc && !matchedTender} onClick={() => {
-                                     if (matchedTender) {
-                                         handleViewPDF(matchedTender._id || matchedTender.id);
-                                     } else {
+                                     if (isClientUpload || !matchedTender) {
                                          handleViewDocument(req);
+                                     } else if (matchedTender) {
+                                         handleViewPDF(matchedTender._id || matchedTender.id);
                                      }
                                  }} className={`mb-4 w-full sm:w-auto h-8 text-xs ${hasDoc || matchedTender ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'text-slate-400 border-slate-200 bg-slate-100'}`}>
-                                    <FileText className="w-3.5 h-3.5 mr-1" /> {(hasDoc || matchedTender) ? "View Original Tender PDF" : "No Document Attached"}
+                                    <FileText className="w-3.5 h-3.5 mr-1" /> 
+                                    {isClientUpload ? "View Uploaded Document" : (matchedTender ? "View Original Tender PDF" : "No Document Attached")}
                                  </Button>
 
                                  {req.status === 'Pending Officer Review' ? (
@@ -1365,7 +1294,6 @@ export default function AdminPage() {
                </Card>
             </div>
           </TabsContent>
-
           {/* ==================== 6. PUBLISHER ==================== */}
           <TabsContent value="publisher" className="mt-4">
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
