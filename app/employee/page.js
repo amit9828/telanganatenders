@@ -46,6 +46,7 @@ export default function EmployeeDashboard() {
   const [publicTenders, setPublicTenders] = useState([]); 
   const [suggestions, setSuggestions] = useState([]); 
   const [tickets, setTickets] = useState([]); 
+  const [guestQueries, setGuestQueries] = useState([]); // 🚀 RESTORED STATE
 
   const [tenderForm, setTenderForm] = useState({
     bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
@@ -80,7 +81,6 @@ export default function EmployeeDashboard() {
   const [mdTaskReply, setMdTaskReply] = useState({});
   const [viewClientDocs, setViewClientDocs] = useState(null);
 
-  // 🚀 FIX: Added All Missing Variables for the pasted UI components
   const [ticketReply, setTicketReply] = useState({});
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
@@ -88,7 +88,6 @@ export default function EmployeeDashboard() {
   const [bidReply, setBidReply] = useState({});
   const [bidAssignee, setBidAssignee] = useState({});
   const [rejectReason, setRejectReason] = useState({});
-  const [guestQueries, setGuestQueries] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [l1Data, setL1Data] = useState({});
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -111,7 +110,6 @@ export default function EmployeeDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 FIX: Fetching ALL Data required for the Admin/Employee mixed components
   const fetchLiveOperationsData = async (userEmail) => {
     try {
       const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes] = await Promise.all([
@@ -141,7 +139,7 @@ export default function EmployeeDashboard() {
       if (ticketsRes.ok) { const tkData = await ticketsRes.json(); setTickets(tkData.tickets || []); }
       if (pendRes.ok) { const pendData = await pendRes.json(); setPendingUsers(pendData.users || []); }
       if (reqRes.ok) { const reqData = await reqRes.json(); setBidRequests(reqData.requests || []); }
-      if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); }
+      if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } // 🚀 RESTORED
       if (empRes.ok) { const eData = await empRes.json(); setTeamMembers(eData.team || []); }
 
     } catch (err) {
@@ -328,8 +326,6 @@ export default function EmployeeDashboard() {
       setProcessingWin(false);
   };
 
-  // 🚀 FIX: ALL MISSING ADMIN/EMPLOYEE MIXED FUNCTIONS ADDED SAFELY BELOW
-
   const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
       let reason = '';
       if (status === 'rejected') {
@@ -378,6 +374,7 @@ export default function EmployeeDashboard() {
       } catch(e) { toast.error("Network Error."); }
   };
 
+  // 🚀 RESTORED: GUEST QUERY RESOLVE FUNCTION
   const resolveGuestQuery = async (id) => {
       try {
           await fetch(`/api/guest-queries?id=${id}`, { method: 'DELETE' });
@@ -500,8 +497,6 @@ export default function EmployeeDashboard() {
           toast.success('L1 Intel saved successfully!'); fetchLiveOperationsData(email);
       } catch(e) { toast.error('Error saving L1 Price'); }
   };
-
-  // -------------------------------------------------------------
 
   const sendActionAlert = async (e) => {
     e.preventDefault();
@@ -1365,10 +1360,11 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          {/* ==================== 7. HELPDESK (WITH GUEST QUERIES) ==================== */}
-          <TabsContent value="tickets" className="mt-4">
+          {/* 🚀 RESTORED: GUEST QUERIES AND SLA TRACKER */}
+          <TabsContent value="sla" className="w-full space-y-6">
             
-            <Card className="tender-shadow border-t-4 border-t-purple-500 w-full mb-6">
+            {/* GUEST QUERIES */}
+            <Card className="tender-shadow border-t-4 border-t-purple-500 w-full">
               <CardHeader className="bg-purple-50/30 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Users className="w-5 h-5 text-purple-600" /> Public Visitor Queries (Leads)</CardTitle>
                  <CardDescription>Questions and Contact Requests submitted from the Guest Home Page.</CardDescription>
@@ -1399,13 +1395,13 @@ export default function EmployeeDashboard() {
               </CardContent>
             </Card>
 
+            {/* HELPDESK TICKETS */}
             <Card className="tender-shadow border-t-4 border-t-amber-500 w-full">
               <CardHeader className="bg-amber-50/30 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MessageSquare className="w-5 h-5 text-amber-600" /> Client Helpdesk & SLA Tracker</CardTitle>
                  <CardDescription>Resolve queries within 24 hours or escalate issues.</CardDescription>
               </CardHeader>
               <CardContent className="pt-6 max-h-[800px] overflow-y-auto">
-                 
                  {activeTickets.length > 0 && (
                     <div className="mb-8 space-y-4">
                        <h3 className="font-bold text-slate-700 mb-2 border-b pb-2">Active Action Required</h3>
@@ -1437,7 +1433,7 @@ export default function EmployeeDashboard() {
                                    <Button onClick={() => submitTicketReply(ticket._id)} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
                                 </div>
                                 <div className="flex gap-2">
-                                   <Button onClick={() => handleImpersonate('client', ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                                   <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
                                    <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 flex-1 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
                                 </div>
                              </div>
@@ -1480,6 +1476,7 @@ export default function EmployeeDashboard() {
         </Tabs>
       </main>
 
+      {/* MODALS */}
       <Dialog open={publishWinModalOpen} onOpenChange={setPublishWinModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1544,16 +1541,5 @@ export default function EmployeeDashboard() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function StatCard({ icon, label, value, accent }) {
-  return (
-    <Card className={`border-0 shadow-sm ring-1 ${accent ? 'ring-emerald-500/50 bg-emerald-50/80' : 'ring-slate-200 bg-white'}`}>
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center gap-2 text-muted-foreground text-[11px] sm:text-xs font-bold uppercase tracking-wider mb-2">{icon} {label}</div>
-        <div className={`text-2xl sm:text-3xl font-black ${accent ? 'text-emerald-700' : 'text-[#0A2647]'}`}>{value}</div>
-      </CardContent>
-    </Card>
   );
 }
