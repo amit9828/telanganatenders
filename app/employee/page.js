@@ -16,7 +16,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -77,9 +77,21 @@ export default function EmployeeDashboard() {
   const [winForm, setWinForm] = useState({ bid_id: null, contract_value: '', validity: '' });
   const [processingWin, setProcessingWin] = useState(false);
 
-  // 🚀 FIX: New States for MD Tasks Reply & Client Vault Docs
   const [mdTaskReply, setMdTaskReply] = useState({});
   const [viewClientDocs, setViewClientDocs] = useState(null);
+
+  // 🚀 FIX: Added All Missing Variables for the pasted UI components
+  const [ticketReply, setTicketReply] = useState({});
+  const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
+  const [dispatches, setDispatches] = useState([]);
+  const [bidRequests, setBidRequests] = useState([]);
+  const [bidReply, setBidReply] = useState({});
+  const [bidAssignee, setBidAssignee] = useState({});
+  const [rejectReason, setRejectReason] = useState({});
+  const [guestQueries, setGuestQueries] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [l1Data, setL1Data] = useState({});
+  const [pendingUsers, setPendingUsers] = useState([]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -93,46 +105,45 @@ export default function EmployeeDashboard() {
         body: JSON.stringify({ email: finalEmail, action: 'LOGIN', details: 'Employee started session on portal.' })
     }).catch(err => console.log('Attendance log failed', err));
 
-    // 🚀 FIX: Live Auto-Refresh every 15 seconds
     const interval = setInterval(() => {
         fetchLiveOperationsData(finalEmail);
     }, 15000);
     return () => clearInterval(interval);
   }, []);
 
+  // 🚀 FIX: Fetching ALL Data required for the Admin/Employee mixed components
   const fetchLiveOperationsData = async (userEmail) => {
     try {
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes] = await Promise.all([
-        fetch('/api/dispatches'), fetch('/api/bids'), fetch('/api/gov-officers'),
-        fetch('/api/users/approved'), fetch('/api/tenders'), fetch('/api/tickets')
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes] = await Promise.all([
+        fetch('/api/dispatches'), 
+        fetch('/api/bids'), 
+        fetch('/api/gov-officers'),
+        fetch('/api/users/approved'), 
+        fetch('/api/tenders'), 
+        fetch('/api/tickets'),
+        fetch('/api/users/pending'),
+        fetch('/api/client-requests'),
+        fetch('/api/guest-queries'),
+        fetch('/api/employees')
       ]);
 
       if (tasksRes.ok) {
         const tData = await tasksRes.json();
         const allDispatches = tData.dispatches || [];
+        setDispatches(allDispatches);
         setMdTasks(allDispatches.filter(d => d.target_type === 'employee_task'));
         setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed' && d.client_reply !== 'Client Accepted the Tender'));
       }
-      if (bidsRes.ok) {
-        const bData = await bidsRes.json();
-        setBids(bData.bids || []);
-      }
-      if (officersRes.ok) {
-        const oData = await officersRes.json();
-        setOfficers(oData.officers || []);
-      }
-      if (clientsRes.ok) {
-        const cData = await clientsRes.json();
-        setApprovedClients(cData.users || []);
-      }
-      if (tendersRes.ok) {
-        const pData = await tendersRes.json();
-        setPublicTenders(pData.tenders || []);
-      }
-      if (ticketsRes.ok) {
-        const tkData = await ticketsRes.json();
-        setTickets(tkData.tickets || []);
-      }
+      if (bidsRes.ok) { const bData = await bidsRes.json(); setBids(bData.bids || []); }
+      if (officersRes.ok) { const oData = await officersRes.json(); setOfficers(oData.officers || []); }
+      if (clientsRes.ok) { const cData = await clientsRes.json(); setApprovedClients(cData.users || []); }
+      if (tendersRes.ok) { const pData = await tendersRes.json(); setPublicTenders(pData.tenders || []); }
+      if (ticketsRes.ok) { const tkData = await ticketsRes.json(); setTickets(tkData.tickets || []); }
+      if (pendRes.ok) { const pendData = await pendRes.json(); setPendingUsers(pendData.users || []); }
+      if (reqRes.ok) { const reqData = await reqRes.json(); setBidRequests(reqData.requests || []); }
+      if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); }
+      if (empRes.ok) { const eData = await empRes.json(); setTeamMembers(eData.team || []); }
+
     } catch (err) {
       console.error("Failed to fetch live operations data", err);
     } finally {
@@ -154,7 +165,6 @@ export default function EmployeeDashboard() {
     reader.readAsDataURL(file);
   };
 
-  // 🚀 FIX: Prevent 4MB Network Error by opening PDF directly in browser
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`, '_blank');
     toast.success('Opening PDF Document...');
@@ -164,11 +174,9 @@ export default function EmployeeDashboard() {
     e.preventDefault();
     if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
     setPublishing(true);
-    
     try {
       const url = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
       const method = isEditingTender ? 'PUT' : 'POST';
-      
       const r = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
@@ -182,9 +190,7 @@ export default function EmployeeDashboard() {
       } else {
         toast.error('Failed to save tender');
       }
-    } catch (err) {
-      toast.error('Network error');
-    }
+    } catch (err) { toast.error('Network error'); }
     setPublishing(false);
   };
 
@@ -200,24 +206,14 @@ export default function EmployeeDashboard() {
   const handleSuggestTender = async (tenderId, tenderTitle, tenderBidNo) => {
     const selectedClientEmail = suggestForm[tenderId];
     if(!selectedClientEmail) return toast.error("Please select a client to suggest this tender.");
-    
     const formattedMessage = `[BID: ${tenderBidNo || 'N/A'}] ${tenderTitle}`;
-    
     const isDuplicate = suggestions.some(s => s.target_id === selectedClientEmail && s.message === formattedMessage);
-    if(isDuplicate) {
-      return toast.error("Action Denied: You have already suggested this tender to the selected client.");
-    }
+    if(isDuplicate) return toast.error("Action Denied: You have already suggested this tender to the selected client.");
     
     try {
       const res = await fetch('/api/dispatches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          target_type: 'client_alert', 
-          target_id: selectedClientEmail, 
-          subject: 'New Tender Suggestion from Officer', 
-          message: formattedMessage 
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_type: 'client_alert', target_id: selectedClientEmail, subject: 'New Tender Suggestion from Officer', message: formattedMessage })
       });
       if (res.ok) {
         toast.success(`Tender suggestion sent successfully to client!`);
@@ -225,35 +221,26 @@ export default function EmployeeDashboard() {
         setSuggestForm({...suggestForm, [tenderId]: ''});
         fetchLiveOperationsData(email);
       }
-    } catch (err) {
-      toast.error('Network Error while sending suggestion.');
-    }
+    } catch (err) { toast.error('Network Error while sending suggestion.'); }
   };
 
   const handleConvertSuggestionToBid = async (sug) => {
       if (sug.client_reply !== 'Client Accepted the Tender') {
          return toast.error("Cannot move to tracker until the client actively accepts the suggestion.");
       }
-
       let extractedBidNo = 'PENDING';
       let extractedDesc = sug.message;
       const match = sug.message.match(/\[BID: (.*?)\] (.*)/);
-      if (match) {
-          extractedBidNo = match[1];
-          extractedDesc = match[2];
-      }
+      if (match) { extractedBidNo = match[1]; extractedDesc = match[2]; }
 
       const isDuplicate = bids.some(b => b.client_email === sug.target_id && b.bid_no === extractedBidNo);
-      if(isDuplicate) {
-         return toast.error("Action Denied: This tender is already actively tracked for this client.");
-      }
+      if(isDuplicate) return toast.error("Action Denied: This tender is already actively tracked for this client.");
 
       try {
           const res = await fetch('/api/bids', {
              method: 'POST', headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ bid_no: extractedBidNo, description: extractedDesc, status: 'Bid Allocated', client_email: sug.target_id, submitted_date: '' })
           });
-          
           if (res.ok) {
              await fetch('/api/dispatches/complete', {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -262,9 +249,7 @@ export default function EmployeeDashboard() {
              toast.success("Both parties agreed! Tender successfully moved to Kanban Tracker.");
              fetchLiveOperationsData(email);
           }
-      } catch (e) {
-          toast.error("Error confirming the bid.");
-      }
+      } catch (e) { toast.error("Error confirming the bid."); }
   };
 
   const handleSuggestionResponse = async (suggestion, action) => {
@@ -277,35 +262,26 @@ export default function EmployeeDashboard() {
          toast.info("Suggestion Rejected and removed from list.");
       }
       fetchLiveOperationsData(email);
-    } catch (err) {
-      toast.error("Error processing suggestion.");
-    }
+    } catch (err) { toast.error("Error processing suggestion."); }
   };
 
   const handleAddBidRow = async (e) => {
     e.preventDefault();
     if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
-    
     const isDuplicate = bids.some(b => b.bid_no === newBidForm.bid_no && b.client_email === newBidForm.client_email);
     if(isDuplicate) return toast.error("Action Denied: This Bid Number is already active for this client!");
 
     try {
       const res = await fetch('/api/bids', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newBidForm)
       });
       if(res.ok) {
         toast.success("New Bid Event Row Added Successfully!");
         setNewBidForm({ bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' });
-        setShowAddBid(false);
-        fetchLiveOperationsData(email);
-      } else {
-        toast.error("Failed to add bid row.");
-      }
-    } catch (err) {
-      toast.error("Network Error.");
-    }
+        setShowAddBid(false); fetchLiveOperationsData(email);
+      } else toast.error("Failed to add bid row.");
+    } catch (err) { toast.error("Network Error."); }
   };
 
   const handleSaveEditBid = async (e) => {
@@ -313,32 +289,22 @@ export default function EmployeeDashboard() {
      if(!editingBid) return;
      try {
         const res = await fetch('/api/bids/update', {
-           method: 'PUT',
-           headers: { 'Content-Type': 'application/json' },
+           method: 'PUT', headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({ bid_id: editingBid._id || editingBid.id, status: editingBid.status, bid_no: editingBid.bid_no, description: editingBid.description })
         });
         if(res.ok) {
            toast.success("Bid details updated successfully!");
-           setEditingBid(null);
-           fetchLiveOperationsData(email);
-        } else {
-           toast.error("Failed to update bid details.");
-        }
-     } catch(err) {
-        toast.error("Network Error.");
-     }
+           setEditingBid(null); fetchLiveOperationsData(email);
+        } else toast.error("Failed to update bid details.");
+     } catch(err) { toast.error("Network Error."); }
   };
 
   const handleDeleteBid = async (bidId) => {
      if(!confirm("Are you sure you want to delete this bid access from the tracker?")) return;
      try {
        const res = await fetch(`/api/bids?id=${bidId}`, { method: 'DELETE' });
-       if (res.ok) { 
-          toast.success("Bid tracking removed."); 
-          fetchLiveOperationsData(email); 
-       } else {
-          toast.error("Failed to remove. Backend route might need update.");
-       }
+       if (res.ok) { toast.success("Bid tracking removed."); fetchLiveOperationsData(email); } 
+       else toast.error("Failed to remove. Backend route might need update.");
      } catch(e) { toast.error("Network error"); }
   }
 
@@ -346,32 +312,196 @@ export default function EmployeeDashboard() {
       e.preventDefault();
       if (!winForm.contract_value || !winForm.validity) return toast.error("Please fill in contract value and validity.");
       setProcessingWin(true);
-      
       try {
           const res = await fetch('/api/bids/update', {
               method: 'PUT', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                 bid_id: winForm.bid_id, 
-                 status: 'Won', 
-                 contract_value: winForm.contract_value, 
-                 validity: winForm.validity 
-              })
+              body: JSON.stringify({ bid_id: winForm.bid_id, status: 'Won', contract_value: winForm.contract_value, validity: winForm.validity })
           });
-          
           if (res.ok) {
               toast.success("Winning Bid Published to Client Ledger!");
               logActivity('PUBLISHED_WIN', `Published bid ${winForm.bid_id} as Won`);
               setPublishWinModalOpen(false);
               setWinForm({ bid_id: null, contract_value: '', validity: '' });
               fetchLiveOperationsData(email);
-          } else {
-              toast.error("Failed to publish win.");
-          }
-      } catch (err) {
-          toast.error("Network Error.");
-      }
+          } else toast.error("Failed to publish win.");
+      } catch (err) { toast.error("Network Error."); }
       setProcessingWin(false);
   };
+
+  // 🚀 FIX: ALL MISSING ADMIN/EMPLOYEE MIXED FUNCTIONS ADDED SAFELY BELOW
+
+  const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
+      let reason = '';
+      if (status === 'rejected') {
+          reason = rejectReason[`${clientEmail}_${docId}`];
+          if (!reason) return toast.error("Please provide a rejection reason so the client can fix it.");
+      }
+      try {
+          const res = await fetch('/api/vault/verify', {
+             method: 'PUT', headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ email: clientEmail, docId: docId, status: status, reject_reason: reason })
+          });
+          if (res.ok) {
+              toast.success(`Document marked as ${status.toUpperCase()}!`);
+              if (status === 'rejected') setRejectReason(prev => ({...prev, [`${clientEmail}_${docId}`]: ''}));
+              fetchLiveOperationsData(email);
+          } else { toast.error("Failed to update status."); }
+      } catch (err) { toast.error("Network error while updating vault document."); }
+  };
+
+  const approveClient = async (clientEmail) => {
+      try {
+          await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: clientEmail }) });
+          toast.success('✅ Client Verified & Portal Unlocked!'); fetchLiveOperationsData(email);
+      } catch(e) { toast.error('Network Error while approving.'); }
+  };
+
+  const deleteClientPermanently = async (clientEmail) => {
+      if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client?")) return;
+      try {
+          const res = await fetch(`/api/users?email=${encodeURIComponent(clientEmail)}`, { method: 'DELETE' });
+          if (res.ok) { toast.success("Client and all data permanently wiped out!"); fetchLiveOperationsData(email); } 
+          else toast.error("Failed to delete client.");
+      } catch(e) { toast.error('Network Error while deleting.'); }
+  };
+
+  const handleSyncDrive = async (clientEmail, companyName) => {
+      toast.loading("Creating Google Drive Workspace...");
+      try {
+          const res = await fetch('/api/drive/create-folder', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: clientEmail, folderName: `Client - ${companyName}` })
+          });
+          const data = await res.json();
+          if(res.ok) { toast.success("Drive Synced & Created Successfully!"); fetchLiveOperationsData(email); } 
+          else toast.error(data.error || "Drive Sync Failed.");
+      } catch(e) { toast.error("Network Error."); }
+  };
+
+  const resolveGuestQuery = async (id) => {
+      try {
+          await fetch(`/api/guest-queries?id=${id}`, { method: 'DELETE' });
+          toast.success("Guest query marked as resolved and removed!");
+          fetchLiveOperationsData(email);
+      } catch (e) { toast.error("Error updating query."); }
+  };
+
+  const submitTicketReply = async (ticket_id) => {
+      const replyText = ticketReply[ticket_id];
+      if(!replyText) return toast.error('Please write a reply first.');
+      try {
+          const r = await fetch('/api/tickets/reply', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ticket_id, reply: replyText, admin_email: empData.name || 'Operations Officer' })
+          });
+          if(r.ok) { 
+              toast.success('Reply Sent & Ticket Resolved!'); 
+              setTicketReply(prev => ({...prev, [ticket_id]: ''})); 
+              fetchLiveOperationsData(email); 
+          } else toast.error('Failed to send reply');
+      } catch(e) { toast.error('Error resolving ticket'); }
+  };
+
+  const deleteTicket = async (ticket_id) => {
+      if(!confirm("Permanently delete this helpdesk conversation?")) return;
+      try {
+          const res = await fetch(`/api/tickets?id=${ticket_id}`, { method: 'DELETE' });
+          if(res.ok) { toast.success("Ticket deleted"); fetchLiveOperationsData(email); } 
+          else toast.error("Failed to delete");
+      } catch(e) { toast.error("Network error"); }
+  };
+
+  const handleProcessBidRequest = async (reqId, status) => {
+      const reply = bidReply[reqId];
+      const assigneeId = bidAssignee[reqId];
+      if(status === 'Assigned' && !assigneeId) return toast.error('Please select an employee from the dropdown to assign.');
+      try {
+          let endpoint = '/api/client-requests/reply';
+          let payload = { req_id: reqId, status: status, reply: reply || 'Processed by Operations' };
+          if (status === 'Assigned' && assigneeId) {
+              const emp = teamMembers.find(t => t.emp_id === assigneeId);
+              endpoint = '/api/client-requests/assign';
+              payload = { req_id: reqId, emp_id: emp.emp_id, emp_name: emp.name, status: 'Assigned', reply: reply || 'Assigned to Employee' };
+          }
+          const res = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          if(res.ok) { 
+              toast.success(`Client Request ${status}!`); 
+              setBidReply(prev => ({...prev, [reqId]: ''})); 
+              setBidAssignee(prev => ({...prev, [reqId]: ''})); 
+              fetchLiveOperationsData(email); 
+          } else toast.error("Failed to update status.");
+      } catch(err) { toast.error("Network Error."); }
+  };
+
+  const handleDispatchTask = async (e) => {
+      e.preventDefault();
+      if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
+      try {
+          const res = await fetch('/api/dispatches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskForm) });
+          if(res.ok) { 
+              toast.success('Dispatch Sent!'); 
+              setTaskForm({ target_type: 'client_alert', target_id: '', subject: '', message: '' }); 
+              fetchLiveOperationsData(email); 
+          } else toast.error('Failed to dispatch');
+      } catch (err) { toast.error('Network Error.'); }
+  };
+
+  const deleteDispatch = async (id, isRequest = true) => {
+      if(!confirm("Permanently delete this task?")) return;
+      if(isRequest) {
+          setBidRequests(prev => prev.filter(r => r._id !== id));
+          await fetch(`/api/client-requests?id=${id}`, { method: 'DELETE' });
+      } else {
+          setDispatches(prev => prev.filter(d => d._id !== id));
+          await fetch(`/api/dispatches?id=${id}`, { method: 'DELETE' });
+      }
+      toast.success("Deleted permanently.");
+  };
+
+  const handleGiveWarning = async (id) => {
+      try {
+          await fetch('/api/dispatches/update', {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ task_id: id, status: 'Warning Issued' })
+          });
+          toast.success("Warning issued successfully!"); fetchLiveOperationsData(email);
+      } catch(e) { toast.error("Network error"); }
+  };
+
+  const handleForceClose = async (id) => {
+      if(!confirm("Are you sure you want to force close this task?")) return;
+      try {
+          await fetch('/api/dispatches/update', {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ task_id: id, status: 'Force Closed (SLA Breach)' })
+          });
+          toast.success("Task force closed."); fetchLiveOperationsData(email);
+      } catch(e) { toast.error("Network error"); }
+  };
+
+  const handleViewDocument = (req) => {
+      const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
+      if (docLink) {
+          const finalUrl = docLink.startsWith('http') ? docLink : (docLink.startsWith('/') ? docLink : `/uploads/${docLink}`);
+          window.open(finalUrl, '_blank');
+      } else if (req.link_or_id && req.link_or_id.startsWith('http')) {
+          window.open(req.link_or_id, '_blank');
+      } else { toast.info("No file attached. The link/ID reference is shown above."); }
+  };
+
+  const submitL1Price = async (tender_id) => {
+      const data = l1Data[tender_id];
+      if (!data?.price) return toast.error('Please enter the L1 Price');
+      try {
+          await fetch(`/api/tenders/${tender_id}`, {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ l1_price: data.price, l1_winner: data.winner })
+          });
+          toast.success('L1 Intel saved successfully!'); fetchLiveOperationsData(email);
+      } catch(e) { toast.error('Error saving L1 Price'); }
+  };
+
+  // -------------------------------------------------------------
 
   const sendActionAlert = async (e) => {
     e.preventDefault();
@@ -388,9 +518,7 @@ export default function EmployeeDashboard() {
         setAlertForm({ client_id: '', message: '' });
         fetchLiveOperationsData(email);
       }
-    } catch (err) {
-      toast.error('Network Error while pushing alert.');
-    }
+    } catch (err) { toast.error('Network Error while pushing alert.'); }
   };
 
   const handleRaiseQuery = async (e) => {
@@ -398,8 +526,7 @@ export default function EmployeeDashboard() {
     if(!queryForm.client_email || !queryForm.subject || !queryForm.message) return toast.error('Please select client and fill query');
     try {
       const res = await fetch('/api/queries/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(queryForm)
       });
       if (res.ok) {
@@ -407,29 +534,22 @@ export default function EmployeeDashboard() {
         logActivity('RAISED_QUERY', `Locked client ${queryForm.client_email} for document request.`);
         setQueryForm({ client_email: '', subject: '', message: '' });
         fetchLiveOperationsData(email);
-      } else {
-        toast.error('Failed to raise query.');
-      }
-    } catch (err) {
-      toast.error('Network Error while raising query.');
-    }
+      } else { toast.error('Failed to raise query.'); }
+    } catch (err) { toast.error('Network Error while raising query.'); }
   };
 
   const handleCloseQuery = async (queryId, clientEmail) => {
     if(!confirm("Are you sure you want to close this query?")) return;
     try {
       const res = await fetch('/api/queries/reply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queryId, email: clientEmail })
       });
       if (res.ok) {
         toast.success(`Query Closed successfully.`);
         fetchLiveOperationsData(email);
       }
-    } catch (err) {
-      toast.error('Network Error.');
-    }
+    } catch (err) { toast.error('Network Error.'); }
   };
 
   const updateBidStatus = async (id, newStatus) => {
@@ -448,15 +568,10 @@ export default function EmployeeDashboard() {
       if (res.ok) {
         toast.success(`Bid updated to "${newStatus}". Client Notified.`);
         logActivity('UPDATED_BID', `Changed bid ${id} status to ${newStatus}`);
-      } else {
-        fetchLiveOperationsData(email); 
-      }
-    } catch (err) {
-      toast.error('Network Error during status update.');
-    }
+      } else { fetchLiveOperationsData(email); }
+    } catch (err) { toast.error('Network Error during status update.'); }
   };
 
-  // 🚀 FIX: Employee Reply to MD Tasks logic
   const markTaskDone = async (taskId) => {
     const replyText = mdTaskReply[taskId] || 'Completed by Employee';
     setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed', employee_reply: replyText } : t));
@@ -471,24 +586,7 @@ export default function EmployeeDashboard() {
         setMdTaskReply(prev => ({...prev, [taskId]: ''}));
         fetchLiveOperationsData(email); 
       }
-    } catch (err) {
-      toast.error('Network Error while updating task.');
-    }
-  };
-
-  const handleDeleteTicket = async (ticketId) => {
-    if(!confirm("Permanently delete this helpdesk conversation?")) return;
-    try {
-      const res = await fetch(`/api/tickets?id=${ticketId}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Ticket conversation deleted.');
-        fetchLiveOperationsData(email);
-      } else {
-        toast.error("Failed to delete ticket.");
-      }
-    } catch (err) {
-      toast.error('Network Error.');
-    }
+    } catch (err) { toast.error('Network Error while updating task.'); }
   };
 
   const handleSaveOfficer = async (e) => {
@@ -534,23 +632,10 @@ export default function EmployeeDashboard() {
     toast.loading(`Connecting to ${targetEmail}'s portal...`);
 
     try {
-      const res = await signIn('impersonate', {
-        email: targetEmail,
-        adminToken: 'admin_success',
-        redirect: false 
-      });
-
-      if (res?.error) {
-         newTab.close(); 
-         toast.error("Failed to connect to client portal!");
-      } else {
-         toast.success("Successfully Connected!");
-         newTab.location.href = '/client';
-      }
-    } catch (e) {
-      newTab.close();
-      toast.error("Network Error.");
-    }
+      const res = await signIn('impersonate', { email: targetEmail, adminToken: 'admin_success', redirect: false });
+      if (res?.error) { newTab.close(); toast.error("Failed to connect to client portal!"); } 
+      else { toast.success("Successfully Connected!"); newTab.location.href = '/client'; }
+    } catch (e) { newTab.close(); toast.error("Network Error."); }
   };
 
   const logActivity = (action, details) => {
@@ -618,7 +703,6 @@ export default function EmployeeDashboard() {
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
               ) : (
                  mdTasks.map(task => (
-                    // 🚀 FIX: Flex-col wrapper to accommodate the text box neatly
                     <div key={task._id || task.id} className="flex flex-col bg-slate-50 border p-3 rounded-lg shadow-sm">
                        <div className="flex justify-between items-start">
                           <div>
@@ -629,7 +713,6 @@ export default function EmployeeDashboard() {
                           {task.status === 'Completed' && <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>}
                        </div>
                        
-                       {/* 🚀 FIX: Employee Reply Textbox & Button added here */}
                        {task.status !== 'Completed' && (
                           <div className="flex flex-col sm:flex-row gap-2 mt-3 border-t border-slate-200 pt-3">
                              <Input placeholder="Type your reply to MD..." className="h-8 text-xs bg-white flex-1" value={mdTaskReply[task._id || task.id] || ''} onChange={(e) => setMdTaskReply({...mdTaskReply, [task._id || task.id]: e.target.value})} />
@@ -1034,7 +1117,6 @@ export default function EmployeeDashboard() {
                                 </div>
                              </div>
                              
-                             {/* 🚀 FIX: Added "View Vault Docs" Button to view Client's Document Uploads */}
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
                                 <Button size="sm" onClick={() => setViewClientDocs(client)} variant="outline" className="flex-1 text-purple-600 border-purple-200 hover:bg-purple-50 h-9">
                                    <FileText className="w-4 h-4 mr-2" /> View Vault Docs
@@ -1283,11 +1365,44 @@ export default function EmployeeDashboard() {
             </div>
           </TabsContent>
 
-          <TabsContent value="sla" className="w-full space-y-6">
-            <Card className="shadow-sm w-full">
-              <CardHeader className="bg-slate-50/50 pb-4 border-b">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2"><MessageSquare className="w-5 h-5 text-amber-500"/> Client Helpdesk & SLA Tracker</CardTitle>
-                <CardDescription>Resolve queries within 24 hours or escalate to MD.</CardDescription>
+          {/* ==================== 7. HELPDESK (WITH GUEST QUERIES) ==================== */}
+          <TabsContent value="tickets" className="mt-4">
+            
+            <Card className="tender-shadow border-t-4 border-t-purple-500 w-full mb-6">
+              <CardHeader className="bg-purple-50/30 border-b pb-4">
+                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Users className="w-5 h-5 text-purple-600" /> Public Visitor Queries (Leads)</CardTitle>
+                 <CardDescription>Questions and Contact Requests submitted from the Guest Home Page.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6 max-h-[500px] overflow-y-auto">
+                 {guestQueries.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400"><MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm font-semibold">No public queries pending.</p></div>
+                 ) : (
+                    <div className="grid md:grid-cols-2 gap-4">
+                       {guestQueries.map(gq => (
+                          <div key={gq._id} className="border border-purple-200 bg-white rounded-lg p-4 shadow-sm relative">
+                             <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-bold text-[#0A2647] text-base">{gq.name}</h4>
+                                <Badge className="bg-purple-100 text-purple-800 border-0">New Lead</Badge>
+                             </div>
+                             <p className="text-sm text-slate-600 mb-2 font-mono"><PhoneCall className="w-3 h-3 inline mr-1"/> {gq.phone}</p>
+                             <div className="bg-slate-50 p-3 rounded border border-slate-100 mb-4">
+                                <p className="text-xs text-slate-700 italic">"{gq.query}"</p>
+                             </div>
+                             <div className="flex gap-2">
+                                <a href={`tel:${gq.phone}`} className="flex-1"><Button size="sm" className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-xs"><PhoneCall className="w-3 h-3 mr-1"/> Call Lead</Button></a>
+                                <Button size="sm" onClick={() => resolveGuestQuery(gq._id)} variant="outline" className="border-slate-300 text-slate-600 hover:bg-slate-100 h-8 text-xs"><CheckCircle2 className="w-3 h-3 mr-1"/> Mark Resolved</Button>
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+              </CardContent>
+            </Card>
+
+            <Card className="tender-shadow border-t-4 border-t-amber-500 w-full">
+              <CardHeader className="bg-amber-50/30 border-b pb-4">
+                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><MessageSquare className="w-5 h-5 text-amber-600" /> Client Helpdesk & SLA Tracker</CardTitle>
+                 <CardDescription>Resolve queries within 24 hours or escalate issues.</CardDescription>
               </CardHeader>
               <CardContent className="pt-6 max-h-[800px] overflow-y-auto">
                  
@@ -1298,7 +1413,6 @@ export default function EmployeeDashboard() {
                        {activeTickets.map(ticket => (
                           <div key={ticket._id} className="border border-amber-200 bg-white rounded-lg p-4 relative overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between">
                              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                             
                              <div>
                                 <div className="flex justify-between items-start mb-2">
                                    <div>
@@ -1307,7 +1421,7 @@ export default function EmployeeDashboard() {
                                    </div>
                                    <div className="flex gap-2 items-center">
                                       <Badge className="bg-amber-100 text-amber-800 border-0 animate-pulse shrink-0">Action Required</Badge>
-                                      <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white"><Trash2 className="w-3 h-3"/></Button>
+                                      <Button variant="ghost" size="icon" onClick={() => deleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white"><Trash2 className="w-3 h-3"/></Button>
                                    </div>
                                 </div>
                                 <div className="bg-amber-50 border border-amber-100 p-3 rounded-tr-xl rounded-br-xl rounded-bl-xl shadow-inner mb-4 mt-2">
@@ -1323,7 +1437,7 @@ export default function EmployeeDashboard() {
                                    <Button onClick={() => submitTicketReply(ticket._id)} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
                                 </div>
                                 <div className="flex gap-2">
-                                   <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
+                                   <Button onClick={() => handleImpersonate('client', ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
                                    <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 flex-1 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
                                 </div>
                              </div>
@@ -1352,7 +1466,7 @@ export default function EmployeeDashboard() {
 
                                 <div className="shrink-0 flex items-center gap-3">
                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{new Date(ticket.created_at).toLocaleDateString()} - {ticket.replied_at ? new Date(ticket.replied_at).toLocaleDateString() : 'N/A'}</span>
-                                   <Button variant="ghost" size="icon" onClick={() => handleDeleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
+                                   <Button variant="ghost" size="icon" onClick={() => deleteTicket(ticket._id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-white border border-slate-200 shadow-sm"><Trash2 className="w-3 h-3"/></Button>
                                 </div>
                              </div>
                           ))}
@@ -1393,7 +1507,6 @@ export default function EmployeeDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* 🚀 NEW: CLIENT VAULT DOCUMENTS MODAL */}
       <Dialog open={!!viewClientDocs} onOpenChange={() => setViewClientDocs(null)}>
         <DialogContent className="sm:max-w-2xl bg-white">
           <DialogHeader>
@@ -1431,5 +1544,16 @@ export default function EmployeeDashboard() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function StatCard({ icon, label, value, accent }) {
+  return (
+    <Card className={`border-0 shadow-sm ring-1 ${accent ? 'ring-emerald-500/50 bg-emerald-50/80' : 'ring-slate-200 bg-white'}`}>
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-center gap-2 text-muted-foreground text-[11px] sm:text-xs font-bold uppercase tracking-wider mb-2">{icon} {label}</div>
+        <div className={`text-2xl sm:text-3xl font-black ${accent ? 'text-emerald-700' : 'text-[#0A2647]'}`}>{value}</div>
+      </CardContent>
+    </Card>
   );
 }
