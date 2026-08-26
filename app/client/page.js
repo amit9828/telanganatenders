@@ -1425,11 +1425,13 @@ export default function ClientDashboard() {
             </Card>
           </TabsContent>
 
-          {/* ============================================================================== */}
+         {/* ============================================================================== */}
           {/* TAB 6: FINANCE & SLA (ALERTS AND QUERIES COMBINED HERE) */}
           {/* ============================================================================== */}
           <TabsContent value="finance" className="space-y-6">
              <div className="grid lg:grid-cols-2 gap-6">
+                
+                {/* 1. FINANCIAL LEDGER CARD */}
                 <Card className="tender-shadow border-t-4 border-t-amber-500 h-fit">
                   <CardHeader className="pb-4 border-b bg-amber-50/30">
                     <CardTitle className="text-lg flex items-center gap-2"><Banknote className="w-5 h-5 text-amber-600"/> Financial Ledger</CardTitle>
@@ -1442,7 +1444,6 @@ export default function ClientDashboard() {
                        
                        <div className="border-t pt-4">
                           <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
-                          {/* 🚀 FIX: We filter the array so 'paid' or 'SUCCESS' items disappear instantly */}
                           {!pendingPayments || pendingPayments.filter(p => p.status !== 'paid' && p.status !== 'SUCCESS').length === 0 ? (
                              <p className="text-xs text-slate-500 text-center py-2">No pending fees requested.</p>
                           ) : (
@@ -1454,7 +1455,6 @@ export default function ClientDashboard() {
                                      <span className="font-semibold text-red-900">{pay.reason}</span>
                                      <span className="font-bold text-red-700">₹{pay.amount}</span>
                                   </div>
-                                  {/* Remember: To fix the redirection, update your return_url inside the executePayment function or backend */}
                                   <Button onClick={() => executePayment(pay)} disabled={buying} size="sm" className="w-full bg-[#0A2647] hover:bg-[#144272] h-9 shadow-md">
                                     {buying ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <IndianRupee className="w-4 h-4 mr-2"/>} 
                                     {buying ? 'Connecting...' : 'Pay via Cashfree'}
@@ -1464,7 +1464,6 @@ export default function ClientDashboard() {
                           )}
                        </div>
                        
-                       {/* Payment History & Gross Revenue */}
                        <div className="border-t pt-4 mt-4">
                           <h4 className="font-bold text-slate-700 mb-3 flex items-center justify-between">
                              Payment History
@@ -1494,6 +1493,7 @@ export default function ClientDashboard() {
                   </CardContent>
                 </Card>
 
+                {/* 2. SLA SUPPORT DESK CARD */}
                 <Card className="tender-shadow border-t-4 border-t-slate-800 h-fit">
                   <CardHeader className="pb-4 bg-slate-50 border-b">
                     <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-slate-700"/> 24/7 SLA Support Desk</CardTitle>
@@ -1528,96 +1528,10 @@ export default function ClientDashboard() {
                                    
                                    {tkt.reply && (
                                       <div className="mb-3 text-xs font-semibold bg-emerald-50 text-emerald-800 p-2 rounded border border-emerald-100">
-                                          Support: {tkt.reply}
-                                      </div>
-                                   )}
-
-                                   {/* Client Actions: Reply or Close */}
-                                   <div className="flex flex-col sm:flex-row gap-2 border-t pt-3 mt-1">
-                                      <Input placeholder="Reply to Support..." className="h-8 text-xs bg-white flex-1" value={ticketReplyClient[tkt._id] || ''} onChange={(e) => setTicketReplyClient({...ticketReplyClient, [tkt._id]: e.target.value})} />
-                                      <div className="flex gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
-                                         <Button size="sm" onClick={() => submitTicketReplyClient(tkt._id)} className="flex-1 sm:flex-none bg-slate-800 hover:bg-slate-900 h-8 text-xs text-white px-3"><Send className="w-3 h-3 mr-1"/> Reply Again</Button>
-                                         <Button size="sm" onClick={() => handleDeleteTicketClient(tkt._id)} variant="outline" className="flex-1 sm:flex-none border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs px-2"><XCircle className="w-3 h-3 mr-1"/> Close Query</Button>
-                                      </div>
-                                   </div>
-                                </div>
-                             ))}
-                          </div>
-                       ) : (
-                          <p className="text-xs text-slate-500 text-center py-4">No ticket history found.</p>
-                       )}
-                    </div>
-                  </CardContent>
-                </Card>
-             </div>
-
-             {/* Officer Document Queries Tracker */}
-             <Card className="tender-shadow border-t-4 border-t-orange-500">
-               <CardHeader className="pb-4 border-b bg-orange-50/50">
-                  <CardTitle className="text-lg flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-orange-600"/> Officer Document Queries Tracker</CardTitle>
-                  <CardDescription>Track the status of documentation requested by the operations team.</CardDescription>
-               </CardHeader>
-               <CardContent className="pt-5">
-                  {userData?.officer_queries?.length === 0 ? (
-                      <p className="text-sm text-slate-500 py-6 text-center">No queries pending from operations.</p>
-                  ) : (
-                      <div className="space-y-4">
-                         {userData?.officer_queries?.map((q, idx) => (
-                            <div key={idx} className="border border-orange-200 bg-orange-50/50 rounded-xl p-4 flex flex-col gap-3">
-                               <div className="flex justify-between items-start">
-                                  <h4 className="font-bold text-[#0A2647]">{q.subject}</h4>
-                                  <Badge className={q.reply_submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800 animate-pulse'}>
-                                     {q.reply_submitted ? 'Reply Sent' : 'Action Required'}
-                                  </Badge>
-                               </div>
-                               <p className="text-sm text-slate-700 bg-white p-3 rounded border border-orange-100">"{q.message}"</p>
-                               
-                               {q.reply_submitted ? (
-                                  <p className="text-xs text-emerald-600 font-bold bg-emerald-50 p-2 rounded">✓ You have submitted the explanation/document. Pending MD verification.</p>
-                               ) : (
-                                  <form onSubmit={(e) => handleQuerySubmit(e, q.id)} className="border-t border-orange-100 pt-3 mt-1 space-y-3">
-                                     <Textarea required placeholder="Provide explanation or details..." value={queryForm.description} onChange={e => setQueryForm({...queryForm, description: e.target.value})} className="bg-white focus:ring-orange-500"/>
-                                     <div className="flex flex-col sm:flex-row gap-3">
-                                        <div className="flex-1 relative border border-slate-300 bg-white rounded-md flex items-center px-3 cursor-pointer hover:bg-slate-50 h-10">
-                                           <input type="file" accept=".pdf,.jpg,.png,.zip" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={e => setQueryForm({...queryForm, file: e.target.files[0]})} />
-                                           <UploadCloud className="w-4 h-4 text-slate-400 mr-2 shrink-0"/>
-                                           <span className="text-xs text-slate-600 truncate">{queryForm.file ? queryForm.file.name : "Attach Document (Optional)"}</span>
-                                        </div>
-                                        <Button type="submit" disabled={submittingQuery} className="bg-orange-600 hover:bg-orange-700 sm:w-auto w-full h-10 shrink-0">
-                                           {submittingQuery ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Send Reply'}
-                                        </Button>
-                                     </div>
-                                  </form>
-                               )}
-                            </div>
-                         ))}
-                      </div>
-                  )}
-               </CardContent>
-             </Card>
-
-          </TabsContent>
-
-                    {/* 🚀 FIX: Client Side Active & Resolved Ticket Management */}
-                    <div>
-                       <h4 className="font-bold text-slate-700 mb-3">Your Tickets History</h4>
-                       {userData?.tickets && userData.tickets.length > 0 ? (
-                          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                             {userData.tickets.map((tkt, i) => (
-                                <div key={tkt._id || i} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm">
-                                   <div className="flex justify-between items-start mb-2">
-                                      <h5 className="font-bold text-[#0A2647]">{tkt.subject}</h5>
-                                      <Badge className={tkt.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-amber-100 text-amber-800 border-0'}>{tkt.status}</Badge>
-                                   </div>
-                                   <p className="text-xs text-slate-600 mb-3 bg-white p-2 rounded border border-slate-100">Me: {tkt.message}</p>
-                                   
-                                   {tkt.reply && (
-                                      <div className="mb-3 text-xs font-semibold bg-emerald-50 text-emerald-800 p-2 rounded border border-emerald-100">
                                          Support: {tkt.reply}
                                       </div>
                                    )}
 
-                                   {/* Client Actions: Reply or Close */}
                                    <div className="flex flex-col sm:flex-row gap-2 border-t pt-3 mt-1">
                                       <Input placeholder="Reply to Support..." className="h-8 text-xs bg-white flex-1" value={ticketReplyClient[tkt._id] || ''} onChange={(e) => setTicketReplyClient({...ticketReplyClient, [tkt._id]: e.target.value})} />
                                       <div className="flex gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
@@ -1636,7 +1550,7 @@ export default function ClientDashboard() {
                 </Card>
              </div>
 
-             {/* Officer Document Queries Tracker */}
+             {/* 3. OFFICER DOCUMENT QUERIES TRACKER CARD */}
              <Card className="tender-shadow border-t-4 border-t-orange-500">
                <CardHeader className="pb-4 border-b bg-orange-50/50">
                   <CardTitle className="text-lg flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-orange-600"/> Officer Document Queries Tracker</CardTitle>
