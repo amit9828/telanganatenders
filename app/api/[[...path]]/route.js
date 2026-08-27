@@ -245,6 +245,12 @@ export async function GET(request, { params }) {
       return json({ officers });
     }
 
+    // 🚀 Operator Docs GET
+    if (path === 'operator/docs' || path === 'api/operator/docs') {
+       const docs = await db.collection('operator_storage').find({}).sort({ created_at: -1 }).toArray();
+       return json({ docs });
+    }
+    
     if (path === 'bids' || path === 'api/bids') {
       const clientEmail = searchParams.get('client_email');
       let query = {};
@@ -916,7 +922,37 @@ export async function POST(request, { params }) {
         await db.collection('finance_ledger').insertOne(newTxn);
         return json({ success: true, message: 'Transaction Added' });
     }
+    // 🚀 Operator Docs POST (Store)
+    if (path === 'operator/docs' || path === 'api/operator/docs') {
+       const { name, file_base64, uploaded_by } = body;
+       const result = await db.collection('operator_storage').insertOne({
+          name, file_base64, uploaded_by, created_at: new Date()
+       });
+       return json({ success: true, id: result.insertedId });
+    }
 
+    // 🚀 Operator Share Doc with Client
+    if (path === 'operator/share' || path === 'api/operator/share') {
+       const { docId, client_email } = body;
+       const doc = await db.collection('operator_storage').findOne({ _id: new ObjectId(docId) });
+       if (!doc) return json({ error: 'Document not found' }, 404);
+
+       const sharedQuery = {
+          id: new ObjectId().toString(),
+          subject: `Shared Proforma Document: ${doc.name}`,
+          message: `Operations team has shared a reference document with you: ${doc.name}`,
+          file_base64: doc.file_base64,
+          file_name: doc.name,
+          reply_submitted: false,
+          created_at: new Date()
+       };
+
+       await db.collection('users').updateOne(
+          { email: client_email.toLowerCase() },
+          { $push: { officer_queries: sharedQuery } }
+       );
+       return json({ success: true });
+    }
     if (path === 'employees' || path === 'api/employees') {
         const count = await db.collection('employees').countDocuments();
         const newEmpId = `EMP-${1000 + count + 1}`; 
