@@ -91,6 +91,8 @@ export default function EmployeeDashboard() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [l1Data, setL1Data] = useState({});
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [mdTaskFile, setMdTaskFile] = useState({});
+  const [uploadingTask, setUploadingTask] = useState(false);
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
@@ -566,21 +568,39 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error('Network Error during status update.'); }
   };
 
+  const onTaskFileChange = (taskId, e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { 
+          setMdTaskFile(prev => ({...prev, [taskId]: { name: file.name, data: reader.result.toString().split(',')[1] }})); 
+      };
+      reader.readAsDataURL(file);
+  };
+
   const markTaskDone = async (taskId) => {
     const replyText = mdTaskReply[taskId] || 'Completed by Employee';
-    setMdTasks(mdTasks.map(t => (t._id === taskId || t.id === taskId) ? { ...t, status: 'Completed', employee_reply: replyText } : t));
+    const fileObj = mdTaskFile[taskId];
+    setUploadingTask(true);
     try {
       const res = await fetch('/api/dispatches/update', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId, status: 'Completed', reply: replyText })
+        body: JSON.stringify({ 
+            task_id: taskId, 
+            status: 'Completed', 
+            reply: replyText,
+            file_name: fileObj?.name || null,
+            file_base64: fileObj?.data || null
+        })
       });
       if (res.ok) {
         toast.success('Task marked completed & replied to MD.');
-        logActivity('COMPLETED_TASK', `Task ${taskId} marked as done`);
         setMdTaskReply(prev => ({...prev, [taskId]: ''}));
+        setMdTaskFile(prev => ({...prev, [taskId]: null}));
         fetchLiveOperationsData(email); 
       }
     } catch (err) { toast.error('Network Error while updating task.'); }
+    setUploadingTask(false);
   };
 
   const handleSaveOfficer = async (e) => {
@@ -707,17 +727,17 @@ export default function EmployeeDashboard() {
                           {task.status === 'Completed' && <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>}
                        </div>
                        
-                       {task.status !== 'Completed' && (
-                          <div className="flex flex-col sm:flex-row gap-2 mt-3 border-t border-slate-200 pt-3">
-                             <Input placeholder="Type your reply to MD..." className="h-8 text-xs bg-white flex-1" value={mdTaskReply[task._id || task.id] || ''} onChange={(e) => setMdTaskReply({...mdTaskReply, [task._id || task.id]: e.target.value})} />
-                             <Button size="sm" onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Send Reply & Close</Button>
-                          </div>
-                       )}
-                    </div>
-                 ))
-              )}
-           </div>
-        </div>
+                      {task.status !== 'Completed' && (
+                           <div className="flex flex-col gap-2 mt-3 border-t border-slate-200 pt-3">
+                              <Input placeholder="Type your reply to MD..." className="h-8 text-xs bg-white" value={mdTaskReply[task._id || task.id] || ''} onChange={(e) => setMdTaskReply({...mdTaskReply, [task._id || task.id]: e.target.value})} />
+                              <div className="flex gap-2 items-center">
+                                 <Input type="file" accept=".pdf, image/*" className="h-8 text-xs bg-white flex-1" onChange={(e) => onTaskFileChange(task._id || task.id, e)} />
+                                 <Button size="sm" disabled={uploadingTask} onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0">
+                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1"/> {uploadingTask ? 'Sending...' : 'Send Reply & Close'}
+                                 </Button>
+                              </div>
+                           </div>
+                        )}
 
         <Tabs defaultValue="kanban" className="w-full">
           <TabsList className="flex flex-wrap w-full bg-slate-200 h-auto p-1 mb-6 rounded-lg gap-1">
