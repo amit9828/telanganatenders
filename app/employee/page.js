@@ -115,7 +115,7 @@ export default function EmployeeDashboard() {
 
   const fetchLiveOperationsData = async (userEmail) => {
     try {
-      // 🚀 FIX: ఇక్కడ కూడా అన్నిటికీ t=Date.now() యాడ్ చేసాను క్యాష్ అవ్వకుండా
+      // 🚀 FIX: t=Date.now()
       const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes] = await Promise.all([
         fetch(`/api/dispatches?t=${Date.now()}`), 
         fetch(`/api/bids?t=${Date.now()}`), 
@@ -146,8 +146,6 @@ export default function EmployeeDashboard() {
       if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } 
       if (empRes.ok) { const eData = await empRes.json(); setTeamMembers(eData.team || []); }
     } catch (err) { console.error("Employee Sync Error", err); } finally { setLoading(false); }
-  };
-  
   };
 
   const onPdfChange = (e) => {
