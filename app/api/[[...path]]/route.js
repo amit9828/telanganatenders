@@ -438,9 +438,11 @@ export async function PUT(request, { params }) {
      }
 
      if (path === 'dispatches/update' || path === 'api/dispatches/update') {
-        const { task_id, status, reply } = body;
+        const { task_id, status, reply, file_name, file_base64 } = body;
         let updateData = { status: status, updated_at: new Date() };
         if(reply) updateData.client_reply = reply;
+        if(file_name) updateData.file_name = file_name;
+        if(file_base64) updateData.file_base64 = file_base64;
 
         await db.collection('dispatches').updateOne(
            { _id: new ObjectId(task_id) },
