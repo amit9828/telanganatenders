@@ -878,7 +878,24 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
+    // 🚀 FIX: Client submits reply (Updates query with data instead of deleting)
     if (path === 'queries/reply' || path === 'api/queries/reply') {
+      const { queryId, email, description, fileName } = body;
+      await db.collection('users').updateOne(
+        { email: email.toLowerCase(), "officer_queries.id": queryId },
+        { $set: { 
+            "officer_queries.$.reply_submitted": true,
+            "officer_queries.$.reply_text": description,
+            "officer_queries.$.reply_file": fileName,
+            "officer_queries.$.replied_at": new Date()
+          } 
+        }
+      );
+      return json({ success: true });
+    }
+
+    // 🚀 FIX: Admin/Employee closes the query after reviewing the client's reply
+    if (path === 'queries/close' || path === 'api/queries/close') {
       const { queryId, email } = body;
       await db.collection('users').updateOne(
         { email: email.toLowerCase() },
