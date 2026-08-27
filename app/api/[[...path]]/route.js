@@ -994,7 +994,7 @@ export async function POST(request, { params }) {
         return json({ error: 'Cashfree Error' }, 500);
       }
     }
-    if (path === 'payment/verify' || path === 'api/payment/verify') {
+   if (path === 'payment/verify' || path === 'api/payment/verify') {
       const orderId = body.order_id;
       if (!orderId) return json({ error: 'Missing ID' }, 400);
       const appId = process.env.CASHFREE_APP_ID;
@@ -1007,18 +1007,23 @@ export async function POST(request, { params }) {
         });
         const cfData = await cfRes.json();
 
-        // 🚀 FIX: పెండింగ్ లో ఉన్న పేమెంట్ సక్సెస్ అయితే 'PAID' గా మార్చడం
+        if (cfData.order_status === 'PAID') {
+          const paymentRecord = await db.collection('payments').findOne({ order_id: orderId });
+          if (paymentRecord && paymentRecord.status !== 'SUCCESS') {
+            await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'SUCCESS', paid_at: new Date() } });
+            const email = paymentRecord.email.toLowerCase();
+            
+            // 🚀 FIX: Pending Payment ని 'PAID' గా మార్చడం
             if (paymentRecord.reason) {
                 await db.collection('users').updateOne(
-                    { email: paymentRecord.email.toLowerCase(), "pending_payments.reason": paymentRecord.reason },
+                    { email: email, "pending_payments.reason": paymentRecord.reason },
                     { $set: { "pending_payments.$.status": "PAID" } }
                 );
             }
 
             if (paymentRecord.plan === 'single' && paymentRecord.tenderId) {
-              await db.collection('users').updateOne({ email: paymentRecord.email.toLowerCase() }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
+              await db.collection('users').updateOne({ email }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
             } else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
-               // మిగతా కోడ్ అంతా సేమ్...
               const days = paymentRecord.plan === 'year' ? 365 : 30;
               const expireDate = new Date();
               expireDate.setDate(expireDate.getDate() + days);
@@ -1033,7 +1038,7 @@ export async function POST(request, { params }) {
         return json({ error: 'Verify failed' }, 500);
       }
     }
-    
+
     if (path === 'payment/webhook' || path === 'api/payment/webhook') {
        try {
          const orderId = body?.data?.order?.order_id;
@@ -1045,6 +1050,14 @@ export async function POST(request, { params }) {
                await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'SUCCESS', paid_at: new Date() } });
                const email = paymentRecord.email.toLowerCase();
                
+               // 🚀 FIX: Pending Payment ని 'PAID' గా మార్చడం
+               if (paymentRecord.reason) {
+                   await db.collection('users').updateOne(
+                       { email: email, "pending_payments.reason": paymentRecord.reason },
+                       { $set: { "pending_payments.$.status": "PAID" } }
+                   );
+               }
+
                if (paymentRecord.plan === 'single' && paymentRecord.tenderId) {
                  await db.collection('users').updateOne({ email }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
                } else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
@@ -1061,6 +1074,8 @@ export async function POST(request, { params }) {
          return json({ error: 'Webhook Error' }, 500);
        }
     }
+    
+    // చివర్లో ఇది కచ్చితంగా ఉండాలి, లేకపోతే ఎర్రర్ వస్తుంది.
     return json({ error: 'POST not found', path }, 404);
   } catch (error) {
     console.error('Server POST Error:', error);
