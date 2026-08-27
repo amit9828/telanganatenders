@@ -689,7 +689,7 @@ export default function EmployeeDashboard() {
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
 
-  return (
+return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-[#0A2647] border-b sticky top-0 z-30 shadow-md text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
@@ -707,8 +707,11 @@ export default function EmployeeDashboard() {
         </div>
       </header>
 
-      <main className="w-full px-4 sm:px-8 py-6"> 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <main className="w-full px-4 sm:px-8 py-6 space-y-6">
+        <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
+           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+           <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Tasks Assigned by MD / Admin</h3>
+           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {mdTasks.length === 0 ? (
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
               ) : (
@@ -779,7 +782,7 @@ export default function EmployeeDashboard() {
               <CardContent className="pt-4">
                 
                 {showAddBid && (
-                   <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner animate-in fade-in slide-in-from-top-4">
+                   <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner">
                       <h4 className="font-bold text-blue-900 mb-4 flex items-center"><Target className="w-4 h-4 mr-2"/> Create New Bid Tracking Row</h4>
                       <form onSubmit={handleAddBidRow} className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
                          <div>
@@ -855,7 +858,7 @@ export default function EmployeeDashboard() {
                                 <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
                                   
                                   {editingBid && (editingBid._id === b._id || editingBid.id === b.id) ? (
-                                     <form onSubmit={handleSaveEditBid} className="space-y-3 animate-in fade-in">
+                                     <form onSubmit={handleSaveEditBid} className="space-y-3">
                                         <div>
                                            <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Bid Number</Label>
                                            <Input value={editingBid.bid_no} onChange={e => setEditingBid({...editingBid, bid_no: e.target.value})} className="h-8 text-xs bg-slate-50" />
@@ -871,18 +874,18 @@ export default function EmployeeDashboard() {
                                      </form>
                                   ) : (
                                      <div>
-                                       <div className="flex justify-between items-start mb-2">
-                                         <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
-                                            <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
-                                            <span className="text-xs font-black font-mono truncate max-w-[120px]">{b.bid_no || b.id || 'N/A'}</span>
-                                         </div>
-                                         <div className="flex gap-1 items-center">
-                                            <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm mr-1">{b.status}</Badge>
-                                            <Button variant="ghost" size="icon" onClick={() => setEditingBid(b)} className="h-6 w-6 p-0 text-slate-400 hover:text-blue-600 bg-slate-50 border"><Pencil className="w-3 h-3"/></Button>
-                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-slate-50 border"><Trash2 className="w-3 h-3"/></Button>
-                                         </div>
-                                       </div>
-                                       <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight line-clamp-2">{b.description || b.title}</h4>
+                                        <div className="flex justify-between items-start mb-2">
+                                           <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
+                                              <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
+                                              <span className="text-xs font-black font-mono truncate max-w-[120px]">{b.bid_no || b.id || 'N/A'}</span>
+                                           </div>
+                                           <div className="flex gap-1 items-center">
+                                              <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm mr-1">{b.status}</Badge>
+                                              <Button variant="ghost" size="icon" onClick={() => setEditingBid(b)} className="h-6 w-6 p-0 text-slate-400 hover:text-blue-600 bg-slate-50 border"><Pencil className="w-3 h-3"/></Button>
+                                              <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-slate-50 border"><Trash2 className="w-3 h-3"/></Button>
+                                           </div>
+                                        </div>
+                                        <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight line-clamp-2">{b.description || b.title}</h4>
                                      </div>
                                   )}
                                   
@@ -913,7 +916,7 @@ export default function EmployeeDashboard() {
                               ))}
                            </CardContent>
                         </Card>
-                    )})}
+                        )})}
                   </div>
                 )}
               </CardContent>
@@ -968,11 +971,11 @@ export default function EmployeeDashboard() {
                                              {displayDesc}
                                           </h4>
                                           {sug.client_reply ? (
-                                              <Badge className={`w-full justify-center ${sug.client_reply.includes('Accepted') ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                                                  Client Status: {sug.client_reply}
-                                              </Badge>
+                                             <Badge className={`w-full justify-center ${sug.client_reply.includes('Accepted') ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                 Client Status: {sug.client_reply}
+                                             </Badge>
                                           ) : (
-                                              <Badge variant="outline" className="w-full justify-center text-slate-400 bg-slate-50">Waiting for Client Reply</Badge>
+                                             <Badge variant="outline" className="w-full justify-center text-slate-400 bg-slate-50">Waiting for Client Reply</Badge>
                                           )}
                                        </div>
                                        <div className="flex gap-2 border-t border-slate-100 pt-3 mt-3">
@@ -987,7 +990,7 @@ export default function EmployeeDashboard() {
                                  )})}
                               </CardContent>
                            </Card>
-                        )})}
+                           )})}
                      </div>
                   )}
                </CardContent>
@@ -1062,14 +1065,14 @@ export default function EmployeeDashboard() {
 
               <Card className="shadow-sm lg:col-span-2 w-full">
                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                  <div>
-                     <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
-                     <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
-                  </div>
-                  <div className="relative shrink-0">
-                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                     <Input placeholder="Search officers..." value={officerSearch} onChange={e=>setOfficerSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
-                  </div>
+                   <div>
+                      <CardTitle className="text-[#0A2647] flex items-center gap-2"><Contact className="w-5 h-5 text-purple-600"/> Central Officers Directory</CardTitle>
+                      <CardDescription>Database of government contacts for quick follow-ups.</CardDescription>
+                   </div>
+                   <div className="relative shrink-0">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <Input placeholder="Search officers..." value={officerSearch} onChange={e=>setOfficerSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-[250px] bg-white shadow-sm" />
+                   </div>
                 </CardHeader>
                 <CardContent className="pt-4 p-0">
                   {filteredOfficers.length === 0 ? (
@@ -1248,7 +1251,7 @@ export default function EmployeeDashboard() {
                                           const link = client.drive_folder_link || client.drive_link;
                                           if(link) window.open(link, '_blank'); 
                                           else toast.info("No documents uploaded yet."); 
-                                       }} variant="outline" className="h-7 text-[10px] border-orange-300 text-orange-700 hover:bg-orange-100 bg-white">
+                                       } } variant="outline" className="h-7 text-[10px] border-orange-300 text-orange-700 hover:bg-orange-100 bg-white">
                                           <Eye className="w-3 h-3 mr-1"/> View Docs
                                        </Button>
                                        <Button size="sm" onClick={() => handleCloseQuery(q.id, client.email)} className="h-7 text-[10px] bg-[#16a34a] hover:bg-[#15803d]">
@@ -1271,52 +1274,52 @@ export default function EmployeeDashboard() {
                
                <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
                  <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
-                   <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
-                      {isEditingTender ? <><Pencil className="w-5 h-5 text-blue-600"/> Edit Tender</> : <><PlusCircle className="w-5 h-5"/> Publish New Tender</>}
-                   </CardTitle>
-                   {isEditingTender && (
-                      <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
-                   )}
+                    <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
+                       {isEditingTender ? <><Pencil className="w-5 h-5 text-blue-600"/> Edit Tender</> : <><PlusCircle className="w-5 h-5"/> Publish New Tender</>}
+                    </CardTitle>
+                    {isEditingTender && (
+                       <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
+                    )}
                  </CardHeader>
                  <CardContent className="pt-5">
                    <form onSubmit={handlePublishTender} className="space-y-4">
-                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/></div>
-                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
-                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label><Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} className="bg-white h-10"/></div>
-                     <div className="grid grid-cols-2 gap-4">
-                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label><Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="bg-white h-10 text-sm"/></div>
-                       <div>
-                         <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
-                         <Select value={tenderForm.category} onValueChange={v=>setTenderForm({...tenderForm, category: v})}>
-                            <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
-                            <SelectContent>
-                               <SelectItem value="Product">Product</SelectItem>
-                               <SelectItem value="Service">Service</SelectItem>
-                            </SelectContent>
-                         </Select>
-                       </div>
-                     </div>
-                     <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
-                       <Select value={tenderForm.district} onValueChange={v=>setTenderForm({...tenderForm, district: v})}>
-                          <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
-                          <SelectContent>
-                             {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                          </SelectContent>
-                       </Select>
-                     </div>
-                     <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea></div>
-                     <div>
-                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
-                       <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
-                          <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                          <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                          <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF')}</span>
-                       </div>
-                     </div>
-                     <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
-                        {publishing ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
-                     </Button>
+                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/></div>
+                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
+                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label><Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} className="bg-white h-10"/></div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label><Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="bg-white h-10 text-sm"/></div>
+                        <div>
+                          <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
+                          <Select value={tenderForm.category} onValueChange={v=>setTenderForm({...tenderForm, category: v})}>
+                             <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
+                             <SelectContent>
+                                <SelectItem value="Product">Product</SelectItem>
+                                <SelectItem value="Service">Service</SelectItem>
+                             </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
+                        <Select value={tenderForm.district} onValueChange={v=>setTenderForm({...tenderForm, district: v})}>
+                           <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
+                           <SelectContent>
+                              {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                           </SelectContent>
+                        </Select>
+                      </div>
+                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea></div>
+                      <div>
+                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
+                        <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
+                           <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                           <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                           <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF')}</span>
+                        </div>
+                      </div>
+                      <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+                         {publishing ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
+                      </Button>
                    </form>
                  </CardContent>
                </Card>
@@ -1332,49 +1335,49 @@ export default function EmployeeDashboard() {
                     </div>
                  </CardHeader>
                  <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                   {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
-                   {filteredTenders.map((t) => (
-                     <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
-                       <div className="flex items-start justify-between gap-3">
-                         <div className="flex-1 min-w-0">
-                           <div className="flex items-center gap-2 mb-2">
-                             <Badge className="bg-[#0A2647]">{t.district}</Badge>
-                             {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
-                             {t.bid_no && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
-                             <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
-                           </div>
-                           <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
-                           <p className="text-xs text-slate-500 mt-1">{t.department}</p>
-                         </div>
-                         <div className="flex flex-col gap-2">
-                            <Button variant="ghost" size="icon" onClick={() => handleEditTender(t)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"><Pencil className="w-4 h-4" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTenderDB(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8"><Trash2 className="w-4 h-4" /></Button>
-                         </div>
-                       </div>
-                       
-                       <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                          <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
-                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
-                          </Button>
-                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
-                             <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
-                                <SelectTrigger className="h-8 bg-slate-50 border-emerald-200 text-xs font-semibold focus:ring-emerald-500 w-full">
-                                   <SelectValue placeholder="Select Client to Suggest" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                   {approvedClients.map(c => {
-                                      const safeId = c.client_id || (c.email ? `CLI-${c.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX');
-                                      return <SelectItem key={c.email} value={c.email}>{safeId} ({c.company_name || c.name})</SelectItem>
-                                   })}
-                                </SelectContent>
-                             </Select>
-                             <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
-                                <Send className="w-3 h-3 mr-1.5"/> Suggest to Client
-                             </Button>
+                    {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
+                    {filteredTenders.map((t) => (
+                      <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge className="bg-[#0A2647]">{t.district}</Badge>
+                              {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
+                              {t.bid_no && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
+                              <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
+                            </div>
+                            <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
+                            <p className="text-xs text-slate-500 mt-1">{t.department}</p>
                           </div>
-                       </div>
-                     </div>
-                   ))}
+                          <div className="flex flex-col gap-2">
+                             <Button variant="ghost" size="icon" onClick={() => handleEditTender(t)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"><Pencil className="w-4 h-4" /></Button>
+                             <Button variant="ghost" size="icon" onClick={() => handleDeleteTenderDB(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8"><Trash2 className="w-4 h-4" /></Button>
+                          </div>
+                        </div>
+                        
+                        <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
+                           <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
+                              <FileText className="w-3 h-3 mr-1.5"/> View PDF
+                           </Button>
+                           <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
+                              <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
+                                 <SelectTrigger className="h-8 bg-slate-50 border-emerald-200 text-xs font-semibold focus:ring-emerald-500 w-full">
+                                    <SelectValue placeholder="Select Client to Suggest" />
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                    {approvedClients.map(c => {
+                                       const safeId = c.client_id || (c.email ? `CLI-${c.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX');
+                                       return <SelectItem key={c.email} value={c.email}>{safeId} ({c.company_name || c.name})</SelectItem>
+                                    })}
+                                 </SelectContent>
+                              </Select>
+                              <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
+                                 <Send className="w-3 h-3 mr-1.5"/> Suggest to Client
+                              </Button>
+                           </div>
+                        </div>
+                      </div>
+                    ))}
                  </CardContent>
                </Card>
             </div>
