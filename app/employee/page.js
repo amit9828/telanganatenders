@@ -91,38 +91,42 @@ export default function EmployeeDashboard() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [l1Data, setL1Data] = useState({});
   const [pendingUsers, setPendingUsers] = useState([]);
-
+// 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
     const e = typeof window !== 'undefined' ? localStorage.getItem('tt_emp_email') : 'employee@tgtenders.in';
     const finalEmail = e || 'employee@tgtenders.in';
     setEmail(finalEmail);
-    fetchLiveOperationsData(finalEmail);
+    
+    // అటెండెన్స్ లాగ్
     fetch('/api/employee/activity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: finalEmail, action: 'LOGIN', details: 'Employee started session on portal.' })
     }).catch(err => console.log('Attendance log failed', err));
 
-    const interval = setInterval(() => {
+    const syncEmployeeData = () => {
         fetchLiveOperationsData(finalEmail);
-    }, 15000);
+    };
+
+    syncEmployeeData(); // ఫస్ట్ టైమ్ కాల్
+    const interval = setInterval(syncEmployeeData, 10000); // 10 సెకన్లకు ఒకసారి లైవ్ ట్రాకింగ్
     return () => clearInterval(interval);
   }, []);
 
   const fetchLiveOperationsData = async (userEmail) => {
     try {
+      // 🚀 FIX: ఇక్కడ కూడా అన్నిటికీ t=Date.now() యాడ్ చేసాను క్యాష్ అవ్వకుండా
       const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes] = await Promise.all([
-        fetch('/api/dispatches'), 
-        fetch('/api/bids'), 
-        fetch('/api/gov-officers'),
-        fetch('/api/users/approved'), 
-        fetch('/api/tenders'), 
-        fetch('/api/tickets'),
-        fetch('/api/users/pending'),
-        fetch('/api/client-requests'),
-        fetch('/api/guest-queries'),
-        fetch('/api/employees')
+        fetch(`/api/dispatches?t=${Date.now()}`), 
+        fetch(`/api/bids?t=${Date.now()}`), 
+        fetch(`/api/gov-officers?t=${Date.now()}`),
+        fetch(`/api/users/approved?t=${Date.now()}`), 
+        fetch(`/api/tenders?t=${Date.now()}`), 
+        fetch(`/api/tickets?t=${Date.now()}`),
+        fetch(`/api/users/pending?t=${Date.now()}`),
+        fetch(`/api/client-requests?t=${Date.now()}`),
+        fetch(`/api/guest-queries?t=${Date.now()}`),
+        fetch(`/api/employees?t=${Date.now()}`)
       ]);
 
       if (tasksRes.ok) {
@@ -139,14 +143,11 @@ export default function EmployeeDashboard() {
       if (ticketsRes.ok) { const tkData = await ticketsRes.json(); setTickets(tkData.tickets || []); }
       if (pendRes.ok) { const pendData = await pendRes.json(); setPendingUsers(pendData.users || []); }
       if (reqRes.ok) { const reqData = await reqRes.json(); setBidRequests(reqData.requests || []); }
-      if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } // 🚀 RESTORED
+      if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } 
       if (empRes.ok) { const eData = await empRes.json(); setTeamMembers(eData.team || []); }
-
-    } catch (err) {
-      console.error("Failed to fetch live operations data", err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error("Employee Sync Error", err); } finally { setLoading(false); }
+  };
+  
   };
 
   const onPdfChange = (e) => {
