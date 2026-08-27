@@ -335,7 +335,8 @@ export default function ClientDashboard() {
               body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
           });
           
-          if(res.ok) {
+         if(res.ok) {
+              // ఆటోమెటిక్ డౌన్‌లోడ్
               const link = document.createElement('a');
               link.href = URL.createObjectURL(blob);
               link.download = "Telangana_Tenders_Agreement.txt";
@@ -344,7 +345,11 @@ export default function ClientDashboard() {
               document.body.removeChild(link);
 
               toast.success("Legal Agreement Signed & Downloaded. Proceeding to Profile Setup.");
+              
+              // 🚀 FIX: వెంటనే స్టేట్ అప్‌డేట్ చేసి లాక్ ఓపెన్ చేయడం
               setUserData(prev => ({...prev, agreement_signed: true}));
+              // పేజీ రీలోడ్ అవ్వకుండా నెక్స్ట్ స్టెప్ కి వెళ్లడానికి
+              fetchClientData(email); 
           }
       } catch(err) {
           toast.error("Network error saving agreement.");
