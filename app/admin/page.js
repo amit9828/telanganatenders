@@ -110,11 +110,11 @@ export default function AdminPage() {
     setAuthChecking(false);
   }, []);
 
-  // 🚀 FIX: Live Polling (Refresh without reloading the page) every 12 seconds
+  // 🚀 FIX: Admin Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     if (token) {
       refresh();
-      const interval = setInterval(() => { refresh(); }, 12000); 
+      const interval = setInterval(() => { refresh(); }, 10000); 
       return () => clearInterval(interval);
     }
     // eslint-disable-next-line
@@ -123,6 +123,7 @@ export default function AdminPage() {
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
+      // 🚀 FIX: ఇక్కడ ఆల్ రెడీ నువ్వు t=Date.now() రాసావు, కానీ మనం పైన 12 బదులు 10 సెకన్లకు మార్చాం
       const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes] = await Promise.all([
         fetch(`/api/tenders?t=${Date.now()}`, { headers }),
         fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
@@ -174,7 +175,6 @@ export default function AdminPage() {
       });
       setSuccessfulPaymentsLog(allSuccess.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
 
-      // 🚀 FIX: Balance Sheet Breakdown Logic
       const onlineRevenue = sJson.revenue || 0;
       const offlineBal = ledgerJson.balance || 0;
       setBreakdown({ offline: offlineBal, online: onlineRevenue });
@@ -197,7 +197,6 @@ export default function AdminPage() {
       }));
     } catch (err) { console.error('Refresh failed:', err); }
   };
-
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.clear();
