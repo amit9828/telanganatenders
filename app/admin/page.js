@@ -436,7 +436,19 @@ export default function AdminPage() {
      }
      toast.success("Deleted permanently.");
   };
-
+  const handleCloseQuery = async (queryId, clientEmail) => {
+    if(!confirm("Are you sure you want to close this query?")) return;
+    try {
+      const res = await fetch('/api/queries/close', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queryId, email: clientEmail })
+      });
+      if (res.ok) {
+        toast.success(`Query Closed successfully.`);
+        refresh();
+      }
+    } catch (err) { toast.error('Network Error.'); }
+  };
   const handleGiveWarning = async (id) => {
     try {
       await fetch('/api/dispatches/update', {
