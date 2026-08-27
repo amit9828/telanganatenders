@@ -1236,28 +1236,71 @@ return (
                   <div className="mt-8">
                      <h4 className="font-bold text-slate-700 text-sm mb-3">Active Client Queries</h4>
                      <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                        {approvedClients.filter(c => c.officer_queries && c.officer_queries.length > 0).length === 0 ? (
+                        {approvedClients.filter(c => c.officer_queries && c.officer_queries.some(q => !q.is_closed)).length === 0 ? (
                            <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No active queries pending.</p>
                         ) : (
-                           approvedClients.filter(c => c.officer_queries && c.officer_queries.length > 0).map(client => (
-                              client.officer_queries.map((q, idx) => (
+                           approvedClients.filter(c => c.officer_queries && c.officer_queries.some(q => !q.is_closed)).map(client => (
+                              client.officer_queries.filter(q => !q.is_closed).map((q, idx) => (
                                  <div key={idx} className="bg-orange-50 border border-orange-200 p-3 rounded-lg flex flex-col relative shadow-sm">
-                                    <span className="text-[9px] text-orange-500 font-bold mb-1">To: {client.company_name || client.email}</span>
+                                    <div className="flex justify-between items-start mb-1">
+                                       <span className="text-[9px] text-orange-500 font-bold">To: {client.company_name || client.email}</span>
+                                       <Badge className={q.reply_submitted ? 'bg-emerald-100 text-emerald-800 border-0 text-[9px]' : 'bg-red-100 text-red-800 border-0 text-[9px] animate-pulse'}>
+                                          {q.reply_submitted ? 'Client Replied' : 'Pending Client'}
+                                       </Badge>
+                                    </div>
                                     <p className="text-xs font-bold text-orange-900 mb-1">{q.subject}</p>
-                                    <p className="text-xs text-orange-800 mb-3 bg-white p-2 rounded border border-orange-100">"{q.message}"</p>
+                                    <p className="text-xs text-orange-800 mb-2 bg-white p-2 rounded border border-orange-100">"{q.message}"</p>
                                     
+                                    {/* 🚀 FIX: Showing Client's Reply & Attached PDF */}
+                                    {q.reply_submitted && (
+                                       <div className="mb-3 bg-emerald-50 border border-emerald-100 p-2 rounded">
+                                          <span className="text-[9px] font-bold text-emerald-600 uppercase block mb-1">Client's Reply:</span>
+                                          <p className="text-xs text-emerald-900 font-medium">"{q.reply_text}"</p>
+                                          {q.reply_file && (
+                                             <Button size="sm" variant="outline" onClick={() => {
+                                                 const doc = client.vault_docs?.find(d => d.id === `query_response_${q.id}`);
+                                                 if (doc && doc.file_base64) {
+                                                     const byteCharacters = atob(doc.file_base64);
+                                                     const byteNumbers = new Array(byteCharacters.length);
+                                                     for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                                     const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+                                                     window.open(URL.createObjectURL(blob), '_blank');
+                                                 } else {
+                                                     toast.error("Document not found in vault.");
+                                                 }
+                                             }} className="mt-2 h-7 text-[10px] border-emerald-300 text-emerald-700 bg-white w-fit">
+                                                <FileText className="w-3 h-3 mr-1"/> View Attached File
+                                             </Button>
+                                          )}
+                                       </div>
+                                    )}
+
                                     <div className="flex gap-2 justify-end mt-1 pt-2 border-t border-orange-200">
-                                       <Button size="sm" onClick={() => { 
-                                          const link = client.drive_folder_link || client.drive_link;
-                                          if(link) window.open(link, '_blank'); 
-                                          else toast.info("No documents uploaded yet."); 
-                                       } } variant="outline" className="h-7 text-[10px] border-orange-300 text-orange-700 hover:bg-orange-100 bg-white">
-                                          <Eye className="w-3 h-3 mr-1"/> View Docs
-                                       </Button>
                                        <Button size="sm" onClick={() => handleCloseQuery(q.id, client.email)} className="h-7 text-[10px] bg-[#16a34a] hover:bg-[#15803d]">
-                                          <CheckCircle2 className="w-3 h-3 mr-1"/> Resolve & Close
+                                          <CheckCircle2 className="w-3 h-3 mr-1"/> {q.reply_submitted ? 'Verify & Close' : 'Force Close Query'}
                                        </Button>
                                     </div>
+                                 </div>
+                              ))
+                           ))
+                        )}
+                     </div>
+
+                     {/* 🚀 NEW: Query History Section */}
+                     <h4 className="font-bold text-slate-700 text-sm mb-3 mt-8 border-t pt-6">Resolved Queries History</h4>
+                     <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                        {approvedClients.filter(c => c.officer_queries && c.officer_queries.some(q => q.is_closed)).length === 0 ? (
+                           <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No resolved queries.</p>
+                        ) : (
+                           approvedClients.filter(c => c.officer_queries && c.officer_queries.some(q => q.is_closed)).map(client => (
+                              client.officer_queries.filter(q => q.is_closed).map((q, idx) => (
+                                 <div key={`hist-${idx}`} className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex flex-col relative shadow-sm">
+                                    <div className="flex justify-between items-start mb-1">
+                                       <span className="text-[9px] text-slate-500 font-bold">To: {client.company_name || client.email}</span>
+                                       <Badge className="bg-slate-200 text-slate-700 border-0 text-[9px]">Closed</Badge>
+                                    </div>
+                                    <p className="text-xs font-bold text-slate-700 mb-1">{q.subject}</p>
+                                    {q.reply_submitted && <p className="text-[10px] text-emerald-600 font-bold">Reply: {q.reply_text}</p>}
                                  </div>
                               ))
                            ))
