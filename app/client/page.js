@@ -671,14 +671,16 @@ export default function ClientDashboard() {
                          <span className="font-bold text-emerald-900 text-sm">I have read, understood, and legally accept the terms of this B2B Agreement.</span>
                       </label>
                       <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto mt-2">
-                         <Button type="button" onClick={() => window.print()} variant="outline" className="border-slate-300 text-slate-700 font-bold h-12 px-6">
-                            <Printer className="w-5 h-5 mr-2"/> Download / Print Agreement
-                         </Button>
-                         <Button type="submit" disabled={submittingAgreement} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10 shadow-lg">
-                            {submittingAgreement ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <PenTool className="w-5 h-5 mr-2"/>}
-                            {submittingAgreement ? 'Generating Record...' : 'Sign Agreement & Enter Profile'}
-                         </Button>
-                      </div>
+                        <Button type="button" onClick={() => window.print()} variant="outline" className="border-slate-300 text-slate-700 font-bold h-12 px-6">
+                         <Printer className="w-5 h-5 mr-2"/> Download / Print Agreement
+                       </Button>
+                       <Button type="submit" disabled={submittingAgreement} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10 shadow-lg">
+                          {submittingAgreement ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <PenTool className="w-5 h-5 mr-2"/>}
+                          {submittingAgreement ? 'Generating Record...' : 'Sign Agreement & Enter Profile'}
+                        </Button>
+                       </div> 
+                     </Button>
+                    </div>
                    </form>
                 </div>
              </CardContent>
