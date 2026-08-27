@@ -650,8 +650,8 @@ const handleViewDocument = (req) => {
             </div>
             
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<FileText className="w-4 h-4 text-blue-500" />} label="Tenders" value={tenders.length} />
+              <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
+                 <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Operations" value={dispatches.filter(d => d.status !== 'Completed' && !d.status.includes('Force Closed')).length + bidRequests.filter(r => r.status === 'Pending Officer Review').length} />
               </div>
               <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
                  <StatCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />} label="Operations" value={dispatches.length + bidRequests.length} />
