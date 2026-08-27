@@ -567,18 +567,7 @@ export default function EmployeeDashboard() {
       } else { fetchLiveOperationsData(email); }
     } catch (err) { toast.error('Network Error during status update.'); }
   };
-
-  const onTaskFileChange = (taskId, e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => { 
-          setMdTaskFile(prev => ({...prev, [taskId]: { name: file.name, data: reader.result.toString().split(',')[1] }})); 
-      };
-      reader.readAsDataURL(file);
-  };
-
- // 🚀 FIX: Employee Task File Upload
+// 🚀 FIX: Employee Task File Upload
   const onTaskFileChange = (taskId, e) => {
       const file = e.target.files?.[0];
       if (!file) return;
