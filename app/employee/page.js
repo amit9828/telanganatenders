@@ -1491,7 +1491,6 @@ export default function EmployeeDashboard() {
               </CardContent>
             </Card>
           </TabsContent>
-
         </Tabs>
       </main>
 
