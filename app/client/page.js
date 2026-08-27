@@ -503,14 +503,6 @@ export default function ClientDashboard() {
       await cashfree.checkout(checkoutOptions);
     } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
   };
-      const d1 = await r1.json();
-      if (!r1.ok) { setBuying(false); return toast.error(d1.error || 'Failed to initialize payment'); }
-      
-      const cashfree = await load({ mode: "production" });
-      const checkoutOptions = { paymentSessionId: d1.payment_session_id, returnUrl: `https://www.tgtenders.in/payment-status?order_id={order_id}` };
-      await cashfree.checkout(checkoutOptions);
-    } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
-  };
 
   const handleSignOut = async () => {
     if (typeof window !== 'undefined') localStorage.clear();
