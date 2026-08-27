@@ -93,6 +93,10 @@ export default function EmployeeDashboard() {
   const [pendingUsers, setPendingUsers] = useState([]);
   const [mdTaskFile, setMdTaskFile] = useState({});
   const [uploadingTask, setUploadingTask] = useState(false);
+  const [operatorDocs, setOperatorDocs] = useState([]);
+  const [sharingDocId, setSharingDocId] = useState(null);
+  const [targetClientEmail, setTargetClientEmail] = useState('');
+  const [uploadingOpPdf, setUploadingOpPdf] = useState(false);
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
@@ -109,7 +113,7 @@ export default function EmployeeDashboard() {
     const syncEmployeeData = () => {
         fetchLiveOperationsData(finalEmail);
     };
-
+    
     syncEmployeeData(); // ఫస్ట్ టైమ్ కాల్
     const interval = setInterval(syncEmployeeData, 10000); // 10 సెకన్లకు ఒకసారి లైవ్ ట్రాకింగ్
     return () => clearInterval(interval);
@@ -130,7 +134,11 @@ export default function EmployeeDashboard() {
         fetch(`/api/guest-queries?t=${Date.now()}`),
         fetch(`/api/employees?t=${Date.now()}`)
       ]);
-
+       const opDocsRes = await fetch(`/api/operator/docs?t=${Date.now()}`);
+      if (opDocsRes.ok) {
+         const opData = await opDocsRes.json();
+         setOperatorDocs(opData.docs || []);
+      }
       if (tasksRes.ok) {
         const tData = await tasksRes.json();
         const allDispatches = tData.dispatches || [];
@@ -346,6 +354,58 @@ export default function EmployeeDashboard() {
       } catch (err) { toast.error("Network error while updating vault document."); }
   };
 
+  const handleOperatorPdfUpload = async (e) => {
+     const file = e.target.files?.[0];
+     if (!file) return;
+     if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
+     
+     setUploadingOpPdf(true);
+     const reader = new FileReader();
+     reader.onload = async () => {
+        try {
+           const res = await fetch('/api/operator/docs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                 name: file.name,
+                 file_base64: reader.result.toString().split(',')[1],
+                 uploaded_by: email
+              })
+           });
+           if (res.ok) {
+              toast.success("Document stored successfully in Operations Storage!");
+              fetchLiveOperationsData(email);
+           } else {
+              toast.error("Failed to store document.");
+           }
+        } catch (err) {
+           toast.error("Network error during upload.");
+        } finally {
+           setUploadingOpPdf(false);
+        }
+     };
+     reader.readAsDataURL(file);
+  };
+
+  const handleShareDocWithClient = async (docId) => {
+     if (!targetClientEmail) return toast.error("Please select a client to share with.");
+     try {
+        const res = await fetch('/api/operator/share', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ docId, client_email: targetClientEmail })
+        });
+        if (res.ok) {
+           toast.success("Document successfully shared with the client!");
+           setSharingDocId(null);
+           setTargetClientEmail('');
+        } else {
+           toast.error("Failed to share document.");
+        }
+     } catch (e) {
+        toast.error("Network error.");
+     }
+  };
   const approveClient = async (clientEmail) => {
       try {
           await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: clientEmail }) });
