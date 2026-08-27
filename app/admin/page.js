@@ -1280,11 +1280,22 @@ const handleViewDocument = (req) => {
                                            <p className="font-bold text-[#0A2647] text-sm">{task.subject}</p>
                                            <p className="text-[10px] text-slate-500 mt-1">Assigned To: <span className="font-mono bg-slate-100 px-1 rounded">{task.target_id}</span></p>
                                            
-                                           {task.client_reply && (
+                                          {task.client_reply && (
                                               <div className="mt-2 bg-blue-50 border border-blue-100 p-2 rounded-md">
-                                                <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Client Reply:</span>
+                                                <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Client/Emp Reply:</span>
                                                 <span className="text-xs font-medium text-slate-700">"{task.client_reply}"</span>
                                               </div>
+                                           )}
+                                           {task.file_base64 && (
+                                              <Button size="sm" variant="outline" onClick={() => {
+                                                  const byteCharacters = atob(task.file_base64);
+                                                  const byteNumbers = new Array(byteCharacters.length);
+                                                  for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                                  const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+                                                  window.open(URL.createObjectURL(blob), '_blank');
+                                              }} className="mt-2 h-7 text-[10px] text-blue-600 border-blue-200 bg-white w-fit">
+                                                 <FileText className="w-3 h-3 mr-1"/> View Attached PDF
+                                              </Button>
                                            )}
 
                                            <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 mb-3">
