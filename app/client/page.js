@@ -352,10 +352,20 @@ export default function ClientDashboard() {
       setSubmittingAgreement(false);
   };
 
+  // 🚀 FIX: Mandatory Profile Validation
   const submitOnboarding = async (e) => {
     e.preventDefault();
+    
+    // 1. అన్నీ ఫీల్డ్స్ మ్యాండేటరీగా చెక్ చేయడం
+    if (!onboardForm.client_name?.trim()) return toast.error("Client / Owner Name is mandatory.");
+    if (!onboardForm.company_name?.trim()) return toast.error("Company / Firm Name is mandatory.");
+    if (!onboardForm.company_type?.trim()) return toast.error("Company Type is mandatory.");
+    if (!onboardForm.service?.trim()) return toast.error("Core Service is mandatory.");
+    if (!onboardForm.gstin?.trim()) return toast.error("GSTIN Number is mandatory.");
+    if (!onboardForm.udyam?.trim()) return toast.error("UDYAM Registration is mandatory.");
+    
+    // 2. ఫోన్ నెంబర్ 10 అంకెలు ఉండాలి
     if (!/^\d{10}$/.test(onboardForm.phone)) return toast.error("Invalid Phone Number. Must be exactly 10 digits.");
-    if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.service) return toast.error('Please fill required fields');
     
     setSubmittingOnboard(true);
     try {
@@ -364,6 +374,7 @@ export default function ClientDashboard() {
         body: JSON.stringify({ 
           email, client_name: onboardForm.client_name, company_name: onboardForm.company_name, phone: onboardForm.phone, 
           company_type: onboardForm.company_type, service_category: onboardForm.service, 
+          gstin: onboardForm.gstin, udyam: onboardForm.udyam, // 🚀 క్రొత్త ఫీల్డ్స్ యాడ్ చేసాం
           documents: { 
             has_gst: onboardForm.has_gst, has_esi: onboardForm.has_esi, has_epf: onboardForm.has_epf, has_iso: onboardForm.has_iso,
             has_bank: onboardForm.has_bank, has_pan: onboardForm.has_pan, has_aadhar: onboardForm.has_aadhar, has_dsc: onboardForm.has_dsc,
@@ -378,11 +389,14 @@ export default function ClientDashboard() {
         toast.success('Profile created successfully! Dashboard Unlocked.');
         setLocalOnboardComplete(true);
         setUserData(prev => ({ ...prev, onboarding_complete: true }));
+      } else {
+        toast.error('Failed to create profile. Server Error.');
       }
-    } catch (err) { toast.error('Error submitting profile'); }
+    } catch (err) { 
+      toast.error('Network error submitting profile'); 
+    }
     setSubmittingOnboard(false);
   };
-
   const requestBidSupportForTender = async (t) => {
       const pdfLink = `${window.location.origin}/api/tenders/${t._id}/pdf?email=${email}&role=client`;
       const desc = `Please support bidding for this public tender: ${t.title}. \n\nDirect PDF Link: ${pdfLink}`;
