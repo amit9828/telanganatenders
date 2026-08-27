@@ -894,16 +894,15 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
 
-    // 🚀 FIX: Admin/Employee closes the query after reviewing the client's reply
+   // 🚀 FIX: Admin/Employee closes the query (Moves to History instead of Delete)
     if (path === 'queries/close' || path === 'api/queries/close') {
       const { queryId, email } = body;
       await db.collection('users').updateOne(
-        { email: email.toLowerCase() },
-        { $pull: { officer_queries: { id: queryId } } }
+        { email: email.toLowerCase(), "officer_queries.id": queryId },
+        { $set: { "officer_queries.$.is_closed": true, "officer_queries.$.closed_at": new Date() } }
       );
       return json({ success: true });
     }
-
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
         const newTxn = {
             type: body.type, 
