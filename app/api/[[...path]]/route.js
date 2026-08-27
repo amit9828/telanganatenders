@@ -757,19 +757,36 @@ export async function POST(request, { params }) {
       return json({ success: true, message: 'Ticket Resolved.' });
     }
 
+    // 🚀 FIX: Profile saving logic with mandatory fields
     if (path === 'users/profile' || path === 'api/users/profile') {
       const { 
         email, client_name, company_name, company_type, phone, address, 
-        service_category, has_gst, has_msme, has_iso, documents, status 
+        service_category, gstin, udyam, has_gst, has_msme, has_iso, documents, status, agreement_signed 
       } = body;
       
+      const userEmail = email.toLowerCase();
+      
+      // అగ్రిమెంట్ కోసం స్పెషల్ చెక్
+      if (agreement_signed) {
+          await db.collection('users').updateOne(
+            { email: userEmail },
+            { $set: { agreement_signed: true, status: 'active' } }
+          );
+          return json({ success: true });
+      }
+
+      // మిగతా ప్రొఫైల్ డేటా సేవ్
       await db.collection('users').updateOne(
-        { email: email.toLowerCase() },
+        { email: userEmail },
         { $set: { 
             company_type, has_gst, has_msme, has_iso,
             client_name, company_name, phone, address, service_category, 
-            documents: documents || {}, status: status || 'pending', 
-            onboarding_complete: true, profile_score: 80 
+            gstin: gstin ? gstin.toUpperCase() : '',
+            udyam: udyam ? udyam.toUpperCase() : '',
+            documents: documents || {}, 
+            status: status || 'pending', 
+            onboarding_complete: true, 
+            profile_score: 100 
           } 
         }, 
         { upsert: true }
