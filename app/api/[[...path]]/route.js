@@ -944,12 +944,21 @@ export async function POST(request, { params }) {
        }
     }
 
-   if (path === 'payment/order' || path === 'api/payment/order') {
+    if (path === 'payment/order' || path === 'api/payment/order') {
       const plan = body.plan;
-      let amount = 12; 
+      let amount = 1000; // డిఫాల్ట్ ₹10 (1000 పైసలు)
+      
       if (plan === 'month') amount = 14900;
-      if (plan === 'year') amount = 149900;
-      if (plan === 'single') amount = 1000;
+      else if (plan === 'year') amount = 149900;
+      else if (plan === 'single') {
+         // 🚀 FIX: కస్టమ్ అమౌంట్ ₹10 కంటే ఎక్కువ ఉంటే దాన్ని తీసుకుంటుంది, లేకపోతే మినిమమ్ ₹10 ఉంటుంది.
+         const custom = Number(body.customAmount);
+         if (custom && custom > 10) {
+             amount = custom * 100;
+         } else {
+             amount = 1000; 
+         }
+      }
 
       const orderId = 'order_' + Date.now();
       const customerId = body.email ? body.email.replace(/[^a-zA-Z0-9]/g, '').substring(0, 50) : 'cust_' + Date.now();
@@ -965,7 +974,6 @@ export async function POST(request, { params }) {
           body: JSON.stringify({
             order_amount: amount/100, order_currency: 'INR', order_id: orderId,
             customer_details: { customer_id: customerId, customer_email: body.email || 'guest@example.com', customer_phone: '9999999999' },
-            // 🚀 FIX: This line now redirects them back to the Finance Dashboard
             order_meta: { return_url: "https://www.tgtenders.in/client?tab=finance" }
           })
         });
@@ -974,7 +982,9 @@ export async function POST(request, { params }) {
         if (data.payment_session_id) {
           await db.collection('payments').insertOne({
              order_id: orderId, email: body.email, amount: amount/100, plan: plan,
-             tenderId: body.tenderId || null, status: 'PENDING', created_at: new Date()
+             tenderId: body.tenderId || null, 
+             reason: body.reason || null, // 🚀 FIX: ఏ పర్పస్ కోసం పే చేస్తున్నారో ఇక్కడ సేవ్ చేస్తాం
+             status: 'PENDING', created_at: new Date()
           });
           return json({ payment_session_id: data.payment_session_id, order: { id: orderId, amount: amount } });
         } else {
@@ -997,15 +1007,18 @@ export async function POST(request, { params }) {
         });
         const cfData = await cfRes.json();
 
-        if (cfData.order_status === 'PAID') {
-          const paymentRecord = await db.collection('payments').findOne({ order_id: orderId });
-          if (paymentRecord && paymentRecord.status !== 'SUCCESS') {
-            await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'SUCCESS', paid_at: new Date() } });
-            const email = paymentRecord.email.toLowerCase();
-            
+        // 🚀 FIX: పెండింగ్ లో ఉన్న పేమెంట్ సక్సెస్ అయితే 'PAID' గా మార్చడం
+            if (paymentRecord.reason) {
+                await db.collection('users').updateOne(
+                    { email: paymentRecord.email.toLowerCase(), "pending_payments.reason": paymentRecord.reason },
+                    { $set: { "pending_payments.$.status": "PAID" } }
+                );
+            }
+
             if (paymentRecord.plan === 'single' && paymentRecord.tenderId) {
-              await db.collection('users').updateOne({ email }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
+              await db.collection('users').updateOne({ email: paymentRecord.email.toLowerCase() }, { $addToSet: { purchases: paymentRecord.tenderId } }, { upsert: true });
             } else if (paymentRecord.plan === 'month' || paymentRecord.plan === 'year') {
+               // మిగతా కోడ్ అంతా సేమ్...
               const days = paymentRecord.plan === 'year' ? 365 : 30;
               const expireDate = new Date();
               expireDate.setDate(expireDate.getDate() + days);
@@ -1020,7 +1033,7 @@ export async function POST(request, { params }) {
         return json({ error: 'Verify failed' }, 500);
       }
     }
-
+    
     if (path === 'payment/webhook' || path === 'api/payment/webhook') {
        try {
          const orderId = body?.data?.order?.order_id;
