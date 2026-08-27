@@ -184,12 +184,13 @@ export default function App() {
     }
   }, [session, status]);
 
-  // Client Dashboard Logic (Intent based) 
+  // 🚀 FIX: Auto-Redirect existing active clients to their Dashboard
   useEffect(() => {
     if (status === 'authenticated' && userData !== null && !loadingUser) {
-      if (intent === 'client' && userData.onboarding_complete && userData.is_approved) {
-        if (typeof window !== 'undefined' && window.location.pathname !== '/client') {
-          window.open('/client', '_blank'); 
+      // యూజర్ ఆల్ రెడీ క్లైంట్ అయితే వాళ్ళని ఆటోమెటిక్ గా డ్యాష్‌బోర్డ్ కి పంపించేయాలి.
+      if (intent === 'client' || userData.onboarding_complete || userData.client_id || userData.is_approved) {
+        if (typeof window !== 'undefined' && window.location.pathname === '/') {
+          window.location.href = '/client'; 
           localStorage.removeItem('tt_intent');
           setIntent(''); 
         }
