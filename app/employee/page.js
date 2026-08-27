@@ -707,8 +707,7 @@ export default function EmployeeDashboard() {
         </div>
       </header>
 
-      <main className="w-full px-4 sm:px-8 py-6">
-        
+      <main className="w-full px-4 sm:px-8 py-6"> 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {mdTasks.length === 0 ? (
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
