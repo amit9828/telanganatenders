@@ -93,8 +93,6 @@ export default function EmployeeDashboard() {
   const [pendingUsers, setPendingUsers] = useState([]);
   const [mdTaskFile, setMdTaskFile] = useState({});
   const [uploadingTask, setUploadingTask] = useState(false);
-  const [mdTaskFile, setMdTaskFile] = useState({});
-  const [uploadingTask, setUploadingTask] = useState(false);
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
