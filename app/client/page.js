@@ -481,13 +481,28 @@ export default function ClientDashboard() {
       } catch (e) { toast.error("Error accepting tender."); }
   };
 
-  const executePayment = async (payRecord) => {
+ const executePayment = async (payRecord) => {
     setBuying(true);
     try {
       const r1 = await fetch('/api/payment/order', { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ email: email, plan: 'single', tenderId: payRecord._id || payRecord.id, customAmount: payRecord.amount }) 
+        // 🚀 FIX: reason ని కూడా పంపాలి
+        body: JSON.stringify({ 
+            email: email, 
+            plan: 'single', 
+            tenderId: payRecord._id || payRecord.id, 
+            customAmount: payRecord.amount,
+            reason: payRecord.reason 
+        }) 
       });
+      const d1 = await r1.json();
+      if (!r1.ok) { setBuying(false); return toast.error(d1.error || 'Failed to initialize payment'); }
+      
+      const cashfree = await load({ mode: "production" });
+      const checkoutOptions = { paymentSessionId: d1.payment_session_id, returnUrl: `https://www.tgtenders.in/payment-status?order_id={order_id}` };
+      await cashfree.checkout(checkoutOptions);
+    } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
+  };
       const d1 = await r1.json();
       if (!r1.ok) { setBuying(false); return toast.error(d1.error || 'Failed to initialize payment'); }
       
