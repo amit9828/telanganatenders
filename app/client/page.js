@@ -104,9 +104,53 @@ export default function ClientDashboard() {
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, [session, status]);
 
+ // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
   useEffect(() => {
     if (status === "loading" || !email) return;
-    const interval = setInterval(() => { fetchClientData(email); }, 15000);
+    
+    // ఒక ఫంక్షన్ క్రియేట్ చేసి, దాన్ని ఫస్ట్ టైమ్ పిలవాలి, ఆపై లూప్ లో పెట్టాలి
+    const syncLiveData = async () => {
+       try {
+         // t=Date.now() వాడటం వల్ల ఎప్పుడూ కొత్త డేటా వస్తుంది, పాత డేటా స్టక్ అవ్వదు
+         const r = await fetch(`/api/me?email=${encodeURIComponent(email)}&t=${Date.now()}`);
+         if(r.ok) {
+           const d = await r.json();
+           
+           const hasSignedAgreement = d.vault_docs?.some(doc => doc.id === 'signed_agreement') || false;
+           d.agreement_signed = hasSignedAgreement;
+
+           if (d.onboarding_complete) setLocalOnboardComplete(true);
+
+           setUserData(d);
+           setClientId(d.client_id || `CLI-${email.substring(0,4).toUpperCase()}X`);
+
+           if(d.stats) setClientStats(d.stats);
+           if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
+           
+           if(d.action_alerts) {
+               setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
+           }
+           
+           // డాక్యుమెంట్స్ అప్‌డేట్
+           if (d.vault_docs && d.vault_docs.length > 0) {
+               const mergedDocs = DEFAULT_VAULT_DOCS.map(defaultDoc => {
+                   const found = d.vault_docs.find(bd => bd.id === defaultDoc.id);
+                   return found ? found : defaultDoc;
+               });
+               const customDocs = d.vault_docs.filter(bd => !DEFAULT_VAULT_DOCS.some(def => def.id === bd.id) && bd.id !== 'signed_agreement');
+               setVaultDocs([...mergedDocs, ...customDocs]);
+           } else {
+               setVaultDocs(DEFAULT_VAULT_DOCS);
+           }
+         }
+       } catch (err) {
+         console.error("Live sync failed", err);
+       }
+    };
+
+    // ప్రతి 10 సెకన్లకు సైలెంట్ గా బ్యాక్‌గ్రౌండ్ లో డేటా అప్‌డేట్ అవుతుంది
+    const interval = setInterval(syncLiveData, 10000); 
+    
     return () => clearInterval(interval);
   }, [email, status]);
 
