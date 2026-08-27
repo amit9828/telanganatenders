@@ -709,10 +709,7 @@ export default function EmployeeDashboard() {
 
       <main className="w-full px-4 sm:px-8 py-6">
         
-        <div className="mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
-           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-           <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Tasks Assigned by MD / Admin</h3>
-           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {mdTasks.length === 0 ? (
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
               ) : (
@@ -738,6 +735,11 @@ export default function EmployeeDashboard() {
                               </div>
                            </div>
                         )}
+                    </div>
+                 ))
+              )}
+           </div>
+        </div>
 
         <Tabs defaultValue="kanban" className="w-full">
           <TabsList className="flex flex-wrap w-full bg-slate-200 h-auto p-1 mb-6 rounded-lg gap-1">
