@@ -441,6 +441,8 @@ export async function PUT(request, { params }) {
         const { task_id, status, reply, file_name, file_base64 } = body;
         let updateData = { status: status, updated_at: new Date() };
         if(reply) updateData.client_reply = reply;
+        
+        // 🚀 FIX: ఫైల్ ని డేటాబేస్ లో సేవ్ చేయడం
         if(file_name) updateData.file_name = file_name;
         if(file_base64) updateData.file_base64 = file_base64;
 
@@ -450,7 +452,6 @@ export async function PUT(request, { params }) {
         );
         return json({ success: true, message: `Dispatch status updated to ${status}` });
      }
-
      // 🚀 FIX: Vault Document Approval + Auto Google Drive Sync
      if (path === 'vault/verify' || path === 'api/vault/verify') {
         const { email, docId, status, reject_reason } = body;
