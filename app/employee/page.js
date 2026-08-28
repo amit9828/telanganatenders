@@ -43,6 +43,7 @@ export default function EmployeeDashboard() {
   const [bids, setBids] = useState([]);
   const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
+  const [analyzingTender, setAnalyzingTender] = useState(false);
   const [publicTenders, setPublicTenders] = useState([]); 
   const [suggestions, setSuggestions] = useState([]); 
   const [tickets, setTickets] = useState([]); 
@@ -165,18 +166,57 @@ export default function EmployeeDashboard() {
     if (file.size > 4 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 4MB.');
     
     const reader = new FileReader();
-    reader.onload = () => {
-      setPdfBase64(reader.result?.toString().split(',')[1] || '');
-      setPdfName(file.name);
+    reader.onload = () => { 
+        const base64Str = reader.result?.toString().split(',')[1] || '';
+        setPdfBase64(base64Str); 
+        setPdfName(file.name); 
+        toast.success(`PDF Loaded. Starting AI Analysis...`);
+        
+        // 🚀 ఫైల్ అటాచ్ అవ్వగానే ఆటోమెటిక్ గా AI ని పిలవడం
+        handleAITenderAnalysis(file, base64Str);
     };
     reader.readAsDataURL(file);
   };
-
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`, '_blank');
     toast.success('Opening PDF Document...');
   };
 
+  // 🚀 AI Auto-Fill Function
+  const handleAITenderAnalysis = async (file, base64Data) => {
+      setAnalyzingTender(true);
+      toast.info("AI is reading the document. Please wait...", { duration: 3000 });
+      
+      try {
+          const res = await fetch('/api/ai/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pdfBase64: base64Data })
+          });
+          
+          if (res.ok) {
+              const { data } = await res.json();
+              if (data) {
+                  // AI ఇచ్చిన డేటాతో ఫారమ్ ని ఆటో-ఫిల్ చేయడం
+                  setForm(prev => ({
+                      ...prev,
+                      bid_no: data.bid_no !== "N/A" ? data.bid_no : prev.bid_no,
+                      title: data.title !== "N/A" ? data.title : prev.title,
+                      department: data.department !== "N/A" ? data.department : prev.department,
+                      last_date: data.last_date !== "N/A" ? data.last_date : prev.last_date,
+                      supply_details: `EMD: ${data.emd_amount}\nTurnover Req: ${data.turnover_req}\nMandatory Docs: ${(data.mandatory_docs || []).join(', ')}`
+                  }));
+                  toast.success("AI Successfully auto-filled the tender details!");
+              }
+          } else {
+              toast.error("AI Analysis failed. You may need to enter manually.");
+          }
+      } catch (err) {
+          toast.error("Network error during AI analysis.");
+      }
+      setAnalyzingTender(false);
+  };
+  
   const handlePublishTender = async (e) => {
     e.preventDefault();
     if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
