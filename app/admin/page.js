@@ -99,10 +99,12 @@ export default function AdminPage() {
   const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState('');
 
+  // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
   const [rejectReason, setRejectReason] = useState({});
-
-  // State for aggregating all successful payments live
   const [successfulPaymentsLog, setSuccessfulPaymentsLog] = useState([]);
+
+  // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
+  const [analyzingFiles, setAnalyzingFiles] = useState(false);
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -393,7 +395,57 @@ export default function AdminPage() {
        if(res.ok) { toast.success("Ticket deleted"); refresh(); } else toast.error("Failed to delete");
     } catch(e) { toast.error("Network error"); }
   };
+  // 🚀 MD Bulk AI Upload Function
+  const handleBulkAIUpload = async (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
 
+      const validFiles = files.filter(f => f.type === 'application/pdf');
+      if (validFiles.length === 0) return toast.error("Only PDF files are allowed.");
+
+      setAnalyzingFiles(true);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < validFiles.length; i++) {
+          const file = validFiles[i];
+          toast.info(`AI is analyzing ${i + 1}/${validFiles.length}: ${file.name}...`, { duration: 3000 });
+          
+          try {
+              const reader = new FileReader();
+              const base64Data = await new Promise((resolve) => {
+                  reader.onload = () => resolve(reader.result.toString().split(',')[1]);
+                  reader.readAsDataURL(file);
+              });
+
+              const res = await fetch('/api/ai/analyze', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify({ 
+                      pdfBase64: base64Data, 
+                      fileName: file.name,
+                      mimeType: 'application/pdf',
+                      uploadedBy: 'MD Admin' 
+                  })
+              });
+
+              if (res.ok) {
+                  successCount++;
+              } else {
+                  if(res.status === 409) {
+                      toast.warning(`Skipped ${file.name}: Already exists in drafts.`);
+                  } else {
+                      failCount++;
+                  }
+              }
+          } catch (error) {
+              failCount++;
+          }
+      }
+
+      toast.success(`Analysis Complete! ${successCount} saved to Employee Drafts. ${failCount} failed.`);
+      setAnalyzingFiles(false);
+  };
   const handleProcessBidRequest = async (reqId, status) => {
     const reply = bidReply[reqId];
     const assigneeId = bidAssignee[reqId];
@@ -1418,6 +1470,33 @@ const handleViewDocument = (req) => {
           </TabsContent>
           {/* ==================== 6. PUBLISHER ==================== */}
           <TabsContent value="publisher" className="mt-4">
+            
+            {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) - MD Bulk AI Dropzone 🚀 */}
+            <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mb-6">
+               <CardHeader className="bg-purple-50/50 border-b pb-4">
+                  <CardTitle className="text-purple-900 flex items-center gap-2"><UploadCloud className="w-5 h-5 text-purple-600"/> Bulk AI Tender Dropzone</CardTitle>
+                  <CardDescription>Drop multiple tender PDFs here. AI will extract data and send them to the Employee's Pending Drafts.</CardDescription>
+               </CardHeader>
+               <CardContent className="pt-6">
+                  <label className={`border-2 border-dashed border-purple-300 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition ${analyzingFiles ? 'bg-purple-100 animate-pulse' : 'bg-purple-50 hover:bg-purple-100'}`}>
+                     <input type="file" accept="application/pdf" multiple onChange={handleBulkAIUpload} disabled={analyzingFiles} className="hidden"/>
+                     {analyzingFiles ? (
+                        <>
+                           <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-3" />
+                           <span className="text-sm font-bold text-purple-800">AI is analyzing files... Please wait.</span>
+                        </>
+                     ) : (
+                        <>
+                           <UploadCloud className="w-10 h-10 text-purple-500 mb-3" />
+                           <span className="text-base font-bold text-purple-900">Click to Select Multiple PDF Files</span>
+                           <span className="text-xs text-purple-600 mt-1">AI will process them one by one.</span>
+                        </>
+                     )}
+                  </label>
+               </CardContent>
+            </Card>
+
+            {/* === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) === */}
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
                 <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
