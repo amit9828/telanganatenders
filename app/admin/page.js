@@ -648,7 +648,11 @@ const handleViewDocument = (req) => {
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
-
+  const filteredTenders = (tenders || []).filter(t => 
+     t.bid_no?.toLowerCase().includes((tenderSearch || '').toLowerCase()) || 
+     t.title?.toLowerCase().includes((tenderSearch || '').toLowerCase()) ||
+     t.department?.toLowerCase().includes((tenderSearch || '').toLowerCase())
+  );
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="bg-[#0A2647] text-white border-b sticky top-0 z-40 shadow-sm">
