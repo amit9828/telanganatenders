@@ -216,6 +216,12 @@ export async function GET(request, { params }) {
       return json({ users });
     }
 
+    // 🚀 Fetch AI Draft Tenders
+    if (path === 'ai/drafts' || path === 'api/ai/drafts') {
+       const drafts = await db.collection('ai_draft_tenders').find({ status: 'Pending Verification' }).sort({ created_at: -1 }).toArray();
+       return json({ drafts });
+    }
+    
     if (path === 'users/approved' || path === 'api/users/approved') {
       const users = await db.collection('users')
          .find({ is_approved: true })
@@ -830,7 +836,14 @@ export async function POST(request, { params }) {
        );
        return json({ success: true });
     }
-
+    // 🚀 Delete AI Draft once Published
+    if (path === 'ai/drafts' || path === 'api/ai/drafts') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing Draft ID' }, 400);
+       await db.collection('ai_draft_tenders').deleteOne({ _id: new ObjectId(id) });
+       return json({ success: true });
+    }
+    
     if (path === 'client-requests' || path === 'api/client-requests') {
        const { client_email, client_id, link_or_id, description } = body;
        const result = await db.collection('client_requests').insertOne({
