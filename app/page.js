@@ -38,6 +38,8 @@ export default function App() {
   const [userData, setUserData] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [subscription, setSubscription] = useState(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBtn, setShowInstallBtn] = useState(false);
   
   // Auth Modals
   const [mainLoginModal, setMainLoginModal] = useState(false);
@@ -159,6 +161,32 @@ export default function App() {
     return () => clearInterval(trafficInterval);
   }, []);
 
+  // 🚀 PWA App Installation Logic
+  useEffect(() => {
+    // 1. Register Service Worker
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW setup failed', err));
+    }
+
+    // 2. Capture the Install Prompt
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBtn(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') setShowInstallBtn(false);
+      setDeferredPrompt(null);
+    }
+  };
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
@@ -519,7 +547,7 @@ export default function App() {
     } 
   }
 
-  // ==============================================================================
+ // ==============================================================================
   // PUBLIC PORTAL
   // ==============================================================================
   return (
@@ -531,7 +559,7 @@ export default function App() {
           
           {/* Left Side: Telangana Tenders */}
           <div className="flex items-center gap-3">
-             {brandSettings.logo ? (
+             {brandSettings?.logo ? (
                 <img src={brandSettings.logo} alt="Logo" className="w-14 h-14 md:w-16 md:h-16 rounded object-contain" />
              ) : (
                 <div className="w-14 h-14 bg-[#16a34a] rounded flex items-center justify-center text-white font-bold text-2xl">TT</div>
@@ -543,13 +571,13 @@ export default function App() {
                 <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">Consultancy Services & Corporate Approvals</p>
              </div>
           </div>
-
+          
           {/* Right Side: GeM Logo & Login */}
           <div className="flex items-center gap-4">
             
             {/* GeM Logo Block */}
             <div className="hidden lg:flex flex-col items-center border-r pr-4 mr-1 border-slate-200">
-               {brandSettings.gem_logo ? (
+               {brandSettings?.gem_logo ? (
                   <img src={brandSettings.gem_logo} alt="GeM Logo" className="w-14 h-14 md:w-16 md:h-16 object-contain" />
                ) : (
                   <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="GeM" className="w-14 h-14 md:w-16 md:h-16 object-contain" onError={(e) => e.target.style.display='none'}/>
@@ -583,9 +611,24 @@ export default function App() {
               </div>
             )}
           </div>
+          {/* End of Right Side */}
+
         </div>
       </header>
 
+      {/* 🚀 NEW: Install App Banner (Shows only on mobile/compatible browsers) */}
+      {showInstallBtn && (
+        <div className="w-full bg-blue-50 py-3 border-b border-blue-100 flex justify-center px-4">
+          <Button 
+            onClick={handleInstallApp} 
+            className="bg-[#16a34a] hover:bg-[#15803d] text-white font-bold w-full max-w-[350px] shadow-md animate-pulse"
+          >
+            ⬇️ Install Telangana Tenders App
+          </Button>
+        </div>
+      )}
+
+      {/* Main Content follows below... */}
       <section className="w-full relative h-[300px] md:h-[400px] overflow-hidden bg-slate-900 group">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
