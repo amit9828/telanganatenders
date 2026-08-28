@@ -322,25 +322,22 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
-  const impersonateUser = async (type, email_or_id) => {
-    const toastId = toast.loading(`Authenticating secure MD bypass into ${type} dashboard...`);
+// 🚀 FIX: LocalStorage Injection for Instant MD Bypass
+  const impersonateUser = (type, email_or_id) => {
+    const toastId = toast.loading(`Bypassing secure access to ${type} dashboard...`);
     try {
-        const res = await signIn('impersonate', { 
-           email: email_or_id, 
-           adminToken: 'admin_success', 
-           redirect: false 
-        });
-
-        if (res?.error) {
-           toast.error("Bypass Authentication Failed!", { id: toastId });
-        } else {
-           toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-           setTimeout(() => {
-              window.open(`/${type}`, '_blank');
-           }, 800);
+        if (type === 'client') {
+            localStorage.setItem('tt_email', email_or_id);
+        } else if (type === 'employee') {
+            localStorage.setItem('tt_emp_email', email_or_id);
         }
+        
+        toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
+        setTimeout(() => {
+            window.open(`/${type}`, '_blank');
+        }, 800);
     } catch (e) {
-        toast.error("Network Error during authentication.", { id: toastId });
+        toast.error("Error during authentication bypass.", { id: toastId });
     }
   };
 
