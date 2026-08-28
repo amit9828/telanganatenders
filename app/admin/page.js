@@ -22,7 +22,7 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle,
-  Building2, PenTool,  Loader2, UploadCloud, Target,
+  Building2, PenTool,
 } from 'lucide-react';
 
 const DISTRICTS = [
