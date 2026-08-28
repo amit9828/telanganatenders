@@ -1483,7 +1483,6 @@ return (
                        </div>
                     )}
 
-                   // === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) ===
                    <form onSubmit={handlePublishTender} className="space-y-4">
                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/></div>
                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
