@@ -1464,11 +1464,7 @@ return (
                        <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
                     )}
                  </CardHeader>
-                 // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
                  <CardContent className="pt-5">
-
-                    {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀 */}
-                    {/* 🚀 AI Drafts Dropdown */}
                     {aiDrafts.length > 0 && !isEditingTender && (
                        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
                           <Label className="text-sm font-bold text-blue-900 mb-2 flex items-center gap-2">
