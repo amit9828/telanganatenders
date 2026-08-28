@@ -700,18 +700,21 @@ export default function EmployeeDashboard() {
     } catch (e) { toast.error("Failed to escalate."); }
   };
 
-  const handleImpersonate = async (targetEmail) => {
+  // 🚀 FIX: LocalStorage Injection for Instant Employee Bypass
+  const handleImpersonate = (targetEmail) => {
     if (!targetEmail) return toast.error('Enter a valid client email');
-    const newTab = window.open('about:blank', '_blank');
-    toast.loading(`Connecting to ${targetEmail}'s portal...`);
+    const toastId = toast.loading(`Connecting to ${targetEmail}'s portal...`);
 
     try {
-      const res = await signIn('impersonate', { email: targetEmail, adminToken: 'admin_success', redirect: false });
-      if (res?.error) { newTab.close(); toast.error("Failed to connect to client portal!"); } 
-      else { toast.success("Successfully Connected!"); newTab.location.href = '/client'; }
-    } catch (e) { newTab.close(); toast.error("Network Error."); }
+      localStorage.setItem('tt_email', targetEmail);
+      toast.success("Successfully Connected!", { id: toastId });
+      setTimeout(() => {
+          window.open('/client', '_blank');
+      }, 800);
+    } catch (e) { 
+      toast.error("Error connecting to client portal.", { id: toastId }); 
+    }
   };
-
   const logActivity = (action, details) => {
     fetch('/api/employee/activity', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
