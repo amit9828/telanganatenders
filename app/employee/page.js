@@ -1455,15 +1455,27 @@ return (
                         </Select>
                       </div>
                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea></div>
+                      
+                      {/* 🚀 FIX: Updated PDF Upload Box with AI Loading Animation */}
                       <div>
                         <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
-                        <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
-                           <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                           <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                           <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF')}</span>
+                        <div className={`border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group ${analyzingTender ? 'animate-pulse bg-blue-50' : ''}`}>
+                           <input type="file" accept="application/pdf" onChange={onPdfChange} disabled={analyzingTender} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
+                           {analyzingTender ? (
+                              <div className="flex flex-col items-center">
+                                 <Loader2 className="w-6 h-6 text-blue-600 animate-spin mb-2" />
+                                 <span className="text-sm font-bold text-blue-600">AI is analyzing document...</span>
+                              </div>
+                           ) : (
+                              <>
+                                 <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                                 <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Drop PDF here for AI Auto-Fill')}</span>
+                              </>
+                           )}
                         </div>
                       </div>
-                      <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+
+                      <Button type="submit" disabled={publishing || analyzingTender} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
                          {publishing ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
                       </Button>
                    </form>
@@ -1527,6 +1539,65 @@ return (
                  </CardContent>
                </Card>
             </div>
+
+            {/* 🚀 NEW: Operator Storage & Client Sharing Block */}
+            <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mt-6">
+               <CardHeader className="bg-purple-50/50 border-b pb-4">
+                  <CardTitle className="text-purple-900 flex items-center gap-2"><FolderPlus className="w-5 h-5 text-purple-600"/> Operations Storage & Client Sharing</CardTitle>
+                  <CardDescription>Upload blank proformas, GeM formats, or reference docs here and share directly to clients.</CardDescription>
+               </CardHeader>
+               <CardContent className="pt-4">
+                  <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                     <label className="flex-1 border-2 border-dashed border-purple-300 bg-purple-50 rounded-lg flex flex-col items-center justify-center h-24 cursor-pointer hover:bg-purple-100 transition shadow-sm">
+                        <UploadCloud className="w-6 h-6 text-purple-500 mb-1"/>
+                        <span className="text-[10px] font-bold text-purple-700 uppercase">{uploadingOpPdf ? 'Uploading...' : 'Upload New Document to Storage'}</span>
+                        <input type="file" accept="application/pdf" onChange={handleOperatorPdfUpload} disabled={uploadingOpPdf} className="hidden"/>
+                     </label>
+                  </div>
+                  
+                  <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-[300px] overflow-y-auto pr-2">
+                     {operatorDocs.length === 0 ? (
+                        <p className="text-xs text-slate-500 col-span-full text-center py-4">No documents stored yet.</p>
+                     ) : (
+                        operatorDocs.map(doc => (
+                           <div key={doc._id} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex flex-col justify-between hover:border-purple-300 transition">
+                              <div className="flex items-start justify-between mb-3">
+                                 <div className="min-w-0 pr-2">
+                                    <h4 className="text-sm font-bold text-[#0A2647] truncate" title={doc.name}>{doc.name}</h4>
+                                    <p className="text-[9px] text-slate-400 mt-0.5">Uploaded: {new Date(doc.created_at).toLocaleDateString()}</p>
+                                 </div>
+                                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-blue-500 hover:bg-blue-50" onClick={() => {
+                                     const byteCharacters = atob(doc.file_base64);
+                                     const byteNumbers = new Array(byteCharacters.length);
+                                     for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                     const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+                                     window.open(URL.createObjectURL(blob), '_blank');
+                                 }}><Eye className="w-3.5 h-3.5"/></Button>
+                              </div>
+                              <div className="border-t border-slate-100 pt-3 mt-auto">
+                                 {sharingDocId === doc._id ? (
+                                    <div className="flex flex-col gap-2">
+                                       <Select value={targetClientEmail} onValueChange={setTargetClientEmail}>
+                                          <SelectTrigger className="h-8 text-[10px] bg-slate-50"><SelectValue placeholder="Select Client"/></SelectTrigger>
+                                          <SelectContent>
+                                             {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.client_id})</SelectItem>)}
+                                          </SelectContent>
+                                       </Select>
+                                       <div className="flex gap-2">
+                                          <Button size="sm" onClick={() => handleShareDocWithClient(doc._id)} className="flex-1 bg-purple-600 hover:bg-purple-700 h-7 text-[10px]">Share</Button>
+                                          <Button size="sm" variant="outline" onClick={() => setSharingDocId(null)} className="h-7 text-[10px] px-2 text-slate-500">Cancel</Button>
+                                       </div>
+                                    </div>
+                                 ) : (
+                                    <Button size="sm" variant="outline" onClick={() => setSharingDocId(doc._id)} className="w-full text-purple-600 border-purple-200 hover:bg-purple-50 h-8 text-xs"><Send className="w-3 h-3 mr-1"/> Share to Client</Button>
+                                 )}
+                              </div>
+                           </div>
+                        ))
+                     )}
+                  </div>
+               </CardContent>
+            </Card>
           </TabsContent>
 
           {/* 🚀 RESTORED: GUEST QUERIES AND SLA TRACKER */}
