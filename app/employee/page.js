@@ -98,6 +98,7 @@ export default function EmployeeDashboard() {
   const [sharingDocId, setSharingDocId] = useState(null);
   const [targetClientEmail, setTargetClientEmail] = useState('');
   const [uploadingOpPdf, setUploadingOpPdf] = useState(false);
+  const [aiDrafts, setAiDrafts] = useState([]);
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
@@ -135,10 +136,18 @@ export default function EmployeeDashboard() {
         fetch(`/api/guest-queries?t=${Date.now()}`),
         fetch(`/api/employees?t=${Date.now()}`)
       ]);
-       const opDocsRes = await fetch(`/api/operator/docs?t=${Date.now()}`);
+       // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
+      const opDocsRes = await fetch(`/api/operator/docs?t=${Date.now()}`);
       if (opDocsRes.ok) {
          const opData = await opDocsRes.json();
          setOperatorDocs(opData.docs || []);
+      }
+
+      // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
+      const draftsRes = await fetch(`/api/ai/drafts?t=${Date.now()}`);
+      if(draftsRes.ok) {
+         const dData = await draftsRes.json();
+         setAiDrafts(dData.drafts || []);
       }
       if (tasksRes.ok) {
         const tData = await tasksRes.json();
@@ -217,6 +226,27 @@ export default function EmployeeDashboard() {
       setAnalyzingTender(false);
   };
   
+  // 🚀 కొత్త కోడ్: Handle Selection of AI Draft
+  const handleSelectDraft = (draftId) => {
+      if (!draftId) return;
+      const draft = aiDrafts.find(d => d._id === draftId);
+      if (!draft) return;
+
+      setTenderForm({
+          bid_no: draft.bid_no !== "N/A" ? draft.bid_no : "",
+          title: draft.title !== "N/A" ? draft.title : "",
+          department: draft.department !== "N/A" ? draft.department : "",
+          last_date: draft.last_date !== "N/A" ? draft.last_date : "",
+          district: draft.district !== "N/A" && DISTRICTS.includes(draft.district) ? draft.district : "",
+          category: "Product",
+          supply_details: `EMD: ${draft.emd_amount}\nTurnover Req: ${draft.turnover_req}\nMandatory Docs: ${(draft.mandatory_docs || []).join(', ')}`
+      });
+      setPdfBase64(draft.pdf_base64 || "");
+      setPdfName(draft.pdf_filename || "AI_Draft_Document.pdf");
+      toast.success("AI Data Auto-Filled!");
+  };
+
+  // 🚀 పాత దానికి బదులు ఈ కొత్త ఫంక్షన్ పెట్టు: 
   const handlePublishTender = async (e) => {
     e.preventDefault();
     if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
@@ -231,6 +261,13 @@ export default function EmployeeDashboard() {
       });
       if(r.ok) {
         toast.success(isEditingTender ? 'Tender updated successfully!' : 'Tender published successfully!');
+        
+        // 🚀 Auto Delete Draft after publish
+        const drafted = aiDrafts.find(d => d.bid_no === tenderForm.bid_no);
+        if (drafted) {
+           await fetch(`/api/ai/drafts?id=${drafted._id}`, { method: 'DELETE' });
+        }
+
         setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
         setPdfBase64(''); setPdfName(''); setIsEditingTender(null);
         fetchLiveOperationsData(email); 
@@ -330,7 +367,7 @@ export default function EmployeeDashboard() {
       } else toast.error("Failed to add bid row.");
     } catch (err) { toast.error("Network Error."); }
   };
-
+  
   const handleSaveEditBid = async (e) => {
      e.preventDefault();
      if(!editingBid) return;
@@ -1427,7 +1464,30 @@ return (
                        <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
                     )}
                  </CardHeader>
+                 // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
                  <CardContent className="pt-5">
+
+                    {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀 */}
+                    {/* 🚀 AI Drafts Dropdown */}
+                    {aiDrafts.length > 0 && !isEditingTender && (
+                       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                          <Label className="text-sm font-bold text-blue-900 mb-2 flex items-center gap-2">
+                             <Target className="w-4 h-4"/> Select AI Processed Draft (Auto-Fill)
+                          </Label>
+                          <Select onValueChange={handleSelectDraft}>
+                             <SelectTrigger className="bg-white border-blue-300 h-10">
+                                <SelectValue placeholder="Choose a tender processed by AI..." />
+                             </SelectTrigger>
+                             <SelectContent>
+                                {aiDrafts.map(d => (
+                                   <SelectItem key={d._id} value={d._id}>{d.bid_no} - {d.department}</SelectItem>
+                                ))}
+                             </SelectContent>
+                          </Select>
+                       </div>
+                    )}
+
+                   // === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) ===
                    <form onSubmit={handlePublishTender} className="space-y-4">
                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/></div>
                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
