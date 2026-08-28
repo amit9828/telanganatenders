@@ -281,56 +281,7 @@ export default function AdminPage() {
       toast.success('L1 Intel saved successfully!'); refresh();
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
-  const handleBulkAIUpload = async (e) => {
-      const files = Array.from(e.target.files);
-      if (files.length === 0) return;
-
-      const validFiles = files.filter(f => f.type === 'application/pdf');
-      if (validFiles.length === 0) return toast.error("Only PDF files allowed.");
-
-      setAnalyzingFiles(true);
-      let successCount = 0;
-      let failCount = 0;
-
-      for (let i = 0; i < validFiles.length; i++) {
-          const file = validFiles[i];
-          toast.info(`Analyzing ${i + 1}/${validFiles.length}: ${file.name}...`);
-          
-          try {
-              const reader = new FileReader();
-              const base64Data = await new Promise((resolve) => {
-                  reader.onload = () => resolve(reader.result.toString().split(',')[1]);
-                  reader.readAsDataURL(file);
-              });
-
-              const res = await fetch('/api/ai/analyze', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ 
-                      pdfBase64: base64Data, 
-                      fileName: file.name,
-                      mimeType: 'application/pdf',
-                      uploadedBy: 'MD Admin',
-                      saveToDraft: true 
-                  })
-              });
-
-              if (res.ok) successCount++;
-              else failCount++;
-          } catch (error) {
-              failCount++;
-          }
-      }
-
-      toast.success(`Analysis Complete! ${successCount} saved to Drafts. ${failCount} failed.`);
-      setAnalyzingFiles(false);
-  };
-  const filteredTenders = tenders.filter(t => 
-     t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
-     t.title?.toLowerCase().includes(tenderSearch.toLowerCase()) ||
-     t.department?.toLowerCase().includes(tenderSearch.toLowerCase())
-  );
-
+  
   const handleSyncDrive = async (email, companyName) => {
      const toastId = toast.loading("Creating Google Drive Workspace...");
      try {
