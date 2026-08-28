@@ -3,36 +3,47 @@ import { Toaster } from '@/components/ui/sonner';
 import Providers from './providers';
 
 export const metadata = {
-  // Ultra-optimized for ranking first on variations of Telangana and Maver Tenders
-  title: {
-    default: 'TG Tenders | Official Telangana Government Tender Portal up to 10 Lakhs',
-    template: '%s | TG Tenders'
+  title: "TG Tenders | Telangana & AP Government Tenders, GeM Services",
+  description: "The No.1 B2B Government Tender Consultancy. Access all live tenders, GeM (Government e Marketplace) bids, and procurement contracts across Telangana and Andhra Pradesh.",
+  manifest: "/manifest.json",
+  themeColor: "#0A2647",
+  // 🚀 Force Google to pick our official icon, bypassing default weird avatars
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+    apple: '/icon.png',
   },
-  description: 'Access all latest Telangana government tenders under 10 Lakhs. View instant, high-speed verified PDFs, filter by district, and check tender due dates on our dynamic calendar.',
   keywords: [
-    'TG Tenders', 
-    'Telangana Tenders', 
-    'Maver Tender', 
-    'Government Tenders Telangana', 
-    'tgtenders.in', 
-    'Hyderabad Tenders', 
-    'Telangana contractor portal',
-    'TG Tenders account login'
+    // Brand & Core
+    'TG Tenders', 'Telangana Tenders', 'tgtenders.in', 'Maver Tender', 
+    // GeM & National
+    'GeM Tenders', 'Government e Marketplace', 'GeM portal services', 'Central government tenders',
+    // Broad Keywords
+    'Government Tenders', 'Tender Consultancy Services', 'B2B Tender tracking', 'e-Procurement Telangana', 'e-Procurement AP', 'Tender bidding experts',
+    // Telangana Districts
+    'Hyderabad Tenders', 'Warangal Tenders', 'Karimnagar Tenders', 'Nizamabad Tenders', 'Khammam Tenders', 'Nalgonda Tenders', 'Mahabubnagar Tenders',
+    // Andhra Pradesh Districts
+    'Andhra Pradesh Tenders', 'AP Tenders', 'Visakhapatnam Tenders', 'Vijayawada Tenders', 'Guntur Tenders', 'Tirupati Tenders', 'Kurnool Tenders'
   ],
-  // Dynamic OpenGraph settings for high-authority social sharing signals
   openGraph: {
-    title: 'TG Tenders — Telangana Government Tender Portal',
-    description: 'Every government tender in Telangana up to 10 Lakhs in one calendar view.',
+    title: 'TG Tenders — No.1 Government Tender Portal & GeM Consultancy',
+    description: 'Expert tender tracking and bidding services for Telangana, AP, and Government e-Marketplace (GeM).',
     url: 'https://www.tgtenders.in',
     siteName: 'TG Tenders',
+    images: [
+      {
+        url: 'https://www.tgtenders.in/icon.png', // WhatsApp/FB share logo
+        width: 512,
+        height: 512,
+        alt: 'TG Tenders Logo',
+      }
+    ],
     locale: 'en_IN',
     type: 'website',
   },
-  // Tells Google this is the unique and authoritative URL for your business
   alternates: {
     canonical: 'https://www.tgtenders.in',
   },
-  // Google Search Console verification code
   verification: {
     google: 'TIofzqsOpScixFgiAUOjXsJ9INu_f_fs4GCAm1WV-mg',
   },
@@ -50,28 +61,44 @@ export const metadata = {
 };
 
 export default function RootLayout({ children }) {
-  // Advanced Structured JSON-LD Data for Google Rank Optimization
+  // 🚀 ULTRA SEO: Telling Google exactly who we are, what our logo is, and what we do.
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "WebSite",
-    "name": "TG Tenders",
-    "alternateName": ["Telangana Tenders", "Maver Tender", "TG Tenders Portal"],
-    "url": "https://www.tgtenders.in",
-    "potentialAction": {
-      "@type": "SearchAction",
-      "target": {
-        "@type": "EntryPoint",
-        "urlTemplate": "https://www.tgtenders.in/?q={search_term_string}"
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://www.tgtenders.in/#organization",
+        "name": "TG Tenders Consultancy",
+        "alternateName": "Telangana & AP Tenders",
+        "url": "https://www.tgtenders.in",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://www.tgtenders.in/icon.png",
+          "width": 512,
+          "height": 512
+        },
+        "description": "Leading Government e Marketplace (GeM) and state tender consultancy services."
       },
-      "query-input": "required name=search_term_string"
-    },
-    "description": "Premium service portal for tracking and viewing small-scale government tenders in Telangana up to 10 Lakhs."
+      {
+        "@type": "WebSite",
+        "@id": "https://www.tgtenders.in/#website",
+        "url": "https://www.tgtenders.in",
+        "name": "TG Tenders",
+        "publisher": {
+          "@id": "https://www.tgtenders.in/#organization"
+        },
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "https://www.tgtenders.in/?q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
+      }
+    ]
   };
 
   return (
     <html lang="en">
       <head>
-        {/* Injects the schema directly into the head so Google reads your search query structure immediately */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
