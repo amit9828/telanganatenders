@@ -13,16 +13,13 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
-// Add these inside the lucide-react import at the top of your files
-import { Loader2, UploadCloud, Target /* other icons */ } from 'lucide-react';
 import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, PlusCircle,
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
-  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle,
-  Building2, PenTool,
+  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -233,50 +230,7 @@ export default function AdminPage() {
     window.open(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`, '_blank');
     toast.success('Opening PDF Document...');
   };
-  const handleBulkAIUpload = async (e) => {
-      const files = Array.from(e.target.files);
-      if (files.length === 0) return;
 
-      const validFiles = files.filter(f => f.type === 'application/pdf');
-      if (validFiles.length === 0) return toast.error("Only PDF files allowed.");
-
-      setAnalyzingFiles(true);
-      let successCount = 0;
-      let failCount = 0;
-
-      for (let i = 0; i < validFiles.length; i++) {
-          const file = validFiles[i];
-          toast.info(`Analyzing ${i + 1}/${validFiles.length}: ${file.name}...`);
-          
-          try {
-              const reader = new FileReader();
-              const base64Data = await new Promise((resolve) => {
-                  reader.onload = () => resolve(reader.result.toString().split(',')[1]);
-                  reader.readAsDataURL(file);
-              });
-
-              const res = await fetch('/api/ai/analyze', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ 
-                      pdfBase64: base64Data, 
-                      fileName: file.name,
-                      mimeType: 'application/pdf',
-                      uploadedBy: 'MD Admin',
-                      saveToDraft: true 
-                  })
-              });
-
-              if (res.ok) successCount++;
-              else failCount++;
-          } catch (error) {
-              failCount++;
-          }
-      }
-
-      toast.success(`Analysis Complete! ${successCount} saved to Drafts. ${failCount} failed.`);
-      setAnalyzingFiles(false);
-  };
   const publish = async (e) => {
     e.preventDefault();
     if (!form.title || !form.department || !form.last_date || !form.district) return toast.error('Fill all required fields');
