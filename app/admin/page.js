@@ -419,7 +419,8 @@ export default function AdminPage() {
                       pdfBase64: base64Data, 
                       fileName: file.name,
                       mimeType: 'application/pdf',
-                      uploadedBy: 'MD Admin' 
+                      uploadedBy: 'MD Admin',
+                      saveToDraft: true
                   })
               });
 
@@ -524,7 +525,7 @@ const handleViewDocument = (req) => {
     } else { 
        toast.info("No file attached. The link/ID reference is shown above."); 
     }
-  };;
+  };
 
   const handleLedgerSubmit = async (e) => {
     e.preventDefault();
