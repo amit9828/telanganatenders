@@ -191,7 +191,7 @@ export default function EmployeeDashboard() {
     toast.success('Opening PDF Document...');
   };
 
-  // 🚀 AI Auto-Fill Function
+  // 🚀 AI Auto-Fill Function (FIXED)
   const handleAITenderAnalysis = async (file, base64Data) => {
       setAnalyzingTender(true);
       toast.info("AI is reading the document. Please wait...", { duration: 3000 });
@@ -200,14 +200,14 @@ export default function EmployeeDashboard() {
           const res = await fetch('/api/ai/analyze', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pdfBase64: base64Data })
+              body: JSON.stringify({ pdfBase64: base64Data, saveToDraft: false })
           });
           
           if (res.ok) {
               const { data } = await res.json();
               if (data) {
-                  // AI ఇచ్చిన డేటాతో ఫారమ్ ని ఆటో-ఫిల్ చేయడం
-                  setForm(prev => ({
+                  // 🚀 ఇక్కడ setTenderForm అని మార్చాం 🚀
+                  setTenderForm(prev => ({
                       ...prev,
                       bid_no: data.bid_no !== "N/A" ? data.bid_no : prev.bid_no,
                       title: data.title !== "N/A" ? data.title : prev.title,
