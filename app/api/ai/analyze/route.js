@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+export const maxDuration = 60; // 🚀 FIX: Prevents Vercel 504 Timeout for AI
+
 let cachedClient = null;
 let cachedDb = null;
 
