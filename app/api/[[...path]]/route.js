@@ -1124,8 +1124,14 @@ export async function POST(request, { params }) {
       }
     }
 
-    if (path === 'payment/webhook' || path === 'api/payment/webhook') {
+  if (path === 'payment/webhook' || path === 'api/payment/webhook') {
        try {
+         // 🚀 FIX: Cashfree Webhook Security Check
+         const signature = request.headers.get('x-webhook-signature');
+         if (!signature && process.env.NODE_ENV === 'production') {
+             return json({ error: 'Unauthorized: Missing Signature' }, 401);
+         }
+
          const orderId = body?.data?.order?.order_id;
          const paymentStatus = body?.data?.payment?.payment_status;
 
