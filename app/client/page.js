@@ -18,7 +18,7 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee, PenTool, Printer
+  IndianRupee, PenTool, Printer, UserCog
 } from 'lucide-react';
 
 const DEFAULT_VAULT_DOCS = [
@@ -250,8 +250,8 @@ export default function ClientDashboard() {
   const addServiceRow = () => setProfileForm(prev => ({...prev, services: [...prev.services, { type: 'Service', name: '' }]}));
   const updateService = (index, key, value) => {
     const newServices = [...profileForm.services];
-    if (typeof newServices[index] === 'string') newServices[index] = { type: 'Service', name: newServices[index] };
-    newServices[index][key] = value;
+    const currentService = typeof newServices[index] === 'string' ? { type: 'Service', name: newServices[index] } : newServices[index];
+    newServices[index] = { ...currentService, [key]: value };
     setProfileForm(prev => ({...prev, services: newServices}));
   };
   const removeService = (index) => {
