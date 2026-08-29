@@ -31,7 +31,14 @@ export async function DELETE(request) {
         if (!id) return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
         
         const db = await getDb();
-        await db.collection('ai_draft_tenders').deleteOne({ _id: new ObjectId(id) });
+        
+        // 🚀 FIX: Prevent Server Crash if ID is invalid
+        if (ObjectId.isValid(id)) {
+            await db.collection('ai_draft_tenders').deleteOne({ _id: new ObjectId(id) });
+        } else {
+            await db.collection('ai_draft_tenders').deleteOne({ _id: id }); // Fallback
+        }
+        
         return NextResponse.json({ success: true });
     } catch (e) {
         return NextResponse.json({ error: e.message }, { status: 500 });
