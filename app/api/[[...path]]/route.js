@@ -604,6 +604,13 @@ export async function PUT(request, { params }) {
         
         return json({ success: true, message: 'Marked as Paid Offline and Added to Ledger' });
      }
+
+     return json({ error: 'PUT endpoint not found' }, 404);
+  } catch(e) {
+     return json({ error: 'Server Error' }, 500);
+  }
+}
+
 // =====================================================================
 // DELETE REQUESTS 
 // =====================================================================
