@@ -19,7 +19,7 @@ import {
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
-  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool
+  FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog
 } from 'lucide-react';
 
 const DISTRICTS = [
