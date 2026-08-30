@@ -1219,16 +1219,25 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                                   <span className="text-[9px] text-slate-400 font-semibold">{doc.upload_date}</span>
                                </div>
                                <div className="flex items-center gap-2 mt-1">
-                                  <Button size="sm" variant="ghost" onClick={() => {
-                                      if (doc.file_base64) {
-                                          const byteCharacters = atob(doc.file_base64);
-                                          const byteNumbers = new Array(byteCharacters.length);
-                                          for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                          const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-                                          window.open(URL.createObjectURL(blob), '_blank');
-                                      } else { toast.error("Document data not found"); }
-                                  }} className="w-full h-7 text-[10px] px-2 font-bold bg-slate-100 hover:bg-slate-200 text-[#0A2647]"><Eye className="w-3 h-3 mr-1"/> View</Button>
-                               </div>
+                                <Button size="sm" variant="ghost" onClick={() => {
+                                    if (doc.file_base64) {
+                                        const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
+                                        const byteCharacters = atob(cleanBase64);
+                                        const byteNumbers = new Array(byteCharacters.length);
+                                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                        const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+                                        window.open(URL.createObjectURL(blob), '_blank');
+                                    } else { toast.error("Document data not found"); }
+                                }} className="flex-1 h-7 text-[10px] px-2 font-bold bg-slate-100 hover:bg-slate-200 text-[#0A2647]">
+                                   <Eye className="w-3 h-3 mr-1"/> View
+                                </Button>
+
+                                {doc.drive_link && (
+                                   <Button size="sm" variant="ghost" onClick={() => window.open(doc.drive_link, '_blank')} className="h-7 text-[10px] px-2 font-bold bg-blue-50 hover:bg-blue-100 text-blue-700" title="Open in Google Drive">
+                                      <Database className="w-3 h-3 mr-1"/> Drive
+                                   </Button>
+                                )}
+                              </div>
                             </div>
                          </div>
                        ))}
