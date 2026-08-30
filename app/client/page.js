@@ -575,7 +575,7 @@ export default function ClientDashboard() {
 
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
-  if (userData && !userData.is_approved && !session?.user?.is_bypass) {
+  if (userData && (userData.onboarding_complete || localOnboardComplete) && !userData.is_approved && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
         <Card className="max-w-md w-full shadow-2xl border-t-8 border-t-amber-500 bg-white">
@@ -606,7 +606,7 @@ export default function ClientDashboard() {
     );
   }
 
-if (userData && userData.is_approved && !userData.agreement_signed && !session?.user?.is_bypass) {
+if (userData && (userData.onboarding_complete || localOnboardComplete) && userData.is_approved && !userData.agreement_signed && !session?.user?.is_bypass) {
       return (
         <div className="min-h-screen flex flex-col items-center bg-slate-100 p-4 sm:py-10">
           <Card className="max-w-4xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white print:border-none print:shadow-none mx-auto">
@@ -689,7 +689,7 @@ if (userData && userData.is_approved && !userData.agreement_signed && !session?.
       );
   }
 
-  if (userData && userData.is_approved && userData.agreement_signed && (!userData.onboarding_complete && !localOnboardComplete) && !session?.user?.is_bypass) {
+  if (userData && (!userData.onboarding_complete && !localOnboardComplete) && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10 w-full overflow-x-hidden">
         <Card className="max-w-3xl mx-auto shadow-2xl border-t-8 border-t-blue-600">
