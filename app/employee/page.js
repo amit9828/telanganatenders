@@ -412,25 +412,43 @@ export default function EmployeeDashboard() {
       setProcessingWin(false);
   };
 
-  const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
+  const [approvalModal, setApprovalModal] = useState({ open: false, email: '', docId: '', docName: '', clientName: '' });
+  const [customFileName, setCustomFileName] = useState('');
+  const [overwriteDoc, setOverwriteDoc] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState('');
+
+  const openApprovalModal = (client, doc) => {
+      const cleanClientName = (client.company_name || client.client_name || 'Client').replace(/\s+/g, '_');
+      const cleanDocName = doc.name.replace(/\s+/g, '_');
+      setCustomFileName(`${cleanClientName}_${cleanDocName}`);
+      setDuplicateWarning('');
+      setOverwriteDoc(false);
+      setApprovalModal({ open: true, email: client.email, docId: doc.id, docName: doc.name, clientName: client.company_name || client.client_name });
+  };
+
+  const handleVerifyVaultDoc = async (clientEmail, docId, status, customName = null, overwrite = false) => {
       let reason = '';
       if (status === 'rejected') {
           reason = rejectReason[`${clientEmail}_${docId}`];
-          if (!reason) return toast.error("Please provide a rejection reason so the client can fix it.");
+          if (!reason) return toast.error("Please provide a rejection reason.");
       }
       try {
           const res = await fetch('/api/vault/verify', {
              method: 'PUT', headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ email: clientEmail, docId: docId, status: status, reject_reason: reason })
+             body: JSON.stringify({ email: clientEmail, docId: docId, status: status, reject_reason: reason, custom_file_name: customName, overwrite: overwrite })
           });
+          const data = await res.json();
           if (res.ok) {
               toast.success(`Document marked as ${status.toUpperCase()}!`);
               if (status === 'rejected') setRejectReason(prev => ({...prev, [`${clientEmail}_${docId}`]: ''}));
+              if (status === 'verified') { setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' }); setViewClientDocs(null); }
               fetchLiveOperationsData(email);
+          } else if (res.status === 409) {
+              setDuplicateWarning(data.message || 'Duplicate found. Replace it?');
           } else { toast.error("Failed to update status."); }
-      } catch (err) { toast.error("Network error while updating vault document."); }
+      } catch (err) { toast.error("Network error."); }
   };
-
+  
   const handleOperatorPdfUpload = async (e) => {
      const file = e.target.files?.[0];
      if (!file) return;
@@ -615,6 +633,16 @@ export default function EmployeeDashboard() {
   };
 
   const handleViewDocument = (req) => {
+      if (req.file_base64 || req.document_base64) {
+          const cleanBase64 = (req.file_base64 || req.document_base64).replace(/^data:(.*,)?/, '');
+          const byteCharacters = atob(cleanBase64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+          const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
+          window.open(URL.createObjectURL(blob), '_blank');
+          return;
+      }
+
       const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
       if (docLink) {
           const finalUrl = docLink.startsWith('http') ? docLink : (docLink.startsWith('/') ? docLink : `/uploads/${docLink}`);
@@ -685,10 +713,18 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error('Network Error.'); }
   };
 
+  const [lossModalOpen, setLossModalOpen] = useState(false);
+  const [lossForm, setLossForm] = useState({ bid_id: null, l1_price: '', l1_winner: '' });
+
   const updateBidStatus = async (id, newStatus) => {
     if (newStatus === 'Won') {
         setWinForm({ bid_id: id, contract_value: '', validity: '' });
         setPublishWinModalOpen(true);
+        return;
+    }
+    if (newStatus === 'Lost') {
+        setLossForm({ bid_id: id, l1_price: '', l1_winner: '' });
+        setLossModalOpen(true);
         return;
     }
 
@@ -703,6 +739,26 @@ export default function EmployeeDashboard() {
         logActivity('UPDATED_BID', `Changed bid ${id} status to ${newStatus}`);
       } else { fetchLiveOperationsData(email); }
     } catch (err) { toast.error('Network Error during status update.'); }
+  };
+
+  const handleProcessLoss = async (e) => {
+      e.preventDefault();
+      if (!lossForm.l1_price) return toast.error("Please enter the L1 Price.");
+      
+      try {
+          await fetch('/api/bids/update', {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ bid_id: lossForm.bid_id, status: 'Lost', l1_price: lossForm.l1_price, l1_winner: lossForm.l1_winner })
+          });
+          
+          await fetch(`/api/bids?id=${lossForm.bid_id}`, { method: 'DELETE' });
+
+          toast.success("L1 Price saved to Database & Bid removed from active tracking.");
+          setLossModalOpen(false);
+          fetchLiveOperationsData(email);
+      } catch (err) {
+          toast.error("Network Error.");
+      }
   };
 // 🚀 FIX: Employee Task File Upload
   const onTaskFileChange = (taskId, e) => {
@@ -1466,23 +1522,26 @@ return (
                  </CardHeader>
                  <CardContent className="pt-5">
                     {aiDrafts.length > 0 && !isEditingTender && (
-                       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                          <Label className="text-sm font-bold text-blue-900 mb-2 flex items-center gap-2">
-                             <Target className="w-4 h-4"/> Select AI Processed Draft (Auto-Fill)
-                          </Label>
-                          <Select onValueChange={handleSelectDraft}>
-                             <SelectTrigger className="bg-white border-blue-300 h-10">
-                                <SelectValue placeholder="Choose a tender processed by AI..." />
-                             </SelectTrigger>
-                             <SelectContent>
-                                {aiDrafts.map(d => (
-                                   <SelectItem key={d._id} value={d._id}>{d.bid_no} - {d.department}</SelectItem>
-                                ))}
-                             </SelectContent>
-                          </Select>
+                       <div className="mb-6 border border-purple-200 rounded-xl overflow-hidden shadow-sm">
+                          <div className="bg-purple-100 text-purple-900 px-4 py-2 font-bold flex items-center gap-2">
+                             <Target className="w-4 h-4"/> Pending for Publish (AI Bulk Uploads)
+                             <Badge className="bg-purple-600 text-white ml-auto">{aiDrafts.length}</Badge>
+                          </div>
+                          <div className="p-3 bg-purple-50/50 flex flex-col gap-2 max-h-[250px] overflow-y-auto">
+                             {aiDrafts.map(d => (
+                                <div key={d._id} className="bg-white border border-purple-100 p-3 rounded-lg flex justify-between items-center hover:border-purple-300 transition shadow-sm">
+                                   <div>
+                                      <p className="font-bold text-sm text-[#0A2647]">{d.bid_no}</p>
+                                      <p className="text-xs text-slate-500">{d.department} - {d.title}</p>
+                                   </div>
+                                   <Button size="sm" onClick={(e) => { e.preventDefault(); handleSelectDraft(d._id); }} className="bg-purple-600 hover:bg-purple-700 h-8 text-xs shrink-0">
+                                      Auto-Fill & Review
+                                   </Button>
+                                </div>
+                             ))}
+                          </div>
                        </div>
                     )}
-
                    <form onSubmit={handlePublishTender} className="space-y-4">
                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/></div>
                       <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
@@ -1815,23 +1874,72 @@ return (
                        <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
                        <Badge className={`mt-2 ${doc.status === 'verified' ? 'bg-emerald-100 text-emerald-800' : doc.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'} border-0`}>{doc.status}</Badge>
                     </div>
-                    <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => {
+                    <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50 mb-2" onClick={() => {
                         if (doc.file_base64) {
-                            const byteCharacters = atob(doc.file_base64);
+                            const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
+                            const byteCharacters = atob(cleanBase64);
                             const byteNumbers = new Array(byteCharacters.length);
                             for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
                             const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
                             window.open(URL.createObjectURL(blob), '_blank');
-                        } else {
-                            toast.error("File is corrupted or not a valid PDF.");
-                        }
+                        } else { toast.error("File is corrupted or not a valid PDF."); }
                     }}>
                        <Eye className="w-4 h-4 mr-2"/> View Document
                     </Button>
+                    
+                    {doc.status === 'uploaded' && (
+                        <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
+                           <Input placeholder="Rejection reason..." className="h-8 text-xs bg-white" value={rejectReason[`${viewClientDocs.email}_${doc.id}`] || ''} onChange={e => setRejectReason({...rejectReason, [`${viewClientDocs.email}_${doc.id}`]: e.target.value})} />
+                           <div className="flex gap-2">
+                              <Button size="sm" onClick={() => openApprovalModal(viewClientDocs, doc)} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
+                              <Button size="sm" onClick={() => handleVerifyVaultDoc(viewClientDocs.email, doc.id, 'rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs"><XCircle className="w-3.5 h-3.5 mr-1"/> Reject</Button>
+                           </div>
+                        </div>
+                    )}
                  </div>
               ))
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+     <Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
+        <DialogContent className="sm:max-w-md border-0 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600"/> Approve & Save Document</DialogTitle>
+            <DialogDescription>Review the file name before saving it to the database and client's Google Drive.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+             <div><Label className="font-bold text-slate-700">Client Name</Label><Input type="text" value={approvalModal.clientName} disabled className="mt-1 bg-slate-50 text-slate-500" /></div>
+             <div><Label className="font-bold text-slate-700">File Name (Auto-Generated) *</Label><Input type="text" value={customFileName} onChange={e => setCustomFileName(e.target.value)} required className="mt-1 border-2 h-11" /></div>
+             
+             {duplicateWarning && (
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex flex-col gap-2">
+                   <div className="flex items-center gap-2 text-amber-800 text-sm font-bold"><AlertTriangle className="w-4 h-4"/> {duplicateWarning}</div>
+                   <label className="flex items-center gap-2 text-sm cursor-pointer font-semibold text-amber-900 mt-1"><input type="checkbox" checked={overwriteDoc} onChange={e => setOverwriteDoc(e.target.checked)} className="w-4 h-4 accent-amber-600" /> Yes, replace the existing file.</label>
+                </div>
+             )}
+
+             <Button onClick={() => handleVerifyVaultDoc(approvalModal.email, approvalModal.docId, 'verified', customFileName, overwriteDoc)} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 mt-2 font-bold text-lg shadow-md" disabled={duplicateWarning && !overwriteDoc}>
+                Confirm & Save to Drive
+             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={lossModalOpen} onOpenChange={setLossModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600"><XCircle className="w-5 h-5"/> Process Lost Bid & Record L1</DialogTitle>
+            <DialogDescription>Enter the winning L1 details. This bid will be removed from your tracking list and the intel will be saved.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleProcessLoss} className="space-y-4 pt-2">
+            <div><Label className="font-bold text-[#0A2647]">L1 Winning Price (₹) *</Label><Input type="number" required placeholder="e.g. 450000" value={lossForm.l1_price} onChange={e => setLossForm({...lossForm, l1_price: e.target.value})} className="mt-1 font-bold"/></div>
+            <div><Label className="font-bold text-[#0A2647]">L1 Winner Name (Optional)</Label><Input type="text" placeholder="e.g. XYZ Constructions" value={lossForm.l1_winner} onChange={e => setLossForm({...lossForm, l1_winner: e.target.value})} className="mt-1"/></div>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setLossModalOpen(false)}>Cancel</Button>
+              <Button type="submit" className="bg-red-600 hover:bg-red-700 text-white">Save L1 & Remove Bid</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
