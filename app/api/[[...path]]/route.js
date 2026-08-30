@@ -116,14 +116,19 @@ export async function GET(request, { params }) {
       const doc = user?.vault_docs?.find(d => d.id === docId);
       
       if (doc && doc.file_base64) {
-          const buffer = Buffer.from(doc.file_base64, 'base64');
-          return new NextResponse(buffer, {
-              status: 200,
-              headers: { 
-                 'Content-Type': 'application/pdf', 
-                 'Content-Disposition': `inline; filename="${doc.file_name || 'document.pdf'}"` 
-              }
-          });
+          try {
+              const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
+              const buffer = Buffer.from(cleanBase64, 'base64');
+              return new NextResponse(buffer, {
+                  status: 200,
+                  headers: { 
+                     'Content-Type': 'application/pdf', 
+                     'Content-Disposition': `inline; filename="${doc.file_name || 'document.pdf'}"` 
+                  }
+              });
+          } catch(err) {
+              return json({ error: 'Failed to parse PDF Data' }, 500);
+          }
       }
       return json({ error: 'Document not found' }, 404);
     }
@@ -197,7 +202,8 @@ export async function GET(request, { params }) {
           });
       } else {
           try {
-             const pdfBuffer = Buffer.from(tender.pdf_base64, 'base64');
+             const cleanBase64 = tender.pdf_base64.replace(/^data:(.*,)?/, '');
+             const pdfBuffer = Buffer.from(cleanBase64, 'base64');
              return new NextResponse(pdfBuffer, {
                  status: 200,
                  headers: {
@@ -501,25 +507,41 @@ export async function PUT(request, { params }) {
         );
         return json({ success: true, message: `Dispatch status updated to ${status}` });
      }
-     // 🚀 FIX: Vault Document Approval + Auto Google Drive Sync
+     // 🚀 FIX: Vault Document Approval + Rename + Duplicate Check + Auto Google Drive Sync
      if (path === 'vault/verify' || path === 'api/vault/verify') {
-        const { email, docId, status, reject_reason } = body;
+        const { email, docId, status, reject_reason, custom_file_name, overwrite } = body;
         const targetEmail = email.toLowerCase();
         
+        const user = await db.collection('users').findOne({ email: targetEmail });
+        const doc = user?.vault_docs?.find(d => d.id === docId);
+
+        let finalFileName = doc?.file_name || `${docId}.pdf`;
+        
+        if (status === 'verified' && custom_file_name) {
+            finalFileName = custom_file_name.toLowerCase().endsWith('.pdf') 
+                ? custom_file_name 
+                : `${custom_file_name}.pdf`;
+            
+            const isDuplicate = user?.vault_docs?.some(d => d.id !== docId && d.file_name === finalFileName);
+            if (isDuplicate && !overwrite) {
+                return json({ 
+                    error: 'Duplicate_Found', 
+                    message: 'ఈ పేరుతో ఇప్పటికే ఫైల్ ఉంది. పాతదాన్ని రీప్లేస్ చేయాలా?' 
+                }, 409);
+            }
+        }
+
         await db.collection('users').updateOne(
             { email: targetEmail, "vault_docs.id": docId },
             { $set: { 
                 "vault_docs.$.status": status,
-                "vault_docs.$.reject_reason": reject_reason || null 
+                "vault_docs.$.reject_reason": reject_reason || null,
+                "vault_docs.$.file_name": finalFileName 
               } 
             }
         );
 
-        // Push Document to Google Drive
         if (status === 'verified') {
-            const user = await db.collection('users').findOne({ email: targetEmail });
-            const doc = user?.vault_docs?.find(d => d.id === docId);
-            
             if (user?.drive_folder_id && doc?.file_base64 && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
                try {
                    const auth = new google.auth.JWT(
@@ -529,13 +551,14 @@ export async function PUT(request, { params }) {
                    );
                    const drive = google.drive({ version: 'v3', auth });
                    
-                   const buffer = Buffer.from(doc.file_base64, 'base64');
+                   const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
+                   const buffer = Buffer.from(cleanBase64, 'base64');
                    const stream = require('stream');
                    const bufferStream = new stream.PassThrough();
                    bufferStream.end(buffer);
 
                    await drive.files.create({
-                       requestBody: { name: doc.file_name || `${doc.name}.pdf`, parents: [user.drive_folder_id] },
+                       requestBody: { name: finalFileName, parents: [user.drive_folder_id] },
                        media: { mimeType: 'application/pdf', body: bufferStream },
                        fields: 'id'
                    });
@@ -544,7 +567,7 @@ export async function PUT(request, { params }) {
                }
             }
         }
-        return json({ success: true });
+        return json({ success: true, saved_file_name: finalFileName });
      }
 
      if (path === 'finance/ledger' || path === 'api/finance/ledger') {
