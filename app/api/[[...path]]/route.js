@@ -108,6 +108,26 @@ export async function GET(request, { params }) {
       return json({ tenders });
     }
 
+    // 🚀 FIX: Fetch Vault Document Instantly Without Lag
+    if (path === 'vault/document' || path === 'api/vault/document') {
+      const email = searchParams.get('email');
+      const docId = searchParams.get('docId');
+      const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+      const doc = user?.vault_docs?.find(d => d.id === docId);
+      
+      if (doc && doc.file_base64) {
+          const buffer = Buffer.from(doc.file_base64, 'base64');
+          return new NextResponse(buffer, {
+              status: 200,
+              headers: { 
+                 'Content-Type': 'application/pdf', 
+                 'Content-Disposition': `inline; filename="${doc.file_name || 'document.pdf'}"` 
+              }
+          });
+      }
+      return json({ error: 'Document not found' }, 404);
+    }
+
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
@@ -283,7 +303,8 @@ export async function GET(request, { params }) {
     }
 
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
-      const transactions = await db.collection('finance_ledger').find({}).sort({ created_at: -1 }).toArray();
+      // 🚀 FIX: Prevent ledger images from lagging the admin panel
+      const transactions = await db.collection('finance_ledger').find({}).project({ proof_base64: 0 }).sort({ created_at: -1 }).toArray();
       const totalCredit = transactions.filter(t => t.type === 'CREDIT').reduce((sum, t) => sum + Number(t.amount), 0);
       const totalDebit = transactions.filter(t => t.type === 'DEBIT').reduce((sum, t) => sum + Number(t.amount), 0);
       return json({ transactions, balance: totalCredit - totalDebit });
@@ -293,7 +314,11 @@ export async function GET(request, { params }) {
       const email = searchParams.get('email');
       if (!email) return json({ error: 'Email required' }, 400);
 
-      const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+      // 🚀 FIX: Block Base64 to stop 3-minute lagging (Amazon Speed)
+      const user = await db.collection('users').findOne(
+        { email: email.toLowerCase() },
+        { projection: { "vault_docs.file_base64": 0, "officer_queries.file_base64": 0 } }
+      );
       if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [], profile: null, is_approved: false });
 
       let unlocked_tenders = [];
