@@ -398,12 +398,52 @@ export async function GET(request, { params }) {
         custom_requests: custom_requests || [],
         active_bids: active_bids || [],
         officer_queries: user.officer_queries || [],
+        // 👆 (పైన ఉండే కోడ్: "api/me" కి సంబంధించిన చివర భాగం ఇది)
         pending_payments: user.pending_payments || [],
         vault_docs: user.vault_docs || [], 
         stats: calculatedStats 
       });
     }
+    // 🚀 FIX: Live Tracking GET route for Admin Dashboard
+    if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const usersWithPayments = await db.collection('users').find({
+           pending_payments: { $exists: true, $not: { $size: 0 } }
+       }).toArray();
 
+       let allRequests = [];
+       usersWithPayments.forEach(user => {
+           user.pending_payments.forEach(req => {
+               if (req.status !== 'PAID') {
+                   allRequests.push({
+                       id: req.id,
+                       db_id: req.id, 
+                       client_id: user.email,
+                       amount: req.amount,
+                       reason: req.reason,
+                       status: req.status === 'UNPAID' ? 'sent' : req.status,
+                       sent_time: new Date(req.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                       created_at: req.date
+                   });
+               }
+           });
+       });
+
+       allRequests.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+       return json({ requests: allRequests });
+    }
+
+    // ⬆️ ఇక్కడి వరకు పేస్ట్ చేయాలి ⬆️
+
+    // 👇 (కింద ఉండే పాత కోడ్: GET ఫంక్షన్ ముగింపు ఇది)
+    return json({ error: 'GET endpoint not found', path }, 404);
+  } catch (error) {
+    console.error(error);
+    return json({ error: 'Server Error' }, 500);
+  }
+}
+// =====================================================================
+// PUT REQUESTS (Updating Data)
+    
     return json({ error: 'GET endpoint not found', path }, 404);
   } catch (error) {
     console.error(error);
@@ -901,34 +941,7 @@ export async function POST(request, { params }) {
        
        return json({ success: true, id: reqId }); // 🚀 FIX: Return ID to frontend
     }
-    // 🚀 FIX: Live Tracking GET route for Admin Dashboard
-    if (path === 'payments/requests' || path === 'api/payments/requests') {
-       const usersWithPayments = await db.collection('users').find({
-           pending_payments: { $exists: true, $not: { $size: 0 } }
-       }).toArray();
-
-       let allRequests = [];
-       usersWithPayments.forEach(user => {
-           user.pending_payments.forEach(req => {
-               if (req.status !== 'PAID') {
-                   allRequests.push({
-                       id: req.id,
-                       db_id: req.id, 
-                       client_id: user.email,
-                       amount: req.amount,
-                       reason: req.reason,
-                       status: req.status === 'UNPAID' ? 'sent' : req.status,
-                       sent_time: new Date(req.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                       created_at: req.date
-                   });
-               }
-           });
-       });
-
-       // Sort newest first
-       allRequests.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-       return json({ requests: allRequests });
-    }
+    
     // 🚀 Delete AI Draft once Published
     if (path === 'ai/drafts' || path === 'api/ai/drafts') {
        const id = searchParams.get('id');
