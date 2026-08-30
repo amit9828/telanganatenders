@@ -235,7 +235,6 @@ misrepresented financial data provided by the Client.`;
            } else {
                setVaultDocs(DEFAULT_VAULT_DOCS);
            }
-         }
        } catch (err) {
          console.error("Live sync failed", err);
        }
