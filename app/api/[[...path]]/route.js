@@ -441,15 +441,6 @@ export async function GET(request, { params }) {
     return json({ error: 'Server Error' }, 500);
   }
 }
-// =====================================================================
-// PUT REQUESTS (Updating Data)
-    
-    return json({ error: 'GET endpoint not found', path }, 404);
-  } catch (error) {
-    console.error(error);
-    return json({ error: 'Server Error' }, 500);
-  }
-}
 
 // =====================================================================
 // PUT REQUESTS (Updating Data)
