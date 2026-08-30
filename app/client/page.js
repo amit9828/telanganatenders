@@ -105,12 +105,7 @@ export default function ClientDashboard() {
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, [session, status]);
 
- const handleSignAgreement = async (e) => {
-      e.preventDefault();
-      setSubmittingAgreement(true);
-      
-      try {
-          // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
+ // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
   useEffect(() => {
     if (status === "loading" || !email) return;
     
@@ -325,9 +320,58 @@ export default function ClientDashboard() {
       setSubmittingAgreement(true);
       
       try {
-          const agreementText = `=======================================================\n                TELANGANA TENDERS\n     CONSULTANCY SERVICES & CORPORATE APPROVALS\n=======================================================\n\nB2B LEGAL SERVICE AGREEMENT\n\nThis B2B Legal Service Agreement ("Agreement") is officially entered into by and between Telangana Tenders (hereinafter referred to as the "Consultancy") and ${onboardForm.company_name || 'The Client'} (hereinafter referred to as the "Client"), effective as of ${new Date().toLocaleDateString()}.\n\n1. SCOPE OF SERVICES & VAULT ACCESS\nThe Consultancy agrees to provide comprehensive bid analysis, documentation support, and operational tender management. All financial and proprietary documents uploaded by the Client to the Corporate Vault shall remain strictly confidential, stored securely via 256-bit encryption, and accessed solely for tender fulfillment purposes on government portals.\n\n2. PROFESSIONAL FEES & CONSULTANCY CHARGES\nThe Client agrees to pay the stipulated processing fees, document unlock fees, and post-win success fees (consultancy charges) as mutually agreed upon for each respective tender. The Client is also solely responsible for depositing Earnest Money Deposits (EMD) directly or via the Consultancy within the stipulated timeframe.\n\n3. DEFAULT OF PAYMENT & LEGAL RECOURSE\nIn the event of non-payment, delayed payment, or refusal to disburse consultancy charges post-service delivery or successful contract award, the Consultancy reserves the absolute right to initiate immediate legal proceedings. This includes, but is not limited to, recovery actions under Section 73 of the Indian Contract Act, 1872 (Compensation for loss or damage caused by breach of contract) and Section 138 of the Negotiable Instruments Act, 1881 (in the event of any dishonored payments). The Client shall be held strictly liable for all legal recovery costs, attorney fees, and an interest penalty of 18% per annum on the outstanding amount until full realization.\n\n4. OFFICIAL REPRESENTATION & AUTHORIZATION\nThe Client legally authorizes the Consultancy's Managing Director (MD) and assigned Operations Officers to represent their firm digitally on government procurement portals (including GeM and eProcurement) strictly for the scope of the assigned tenders. The Consultancy is absolved of any liabilities arising from false documents or misrepresented financial data provided by the Client.\n\n-------------------------------------------------------\nDIGITALLY SIGNED BY MANAGING DIRECTOR:\nB. Esak\nTelangana Tenders\n+91 6304486770\n\nAUTHORISED CLIENT SIGNATORY:\n${onboardForm.client_name || 'Authorised Signatory'}\n${onboardForm.company_name || 'Company Name'}\nDate: ${new Date().toLocaleDateString()}\n=======================================================`;
-          const blob = new Blob([agreementText], { type: 'text/plain' });
-          const file = new File([blob], "Signed_B2B_Legal_Agreement.txt", { type: "text/plain" });
+          // 🚀 FIX: Generate a Professional PDF Letterhead instead of a .txt file
+          const pdfDoc = await PDFDocument.create();
+          const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+          const timesBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+          const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+          const page = pdfDoc.addPage([595.28, 841.89]); // Standard A4 Size
+          const { width, height } = page.getSize();
+
+          // --- 1. LETTERHEAD TOP STRIP (Navy Blue) ---
+          page.drawRectangle({
+              x: 0, y: height - 85, width: width, height: 85,
+              color: rgb(0.04, 0.15, 0.28) // #0A2647
+          });
+
+          // --- 2. BRANDING & CONTACT INFO ---
+          page.drawText('TELANGANA TENDERS', { x: 40, y: height - 35, size: 22, font: timesBold, color: rgb(1, 1, 1) });
+          page.drawText('CONSULTANCY SERVICES & CORPORATE APPROVALS', { x: 40, y: height - 52, size: 9, font: helvetica, color: rgb(0.8, 0.9, 1) });
+          
+          // Right Side Details
+          page.drawText('Phone: +91 6304486770 | Email: support@tgtenders.in', { x: width - 290, y: height - 30, size: 9, font: helvetica, color: rgb(1, 1, 1) });
+          page.drawText('Instagram: @tgtenders | YouTube: TG Tenders', { x: width - 290, y: height - 47, size: 9, font: helvetica, color: rgb(1, 1, 1) });
+          page.drawText('Services: e-Procurement, GeM Bidding, L1 Strategy', { x: width - 290, y: height - 64, size: 9, font: helvetica, color: rgb(1, 1, 1) });
+
+          // --- 3. AGREEMENT TITLE ---
+          page.drawText('B2B LEGAL SERVICE AGREEMENT', { x: width / 2 - 120, y: height - 130, size: 14, font: timesBold, color: rgb(0, 0, 0) });
+
+          // --- 4. BODY TEXT ---
+          const bodyText = `This B2B Legal Service Agreement ("Agreement") is officially entered into by and between\nTelangana Tenders (hereinafter referred to as the "Consultancy") and ${onboardForm.company_name || 'The Client'}\n(hereinafter referred to as the "Client"), effective as of ${new Date().toLocaleDateString()}.\n\n1. SCOPE OF SERVICES & VAULT ACCESS\nThe Consultancy agrees to provide comprehensive bid analysis, documentation support, and \noperational tender management. All financial and proprietary documents uploaded by the \nClient to the Corporate Vault shall remain strictly confidential, stored securely via 256-bit \nencryption, and accessed solely for tender fulfillment purposes on government portals.\n\n2. PROFESSIONAL FEES & CONSULTANCY CHARGES\nThe Client agrees to pay the stipulated processing fees, document unlock fees, and post-win \nsuccess fees (consultancy charges) as mutually agreed upon for each respective tender. The \nClient is also solely responsible for depositing Earnest Money Deposits (EMD) directly or \nvia the Consultancy within the stipulated timeframe.\n\n3. DEFAULT OF PAYMENT & LEGAL RECOURSE\nIn the event of non-payment, delayed payment, or refusal to disburse consultancy charges \npost-service delivery or successful contract award, the Consultancy reserves the absolute \nright to initiate immediate legal proceedings. This includes, but is not limited to, recovery \nactions under Section 73 of the Indian Contract Act, 1872 and Section 138 of the Negotiable \nInstruments Act, 1881. The Client shall be held strictly liable for all legal recovery costs, \nattorney fees, and an interest penalty of 18% per annum on the outstanding amount.\n\n4. OFFICIAL REPRESENTATION & AUTHORIZATION\nThe Client legally authorizes the Consultancy's Managing Director (MD) and assigned \nOperations Officers to represent their firm digitally on government procurement portals \n(including GeM and eProcurement) strictly for the scope of the assigned tenders. \nThe Consultancy is absolved of any liabilities arising from false documents or \nmisrepresented financial data provided by the Client.`;
+
+          page.drawText(bodyText, { x: 40, y: height - 180, size: 11, font: timesRoman, color: rgb(0.1, 0.1, 0.1), lineHeight: 16 });
+
+          // --- 5. SIGNATURES ---
+          page.drawLine({ start: { x: 40, y: 220 }, end: { x: width - 40, y: 220 }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
+
+          page.drawText('DIGITALLY SIGNED BY MANAGING DIRECTOR:', { x: 40, y: 190, size: 10, font: timesBold });
+          page.drawText('B. Esak\nTelangana Tenders\n+91 6304486770', { x: 40, y: 170, size: 10, font: timesRoman, lineHeight: 14 });
+
+          page.drawText('AUTHORISED CLIENT SIGNATORY:', { x: 340, y: 190, size: 10, font: timesBold });
+          page.drawText(`${onboardForm.client_name || 'Authorised Signatory'}\n${onboardForm.company_name || 'Company Name'}\nDate: ${new Date().toLocaleDateString()}`, { x: 340, y: 170, size: 10, font: timesRoman, lineHeight: 14 });
+
+          // --- 6. FOOTER STRIP ---
+          page.drawRectangle({
+              x: 0, y: 0, width: width, height: 25,
+              color: rgb(0.04, 0.15, 0.28)
+          });
+          page.drawText(`Telangana Tenders © ${new Date().getFullYear()} | Securely Generated via Enterprise Portal`, { x: width / 2 - 130, y: 8, size: 8, font: helvetica, color: rgb(1, 1, 1) });
+
+          // --- SAVE & EXPORT AS PDF ---
+          const pdfBytes = await pdfDoc.save();
+          const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+          const file = new File([blob], "Signed_B2B_Legal_Agreement.pdf", { type: "application/pdf" });
           
           const formData = new FormData();
           formData.append('file', file);
@@ -341,28 +385,25 @@ export default function ClientDashboard() {
               body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
           });
           
-         if(res.ok) {
-              // ఆటోమెటిక్ డౌన్‌లోడ్
+          if(res.ok) {
               const link = document.createElement('a');
               link.href = URL.createObjectURL(blob);
-              link.download = "Telangana_Tenders_Agreement.txt";
+              link.download = "Telangana_Tenders_Agreement.pdf";
               document.body.appendChild(link);
               link.click();
               document.body.removeChild(link);
 
-              toast.success("Legal Agreement Signed & Downloaded. Proceeding to Profile Setup.");
+              toast.success("Professional Legal Agreement PDF Generated & Downloaded!");
               
-              // 🚀 FIX: వెంటనే స్టేట్ అప్‌డేట్ చేసి లాక్ ఓపెన్ చేయడం
               setUserData(prev => ({...prev, agreement_signed: true}));
-              // పేజీ రీలోడ్ అవ్వకుండా నెక్స్ట్ స్టెప్ కి వెళ్లడానికి
               fetchClientData(email); 
           }
       } catch(err) {
+          console.error("PDF Generation Error:", err);
           toast.error("Network error saving agreement.");
       }
       setSubmittingAgreement(false);
   };
-
   // 🚀 FIX: Mandatory Profile Validation
   const submitOnboarding = async (e) => {
     e.preventDefault();
