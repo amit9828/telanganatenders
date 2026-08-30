@@ -398,6 +398,8 @@ export default function ClientDashboard() {
               setUserData(prev => ({...prev, agreement_signed: true}));
               fetchClientData(email); 
           }
+          setActiveTab('profile'); 
+              setIsEditingProfile(true);
       } catch(err) {
           console.error("PDF Generation Error:", err);
           toast.error("Network error saving agreement.");
