@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, PlusCircle,
@@ -337,7 +338,21 @@ export default function AdminPage() {
     }
   };
 
-  const handleVerifyVaultDoc = async (clientEmail, docId, status) => {
+  const [approvalModal, setApprovalModal] = useState({ open: false, email: '', docId: '', docName: '', clientName: '' });
+  const [customFileName, setCustomFileName] = useState('');
+  const [overwriteDoc, setOverwriteDoc] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState('');
+
+  const openApprovalModal = (client, doc) => {
+      const cleanClientName = (client.company_name || client.client_name || 'Client').replace(/\s+/g, '_');
+      const cleanDocName = doc.name.replace(/\s+/g, '_');
+      setCustomFileName(`${cleanClientName}_${cleanDocName}`);
+      setDuplicateWarning('');
+      setOverwriteDoc(false);
+      setApprovalModal({ open: true, email: client.email, docId: doc.id, docName: doc.name, clientName: client.company_name || client.client_name });
+  };
+
+  const handleVerifyVaultDoc = async (clientEmail, docId, status, customName = null, overwrite = false) => {
       let reason = '';
       if (status === 'rejected') {
           reason = rejectReason[`${clientEmail}_${docId}`];
@@ -347,13 +362,21 @@ export default function AdminPage() {
       try {
           const res = await fetch('/api/vault/verify', {
              method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-             body: JSON.stringify({ email: clientEmail, docId: docId, status: status, reject_reason: reason })
+             body: JSON.stringify({ 
+                 email: clientEmail, docId: docId, status: status, reject_reason: reason,
+                 custom_file_name: customName, overwrite: overwrite 
+             })
           });
           
+          const data = await res.json();
+
           if (res.ok) {
               toast.success(`Document marked as ${status.toUpperCase()}!`);
               if (status === 'rejected') setRejectReason(prev => ({...prev, [`${clientEmail}_${docId}`]: ''}));
+              if (status === 'verified') setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' });
               refresh();
+          } else if (res.status === 409) {
+              setDuplicateWarning(data.message || 'Duplicate found. Replace it?');
           } else {
               toast.error("Failed to update status.");
           }
@@ -817,7 +840,7 @@ const handleViewDocument = (req) => {
                                       <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
                                          <Input placeholder="Rejection reason (if rejecting)..." className="h-8 text-xs bg-white" value={rejectReason[`${client.email}_${doc.id}`] || ''} onChange={e => setRejectReason({...rejectReason, [`${client.email}_${doc.id}`]: e.target.value})} />
                                          <div className="flex gap-2">
-                                            <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'verified')} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
+                                            <Button size="sm" onClick={() => openApprovalModal(client, doc)} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
                                             <Button size="sm" onClick={() => handleVerifyVaultDoc(client.email, doc.id, 'rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs"><XCircle className="w-3.5 h-3.5 mr-1"/> Reject</Button>
                                          </div>
                                       </div>
@@ -1708,7 +1731,45 @@ const handleViewDocument = (req) => {
     </div>
   );
 }
+<Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
+        <DialogContent className="sm:max-w-md border-0 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600"/> Approve & Save Document</DialogTitle>
+            <DialogDescription>Review the file name before saving it to the database and client's drive.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+             <div>
+                <Label className="font-bold text-slate-700">Client Name</Label>
+                <Input type="text" value={approvalModal.clientName} disabled className="mt-1 bg-slate-50 text-slate-500" />
+             </div>
+             <div>
+                <Label className="font-bold text-slate-700">File Name (Auto-Generated) *</Label>
+                <Input type="text" value={customFileName} onChange={e => setCustomFileName(e.target.value)} required className="mt-1 border-2 h-11" />
+                <p className="text-[10px] text-slate-500 mt-1">Note: .pdf extension will be added automatically if missing.</p>
+             </div>
+             
+             {duplicateWarning && (
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex flex-col gap-2">
+                   <div className="flex items-center gap-2 text-amber-800 text-sm font-bold">
+                      <AlertTriangle className="w-4 h-4"/> {duplicateWarning}
+                   </div>
+                   <label className="flex items-center gap-2 text-sm cursor-pointer font-semibold text-amber-900 mt-1">
+                      <input type="checkbox" checked={overwriteDoc} onChange={e => setOverwriteDoc(e.target.checked)} className="w-4 h-4 accent-amber-600" />
+                      Yes, replace the existing file.
+                   </label>
+                </div>
+             )}
 
+             <Button 
+                onClick={() => handleVerifyVaultDoc(approvalModal.email, approvalModal.docId, 'verified', customFileName, overwriteDoc)} 
+                className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 mt-2 font-bold text-lg shadow-md"
+                disabled={duplicateWarning && !overwriteDoc}
+             >
+                Confirm & Save File
+             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 function StatCard({ icon, label, value, accent }) {
   return (
     <Card className={`border-0 shadow-sm ring-1 ${accent ? 'ring-emerald-500/50 bg-emerald-50/80' : 'ring-slate-200 bg-white'}`}>
