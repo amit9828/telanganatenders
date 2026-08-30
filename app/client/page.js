@@ -116,7 +116,6 @@ export default function ClientDashboard() {
          const r = await fetch(`/api/me?email=${encodeURIComponent(email)}&t=${Date.now()}`);
          if(r.ok) {
            const d = await r.json();
-           
            const handleSignAgreement = async (e) => {
       e.preventDefault();
       setSubmittingAgreement(true);
@@ -149,7 +148,7 @@ export default function ClientDashboard() {
           // --- 3. AGREEMENT TITLE ---
           page.drawText('B2B LEGAL SERVICE AGREEMENT', { x: width / 2 - 120, y: height - 130, size: 14, font: timesBold, color: rgb(0, 0, 0) });
 
-          // --- 4. BODY TEXT (Properly line-broken for A4) ---
+          // --- 4. BODY TEXT ---
           const bodyText = `This B2B Legal Service Agreement ("Agreement") is officially entered into by and between
 Telangana Tenders (hereinafter referred to as the "Consultancy") and ${onboardForm.company_name || 'The Client'}
 (hereinafter referred to as the "Client"), effective as of ${new Date().toLocaleDateString()}.
@@ -217,7 +216,6 @@ misrepresented financial data provided by the Client.`;
           });
           
           if(res.ok) {
-              // 🚀 Auto-Download the generated PDF for the Client
               const link = document.createElement('a');
               link.href = URL.createObjectURL(blob);
               link.download = "Telangana_Tenders_Agreement.pdf";
@@ -225,7 +223,7 @@ misrepresented financial data provided by the Client.`;
               link.click();
               document.body.removeChild(link);
 
-              toast.success("Professional Legal Agreement Generated & Downloaded!");
+              toast.success("Professional Legal Agreement PDF Generated & Downloaded!");
               
               setUserData(prev => ({...prev, agreement_signed: true}));
               fetchClientData(email); 
@@ -236,6 +234,7 @@ misrepresented financial data provided by the Client.`;
       }
       setSubmittingAgreement(false);
   };
+          
            
            // డాక్యుమెంట్స్ అప్‌డేట్
            if (d.vault_docs && d.vault_docs.length > 0) {
