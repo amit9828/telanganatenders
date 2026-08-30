@@ -110,119 +110,32 @@ export default function ClientDashboard() {
       setSubmittingAgreement(true);
       
       try {
-          // 🚀 FIX: Generate a Professional PDF Letterhead instead of a .txt file
-          const pdfDoc = await PDFDocument.create();
-          const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-          const timesBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-          const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+          // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
+  useEffect(() => {
+    if (status === "loading" || !email) return;
+    
+    // ఒక ఫంక్షన్ క్రియేట్ చేసి, దాన్ని ఫస్ట్ టైమ్ పిలవాలి, ఆపై లూప్ లో పెట్టాలి
+    const syncLiveData = async () => {
+       try {
+         // t=Date.now() వాడటం వల్ల ఎప్పుడూ కొత్త డేటా వస్తుంది, పాత డేటా స్టక్ అవ్వదు
+         const r = await fetch(`/api/me?email=${encodeURIComponent(email)}&t=${Date.now()}`);
+         if(r.ok) {
+           const d = await r.json();
+           
+           const hasSignedAgreement = d.vault_docs?.some(doc => doc.id === 'signed_agreement') || false;
+           d.agreement_signed = hasSignedAgreement;
 
-          const page = pdfDoc.addPage([595.28, 841.89]); // Standard A4 Size
-          const { width, height } = page.getSize();
+           if (d.onboarding_complete) setLocalOnboardComplete(true);
 
-          // --- 1. LETTERHEAD TOP STRIP (Navy Blue) ---
-          page.drawRectangle({
-              x: 0, y: height - 85, width: width, height: 85,
-              color: rgb(0.04, 0.15, 0.28) // #0A2647
-          });
+           setUserData(d);
+           setClientId(d.client_id || `CLI-${email.substring(0,4).toUpperCase()}X`);
 
-          // --- 2. BRANDING & CONTACT INFO ---
-          page.drawText('TELANGANA TENDERS', { x: 40, y: height - 35, size: 22, font: timesBold, color: rgb(1, 1, 1) });
-          page.drawText('CONSULTANCY SERVICES & CORPORATE APPROVALS', { x: 40, y: height - 52, size: 9, font: helvetica, color: rgb(0.8, 0.9, 1) });
-          
-          // Right Side Details
-          page.drawText('Phone: +91 6304486770 | Email: support@tgtenders.in', { x: width - 290, y: height - 30, size: 9, font: helvetica, color: rgb(1, 1, 1) });
-          page.drawText('Instagram: @tgtenders | YouTube: TG Tenders', { x: width - 290, y: height - 47, size: 9, font: helvetica, color: rgb(1, 1, 1) });
-          page.drawText('Services: e-Procurement, GeM Bidding, L1 Strategy', { x: width - 290, y: height - 64, size: 9, font: helvetica, color: rgb(1, 1, 1) });
-
-          // --- 3. AGREEMENT TITLE ---
-          page.drawText('B2B LEGAL SERVICE AGREEMENT', { x: width / 2 - 120, y: height - 130, size: 14, font: timesBold, color: rgb(0, 0, 0) });
-
-          // --- 4. BODY TEXT ---
-          const bodyText = `This B2B Legal Service Agreement ("Agreement") is officially entered into by and between
-Telangana Tenders (hereinafter referred to as the "Consultancy") and ${onboardForm.company_name || 'The Client'}
-(hereinafter referred to as the "Client"), effective as of ${new Date().toLocaleDateString()}.
-
-1. SCOPE OF SERVICES & VAULT ACCESS
-The Consultancy agrees to provide comprehensive bid analysis, documentation support, and 
-operational tender management. All financial and proprietary documents uploaded by the 
-Client to the Corporate Vault shall remain strictly confidential, stored securely via 256-bit 
-encryption, and accessed solely for tender fulfillment purposes on government portals.
-
-2. PROFESSIONAL FEES & CONSULTANCY CHARGES
-The Client agrees to pay the stipulated processing fees, document unlock fees, and post-win 
-success fees (consultancy charges) as mutually agreed upon for each respective tender. The 
-Client is also solely responsible for depositing Earnest Money Deposits (EMD) directly or 
-via the Consultancy within the stipulated timeframe.
-
-3. DEFAULT OF PAYMENT & LEGAL RECOURSE
-In the event of non-payment, delayed payment, or refusal to disburse consultancy charges 
-post-service delivery or successful contract award, the Consultancy reserves the absolute 
-right to initiate immediate legal proceedings. This includes, but is not limited to, recovery 
-actions under Section 73 of the Indian Contract Act, 1872 and Section 138 of the Negotiable 
-Instruments Act, 1881. The Client shall be held strictly liable for all legal recovery costs, 
-attorney fees, and an interest penalty of 18% per annum on the outstanding amount.
-
-4. OFFICIAL REPRESENTATION & AUTHORIZATION
-The Client legally authorizes the Consultancy's Managing Director (MD) and assigned 
-Operations Officers to represent their firm digitally on government procurement portals 
-(including GeM and eProcurement) strictly for the scope of the assigned tenders. 
-The Consultancy is absolved of any liabilities arising from false documents or 
-misrepresented financial data provided by the Client.`;
-
-          page.drawText(bodyText, { x: 40, y: height - 180, size: 11, font: timesRoman, color: rgb(0.1, 0.1, 0.1), lineHeight: 16 });
-
-          // --- 5. SIGNATURES ---
-          page.drawLine({ start: { x: 40, y: 220 }, end: { x: width - 40, y: 220 }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
-
-          page.drawText('DIGITALLY SIGNED BY MANAGING DIRECTOR:', { x: 40, y: 190, size: 10, font: timesBold });
-          page.drawText('B. Esak\nTelangana Tenders\n+91 6304486770', { x: 40, y: 170, size: 10, font: timesRoman, lineHeight: 14 });
-
-          page.drawText('AUTHORISED CLIENT SIGNATORY:', { x: 340, y: 190, size: 10, font: timesBold });
-          page.drawText(`${onboardForm.client_name || 'Authorised Signatory'}\n${onboardForm.company_name || 'Company Name'}\nDate: ${new Date().toLocaleDateString()}`, { x: 340, y: 170, size: 10, font: timesRoman, lineHeight: 14 });
-
-          // --- 6. FOOTER STRIP ---
-          page.drawRectangle({
-              x: 0, y: 0, width: width, height: 25,
-              color: rgb(0.04, 0.15, 0.28)
-          });
-          page.drawText(`Telangana Tenders © ${new Date().getFullYear()} | Securely Generated via Enterprise Portal`, { x: width / 2 - 130, y: 8, size: 8, font: helvetica, color: rgb(1, 1, 1) });
-
-          // --- SAVE & EXPORT AS PDF ---
-          const pdfBytes = await pdfDoc.save();
-          const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-          const file = new File([blob], "Signed_B2B_Legal_Agreement.pdf", { type: "application/pdf" });
-          
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('docId', 'signed_agreement');
-          formData.append('email', email);
-          formData.append('clientName', onboardForm.company_name || onboardForm.client_name); 
-          await fetch('/api/vault/upload', { method: 'POST', body: formData });
-
-          const res = await fetch('/api/users/profile', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
-          });
-          
-          if(res.ok) {
-              const link = document.createElement('a');
-              link.href = URL.createObjectURL(blob);
-              link.download = "Telangana_Tenders_Agreement.pdf";
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-
-              toast.success("Professional Legal Agreement PDF Generated & Downloaded!");
-              
-              setUserData(prev => ({...prev, agreement_signed: true}));
-              fetchClientData(email); 
-          }
-      } catch(err) {
-          console.error("PDF Generation Error:", err);
-          toast.error("Network error saving agreement.");
-      }
-      setSubmittingAgreement(false);
-  };
+           if(d.stats) setClientStats(d.stats);
+           if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
+           
+           if(d.action_alerts) {
+               setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
+           }
            
            // డాక్యుమెంట్స్ అప్‌డేట్
            if (d.vault_docs && d.vault_docs.length > 0) {
@@ -235,6 +148,7 @@ misrepresented financial data provided by the Client.`;
            } else {
                setVaultDocs(DEFAULT_VAULT_DOCS);
            }
+         }
        } catch (err) {
          console.error("Live sync failed", err);
        }
