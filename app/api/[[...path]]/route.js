@@ -211,25 +211,29 @@ export async function GET(request, { params }) {
     if (path === 'users/pending' || path === 'api/users/pending') {
       const users = await db.collection('users')
          .find({ is_approved: { $ne: true }, onboarding_complete: true })
+         .project({ "vault_docs.file_base64": 0 }) // 🚀 FIX: Block heavy PDF loads
          .sort({ created_at: -1 })
          .toArray();
       return json({ users });
     }
 
-    // 🚀 Fetch AI Draft Tenders
     if (path === 'ai/drafts' || path === 'api/ai/drafts') {
-       const drafts = await db.collection('ai_draft_tenders').find({ status: 'Pending Verification' }).sort({ created_at: -1 }).toArray();
+       const drafts = await db.collection('ai_draft_tenders')
+         .find({ status: 'Pending Verification' })
+         .project({ pdf_base64: 0 }) // 🚀 FIX: Block heavy AI PDF loads
+         .sort({ created_at: -1 })
+         .toArray();
        return json({ drafts });
     }
     
     if (path === 'users/approved' || path === 'api/users/approved') {
       const users = await db.collection('users')
          .find({ is_approved: true })
+         .project({ "vault_docs.file_base64": 0 }) // 🚀 FIX: Block heavy PDF loads
          .sort({ created_at: -1 })
          .toArray();
       return json({ users });
     }
-
     if (path === 'client-requests' || path === 'api/client-requests') {
       const email = searchParams.get('email');
       let query = {};
@@ -242,7 +246,11 @@ export async function GET(request, { params }) {
       const targetId = searchParams.get('target_id');
       let query = {};
       if (targetId) query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') }; 
-      const dispatches = await db.collection('dispatches').find(query).sort({ created_at: -1 }).toArray();
+      const dispatches = await db.collection('dispatches')
+         .find(query)
+         .project({ file_base64: 0 }) // 🚀 FIX: Block heavy task attachment loads
+         .sort({ created_at: -1 })
+         .toArray();
       return json({ dispatches });
     }
 
@@ -253,7 +261,11 @@ export async function GET(request, { params }) {
 
     // 🚀 Operator Docs GET
     if (path === 'operator/docs' || path === 'api/operator/docs') {
-       const docs = await db.collection('operator_storage').find({}).sort({ created_at: -1 }).toArray();
+       const docs = await db.collection('operator_storage')
+         .find({})
+         .project({ file_base64: 0 }) // 🚀 FIX: Block heavy storage loads
+         .sort({ created_at: -1 })
+         .toArray();
        return json({ docs });
     }
     
