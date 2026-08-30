@@ -1725,51 +1725,58 @@ const handleViewDocument = (req) => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="settings" className="mt-4"><BrandSettings token={token} /></TabsContent>
+          <TabsContent value="settings" className="mt-4">
+            <BrandSettings token={token} />
+          </TabsContent>
         </Tabs>
+
+        {/* 🚀 MD Vault Approval Dialog */}
+        <Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
+          <DialogContent className="sm:max-w-md border-0 shadow-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600"/> Approve & Save Document
+              </DialogTitle>
+              <DialogDescription>Review the file name before saving it to the database and client's drive.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+               <div>
+                  <Label className="font-bold text-slate-700">Client Name</Label>
+                  <Input type="text" value={approvalModal.clientName} disabled className="mt-1 bg-slate-50 text-slate-500" />
+               </div>
+               <div>
+                  <Label className="font-bold text-slate-700">File Name (Auto-Generated) *</Label>
+                  <Input type="text" value={customFileName} onChange={e => setCustomFileName(e.target.value)} required className="mt-1 border-2 h-11" />
+                  <p className="text-[10px] text-slate-500 mt-1">Note: .pdf extension will be added automatically if missing.</p>
+               </div>
+               
+               {duplicateWarning && (
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex flex-col gap-2">
+                     <div className="flex items-center gap-2 text-amber-800 text-sm font-bold">
+                        <AlertTriangle className="w-4 h-4"/> {duplicateWarning}
+                     </div>
+                     <label className="flex items-center gap-2 text-sm cursor-pointer font-semibold text-amber-900 mt-1">
+                        <input type="checkbox" checked={overwriteDoc} onChange={e => setOverwriteDoc(e.target.checked)} className="w-4 h-4 accent-amber-600" />
+                        Yes, replace the existing file.
+                     </label>
+                  </div>
+               )}
+
+               <Button 
+                  onClick={() => handleVerifyVaultDoc(approvalModal.email, approvalModal.docId, 'verified', customFileName, overwriteDoc)} 
+                  className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 mt-2 font-bold text-lg shadow-md"
+                  disabled={duplicateWarning && !overwriteDoc}
+               >
+                  Confirm & Save File
+               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
 }
-<Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
-        <DialogContent className="sm:max-w-md border-0 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600"/> Approve & Save Document</DialogTitle>
-            <DialogDescription>Review the file name before saving it to the database and client's drive.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-             <div>
-                <Label className="font-bold text-slate-700">Client Name</Label>
-                <Input type="text" value={approvalModal.clientName} disabled className="mt-1 bg-slate-50 text-slate-500" />
-             </div>
-             <div>
-                <Label className="font-bold text-slate-700">File Name (Auto-Generated) *</Label>
-                <Input type="text" value={customFileName} onChange={e => setCustomFileName(e.target.value)} required className="mt-1 border-2 h-11" />
-                <p className="text-[10px] text-slate-500 mt-1">Note: .pdf extension will be added automatically if missing.</p>
-             </div>
-             
-             {duplicateWarning && (
-                <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex flex-col gap-2">
-                   <div className="flex items-center gap-2 text-amber-800 text-sm font-bold">
-                      <AlertTriangle className="w-4 h-4"/> {duplicateWarning}
-                   </div>
-                   <label className="flex items-center gap-2 text-sm cursor-pointer font-semibold text-amber-900 mt-1">
-                      <input type="checkbox" checked={overwriteDoc} onChange={e => setOverwriteDoc(e.target.checked)} className="w-4 h-4 accent-amber-600" />
-                      Yes, replace the existing file.
-                   </label>
-                </div>
-             )}
 
-             <Button 
-                onClick={() => handleVerifyVaultDoc(approvalModal.email, approvalModal.docId, 'verified', customFileName, overwriteDoc)} 
-                className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 mt-2 font-bold text-lg shadow-md"
-                disabled={duplicateWarning && !overwriteDoc}
-             >
-                Confirm & Save File
-             </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 function StatCard({ icon, label, value, accent }) {
   return (
     <Card className={`border-0 shadow-sm ring-1 ${accent ? 'ring-emerald-500/50 bg-emerald-50/80' : 'ring-slate-200 bg-white'}`}>
