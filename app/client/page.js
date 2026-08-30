@@ -105,18 +105,7 @@ export default function ClientDashboard() {
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
   }, [session, status]);
 
- // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
-  useEffect(() => {
-    if (status === "loading" || !email) return;
-    
-    // ఒక ఫంక్షన్ క్రియేట్ చేసి, దాన్ని ఫస్ట్ టైమ్ పిలవాలి, ఆపై లూప్ లో పెట్టాలి
-    const syncLiveData = async () => {
-       try {
-         // t=Date.now() వాడటం వల్ల ఎప్పుడూ కొత్త డేటా వస్తుంది, పాత డేటా స్టక్ అవ్వదు
-         const r = await fetch(`/api/me?email=${encodeURIComponent(email)}&t=${Date.now()}`);
-         if(r.ok) {
-           const d = await r.json();
-           const handleSignAgreement = async (e) => {
+ const handleSignAgreement = async (e) => {
       e.preventDefault();
       setSubmittingAgreement(true);
       
@@ -234,7 +223,6 @@ misrepresented financial data provided by the Client.`;
       }
       setSubmittingAgreement(false);
   };
-          
            
            // డాక్యుమెంట్స్ అప్‌డేట్
            if (d.vault_docs && d.vault_docs.length > 0) {
