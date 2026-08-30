@@ -583,13 +583,15 @@ export async function PUT(request, { params }) {
      if (path === 'payments/offline' || path === 'api/payments/offline') {
         const { id, amount, reason, client_id } = body;
         
-        if (id) {
-            await db.collection('payments').updateOne(
-                { _id: new ObjectId(id) },
-                { $set: { status: 'SUCCESS_OFFLINE', paid_at: new Date() } }
+        // 🚀 FIX: యూజర్ అకౌంట్‌లో పెండింగ్ పేమెంట్ ని PAID అని మార్చడం
+        if (id && client_id) {
+            await db.collection('users').updateOne(
+                { email: client_id.toLowerCase(), "pending_payments.id": id },
+                { $set: { "pending_payments.$.status": "PAID" } }
             );
         }
         
+        // బ్యాలెన్స్ షీట్ (లెడ్జర్) లో యాడ్ చేయడం
         await db.collection('finance_ledger').insertOne({
             type: 'CREDIT',
             amount: Number(amount),
@@ -602,13 +604,6 @@ export async function PUT(request, { params }) {
         
         return json({ success: true, message: 'Marked as Paid Offline and Added to Ledger' });
      }
-
-     return json({ error: 'PUT endpoint not found' }, 404);
-  } catch(e) {
-     return json({ error: 'Server Error' }, 500);
-  }
-}
-
 // =====================================================================
 // DELETE REQUESTS 
 // =====================================================================
@@ -890,11 +885,42 @@ export async function POST(request, { params }) {
 
     if (path === 'users/request-payment' || path === 'api/users/request-payment') {
        const { email, amount, reason } = body;
+       const reqId = new ObjectId().toString(); // 🚀 FIX: Generate a unique ID
+
        await db.collection('users').updateOne(
          { email: email.toLowerCase() },
-         { $push: { pending_payments: { amount, reason, date: new Date(), status: 'UNPAID' } } }
+         { $push: { pending_payments: { id: reqId, amount, reason, date: new Date(), status: 'UNPAID' } } }
        );
-       return json({ success: true });
+       
+       return json({ success: true, id: reqId }); // 🚀 FIX: Return ID to frontend
+    }
+    // 🚀 FIX: Live Tracking GET route for Admin Dashboard
+    if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const usersWithPayments = await db.collection('users').find({
+           pending_payments: { $exists: true, $not: { $size: 0 } }
+       }).toArray();
+
+       let allRequests = [];
+       usersWithPayments.forEach(user => {
+           user.pending_payments.forEach(req => {
+               if (req.status !== 'PAID') {
+                   allRequests.push({
+                       id: req.id,
+                       db_id: req.id, 
+                       client_id: user.email,
+                       amount: req.amount,
+                       reason: req.reason,
+                       status: req.status === 'UNPAID' ? 'sent' : req.status,
+                       sent_time: new Date(req.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                       created_at: req.date
+                   });
+               }
+           });
+       });
+
+       // Sort newest first
+       allRequests.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+       return json({ requests: allRequests });
     }
     // 🚀 Delete AI Draft once Published
     if (path === 'ai/drafts' || path === 'api/ai/drafts') {
@@ -946,7 +972,17 @@ export async function POST(request, { params }) {
        });
        return json({ success: true });
     }
+    // 🚀 FIX: Delete Route to Cancel a Payment Request
+    if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing Request ID' }, 400);
 
+       await db.collection('users').updateOne(
+           { "pending_payments.id": id },
+           { $pull: { pending_payments: { id: id } } }
+       );
+       return json({ success: true, message: 'Payment Request Cancelled' });
+    }
     if (path === 'queries/send' || path === 'api/queries/send') {
       const { client_email, subject, message } = body;
       const queryId = new ObjectId().toString();
