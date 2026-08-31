@@ -766,6 +766,15 @@ export async function POST(request, { params }) {
        }
     }
 
+    // 🚀 SECURITY FIX: Cashfree webhook signatures are computed over the RAW request
+    // body text. We must read it with request.text() BEFORE any JSON parsing happens
+    // below — parsing then re-stringifying would change the payload and break HMAC
+    // signature verification in handleCashfreeWebhook.
+    if (path === 'payment/webhook' || path === 'api/payment/webhook') {
+      const rawBody = await request.text();
+      return await handleCashfreeWebhook(db, request, rawBody);
+    }
+
     const body = await request.json().catch(() => null);
     if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
@@ -1135,10 +1144,6 @@ export async function POST(request, { params }) {
       return await verifyCashfreeOrder(db, body);
     }
 
-    if (path === 'payment/webhook' || path === 'api/payment/webhook') {
-      // 🚀 Extracted to app/api/payments/route.js (Cashfree Webhook)
-      return await handleCashfreeWebhook(db, request, body);
-    }
     
     // చివర్లో ఇది కచ్చితంగా ఉండాలి, లేకపోతే ఎర్రర్ వస్తుంది.
     return json({ error: 'POST not found', path }, 404);

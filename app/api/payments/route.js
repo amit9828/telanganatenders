@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { getDb } from '@/lib/db';
 // 🚀 NOTE: This project talks to Cashfree via its plain REST API (fetch calls below),
 // not the Cashfree Node SDK, so no dedicated Cashfree SDK import is required here.
@@ -122,12 +123,51 @@ export async function verifyCashfreeOrder(db, body) {
 // =====================================================================
 // 🚀 CASHFREE: Webhook
 // =====================================================================
-export async function handleCashfreeWebhook(db, request, body) {
+// 🚀 SECURITY FIX: `rawBody` MUST be the exact, unparsed request body text.
+// Cashfree signs the raw bytes it sent us — parsing to JSON and re-stringifying
+// changes key order/whitespace and makes the signature check fail, so the caller
+// is responsible for passing `await request.text()` here (never a parsed object).
+export async function handleCashfreeWebhook(db, request, rawBody) {
   try {
-    // 🚀 FIX: Cashfree Webhook Security Check
     const signature = request.headers.get('x-webhook-signature');
-    if (!signature && process.env.NODE_ENV === 'production') {
-      return json({ error: 'Unauthorized: Missing Signature' }, 401);
+    const timestamp = request.headers.get('x-webhook-timestamp');
+    const secretKey = process.env.CASHFREE_SECRET_KEY;
+
+    if (!signature || !timestamp || !secretKey) {
+      console.error('Webhook rejected: missing signature/timestamp header or secret key.');
+      return json({ error: 'Unauthorized: Missing Signature' }, 400);
+    }
+
+    // 🚀 Compute the expected signature ourselves. Wrapped in try/catch so a malformed
+    // or empty raw body can never crash the server — it just fails verification safely.
+    let computedSignature;
+    try {
+      computedSignature = crypto
+        .createHmac('sha256', secretKey)
+        .update(timestamp + (rawBody || ''), 'utf8')
+        .digest('base64');
+    } catch (hmacError) {
+      console.error('Webhook rejected: HMAC computation failed.', hmacError);
+      return json({ error: 'Unauthorized: Signature verification failed' }, 400);
+    }
+
+    const expectedBuf = Buffer.from(computedSignature);
+    const receivedBuf = Buffer.from(signature);
+    const isValidSignature =
+      expectedBuf.length === receivedBuf.length && crypto.timingSafeEqual(expectedBuf, receivedBuf);
+
+    if (!isValidSignature) {
+      console.error('Webhook rejected: signature mismatch.');
+      return json({ error: 'Unauthorized: Invalid Signature' }, 400);
+    }
+
+    // Only parse the body into JSON AFTER the signature has been verified against the raw text.
+    let body;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (parseError) {
+      console.error('Webhook rejected: malformed JSON payload.', parseError);
+      return json({ error: 'Invalid JSON body' }, 400);
     }
 
     const orderId = body?.data?.order?.order_id;
@@ -205,12 +245,19 @@ export async function POST(request) {
   const action = searchParams.get('action');
 
   try {
+    // 🚀 SECURITY FIX: Webhooks must be verified against the exact RAW body text, so
+    // this path reads text() and skips JSON parsing entirely — parsing then
+    // re-stringifying would alter the payload and break HMAC signature verification.
+    if (action === 'webhook') {
+      const rawBody = await request.text();
+      return await handleCashfreeWebhook(db, request, rawBody);
+    }
+
     const body = await request.json().catch(() => null);
     if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
     if (action === 'order') return await createCashfreeOrder(db, body);
     if (action === 'verify') return await verifyCashfreeOrder(db, body);
-    if (action === 'webhook') return await handleCashfreeWebhook(db, request, body);
 
     return json({ error: 'Unknown payment action', action }, 404);
   } catch (error) {
