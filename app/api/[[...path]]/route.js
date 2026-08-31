@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
+import { randomUUID } from 'crypto';
 import { google } from 'googleapis'; // 🚀 Google Drive Integration
 import { getDb } from '@/lib/db';
 import { uploadTenderPDF } from '@/lib/cloudflare-r2';
@@ -72,6 +73,41 @@ export async function GET(request, { params }) {
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
       return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
+    }
+
+    // 🚀 Live Portal Traffic Counter — dedupes via cookies so polling the same
+    // browser session doesn't inflate counts on every 15s refresh.
+    if (path === 'analytics/visitors' || path === 'api/analytics/visitors') {
+      const cookieHeader = request.headers.get('cookie') || '';
+      const cookies = Object.fromEntries(
+        cookieHeader.split(';').map((c) => c.trim().split('=')).filter(([k]) => k)
+      );
+      const todayKey = new Date().toISOString().slice(0, 10);
+
+      const isNewVisitor = !cookies['visitor_id'];
+      const isNewToday = cookies['visited_today'] !== todayKey;
+
+      if (isNewVisitor || isNewToday) {
+        const inc = {};
+        if (isNewVisitor) inc.total = 1;
+        if (isNewToday) inc[`daily.${todayKey}`] = 1;
+        await db.collection('analytics_visitors').updateOne(
+          { id: 'stats' },
+          { $inc: inc },
+          { upsert: true }
+        );
+      }
+
+      const stats = await db.collection('analytics_visitors').findOne({ id: 'stats' });
+      const response = json({ total: stats?.total || 0, today: stats?.daily?.[todayKey] || 0 });
+
+      if (isNewVisitor) {
+        response.headers.append('Set-Cookie', `visitor_id=${randomUUID()}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      }
+      if (isNewToday) {
+        response.headers.append('Set-Cookie', `visited_today=${todayKey}; Path=/; Max-Age=86400; SameSite=Lax`);
+      }
+      return response;
     }
 
     if (path === 'tenders' || path === 'api/tenders') {
