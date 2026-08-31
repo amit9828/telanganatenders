@@ -12,6 +12,20 @@ export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
 
+// 🚀 PERF: $text search requires a MongoDB text index on `tenders.title`. We lazily
+// ensure it exists once per warm server instance (createIndex is a cheap no-op if it
+// already exists) instead of on every single search request.
+let tendersTextIndexEnsured = false;
+async function ensureTendersTextIndex(db) {
+  if (tendersTextIndexEnsured) return;
+  try {
+    await db.collection('tenders').createIndex({ title: 'text' });
+    tendersTextIndexEnsured = true;
+  } catch (err) {
+    console.error('Failed to ensure tenders text index:', err);
+  }
+}
+
 // 🚀 STRICT RULE: ప్రతీ API రెస్పాన్స్ కి No-Cache హెడర్స్ పంపడం
 function json(data, status = 200) {
   return NextResponse.json(data, { 
@@ -69,7 +83,12 @@ export async function GET(request, { params }) {
 
       let query = {};
       if (district && district !== 'all') query.district = district;
-      if (q) query.title = { $regex: q,$options: 'i' };
+      if (q) {
+        // 🚀 PERF: Use a MongoDB text index instead of an unanchored regex scan —
+        // far cheaper on large collections and lets Mongo use its own relevance/index.
+        await ensureTendersTextIndex(db);
+        query.$text = { $search: q };
+      }
 
       // 🚀 FIX: Auto-Hide/Delete Expired Tenders from interface
       const today = new Date();
@@ -79,6 +98,7 @@ export async function GET(request, { params }) {
         .find(query)
         .project({ pdf_base64: 0 }) 
         .sort({ last_date: -1 })
+        .limit(300) // 🚀 PERF: Cap payload size so the browser never chokes on thousands of tenders
         .toArray();
 
       let tenders = allTenders.filter(t => {
