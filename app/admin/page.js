@@ -137,53 +137,58 @@ export default function AdminPage() {
   // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
 
+  // 🚀 FIX: Bulletproof refresh — one blocked/failing route (e.g. expired-tender
+  // filter accidentally hiding admin data, a network blip, a non-JSON error page)
+  // used to throw inside Promise.all and take the ENTIRE dashboard down to zeros.
+  // safeFetch isolates each request so a single failure never crashes the rest.
   const refresh = async () => {
     const headers = { Authorization: `Bearer ${token}` };
-    try {
-      // 🚀 FIX: ఇక్కడ ఆల్ రెడీ నువ్వు t=Date.now() రాసావు, కానీ మనం పైన 12 బదులు 10 సెకన్లకు మార్చాం
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes] = await Promise.all([
-        fetch(`/api/tenders?t=${Date.now()}`, { headers }),
-        fetch(`/api/admin/stats?t=${Date.now()}`, { headers }),
-        fetch(`/api/tickets?role=admin&t=${Date.now()}`, { headers }),
-        fetch(`/api/users/pending?t=${Date.now()}`, { headers }),
-        fetch(`/api/users/approved?t=${Date.now()}`, { headers }), 
-        fetch(`/api/client-requests?t=${Date.now()}`, { headers }),
-        fetch(`/api/dispatches?t=${Date.now()}`, { headers }),       
-        fetch(`/api/employees?t=${Date.now()}`, { headers }), 
-        fetch(`/api/finance/ledger?t=${Date.now()}`, { headers }),
-        fetch(`/api/guest-queries?t=${Date.now()}`, { headers }),
-        fetch(`/api/payments/requests?t=${Date.now()}`, { headers }).catch(() => ({ ok: false }))
-      ]);
-      
-      if (tRes.status === 401) return logout();
-      
-      const tJson = await tRes.json();
-      const sJson = await sRes.json();
-      const tkJson = tkRes.ok ? await tkRes.json() : { tickets: [] };
-      const uJson = uRes.ok ? await uRes.json() : { users: [] };
-      const aJson = aRes.ok ? await aRes.json() : { users: [] }; 
-      const reqJson = reqRes.ok ? await reqRes.json() : { requests: [] };
-      const dispJson = dispRes.ok ? await dispRes.json() : { dispatches: [] };
-      const empJson = empRes.ok ? await empRes.json() : { team: [] };
-      const ledgerJson = ledgerRes.ok ? await ledgerRes.json() : { transactions: [], balance: 0 };
-      const guestJson = guestQRes.ok ? await guestQRes.json() : { queries: [] }; 
-      const finReqJson = finReqRes.ok ? await finReqRes.json() : { requests: [] };
+    const safeFetch = async (url) => {
+      try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) return { ok: false, status: res.status };
+        return { ok: true, data: await res.json() };
+      } catch (e) {
+        return { ok: false };
+      }
+    };
 
-      setTenders(tJson.tenders || []);
-      setStats(sJson || {});
-      setTickets(tkJson.tickets || []);
-      setGuestQueries(guestJson.queries || guestJson['guest-queries'] || []); 
-      setPendingUsers(uJson.users || []);
-      setApprovedClients(aJson.users || []); 
-      setBidRequests(reqJson.requests || []);
-      setDispatches(dispJson.dispatches || []);
-      setTeamMembers(empJson.team || []);
-      setLedgerTxns(ledgerJson.transactions || []);
-      
-      setFinancialRequests((finReqJson.requests || []).filter(r => r.status !== 'SUCCESS' && r.status !== 'PAID')); 
-      
+    try {
+      // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
+      // tenders" filter that's meant only for the public site.
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes] = await Promise.all([
+        safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
+        safeFetch(`/api/admin/stats?t=${Date.now()}`),
+        safeFetch(`/api/tickets?role=admin&t=${Date.now()}`),
+        safeFetch(`/api/users/pending?t=${Date.now()}`),
+        safeFetch(`/api/users/approved?t=${Date.now()}`),
+        safeFetch(`/api/client-requests?t=${Date.now()}`),
+        safeFetch(`/api/dispatches?t=${Date.now()}`),
+        safeFetch(`/api/employees?t=${Date.now()}`),
+        safeFetch(`/api/finance/ledger?t=${Date.now()}`),
+        safeFetch(`/api/guest-queries?t=${Date.now()}`),
+        safeFetch(`/api/payments/requests?t=${Date.now()}`)
+      ]);
+
+      if (tRes.status === 401) return logout();
+
+      if (tRes.ok) setTenders(tRes.data.tenders || []);
+      if (sRes.ok) setStats(sRes.data || {});
+      if (tkRes.ok) setTickets(tkRes.data.tickets || []);
+      if (guestQRes.ok) setGuestQueries(guestQRes.data.queries || guestQRes.data['guest-queries'] || []);
+      if (uRes.ok) setPendingUsers(uRes.data.users || []);
+      if (aRes.ok) setApprovedClients(aRes.data.users || []);
+      if (reqRes.ok) setBidRequests(reqRes.data.requests || []);
+      if (dispRes.ok) setDispatches(dispRes.data.dispatches || []);
+      if (empRes.ok) setTeamMembers(empRes.data.team || []);
+      if (ledgerRes.ok) setLedgerTxns(ledgerRes.data.transactions || []);
+      if (finReqRes.ok) {
+        setFinancialRequests((finReqRes.data.requests || []).filter(r => r.status !== 'SUCCESS' && r.status !== 'PAID'));
+      }
+
+      const approvedUsers = aRes.ok ? (aRes.data.users || []) : [];
       const allSuccess = [];
-      (aJson.users || []).forEach(client => {
+      approvedUsers.forEach(client => {
           if (client.payments && client.payments.length > 0) {
               client.payments.filter(p => p.status === 'SUCCESS').forEach(p => {
                   allSuccess.push({ ...p, client_name: client.company_name || client.name, email: client.email });
@@ -192,12 +197,12 @@ export default function AdminPage() {
       });
       setSuccessfulPaymentsLog(allSuccess.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
 
-      const onlineRevenue = sJson.revenue || 0;
-      const offlineBal = ledgerJson.balance || 0;
+      const onlineRevenue = sRes.ok ? (sRes.data.revenue || 0) : 0;
+      const offlineBal = ledgerRes.ok ? (ledgerRes.data.balance || 0) : 0;
       setBreakdown({ offline: offlineBal, online: onlineRevenue });
       setLedgerBalance(offlineBal + onlineRevenue);
 
-      setClientReports((aJson.users || []).map(c => {
+      setClientReports(approvedUsers.map(c => {
          const wonBids = (c.bids || []).filter(b => b.status === 'Won').length || c.stats?.won || 0;
          const participated = (c.bids || []).length || c.stats?.participated || 0;
          return {
@@ -205,10 +210,12 @@ export default function AdminPage() {
              total: participated, won: wonBids, lost: participated - wonBids
          };
       }));
-      
-      setEmployeeReports((empJson.team || []).map(e => {
-         const completedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
-         const assignedTasks = dispJson.dispatches?.filter(d => d.target_id === e.emp_id).length || 1;
+
+      const teamList = empRes.ok ? (empRes.data.team || []) : [];
+      const dispatchList = dispRes.ok ? (dispRes.data.dispatches || []) : [];
+      setEmployeeReports(teamList.map(e => {
+         const completedTasks = dispatchList.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
+         const assignedTasks = dispatchList.filter(d => d.target_id === e.emp_id).length || 1;
          const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); 
          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
       }));

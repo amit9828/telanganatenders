@@ -116,6 +116,7 @@ export async function GET(request, { params }) {
       const year = searchParams.get('year');
       const scope = searchParams.get('scope');
       const q = searchParams.get('q');
+      const role = searchParams.get('role');
 
       let query = {};
       if (district && district !== 'all') query.district = district;
@@ -137,7 +138,10 @@ export async function GET(request, { params }) {
         .limit(300) // 🚀 PERF: Cap payload size so the browser never chokes on thousands of tenders
         .toArray();
 
+      // 🚀 FIX: Admin dashboard should see every tender (including expired ones) —
+      // only the public-facing site should hide expired tenders.
       let tenders = allTenders.filter(t => {
+          if (role === 'admin') return true;
           if (!t.last_date) return true;
           return new Date(t.last_date).getTime() >= today.getTime();
       });
@@ -503,6 +507,27 @@ export async function PUT(request, { params }) {
         let updateFields = { ...body, updated_at: new Date() };
         delete updateFields._id; 
 
+        // 🚀 FIX: Editing a tender with a new PDF crashed the server because the raw
+        // base64 was passed straight to MongoDB (exceeding the 16MB BSON doc limit /
+        // never uploaded to R2). Mirror the same Cloudflare R2 offload used on create.
+        if (updateFields.pdf_base64) {
+           try {
+              const cleanBase64 = updateFields.pdf_base64.replace(/^data:(.*,)?/, '');
+              const fileBuffer = Buffer.from(cleanBase64, 'base64');
+              const safeFileName = `${Date.now()}-${updateFields.pdf_filename || 'tender.pdf'}`;
+
+              const uploadedUrl = await uploadTenderPDF(fileBuffer, safeFileName);
+              if (uploadedUrl) {
+                 updateFields.pdf_url = uploadedUrl;
+              } else {
+                 console.error('Tender PDF upload to Cloudflare R2 failed during edit; keeping existing PDF.');
+              }
+           } catch (uploadError) {
+              console.error('Failed to process tender PDF for upload during edit:', uploadError);
+           }
+           delete updateFields.pdf_base64; // 🚀 CRITICAL: never persist raw base64 to MongoDB
+        }
+
         await db.collection('tenders').updateOne(
            { _id: new ObjectId(tenderId) },
            { $set: updateFields }
@@ -536,6 +561,7 @@ export async function PUT(request, { params }) {
                 message: reply || reqData.description,
                 status: 'Sent',
                 priority: 'High',
+                client_request_id: req_id, // 🚀 FIX: Links dispatch back to originating client request
                 created_at: new Date()
             });
         }
@@ -580,6 +606,25 @@ export async function PUT(request, { params }) {
            { _id: new ObjectId(task_id) },
            { $set: updateData }
         );
+
+        // 🚀 FIX: Broken Triangle — sync the employee's reply/status/attachment back
+        // onto the originating client request so the client actually sees the update.
+        const updatedDispatch = await db.collection('dispatches').findOne({ _id: new ObjectId(task_id) });
+        if (updatedDispatch?.client_request_id) {
+           let clientRequestUpdate = { updated_at: new Date() };
+           if (reply) clientRequestUpdate.reply = reply;
+           if (status === 'Completed') clientRequestUpdate.status = 'Resolved by Employee';
+           if (file_base64) {
+              clientRequestUpdate.file_base64 = file_base64;
+              clientRequestUpdate.file_name = file_name || null;
+           }
+
+           await db.collection('client_requests').updateOne(
+              { _id: new ObjectId(updatedDispatch.client_request_id) },
+              { $set: clientRequestUpdate }
+           );
+        }
+
         return json({ success: true, message: `Dispatch status updated to ${status}` });
      }
      // 🚀 FIX: Vault Document Approval + Rename + Duplicate Check + Auto Google Drive Sync
