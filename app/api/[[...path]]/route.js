@@ -738,6 +738,10 @@ export async function POST(request, { params }) {
 
          if (!file || !email || !docId) return json({ error: 'Missing data' }, 400);
 
+         // 🚀 SECURITY FIX: Strictly enforce a 4MB max file size on the server side,
+         // regardless of what the client attempts to send.
+         if (file.size > 4 * 1024 * 1024) return json({ error: 'File size exceeds strictly enforced 4MB limit' }, 400);
+
          const arrayBuffer = await file.arrayBuffer();
          const buffer = Buffer.from(arrayBuffer);
          const base64 = buffer.toString('base64');

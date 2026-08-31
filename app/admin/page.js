@@ -117,7 +117,13 @@ export default function AdminPage() {
   useEffect(() => {
     if (token) {
       refresh();
-      const interval = setInterval(() => { refresh(); }, 10000); 
+      // 🚀 FIX: Poll every 60s (not 10s) and only while this tab is visible, so we
+      // stop hammering the database when the admin is on a different browser tab.
+      const interval = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          refresh();
+        }
+      }, 60000);
       return () => clearInterval(interval);
     }
     // eslint-disable-next-line
