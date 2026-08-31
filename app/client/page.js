@@ -1503,18 +1503,37 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 {userData?.custom_requests?.length > 0 && (
                   <div className="mt-6 border-t pt-6 space-y-4">
                      <h4 className="font-bold text-[#0A2647]">My Submitted Requests ({userData.custom_requests.length})</h4>
-                     {userData.custom_requests.map(req => (
-                        <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
+                     {userData.custom_requests.map((req, i) => (
+                        <div key={req._id || i} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
                            <div className="flex-1">
                               <div className="flex justify-between items-start">
                                  <h4 className="font-bold text-[#0A2647] text-sm break-all mb-1">{req.link_or_id}</h4>
                                  <Badge className={req.status === 'Pending Officer Review' ? 'bg-amber-100 text-amber-800 border-0' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
                               </div>
                               <p className="text-xs text-slate-500 mt-1">"{req.description}"</p>
+
                               {req.reply && (
-                                 <div className="mt-2 text-xs text-emerald-700 font-bold bg-emerald-50 p-2 rounded border border-emerald-100">
-                                    Officer Reply: {req.reply}
+                                 <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 mt-2">
+                                    <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Status Update / Reply:</span>
+                                    <p className="text-xs font-medium text-emerald-800">{req.reply}</p>
                                  </div>
+                              )}
+
+                              {/* 🚀 FIX: Employee's attached document (base64 or R2/Drive URL) synced from Dispatches */}
+                              {(req.file_base64 || req.file_url) && (
+                                 <Button size="sm" variant="outline" onClick={() => {
+                                     if (req.file_url) {
+                                        window.open(req.file_url, '_blank');
+                                     } else if (req.file_base64) {
+                                        const byteCharacters = atob(req.file_base64);
+                                        const byteNumbers = new Array(byteCharacters.length);
+                                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                        const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+                                        window.open(URL.createObjectURL(blob), '_blank');
+                                     }
+                                 }} className="mt-2 h-7 text-[10px] text-blue-600 border-blue-200 bg-white w-fit">
+                                    <FileText className="w-3 h-3 mr-1"/> View Attached Document
+                                 </Button>
                               )}
                            </div>
                         </div>
