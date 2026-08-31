@@ -55,12 +55,17 @@ export async function OPTIONS(request) {
 // GET REQUESTS
 // =====================================================================
 export async function GET(request, { params }) {
-  const db = await getDb();
-  const pathArray = params?.path || [];
-  const path = pathArray.join('/');
-  const { searchParams } = new URL(request.url);
-
+  // 🚀 FIX: getDb()/param parsing used to sit OUTSIDE the try block — if the DB
+  // connection failed (or params were malformed) it threw an unhandled error before
+  // any response body was ever written, causing empty-body 500s that broke
+  // res.json() on the frontend with "Unexpected end of JSON input". Everything now
+  // lives inside the try so we ALWAYS return valid JSON.
   try {
+    const db = await getDb();
+    const pathArray = params?.path || [];
+    const path = pathArray.join('/');
+    const { searchParams } = new URL(request.url);
+
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
@@ -485,8 +490,8 @@ export async function GET(request, { params }) {
     // 👇 (కింద ఉండే పాత కోడ్: GET ఫంక్షన్ ముగింపు ఇది)
     return json({ error: 'GET endpoint not found', path }, 404);
   } catch (error) {
-    console.error(error);
-    return json({ error: 'Server Error' }, 500);
+    console.error('API Error:', error);
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
 
@@ -494,11 +499,13 @@ export async function GET(request, { params }) {
 // PUT REQUESTS (Updating Data)
 // =====================================================================
 export async function PUT(request, { params }) {
-  const db = await getDb();
-  const pathArray = params?.path || [];
-  const path = pathArray.join('/');
-  
+  // 🚀 FIX: Entire handler (db connection + param parsing included) now lives inside
+  // the try/catch so a failure never produces an empty, unparseable response body.
   try {
+     const db = await getDb();
+     const pathArray = params?.path || [];
+     const path = pathArray.join('/');
+
      const body = await request.json().catch(() => null);
      if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
@@ -706,8 +713,9 @@ export async function PUT(request, { params }) {
      }
 
      return json({ error: 'PUT endpoint not found' }, 404);
-  } catch(e) {
-     return json({ error: 'Server Error' }, 500);
+  } catch (error) {
+     console.error('API Error:', error);
+     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
 
@@ -825,11 +833,13 @@ export async function DELETE(request, { params }) {
 // POST REQUESTS (Creating Data)
 // =====================================================================
 export async function POST(request, { params }) {
-  const db = await getDb();
-  const pathArray = params?.path || [];
-  const path = pathArray.join('/');
-
+  // 🚀 FIX: Entire handler (db connection + param parsing included) now lives inside
+  // the try/catch so a failure never produces an empty, unparseable response body.
   try {
+    const db = await getDb();
+    const pathArray = params?.path || [];
+    const path = pathArray.join('/');
+
     if (path === 'vault/upload' || path === 'api/vault/upload') {
        try {
          const formData = await request.formData();
@@ -880,15 +890,18 @@ export async function POST(request, { params }) {
       return await handleCashfreeWebhook(db, request, rawBody);
     }
 
-    const body = await request.json().catch(() => null);
-    if (!body) return json({ error: 'Invalid JSON body' }, 400);
+    // 🚀 FIX: Missing/empty/malformed JSON bodies (e.g. Adblock-mangled requests)
+    // used to bail out early with a 400 before routes like system/verify could even
+    // run. Default to {} instead so downstream routes can safely destructure it.
+    let body = {};
+    try { body = await request.json(); } catch (e) { body = {}; }
 
-    if (path === 'system/verify' || path === 'api/system/verify') {
-      if (!body.email || !body.password) return json({ error: 'Credentials required' }, 400);
-      if (body.email === process.env.ADMIN_EMAIL && body.password === process.env.ADMIN_PASSWORD) {
-        return json({ token: process.env.ADMIN_TOKEN || 'admin_success' });
+    if (path === 'system/verify' || path === 'api/system/verify' || (pathArray.length === 2 && pathArray[0] === 'system' && pathArray[1] === 'verify')) {
+      const { email, password } = body || {};
+      if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+        return NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
       }
-      return json({ error: 'Invalid credentials' }, 401);
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     if (path === 'tenders' || path === 'api/tenders' || path === 'admin/tenders' || path === 'api/admin/tenders') {
@@ -1253,7 +1266,7 @@ export async function POST(request, { params }) {
     // చివర్లో ఇది కచ్చితంగా ఉండాలి, లేకపోతే ఎర్రర్ వస్తుంది.
     return json({ error: 'POST not found', path }, 404);
   } catch (error) {
-    console.error('Server POST Error:', error);
-    return json({ error: 'Server Error' }, 500);
+    console.error('API Error:', error);
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
