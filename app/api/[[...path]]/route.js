@@ -898,7 +898,15 @@ export async function POST(request, { params }) {
 
     if (path === 'system/verify' || path === 'api/system/verify' || (pathArray.length === 2 && pathArray[0] === 'system' && pathArray[1] === 'verify')) {
       const { email, password } = body || {};
-      if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+      // 🚀 FIX: Windows .env files (and copy-pasted credentials) can smuggle in
+      // trailing \r / \n / whitespace, silently breaking a strict === comparison.
+      // Trim both sides so the check only cares about the actual credential value.
+      const cleanEmail = String(email || '').trim();
+      const cleanPassword = String(password || '').trim();
+      const cleanAdminEmail = String(process.env.ADMIN_EMAIL || '').trim();
+      const cleanAdminPassword = String(process.env.ADMIN_PASSWORD || '').trim();
+
+      if (cleanEmail === cleanAdminEmail && cleanPassword === cleanAdminPassword) {
         return NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
       }
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
