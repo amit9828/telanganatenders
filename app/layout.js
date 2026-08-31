@@ -2,11 +2,14 @@ import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 import Providers from './providers';
 
+export const viewport = {
+  themeColor: "#0A2647",
+};
+
 export const metadata = {
   title: "TG Tenders | Telangana & AP Government Tenders, GeM Services",
   description: "The No.1 B2B Government Tender Consultancy. Access all live tenders, GeM (Government e Marketplace) bids, and procurement contracts across Telangana and Andhra Pradesh.",
   manifest: "/manifest.json",
-  themeColor: "#0A2647",
   // 🚀 Force Google to pick our official icon, bypassing default weird avatars
   icons: {
     icon: '/icon.png',
