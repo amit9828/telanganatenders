@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { google } from 'googleapis'; // 🚀 Google Drive Integration
 import { getDb } from '@/lib/db';
+import { uploadTenderPDF } from '@/lib/cloudflare-r2';
 // 🚀 SECURITY: Cashfree (Order/Verify/Webhook) + Offline Ledger logic now lives in
 // app/api/payments/route.js. Only thin delegating calls remain below.
 import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '../payments/route';
@@ -777,7 +778,29 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'tenders' || path === 'api/tenders' || path === 'admin/tenders' || path === 'api/admin/tenders') {
-      const newTender = { ...body, created_at: new Date() };
+      // 🚀 FIX: Offload PDF storage to Cloudflare R2 instead of MongoDB. Only the
+      // resulting `pdf_url` is persisted, keeping tender documents lightweight.
+      const { pdf_base64, ...tenderFields } = body;
+      let pdf_url = tenderFields.pdf_url || null;
+
+      if (pdf_base64) {
+        try {
+          const cleanBase64 = pdf_base64.replace(/^data:(.*,)?/, '');
+          const fileBuffer = Buffer.from(cleanBase64, 'base64');
+          const safeFileName = `${Date.now()}-${tenderFields.pdf_filename || 'tender.pdf'}`;
+
+          const uploadedUrl = await uploadTenderPDF(fileBuffer, safeFileName);
+          if (uploadedUrl) {
+            pdf_url = uploadedUrl;
+          } else {
+            console.error('Tender PDF upload to Cloudflare R2 failed; publishing tender without a PDF.');
+          }
+        } catch (uploadError) {
+          console.error('Failed to process tender PDF for upload:', uploadError);
+        }
+      }
+
+      const newTender = { ...tenderFields, pdf_url, created_at: new Date() };
       const result = await db.collection('tenders').insertOne(newTender);
       return json({ success: true, message: 'Tender published successfully', id: result.insertedId });
     }
