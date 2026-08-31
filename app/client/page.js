@@ -149,9 +149,14 @@ export default function ClientDashboard() {
        }
     };
 
-    // ప్రతి 10 సెకన్లకు సైలెంట్ గా బ్యాక్‌గ్రౌండ్ లో డేటా అప్‌డేట్ అవుతుంది
-    const interval = setInterval(syncLiveData, 10000); 
-    
+    // 🚀 FIX: Poll every 60 seconds instead of 10 — and only while this tab is actually
+    // visible, so we stop hammering MongoDB when the user switches away/minimizes.
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncLiveData();
+      }
+    }, 60000);
+
     return () => clearInterval(interval);
   }, [email, status]);
 
@@ -378,33 +383,43 @@ export default function ClientDashboard() {
           formData.append('docId', 'signed_agreement');
           formData.append('email', email);
           formData.append('clientName', onboardForm.company_name || onboardForm.client_name); 
-          await fetch('/api/vault/upload', { method: 'POST', body: formData });
+
+          // 🚀 FIX: Only proceed to mark the agreement as signed if the vault upload
+          // actually succeeded — otherwise the signed PDF could be lost silently.
+          const uploadRes = await fetch('/api/vault/upload', { method: 'POST', body: formData });
+          if (!uploadRes.ok) {
+              throw new Error('Failed to upload signed agreement to the vault.');
+          }
 
           const res = await fetch('/api/users/profile', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email, agreement_signed: true, status: 'active' })
+              body: JSON.stringify({ email, agreement_signed: true })
           });
-          
-          if(res.ok) {
-              const link = document.createElement('a');
-              link.href = URL.createObjectURL(blob);
-              link.download = "Telangana_Tenders_Agreement.pdf";
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
 
-              toast.success("Professional Legal Agreement PDF Generated & Downloaded!");
-              
-              setUserData(prev => ({...prev, agreement_signed: true}));
-              fetchClientData(email); 
+          if (!res.ok) {
+              throw new Error('Failed to update agreement status on profile.');
           }
-          setActiveTab('profile'); 
-              setIsEditingProfile(true);
-      } catch(err) {
+
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = "Telangana_Tenders_Agreement.pdf";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          toast.success("Professional Legal Agreement PDF Generated & Downloaded!");
+
+          setUserData(prev => ({ ...prev, agreement_signed: true }));
+          fetchClientData(email);
+
+          setActiveTab('profile');
+          setIsEditingProfile(true);
+      } catch (err) {
           console.error("PDF Generation Error:", err);
           toast.error("Network error saving agreement.");
+      } finally {
+          setSubmittingAgreement(false);
       }
-      setSubmittingAgreement(false);
   };
   // 🚀 FIX: Mandatory Profile Validation
   const submitOnboarding = async (e) => {
