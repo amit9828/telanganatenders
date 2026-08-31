@@ -9,10 +9,7 @@ let _client;
 async function getDb() {
   if (!_client) {
     if (!process.env.MONGO_URL) throw new Error('MONGO_URL missing in environment variables.');
-    _client = new MongoClient(process.env.MONGO_URL, {
-       useNewUrlParser: true,
-       useUnifiedTopology: true,
-    });
+    _client = new MongoClient(process.env.MONGO_URL);
     await _client.connect();
   }
   return _client.db(process.env.DB_NAME || 'tender_portal');
