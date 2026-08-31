@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -63,8 +63,10 @@ export default function App() {
   // Search & Filters
   const [uiYear, setUiYear] = useState(today.getFullYear());
   const [uiMonth, setUiMonth] = useState(today.getMonth() + 1);
-  const [appliedYear, setAppliedYear] = useState(today.getFullYear());
-  const [appliedMonth, setAppliedMonth] = useState(today.getMonth() + 1);
+  // 🚀 FIX: No default month/year filter — null means "fetch ALL active tenders" until the
+  // user explicitly clicks "Apply Filter" on the calendar.
+  const [appliedYear, setAppliedYear] = useState(null);
+  const [appliedMonth, setAppliedMonth] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
   const [appliedDay, setAppliedDay] = useState(null);
   
@@ -76,6 +78,11 @@ export default function App() {
   const [tenders, setTenders] = useState([]);
   const [calDays, setCalDays] = useState({});
   const [loading, setLoading] = useState(false);
+
+  // 🚀 Pagination (10 tenders per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const tendersListRef = useRef(null);
   
   const [email, setEmail] = useState('');
   const [paywallModal, setPaywallModal] = useState(false);
@@ -240,8 +247,12 @@ export default function App() {
       const params = new URLSearchParams();
       if (district !== 'all') params.set('district', district);
       if (category !== 'all') params.set('category', category);
-      params.set('month', String(appliedMonth)); 
-      params.set('year', String(appliedYear));
+      // 🚀 FIX: Only scope the fetch to a specific month/year when the user has explicitly
+      // applied a calendar filter. Otherwise fetch ALL active tenders.
+      if (appliedMonth && appliedYear) {
+        params.set('month', String(appliedMonth));
+        params.set('year', String(appliedYear));
+      }
       if (searchQ.trim()) {
         params.set('q', searchQ.trim());
         params.set('scope', 'all'); 
@@ -262,12 +273,30 @@ export default function App() {
   useEffect(() => { fetchTenders(); }, [appliedMonth, appliedYear, district, category, searchQ]);
   useEffect(() => { fetchCalendar(); }, [uiMonth, uiYear]);
 
+  // 🚀 FIX: Reset to page 1 whenever any filter is applied/cleared/changed, so the user
+  // never lands on a stale, out-of-range page.
+  useEffect(() => { setCurrentPage(1); }, [appliedMonth, appliedYear, appliedDay, district, category, searchQ]);
+
   const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders, today]);
   
   const filteredTenders = useMemo(() => {
     if (!appliedDay) return activeTenders; 
     return activeTenders.filter((t) => new Date(t.last_date).getDate() === appliedDay);
   }, [activeTenders, appliedDay]);
+
+  // 🚀 Pagination: slice filteredTenders into pages of `itemsPerPage`
+  const totalPages = Math.max(1, Math.ceil(filteredTenders.length / itemsPerPage));
+  const paginatedTenders = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredTenders.slice(start, start + itemsPerPage);
+  }, [filteredTenders, currentPage]);
+
+  const goToPage = (page) => {
+    const safePage = Math.min(Math.max(1, page), totalPages);
+    setCurrentPage(safePage);
+    // Smoothly scroll the user back to the top of the tenders list on page change
+    tendersListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const validDays = useMemo(() => {
     const daysInMonth = new Date(uiYear, uiMonth, 0).getDate();
@@ -687,10 +716,14 @@ export default function App() {
       </section>
 
       <main className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-3 space-y-6 w-full min-w-0">
+        <div className="lg:col-span-3 space-y-6 w-full min-w-0" ref={tendersListRef}>
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
-              {appliedDay ? `Closing on ${appliedDay} ${monthName(appliedMonth - 1)}` : `Active Tenders for ${monthName(appliedMonth - 1)}`}
+              {appliedDay
+                ? `Closing on ${appliedDay} ${monthName(appliedMonth - 1)}`
+                : (appliedMonth && appliedYear)
+                  ? `Active Tenders for ${monthName(appliedMonth - 1)}`
+                  : 'All Active Tenders'}
             </h3>
             <Badge variant="outline" className="bg-white font-bold">{filteredTenders.length} Results</Badge>
           </div>
@@ -703,28 +736,55 @@ export default function App() {
                 <h4 className="text-lg font-bold text-slate-600">No active tenders matched</h4>
              </Card>
           ) : (
-             <div className="grid gap-4 w-full">
-               {filteredTenders.map(t => (
-                 <Card key={t._id || t.id} className="hover:shadow-xl transition-all border-l-4 border-l-emerald-500 bg-white overflow-hidden">
-                   <CardContent className="p-5 flex flex-col sm:flex-row items-start gap-4">
-                     <div className="flex-1 min-w-0 w-full">
-                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                         <Badge className="bg-[#0A2647] font-semibold"><MapPin className="w-3 h-3 mr-1" />{t.district}</Badge>
-                         {t.category && <Badge variant="outline" className="text-xs bg-slate-50 font-semibold">{t.category}</Badge>}
-                         <span className="text-[11px] font-black text-red-600 bg-red-50 px-2 py-1 rounded flex items-center border border-red-100 uppercase">
-                           <Clock className="w-3 h-3 mr-1" /> Ends: {new Date(t.last_date).toDateString()}
-                         </span>
+             <>
+               <div className="grid gap-4 w-full">
+                 {paginatedTenders.map(t => (
+                   <Card key={t._id || t.id} className="hover:shadow-xl transition-all border-l-4 border-l-emerald-500 bg-white overflow-hidden">
+                     <CardContent className="p-5 flex flex-col sm:flex-row items-start gap-4">
+                       <div className="flex-1 min-w-0 w-full">
+                         <div className="flex flex-wrap items-center gap-2 mb-2">
+                           <Badge className="bg-[#0A2647] font-semibold"><MapPin className="w-3 h-3 mr-1" />{t.district}</Badge>
+                           {t.category && <Badge variant="outline" className="text-xs bg-slate-50 font-semibold">{t.category}</Badge>}
+                           <span className="text-[11px] font-black text-red-600 bg-red-50 px-2 py-1 rounded flex items-center border border-red-100 uppercase">
+                             <Clock className="w-3 h-3 mr-1" /> Ends: {new Date(t.last_date).toDateString()}
+                           </span>
+                         </div>
+                         <h4 className="font-bold text-slate-800 text-lg mb-1 leading-snug line-clamp-2">{t.title}</h4>
+                         <p className="text-sm text-slate-500 flex items-center gap-1 font-semibold"><Building2 className="w-4 h-4 text-slate-400" /> {t.department}</p>
                        </div>
-                       <h4 className="font-bold text-slate-800 text-lg mb-1 leading-snug line-clamp-2">{t.title}</h4>
-                       <p className="text-sm text-slate-500 flex items-center gap-1 font-semibold"><Building2 className="w-4 h-4 text-slate-400" /> {t.department}</p>
-                     </div>
-                     <Button onClick={() => tryUnlockPDF(t)} className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white shrink-0 w-full sm:w-auto h-11 shadow-md font-bold">
-                       <FileText className="w-4 h-4 mr-2" /> View PDF
-                     </Button>
-                   </CardContent>
-                 </Card>
-               ))}
-             </div>
+                       <Button onClick={() => tryUnlockPDF(t)} className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white shrink-0 w-full sm:w-auto h-11 shadow-md font-bold">
+                         <FileText className="w-4 h-4 mr-2" /> View PDF
+                       </Button>
+                     </CardContent>
+                   </Card>
+                 ))}
+               </div>
+
+               {/* 🚀 Pagination Controls (10 per page) */}
+               {totalPages > 1 && (
+                 <div className="flex items-center justify-center gap-4 pt-4">
+                   <Button
+                     variant="outline"
+                     onClick={() => goToPage(currentPage - 1)}
+                     disabled={currentPage === 1}
+                     className="border-2 font-bold text-slate-600 disabled:opacity-40"
+                   >
+                     <ChevronLeft className="w-4 h-4 mr-1" /> Previous
+                   </Button>
+                   <span className="text-sm font-black text-[#0A2647] whitespace-nowrap">
+                     Page {currentPage} of {totalPages}
+                   </span>
+                   <Button
+                     variant="outline"
+                     onClick={() => goToPage(currentPage + 1)}
+                     disabled={currentPage === totalPages}
+                     className="border-2 font-bold text-slate-600 disabled:opacity-40"
+                   >
+                     Next <ChevronRight className="w-4 h-4 ml-1" />
+                   </Button>
+                 </div>
+               )}
+             </>
           )}
         </div>
 
@@ -760,16 +820,18 @@ export default function App() {
               </div>
               <div className="mt-3 flex gap-2 w-full">
                  <Button onClick={() => {
+                    // 🚀 Explicit "Apply Filter" click — now the fetch/UI is scoped to this month/day
                     setAppliedMonth(uiMonth);
                     setAppliedYear(uiYear);
                     setAppliedDay(selectedDay);
                  }} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-9">Apply Filter</Button>
                  
                  <Button onClick={() => { 
+                    // 🚀 "Clear" resets everything back to showing ALL active tenders
                     setSelectedDay(null); 
                     setAppliedDay(null); 
-                    setAppliedMonth(uiMonth);
-                    setAppliedYear(uiYear);
+                    setAppliedMonth(null);
+                    setAppliedYear(null);
                  }} variant="outline" className="flex-1 border-2 border-slate-200 h-9 font-bold text-slate-600">Clear</Button>
               </div>
             </CardContent>
