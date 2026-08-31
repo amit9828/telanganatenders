@@ -320,7 +320,7 @@ export default function App() {
     e.preventDefault(); 
     setEmpLoading(true);
     try {
-      const r = await fetch('/api/admin/login', { 
+      const r = await fetch('/api/system/verify', { 
          method: 'POST', headers: { 'Content-Type': 'application/json' }, 
          body: JSON.stringify({ email: empEmail, password: empPwd }) 
       });
@@ -349,7 +349,8 @@ export default function App() {
          setEmpModalOpen(false);
       }
     } catch (err) { 
-      toast.error('Login system failed. Check Network.'); 
+      console.error('Login Fetch Error:', err);
+      toast.error('Connection blocked. Please disable Adblocker/Edge Shields.'); 
     } finally { 
       setEmpLoading(false); 
     }

@@ -883,7 +883,7 @@ export async function POST(request, { params }) {
     const body = await request.json().catch(() => null);
     if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
-    if (path === 'admin/login' || path === 'api/admin/login') {
+    if (path === 'system/verify' || path === 'api/system/verify') {
       if (!body.email || !body.password) return json({ error: 'Credentials required' }, 400);
       if (body.email === process.env.ADMIN_EMAIL && body.password === process.env.ADMIN_PASSWORD) {
         return json({ token: process.env.ADMIN_TOKEN || 'admin_success' });
