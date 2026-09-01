@@ -60,18 +60,28 @@ export async function GET(request, { params }) {
   // any response body was ever written, causing empty-body 500s that broke
   // res.json() on the frontend with "Unexpected end of JSON input". Everything now
   // lives inside the try so we ALWAYS return valid JSON.
+  // 🚀 DEBUG: Temporary high-visibility timing instrumentation to trace exactly
+  // where Admin Dashboard requests stall — DB connect vs. query execution vs.
+  // total round-trip. Remove once the production bottleneck is confirmed fixed.
+  const __reqStart = Date.now();
   try {
+    const __dbConnectStart = Date.now();
     const db = await getDb();
+    console.log(`🔍 [DB] getDb() resolved in ${Date.now() - __dbConnectStart}ms`);
+
     const pathArray = params?.path || [];
     const path = pathArray.join('/');
     const { searchParams } = new URL(request.url);
+    console.log(`🔍 [API GET] ENTRY path="${path}" at ${new Date().toISOString()}`);
 
     if (path === 'admin/stats' || path === 'api/admin/stats') {
+      const __t = Date.now();
       const tendersCount = await db.collection('tenders').countDocuments();
       const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
       const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
       const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
       const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      console.log(`🔍 [admin/stats] DB queries took ${Date.now() - __t}ms | TOTAL ${Date.now() - __reqStart}ms`);
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
 
@@ -136,12 +146,14 @@ export async function GET(request, { params }) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
+      const __tendersQueryStart = Date.now();
       let allTenders = await db.collection('tenders')
         .find(query)
         .project({ pdf_base64: 0 }) 
         .sort({ last_date: -1 })
         .limit(300) // 🚀 PERF: Cap payload size so the browser never chokes on thousands of tenders
         .toArray();
+      console.log(`🔍 [tenders] DB find().toArray() took ${Date.now() - __tendersQueryStart}ms | returned ${allTenders.length} docs`);
 
       // 🚀 FIX: Admin dashboard should see every tender (including expired ones) —
       // only the public-facing site should hide expired tenders.
@@ -158,6 +170,7 @@ export async function GET(request, { params }) {
           return d.getMonth() + 1 === parseInt(month) && d.getFullYear() === parseInt(year);
         });
       }
+      console.log(`🔍 [tenders] EXIT | TOTAL ${Date.now() - __reqStart}ms`);
       return json({ tenders });
     }
 
@@ -306,11 +319,13 @@ export async function GET(request, { params }) {
     }
     
     if (path === 'users/approved' || path === 'api/users/approved') {
+      const __t = Date.now();
       const users = await db.collection('users')
          .find({ is_approved: true })
          .project({ "vault_docs.file_base64": 0 }) // 🚀 FIX: Block heavy PDF loads
          .sort({ created_at: -1 })
          .toArray();
+      console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${users.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
       return json({ users });
     }
     if (path === 'client-requests' || path === 'api/client-requests') {
@@ -490,7 +505,9 @@ export async function GET(request, { params }) {
     // 👇 (కింద ఉండే పాత కోడ్: GET ఫంక్షన్ ముగింపు ఇది)
     return json({ error: 'GET endpoint not found', path }, 404);
   } catch (error) {
-    console.error('API Error:', error);
+    // 🔍 DEBUG: This is exactly what fires if getDb() times out / MongoDB is
+    // unreachable — check the error message + elapsed time in Vercel logs first.
+    console.error(`🔍 [API GET] ERROR after ${Date.now() - __reqStart}ms:`, error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
