@@ -1,20 +1,8 @@
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getDb } from '@/lib/db';
 
 export const maxDuration = 60; // 🚀 FIX: Prevents Vercel 504 Timeout for AI
-
-let cachedClient = null;
-let cachedDb = null;
-
-async function getDb() {
-  if (cachedDb) return cachedDb;
-  if (!process.env.MONGO_URL) throw new Error("MONGO_URL is missing in Vercel Environment Variables");
-  const client = await MongoClient.connect(process.env.MONGO_URL);
-  cachedClient = client;
-  cachedDb = client.db(process.env.DB_NAME || 'tender_portal');
-  return cachedDb;
-}
 
 export async function POST(request) {
   try {
@@ -63,7 +51,10 @@ export async function POST(request) {
     if (saveToDraft) {
         try {
             const db = await getDb();
-            const existing = await db.collection('ai_draft_tenders').findOne({ bid_no: parsedData.bid_no });
+            const existing = await db.collection('ai_draft_tenders').findOne(
+                { bid_no: parsedData.bid_no },
+                { projection: { _id: 1 } }
+            );
             if (existing && parsedData.bid_no !== "N/A") {
                 return NextResponse.json({ error: 'Already exists in drafts' }, { status: 409 });
             }

@@ -1,19 +1,8 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials'; 
-import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
-
-// 🚀 SERVERLESS MONGODB CONNECTION POOLING
-let _client;
-async function getDb() {
-  if (!_client) {
-    if (!process.env.MONGO_URL) throw new Error('MONGO_URL missing in environment variables.');
-    _client = new MongoClient(process.env.MONGO_URL);
-    await _client.connect();
-  }
-  return _client.db(process.env.DB_NAME || 'tender_portal');
-}
+import { getDb } from '@/lib/db';
 
 const handler = NextAuth({
   providers: [

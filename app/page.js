@@ -394,7 +394,8 @@ export default function App() {
        
        let hasAccess = false;
        if (d.subscription && d.subscription.status === 'active') hasAccess = true;
-       if (d.purchases && d.purchases.includes(t._id || t.id)) hasAccess = true;
+       const tenderId = String(t._id || t.id);
+       if (Array.isArray(d.unlocked_tenders) && d.unlocked_tenders.some((u) => String(u.id || u._id) === tenderId)) hasAccess = true;
 
        if (hasAccess) {
           toast.success('Access Granted!', { id: toastId });

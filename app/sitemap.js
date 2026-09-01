@@ -1,4 +1,4 @@
-import { MongoClient } from 'mongodb';
+import { getDb } from '@/lib/db';
 
 export default async function sitemap() {
   const baseUrl = 'https://www.tgtenders.in';
@@ -20,12 +20,12 @@ export default async function sitemap() {
     }
 
     // 2. Fetch Active Tenders from Database (Dynamic Routes)
-    const client = await MongoClient.connect(process.env.MONGO_URL);
-    const db = client.db(process.env.DB_NAME || 'tender_portal');
+    const db = await getDb();
     
     // Fetching latest 1000 tenders to keep sitemap fast and efficient
     const tenders = await db.collection('tenders')
       .find({})
+      .project({ _id: 1, created_at: 1 })
       .sort({ _id: -1 })
       .limit(1000)
       .toArray();
@@ -36,9 +36,6 @@ export default async function sitemap() {
       changeFrequency: 'daily',
       priority: 0.9,
     }));
-
-    // Close DB connection
-    await client.close();
 
     // 3. Return combined routes to Next.js
     return [...staticRoutes, ...dynamicRoutes];

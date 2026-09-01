@@ -1401,24 +1401,16 @@ const handleViewDocument = (req) => {
                                            )}
                                            
                                            {/* 🚀 FIX: అటాచ్ చేసిన PDF ని వ్యూ చేసే ఆప్షన్ */}
-                                           {task.file_base64 && (
+                                           {task.file_name && (
                                               <Button size="sm" variant="outline" onClick={() => {
-                                                  const byteCharacters = atob(task.file_base64);
-                                                  const byteNumbers = new Array(byteCharacters.length);
-                                                  for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                                  const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-                                                  window.open(URL.createObjectURL(blob), '_blank');
+                                                  window.open(`/api/dispatches/${task._id || task.id}/file`, '_blank');
                                               }} className="mt-2 h-7 text-[10px] text-blue-600 border-blue-200 bg-white w-fit">
                                                  <FileText className="w-3 h-3 mr-1"/> View Attached PDF
                                               </Button>
                                            )}
-                                           {task.file_base64 && (
+                                           {task.file_name && (
                                               <Button size="sm" variant="outline" onClick={() => {
-                                                  const byteCharacters = atob(task.file_base64);
-                                                  const byteNumbers = new Array(byteCharacters.length);
-                                                  for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                                  const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-                                                  window.open(URL.createObjectURL(blob), '_blank');
+                                                  window.open(`/api/dispatches/${task._id || task.id}/file`, '_blank');
                                               }} className="mt-2 h-7 text-[10px] text-blue-600 border-blue-200 bg-white w-fit">
                                                  <FileText className="w-3 h-3 mr-1"/> View Attached PDF
                                               </Button>

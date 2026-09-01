@@ -1464,16 +1464,7 @@ return (
                                           <p className="text-xs text-emerald-900 font-medium">"{q.reply_text}"</p>
                                           {q.reply_file && (
                                              <Button size="sm" variant="outline" onClick={() => {
-                                                 const doc = client.vault_docs?.find(d => d.id === `query_response_${q.id}`);
-                                                 if (doc && doc.file_base64) {
-                                                     const byteCharacters = atob(doc.file_base64);
-                                                     const byteNumbers = new Array(byteCharacters.length);
-                                                     for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                                     const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-                                                     window.open(URL.createObjectURL(blob), '_blank');
-                                                 } else {
-                                                     toast.error("Document not found in vault.");
-                                                 }
+                                                 window.open(`/api/vault/document?email=${encodeURIComponent(client.email)}&docId=${encodeURIComponent(`query_response_${q.id}`)}`, '_blank');
                                              }} className="mt-2 h-7 text-[10px] border-emerald-300 text-emerald-700 bg-white w-fit">
                                                 <FileText className="w-3 h-3 mr-1"/> View Attached File
                                              </Button>
@@ -1691,11 +1682,7 @@ return (
                                     <p className="text-[9px] text-slate-400 mt-0.5">Uploaded: {new Date(doc.created_at).toLocaleDateString()}</p>
                                  </div>
                                  <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-blue-500 hover:bg-blue-50" onClick={() => {
-                                     const byteCharacters = atob(doc.file_base64);
-                                     const byteNumbers = new Array(byteCharacters.length);
-                                     for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                     const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-                                     window.open(URL.createObjectURL(blob), '_blank');
+                                     window.open(`/api/operator/docs/${doc._id}/file`, '_blank');
                                  }}><Eye className="w-3.5 h-3.5"/></Button>
                               </div>
                               <div className="border-t border-slate-100 pt-3 mt-auto">
@@ -1885,14 +1872,7 @@ return (
                        <Badge className={`mt-2 ${doc.status === 'verified' ? 'bg-emerald-100 text-emerald-800' : doc.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'} border-0`}>{doc.status}</Badge>
                     </div>
                     <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50 mb-2" onClick={() => {
-                        if (doc.file_base64) {
-                            const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
-                            const byteCharacters = atob(cleanBase64);
-                            const byteNumbers = new Array(byteCharacters.length);
-                            for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                            const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-                            window.open(URL.createObjectURL(blob), '_blank');
-                        } else { toast.error("File is corrupted or not a valid PDF."); }
+                        window.open(`/api/vault/document?email=${encodeURIComponent(viewClientDocs.email)}&docId=${encodeURIComponent(doc.id)}`, '_blank');
                     }}>
                        <Eye className="w-4 h-4 mr-2"/> View Document
                     </Button>
