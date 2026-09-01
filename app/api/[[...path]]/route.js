@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis'; // 🚀 Google Drive Integration
-import { getDb } from '@/lib/db';
+import { getDb, markHostUnhealthy, forceReconnect } from '@/lib/db';
 import { uploadTenderPDF } from '@/lib/cloudflare-r2';
 // 🚀 SECURITY: Cashfree (Order/Verify/Webhook) + Offline Ledger logic now lives in
 // app/api/payments/route.js. Only thin delegating calls remain below.
@@ -63,6 +63,20 @@ export async function OPTIONS(request) {
 function isTransientDbError(error) {
   const text = `${error?.name || ''} ${error?.message || ''}`;
   return /timed out|ETIMEDOUT|ECONNRESET|ReplicaSetNoPrimary|MongoNetworkTimeoutError|MongoServerSelectionError|topology was destroyed/i.test(text);
+}
+
+// 🚀 The driver sometimes exposes the specific failing member directly as
+// `error.address` / `error.cause.address` (e.g. "ac-htm8mso-shard-00-02...:27017"),
+// and otherwise it's only mentioned inside the message text as a bare IP
+// (e.g. "connection 6 to 159.41.205.74:27017 timed out", or the IPv6/NAT64
+// form "[64:ff9b::9f29:cd4a]:27017"). Try both so `markHostUnhealthy` has a
+// real target to blacklist for the retry.
+function extractFailingHost(error) {
+  const direct = error?.address || error?.cause?.address;
+  if (direct) return direct;
+  const text = `${error?.message || ''} ${error?.cause?.message || ''}`;
+  const match = text.match(/to\s+\[?([0-9a-fA-F:.]+?)\]?:\d+\s+timed out/i);
+  return match ? match[1] : null;
 }
 
 async function handleGET(request, { params }, attempt = 1) {
@@ -521,7 +535,15 @@ async function handleGET(request, { params }, attempt = 1) {
     console.error(`🔍 [API GET] ERROR after ${Date.now() - __reqStart}ms:`, error);
 
     if (isTransientDbError(error) && attempt < 2) {
-      console.warn(`🔍 [API GET] Transient DB error, retrying once (attempt ${attempt + 1})...`);
+      const badHost = extractFailingHost(error);
+      if (badHost) {
+        // 🚀 Exclude the specific node that just failed from the next
+        // connection attempt entirely, instead of blindly retrying and
+        // risking landing on the same broken member again.
+        markHostUnhealthy(badHost);
+        forceReconnect();
+      }
+      console.warn(`🔍 [API GET] Transient DB error${badHost ? ` (bad host: ${badHost})` : ''}, retrying once (attempt ${attempt + 1})...`);
       await new Promise((resolve) => setTimeout(resolve, 400));
       return handleGET(request, { params }, attempt + 1);
     }
