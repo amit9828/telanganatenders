@@ -111,6 +111,8 @@ export default function AdminPage() {
 
   // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
+  const [bulkDragActive, setBulkDragActive] = useState(false);
+  const [bulkFileCount, setBulkFileCount] = useState(0);
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -438,57 +440,77 @@ export default function AdminPage() {
        if(res.ok) { toast.success("Ticket deleted"); refresh(); } else toast.error("Failed to delete");
     } catch(e) { toast.error("Network error"); }
   };
-  // 🚀 MD Bulk AI Upload Function
-  const handleBulkAIUpload = async (e) => {
-      const files = Array.from(e.target.files);
+  // 🚀 MD Bulk AI Upload — sends the raw PDFs as multipart/form-data to the bulk
+  // pipeline, which stores each document in Cloudflare R2 and keeps only the extracted
+  // JSON + R2 pointers in MongoDB. (The previous version base64-encoded every file into
+  // a JSON body, which bloated MongoDB and made large batches time out.)
+  const processBulkFiles = async (fileList) => {
+      const files = Array.from(fileList || []);
       if (files.length === 0) return;
 
-      const validFiles = files.filter(f => f.type === 'application/pdf');
-      if (validFiles.length === 0) return toast.error("Only PDF files are allowed.");
+      const validFiles = files.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+      const rejectedCount = files.length - validFiles.length;
+      if (validFiles.length === 0) return toast.error('Only PDF files are allowed.');
+      if (rejectedCount > 0) toast.warning(`${rejectedCount} non-PDF file(s) were skipped.`);
 
       setAnalyzingFiles(true);
-      let successCount = 0;
-      let failCount = 0;
+      setBulkFileCount(validFiles.length);
 
-      for (let i = 0; i < validFiles.length; i++) {
-          const file = validFiles[i];
-          toast.info(`AI is analyzing ${i + 1}/${validFiles.length}: ${file.name}...`, { duration: 3000 });
-          
-          try {
-              const reader = new FileReader();
-              const base64Data = await new Promise((resolve) => {
-                  reader.onload = () => resolve(reader.result.toString().split(',')[1]);
-                  reader.readAsDataURL(file);
-              });
+      try {
+          const formData = new FormData();
+          validFiles.forEach(file => formData.append('files', file));
+          formData.append('uploadedBy', 'MD Admin');
 
-              const res = await fetch('/api/ai/analyze', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ 
-                      pdfBase64: base64Data, 
-                      fileName: file.name,
-                      mimeType: 'application/pdf',
-                      uploadedBy: 'MD Admin',
-                      saveToDraft: true
-                  })
-              });
+          const res = await fetch('/api/ai/bulk-upload', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+              body: formData,
+          });
 
-              if (res.ok) {
-                  successCount++;
-              } else {
-                  if(res.status === 409) {
-                      toast.warning(`Skipped ${file.name}: Already exists in drafts.`);
-                  } else {
-                      failCount++;
-                  }
-              }
-          } catch (error) {
-              failCount++;
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+              toast.error(data?.error || `Bulk upload failed (${res.status})`, { duration: 9000 });
+              return;
           }
-      }
 
-      toast.success(`Analysis Complete! ${successCount} saved to Employee Drafts. ${failCount} failed.`);
-      setAnalyzingFiles(false);
+          const { saved = 0, duplicates = 0, failed = 0 } = data?.summary || {};
+
+          if (saved > 0) {
+              toast.success(`${saved} tender(s) sent to the employee review queue.`);
+          }
+          if (duplicates > 0) {
+              toast.warning(`${duplicates} file(s) skipped — already in drafts or already live.`);
+          }
+          if (failed > 0) {
+              const firstError = (data?.results || []).find(r => r.status === 'failed');
+              toast.error(
+                  `${failed} file(s) failed${firstError ? `: ${firstError.fileName} — ${firstError.error}` : '.'}`,
+                  { duration: 9000 }
+              );
+          }
+          if (saved === 0 && duplicates === 0 && failed === 0) {
+              toast.info('No files were processed.');
+          }
+      } catch (error) {
+          console.error('Bulk upload error:', error);
+          toast.error('Network error while uploading. Please try again.');
+      } finally {
+          setAnalyzingFiles(false);
+          setBulkFileCount(0);
+      }
+  };
+
+  const handleBulkAIUpload = async (e) => {
+      await processBulkFiles(e.target.files);
+      e.target.value = ''; // allow re-selecting the same file after a failure
+  };
+
+  const handleBulkDrop = async (e) => {
+      e.preventDefault();
+      setBulkDragActive(false);
+      if (analyzingFiles) return;
+      await processBulkFiles(e.dataTransfer?.files);
   };
   const handleProcessBidRequest = async (reqId, status) => {
     const reply = bidReply[reqId];
@@ -1524,21 +1546,37 @@ const handleViewDocument = (req) => {
             <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mb-6">
                <CardHeader className="bg-purple-50/50 border-b pb-4">
                   <CardTitle className="text-purple-900 flex items-center gap-2"><UploadCloud className="w-5 h-5 text-purple-600"/> Bulk AI Tender Dropzone</CardTitle>
-                  <CardDescription>Drop multiple tender PDFs here. AI will extract data and send them to the Employee's Pending Drafts.</CardDescription>
+                  <CardDescription>Drag &amp; drop multiple tender PDFs. Each document is stored securely in Cloudflare R2, read by AI, and queued for employee review before going live.</CardDescription>
                </CardHeader>
                <CardContent className="pt-6">
-                  <label className={`border-2 border-dashed border-purple-300 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition ${analyzingFiles ? 'bg-purple-100 animate-pulse' : 'bg-purple-50 hover:bg-purple-100'}`}>
+                  <label
+                     onDragOver={(e) => { e.preventDefault(); if (!analyzingFiles) setBulkDragActive(true); }}
+                     onDragLeave={(e) => { e.preventDefault(); setBulkDragActive(false); }}
+                     onDrop={handleBulkDrop}
+                     className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center transition-colors ${
+                        analyzingFiles
+                           ? 'border-purple-300 bg-purple-100 cursor-wait'
+                           : bulkDragActive
+                              ? 'border-purple-600 bg-purple-100 cursor-copy ring-2 ring-purple-300'
+                              : 'border-purple-300 bg-purple-50 hover:bg-purple-100 cursor-pointer'
+                     }`}
+                  >
                      <input type="file" accept="application/pdf" multiple onChange={handleBulkAIUpload} disabled={analyzingFiles} className="hidden"/>
                      {analyzingFiles ? (
                         <>
-                           <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-3" />
-                           <span className="text-sm font-bold text-purple-800">AI is analyzing files... Please wait.</span>
+                           <Loader2 className="w-9 h-9 text-purple-600 animate-spin mb-3" />
+                           <span className="text-sm font-bold text-purple-900">
+                              Uploading &amp; extracting {bulkFileCount > 0 ? `${bulkFileCount} document${bulkFileCount > 1 ? 's' : ''}` : 'documents'}...
+                           </span>
+                           <span className="text-xs text-purple-600 mt-1">This can take up to a minute. Please keep this tab open.</span>
                         </>
                      ) : (
                         <>
-                           <UploadCloud className="w-10 h-10 text-purple-500 mb-3" />
-                           <span className="text-base font-bold text-purple-900">Click to Select Multiple PDF Files</span>
-                           <span className="text-xs text-purple-600 mt-1">AI will process them one by one.</span>
+                           <UploadCloud className={`w-11 h-11 mb-3 transition-colors ${bulkDragActive ? 'text-purple-700' : 'text-purple-500'}`} />
+                           <span className="text-base font-bold text-purple-900">
+                              {bulkDragActive ? 'Release to upload' : 'Drag & drop PDFs here'}
+                           </span>
+                           <span className="text-xs text-purple-600 mt-1">or click to browse — up to 25 files, 15MB each</span>
                         </>
                      )}
                   </label>
