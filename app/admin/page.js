@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
+import GemCoPilot from '@/components/GemCoPilot';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -1864,6 +1865,13 @@ const handleViewDocument = (req) => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* 🚀 GeM AI Co-Pilot — context-aware: while a tender is open for editing, the
+            chat is silently scoped to that tender instead of the general GeM rulebook. */}
+        <GemCoPilot
+          tenderId={isEditingTender || null}
+          tenderLabel={isEditingTender ? (form.title || form.bid_no || 'this tender') : null}
+        />
       </main>
     </div>
   );

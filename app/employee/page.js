@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
+import GemCoPilot from '@/components/GemCoPilot';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -2176,6 +2177,14 @@ return (
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* 🚀 GeM AI Co-Pilot — context-aware: while a live tender is open for editing the
+          chat is scoped to that tender. Drafts are deliberately excluded, since they are
+          not yet in the `tenders` collection the chat API reads from. */}
+      <GemCoPilot
+        tenderId={isEditingTender || null}
+        tenderLabel={isEditingTender ? (tenderForm.title || tenderForm.bid_no || 'this tender') : null}
+      />
     </div>
   );
 }
