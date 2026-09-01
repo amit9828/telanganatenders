@@ -101,11 +101,23 @@ async function handleGET(request, { params }, attempt = 1) {
 
     if (path === 'admin/stats' || path === 'api/admin/stats') {
       const __t = Date.now();
-      const tendersCount = await db.collection('tenders').countDocuments();
-      const usersCount = await db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true });
-      const paymentsCount = await db.collection('payments').countDocuments({ status: 'SUCCESS' });
-      const successfulPayments = await db.collection('payments').find({ status: 'SUCCESS' }).toArray();
-      const totalRevenue = successfulPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      // 🚀 PERF FIX: Revenue previously fetched every successful payment document
+      // just to sum one field in JS. A $group/$sum aggregation does that sum
+      // inside MongoDB itself and returns a single number — no document bodies
+      // ever cross the network. $convert (with onError/onNull → 0) mirrors the
+      // old `Number(p.amount) || 0` defensive fallback in case `amount` was ever
+      // stored as a non-numeric string. These four independent queries also now
+      // run in parallel instead of sequentially.
+      const [tendersCount, usersCount, paymentsCount, revenueAgg] = await Promise.all([
+        db.collection('tenders').countDocuments(),
+        db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true }),
+        db.collection('payments').countDocuments({ status: 'SUCCESS' }),
+        db.collection('payments').aggregate([
+          { $match: { status: 'SUCCESS' } },
+          { $group: { _id: null, total: { $sum: { $convert: { input: '$amount', to: 'double', onError: 0, onNull: 0 } } } } },
+        ]).toArray(),
+      ]);
+      const totalRevenue = revenueAgg[0]?.total || 0;
       console.log(`🔍 [admin/stats] DB queries took ${Date.now() - __t}ms | TOTAL ${Date.now() - __reqStart}ms`);
       return json({ tenders: tendersCount, users: usersCount, payments: paymentsCount, revenue: totalRevenue });
     }
@@ -227,17 +239,29 @@ async function handleGET(request, { params }, attempt = 1) {
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
       const month = parseInt(searchParams.get('month'));
       const year = parseInt(searchParams.get('year'));
-      const tenders = await db.collection('tenders').find({}).project({ pdf_base64: 0 }).toArray();
+
+      // 🚀 PERF FIX: `last_date` is stored as a zero-padded ISO date string
+      // (e.g. "2026-09-01"), which sorts identically to a real date lexically.
+      // Filtering to the target month directly in the query — instead of
+      // pulling every tender in the entire collection and checking each one in
+      // JS — lets MongoDB do the filtering, so this stops scaling linearly with
+      // total tenders as the collection grows.
+      const rangeStart = `${year}-${String(month).padStart(2, '0')}-01`;
+      const nextMonth = month === 12 ? 1 : month + 1;
+      const nextYear = month === 12 ? year + 1 : year;
+      const rangeEnd = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+
+      const tenders = await db.collection('tenders')
+        .find({ last_date: { $gte: rangeStart, $lt: rangeEnd } })
+        .project({ pdf_base64: 0 })
+        .toArray();
+
       const days = {};
       tenders.forEach(t => {
-        if (t.last_date) {
-          const d = new Date(t.last_date);
-          if (d.getMonth() + 1 === month && d.getFullYear() === year) {
-            const day = d.getDate();
-            if (!days[day]) days[day] = [];
-            days[day].push(t);
-          }
-        }
+        const d = new Date(t.last_date);
+        const day = d.getDate();
+        if (!days[day]) days[day] = [];
+        days[day].push(t);
       });
       return json({ days });
     }
@@ -420,33 +444,36 @@ async function handleGET(request, { params }, attempt = 1) {
       );
       if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [], profile: null, is_approved: false });
 
-      let unlocked_tenders = [];
-      if (user.purchases && user.purchases.length > 0) {
-        const objectIds = user.purchases.map(id => {
-          try { return new ObjectId(id); } catch(e) { return id; }
-        });
-        
-        const tendersData = await db.collection('tenders')
-          .find({ _id: { $in: objectIds } })
-          .project({ title: 1, department: 1, district: 1 })
-          .toArray();
-        
-        unlocked_tenders = tendersData.map(t => ({
-          id: t._id.toString(),
-          title: t.title,
-          department: t.department,
-          district: t.district
-        }));
-      }
+      // 🚀 PERF FIX: These five lookups are all independent of each other (none
+      // depends on another's result) but were previously awaited one-at-a-time,
+      // stacking up their round-trip latencies serially. Running them through a
+      // single Promise.all lets them execute concurrently instead.
+      const purchaseObjectIds = (user.purchases && user.purchases.length > 0)
+        ? user.purchases.map(id => { try { return new ObjectId(id); } catch (e) { return id; } })
+        : null;
 
-      const payments = await db.collection('payments')
-        .find({ email: email.toLowerCase(), status: 'SUCCESS' })
-        .sort({ paid_at: -1 })
-        .toArray();
+      const [tendersData, payments, custom_requests, active_bids, action_alerts] = await Promise.all([
+        purchaseObjectIds
+          ? db.collection('tenders')
+              .find({ _id: { $in: purchaseObjectIds } })
+              .project({ title: 1, department: 1, district: 1 })
+              .toArray()
+          : Promise.resolve([]),
+        db.collection('payments')
+          .find({ email: email.toLowerCase(), status: 'SUCCESS' })
+          .sort({ paid_at: -1 })
+          .toArray(),
+        db.collection('client_requests').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray(),
+        db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray(),
+        db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray(),
+      ]);
 
-      const custom_requests = await db.collection('client_requests').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
-      const active_bids = await db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray();
-      const action_alerts = await db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray();
+      const unlocked_tenders = tendersData.map(t => ({
+        id: t._id.toString(),
+        title: t.title,
+        department: t.department,
+        district: t.district
+      }));
 
        // 🚀 FIX: Calculate Contract Values and add to Total Revenue
        const won_bids = active_bids.filter(b => b.status === 'Won');
@@ -499,9 +526,15 @@ async function handleGET(request, { params }, attempt = 1) {
     }
     // 🚀 FIX: Live Tracking GET route for Admin Dashboard
     if (path === 'payments/requests' || path === 'api/payments/requests') {
-       const usersWithPayments = await db.collection('users').find({
-           pending_payments: { $exists: true, $not: { $size: 0 } }
-       }).toArray();
+       // 🚀 PERF FIX: `users` documents average ~1.5MB (embedded vault_docs/
+       // officer_queries base64 attachments). This endpoint only ever reads
+       // `email` + `pending_payments`, so an inclusion projection fetches just
+       // those two fields instead of dragging every user's full profile
+       // (PDFs included) across the network on every poll.
+       const usersWithPayments = await db.collection('users').find(
+           { pending_payments: { $exists: true, $not: { $size: 0 } } },
+           { projection: { email: 1, pending_payments: 1 } }
+       ).toArray();
 
        let allRequests = [];
        usersWithPayments.forEach(user => {

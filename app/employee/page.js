@@ -117,14 +117,25 @@ export default function EmployeeDashboard() {
     };
     
     syncEmployeeData(); // ఫస్ట్ టైమ్ కాల్
-    const interval = setInterval(syncEmployeeData, 10000); // 10 సెకన్లకు ఒకసారి లైవ్ ట్రాకింగ్
+    // 🚀 PERF FIX: Poll every 60s (not 10s) and only while this tab is visible —
+    // matches the same guard already used in Admin/Client dashboards, so an
+    // employee tab left open/minimized in the background stops silently
+    // generating 12 DB-touching requests every 10 seconds all day.
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncEmployeeData();
+      }
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
   const fetchLiveOperationsData = async (userEmail) => {
     try {
-      // 🚀 FIX: t=Date.now()
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes] = await Promise.all([
+      // 🚀 PERF FIX: All 12 endpoints now fire in a single Promise.all instead of
+      // 10 in parallel + 2 more awaited sequentially afterward — eliminates the
+      // extra round-trip latency the sequential `operator/docs`/`ai/drafts`
+      // calls were adding on top of the already-parallel batch.
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, opDocsRes, draftsRes] = await Promise.all([
         fetch(`/api/dispatches?t=${Date.now()}`), 
         fetch(`/api/bids?t=${Date.now()}`), 
         fetch(`/api/gov-officers?t=${Date.now()}`),
@@ -134,18 +145,17 @@ export default function EmployeeDashboard() {
         fetch(`/api/users/pending?t=${Date.now()}`),
         fetch(`/api/client-requests?t=${Date.now()}`),
         fetch(`/api/guest-queries?t=${Date.now()}`),
-        fetch(`/api/employees?t=${Date.now()}`)
+        fetch(`/api/employees?t=${Date.now()}`),
+        fetch(`/api/operator/docs?t=${Date.now()}`),
+        fetch(`/api/ai/drafts?t=${Date.now()}`)
       ]);
-       // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
-      const opDocsRes = await fetch(`/api/operator/docs?t=${Date.now()}`);
+
       if (opDocsRes.ok) {
          const opData = await opDocsRes.json();
          setOperatorDocs(opData.docs || []);
       }
 
-      // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
-      const draftsRes = await fetch(`/api/ai/drafts?t=${Date.now()}`);
-      if(draftsRes.ok) {
+      if (draftsRes.ok) {
          const dData = await draftsRes.json();
          setAiDrafts(dData.drafts || []);
       }
