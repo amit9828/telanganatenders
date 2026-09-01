@@ -215,8 +215,13 @@ async function handleGET(request, { params }, attempt = 1) {
     if (path === 'vault/document' || path === 'api/vault/document') {
       const email = searchParams.get('email');
       const docId = searchParams.get('docId');
-      const user = await db.collection('users').findOne({ email: email.toLowerCase() });
-      const doc = user?.vault_docs?.find(d => d.id === docId);
+      if (!email || !docId) return json({ error: 'Missing email or docId' }, 400);
+
+      const user = await db.collection('users').findOne(
+        { email: email.toLowerCase() },
+        { projection: { vault_docs: { $elemMatch: { id: docId } } } }
+      );
+      const doc = user?.vault_docs?.[0];
       
       if (doc && doc.file_base64) {
           try {
@@ -287,7 +292,10 @@ async function handleGET(request, { params }, attempt = 1) {
 
       if (!email) return json({ error: 'Email required' }, 400);
 
-      const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+      const user = await db.collection('users').findOne(
+        { email: email.toLowerCase() },
+        { projection: { subscription: 1, purchases: 1 } }
+      );
       
       let hasSubscription = false;
       const now = new Date();
@@ -305,8 +313,20 @@ async function handleGET(request, { params }, attempt = 1) {
 
       if (!hasSubscription && !hasBoughtSingle) return json({ error: 'Payment required' }, 402);
 
-      const tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) });
-      if (!tender || !tender.pdf_base64) return json({ error: 'PDF not found' }, 404);
+      const tender = await db.collection('tenders').findOne(
+        { _id: new ObjectId(tenderId) },
+        { projection: { pdf_url: 1, pdf_base64: 1, pdf_filename: 1, title: 1 } }
+      );
+      if (!tender) return json({ error: 'PDF not found' }, 404);
+
+      // 🚀 Prefer R2 public URL so the PDF never travels through Mongo/base64
+      // (avoids replica-set timeouts on large BSON reads). Legacy tenders that
+      // still only have pdf_base64 keep the previous in-process stream.
+      if (tender.pdf_url) {
+        return NextResponse.redirect(tender.pdf_url, 307);
+      }
+
+      if (!tender.pdf_base64) return json({ error: 'PDF not found' }, 404);
 
       if (format === 'json') {
           return json({
@@ -385,6 +405,30 @@ async function handleGET(request, { params }, attempt = 1) {
       return json({ requests });
     }
 
+    if (pathArray.length === 3 && pathArray[0] === 'dispatches' && pathArray[2] === 'file') {
+      const taskId = pathArray[1];
+      if (!ObjectId.isValid(taskId)) return json({ error: 'Invalid dispatch ID' }, 400);
+      const dispatch = await db.collection('dispatches').findOne(
+        { _id: new ObjectId(taskId) },
+        { projection: { file_base64: 1, file_name: 1 } }
+      );
+      if (!dispatch?.file_base64) return json({ error: 'File not found' }, 404);
+      try {
+        const cleanBase64 = dispatch.file_base64.replace(/^data:(.*,)?/, '');
+        const buffer = Buffer.from(cleanBase64, 'base64');
+        return new NextResponse(buffer, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `inline; filename="${dispatch.file_name || 'attachment.pdf'}"`,
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          }
+        });
+      } catch (err) {
+        return json({ error: 'Failed to parse PDF Data' }, 500);
+      }
+    }
+
     if (path === 'dispatches' || path === 'api/dispatches') {
       const targetId = searchParams.get('target_id');
       let query = {};
@@ -403,6 +447,30 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     // 🚀 Operator Docs GET
+    if (pathArray.length === 4 && pathArray[0] === 'operator' && pathArray[1] === 'docs' && pathArray[3] === 'file') {
+       const docId = pathArray[2];
+       if (!ObjectId.isValid(docId)) return json({ error: 'Invalid document ID' }, 400);
+       const doc = await db.collection('operator_storage').findOne(
+         { _id: new ObjectId(docId) },
+         { projection: { file_base64: 1, name: 1 } }
+       );
+       if (!doc?.file_base64) return json({ error: 'Document not found' }, 404);
+       try {
+         const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
+         const buffer = Buffer.from(cleanBase64, 'base64');
+         return new NextResponse(buffer, {
+           status: 200,
+           headers: {
+             'Content-Type': 'application/pdf',
+             'Content-Disposition': `inline; filename="${doc.name || 'document.pdf'}"`,
+             'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+           }
+         });
+       } catch (err) {
+         return json({ error: 'Failed to parse PDF Data' }, 500);
+       }
+    }
+
     if (path === 'operator/docs' || path === 'api/operator/docs') {
        const docs = await db.collection('operator_storage')
          .find({})
