@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis'; // 🚀 Google Drive Integration
 import { getDb, markHostUnhealthy, forceReconnect } from '@/lib/db';
-import { uploadTenderPDF } from '@/lib/cloudflare-r2';
+import { uploadTenderPDF, fetchTenderPDFBuffer } from '@/lib/cloudflare-r2';
 // 🚀 SECURITY: Cashfree (Order/Verify/Webhook) + Offline Ledger logic now lives in
 // app/api/payments/route.js. Only thin delegating calls remain below.
 import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '../payments/route';
@@ -313,44 +313,68 @@ async function handleGET(request, { params }, attempt = 1) {
 
       if (!hasSubscription && !hasBoughtSingle) return json({ error: 'Payment required' }, 402);
 
-      const tender = await db.collection('tenders').findOne(
-        { _id: new ObjectId(tenderId) },
-        { projection: { pdf_url: 1, pdf_base64: 1, pdf_filename: 1, title: 1 } }
-      );
+      const pdfProjection = { projection: { pdf_url: 1, pdf_base64: 1, pdf_filename: 1, title: 1, file_url: 1, pdf_r2_key: 1 } };
+      let tender = null;
+      if (ObjectId.isValid(tenderId)) {
+        try {
+          tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) }, pdfProjection);
+        } catch (_) { /* fall through to string _id / id lookups */ }
+      }
+      if (!tender) tender = await db.collection('tenders').findOne({ _id: tenderId }, pdfProjection);
+      if (!tender) tender = await db.collection('tenders').findOne({ id: tenderId }, pdfProjection);
       if (!tender) return json({ error: 'PDF not found' }, 404);
 
+      const fileUrl = String(tender.pdf_url || tender.file_url || '').trim();
       // 🚀 Prefer R2 public URL so the PDF never travels through Mongo/base64
       // (avoids replica-set timeouts on large BSON reads). Legacy tenders that
       // still only have pdf_base64 keep the previous in-process stream.
-      if (tender.pdf_url) {
-        return NextResponse.redirect(tender.pdf_url, 307);
+      if (fileUrl) {
+        return NextResponse.redirect(fileUrl, 307);
       }
 
-      if (!tender.pdf_base64) return json({ error: 'PDF not found' }, 404);
+      if (tender.pdf_base64) {
+        if (format === 'json') {
+            return json({
+               pdf_base64: tender.pdf_base64,
+               pdf_filename: tender.pdf_filename || 'tender_document.pdf',
+               title: tender.title,
+               watermarked: true
+            });
+        }
+        try {
+           const cleanBase64 = tender.pdf_base64.replace(/^data:(.*,)?/, '');
+           const pdfBuffer = Buffer.from(cleanBase64, 'base64');
+           return new NextResponse(pdfBuffer, {
+               status: 200,
+               headers: {
+                   'Content-Type': 'application/pdf',
+                   'Content-Disposition': `inline; filename="${tender.pdf_filename || 'tender_document.pdf'}"`,
+                   'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+               }
+           });
+        } catch(err) {
+           return json({ error: 'Failed to parse PDF Data' }, 500);
+        }
+      }
 
-      if (format === 'json') {
-          return json({
-             pdf_base64: tender.pdf_base64,
-             pdf_filename: tender.pdf_filename || 'tender_document.pdf',
-             title: tender.title,
-             watermarked: true
-          });
-      } else {
-          try {
-             const cleanBase64 = tender.pdf_base64.replace(/^data:(.*,)?/, '');
-             const pdfBuffer = Buffer.from(cleanBase64, 'base64');
-             return new NextResponse(pdfBuffer, {
-                 status: 200,
-                 headers: {
-                     'Content-Type': 'application/pdf',
-                     'Content-Disposition': `inline; filename="${tender.pdf_filename || 'tender_document.pdf'}"`,
-                     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
-                 }
-             });
-          } catch(err) {
-             return json({ error: 'Failed to parse PDF Data' }, 500);
+      // R2 upload stored the object but pdf_url was never saved (null). Recover by key/filename.
+      const r2Buffer = await fetchTenderPDFBuffer({
+        pdf_url: fileUrl,
+        pdf_filename: tender.pdf_filename,
+        pdf_r2_key: tender.pdf_r2_key,
+      });
+      if (r2Buffer) {
+        return new NextResponse(r2Buffer, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `inline; filename="${tender.pdf_filename || 'tender_document.pdf'}"`,
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
           }
+        });
       }
+
+      return json({ error: 'PDF not found' }, 404);
     }
 
     if (path === 'tickets' || path === 'api/tickets') {
@@ -685,16 +709,17 @@ export async function PUT(request, { params }) {
               const fileBuffer = Buffer.from(cleanBase64, 'base64');
               const safeFileName = `${Date.now()}-${updateFields.pdf_filename || 'tender.pdf'}`;
 
-              const uploadedUrl = await uploadTenderPDF(fileBuffer, safeFileName);
-              if (uploadedUrl) {
-                 updateFields.pdf_url = uploadedUrl;
+              const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
+              if (uploaded?.url) {
+                 updateFields.pdf_url = uploaded.url;
+                 updateFields.pdf_r2_key = uploaded.key;
+                 delete updateFields.pdf_base64;
               } else {
-                 console.error('Tender PDF upload to Cloudflare R2 failed during edit; keeping existing PDF.');
+                 console.error('Tender PDF upload to Cloudflare R2 failed during edit; keeping pdf_base64 so the file remains readable.');
               }
            } catch (uploadError) {
               console.error('Failed to process tender PDF for upload during edit:', uploadError);
            }
-           delete updateFields.pdf_base64; // 🚀 CRITICAL: never persist raw base64 to MongoDB
         }
 
         await db.collection('tenders').updateOne(
@@ -1086,11 +1111,12 @@ export async function POST(request, { params }) {
           const fileBuffer = Buffer.from(cleanBase64, 'base64');
           const safeFileName = `${Date.now()}-${tenderFields.pdf_filename || 'tender.pdf'}`;
 
-          const uploadedUrl = await uploadTenderPDF(fileBuffer, safeFileName);
-          if (uploadedUrl) {
-            pdf_url = uploadedUrl;
+          const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
+          if (uploaded?.url) {
+            pdf_url = uploaded.url;
+            tenderFields.pdf_r2_key = uploaded.key;
           } else {
-            console.error('Tender PDF upload to Cloudflare R2 failed; publishing tender without a PDF.');
+            console.error('Tender PDF upload to Cloudflare R2 failed; keeping pdf_base64 so the file remains readable.');
           }
         } catch (uploadError) {
           console.error('Failed to process tender PDF for upload:', uploadError);
@@ -1098,6 +1124,7 @@ export async function POST(request, { params }) {
       }
 
       const newTender = { ...tenderFields, pdf_url, created_at: new Date() };
+      if (!pdf_url && pdf_base64) newTender.pdf_base64 = pdf_base64;
       const result = await db.collection('tenders').insertOne(newTender);
       return json({ success: true, message: 'Tender published successfully', id: result.insertedId });
     }
