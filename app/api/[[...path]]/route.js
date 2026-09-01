@@ -3,7 +3,13 @@ import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis'; // 🚀 Google Drive Integration
 import { getDb, markHostUnhealthy, forceReconnect } from '@/lib/db';
-import { uploadTenderPDF, fetchTenderPDFBuffer } from '@/lib/cloudflare-r2';
+import {
+  uploadTenderPDF,
+  fetchTenderPDFBuffer,
+  isPubliclyServableUrl,
+  isValidPDFBuffer,
+  isR2Configured,
+} from '@/lib/cloudflare-r2';
 // 🚀 SECURITY: Cashfree (Order/Verify/Webhook) + Offline Ledger logic now lives in
 // app/api/payments/route.js. Only thin delegating calls remain below.
 import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '../payments/route';
@@ -36,6 +42,110 @@ function json(data, status = 200) {
       'Pragma': 'no-cache',
       'Expires': '0',
     }
+  });
+}
+
+// 🚀 Document viewers are opened as a top-level navigation (window.open), so a JSON
+// error body just dumps raw `{"error":...}` into the tab and users read it as "the PDF
+// is broken". Serve a readable page for navigations and keep JSON for fetch() callers.
+function documentError(request, { status, message, code, details }) {
+  const wantsHtml = (request?.headers.get('accept') || '').includes('text/html');
+  if (!wantsHtml) return json({ error: message, code, details }, status);
+
+  const escape = (s) => String(s).replace(/[&<>"]/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+  ));
+
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Document unavailable</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:#f1f5f9;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:32px;max-width:460px;
+        box-shadow:0 10px 30px rgba(15,23,42,.08);text-align:center}
+  h1{margin:0 0 10px;font-size:19px;color:#0a2647}
+  p{margin:0;color:#475569;font-size:14px;line-height:1.6}
+  code{display:inline-block;margin-top:18px;font-size:11px;color:#94a3b8}
+</style></head>
+<body><div class="card">
+  <h1>This document can't be opened</h1>
+  <p>${escape(message)}</p>
+  <code>${escape(code || `HTTP ${status}`)}</code>
+</div></body></html>`;
+
+  return new NextResponse(html, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+// 🚀 FIX: /api/vault/upload accepts any file type, so vault docs and ledger proofs are
+// frequently JPEG/PNG scans — but every document endpoint hardcoded
+// `Content-Type: application/pdf`. Combined with `X-Content-Type-Options: nosniff`
+// the browser refuses to render an image mislabelled as a PDF, producing an empty
+// viewer. Detect the real type from the magic bytes instead of guessing.
+function sniffContentType(buffer, fileName = '') {
+  const head = Buffer.from(buffer.subarray(0, 12));
+  const hex = head.toString('hex');
+
+  if (head.toString('latin1', 0, 5) === '%PDF-') return 'application/pdf';
+  if (hex.startsWith('ffd8ff')) return 'image/jpeg';
+  if (hex.startsWith('89504e470d0a1a0a')) return 'image/png';
+  if (hex.startsWith('47494638')) return 'image/gif';
+  if (hex.startsWith('52494646') && head.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  // ZIP container — .docx/.xlsx/.pptx and plain .zip all share this signature.
+  if (hex.startsWith('504b0304')) {
+    if (/\.docx$/i.test(fileName)) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (/\.xlsx$/i.test(fileName)) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    return 'application/zip';
+  }
+  return null;
+}
+
+// 🚀 FIX (documents opening blank): every base64-backed document endpoint decoded
+// with `Buffer.from(str, 'base64')`, which silently returns garbage bytes for
+// malformed input instead of throwing — so a 200 response with an unreadable body was
+// served and the browser showed an empty viewer with a clean console. Content-Length
+// was also missing, which some PDF viewers need in order to render at all.
+function streamBase64Document(request, base64, fileName = 'document.pdf') {
+  if (typeof base64 !== 'string' || base64.length === 0) {
+    return documentError(request, {
+      status: 404,
+      code: 'FILE_SOURCE_MISSING',
+      message: 'The file is missing from storage. Please re-upload the document.',
+    });
+  }
+
+  const cleanBase64 = base64.replace(/^data:[^;,]*(;base64)?,/, '');
+  const buffer = Buffer.from(cleanBase64, 'base64');
+
+  const contentType = sniffContentType(buffer, fileName);
+  if (!contentType) {
+    console.error(
+      `[documents] stored base64 for "${fileName}" (${buffer.length} bytes) did not decode to a ` +
+      'recognisable file. Buffer.from() silently accepts malformed base64, so the record is corrupt.'
+    );
+    return documentError(request, {
+      status: 422,
+      code: 'FILE_CORRUPT',
+      message: 'The stored file is corrupted and cannot be opened. Please re-upload it.',
+    });
+  }
+
+  // Images and PDFs render in-tab; anything else is safer as a download.
+  const inline = contentType === 'application/pdf' || contentType.startsWith('image/');
+
+  return new NextResponse(new Uint8Array(buffer), {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(buffer.length),
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${fileName}"`,
+      'Cache-Control': 'private, max-age=0, must-revalidate',
+      'X-Content-Type-Options': 'nosniff',
+    },
   });
 }
 
@@ -222,23 +332,10 @@ async function handleGET(request, { params }, attempt = 1) {
         { projection: { vault_docs: { $elemMatch: { id: docId } } } }
       );
       const doc = user?.vault_docs?.[0];
-      
-      if (doc && doc.file_base64) {
-          try {
-              const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
-              const buffer = Buffer.from(cleanBase64, 'base64');
-              return new NextResponse(buffer, {
-                  status: 200,
-                  headers: { 
-                     'Content-Type': 'application/pdf', 
-                     'Content-Disposition': `inline; filename="${doc.file_name || 'document.pdf'}"` 
-                  }
-              });
-          } catch(err) {
-              return json({ error: 'Failed to parse PDF Data' }, 500);
-          }
-      }
-      return json({ error: 'Document not found' }, 404);
+
+      if (!doc) return documentError(request, { status: 404, code: 'DOC_NOT_FOUND', message: 'This vault document no longer exists.' });
+      if (doc.file_url) return NextResponse.redirect(doc.file_url, 307);
+      return streamBase64Document(request, doc.file_base64, doc.file_name || 'document.pdf');
     }
 
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
@@ -290,7 +387,13 @@ async function handleGET(request, { params }, attempt = 1) {
       const role = searchParams.get('role');
       const format = searchParams.get('format'); 
 
-      if (!email) return json({ error: 'Email required' }, 400);
+      if (!email) {
+        return documentError(request, {
+          status: 400,
+          code: 'EMAIL_REQUIRED',
+          message: 'You are not signed in. Please log in again and reopen the tender.',
+        });
+      }
 
       const user = await db.collection('users').findOne(
         { email: email.toLowerCase() },
@@ -311,70 +414,152 @@ async function handleGET(request, { params }, attempt = 1) {
           hasSubscription = true; 
       }
 
-      if (!hasSubscription && !hasBoughtSingle) return json({ error: 'Payment required' }, 402);
-
-      const pdfProjection = { projection: { pdf_url: 1, pdf_base64: 1, pdf_filename: 1, title: 1, file_url: 1, pdf_r2_key: 1 } };
-      let tender = null;
-      if (ObjectId.isValid(tenderId)) {
-        try {
-          tender = await db.collection('tenders').findOne({ _id: new ObjectId(tenderId) }, pdfProjection);
-        } catch (_) { /* fall through to string _id / id lookups */ }
+      if (!hasSubscription && !hasBoughtSingle) {
+        return documentError(request, {
+          status: 402,
+          code: 'PAYMENT_REQUIRED',
+          message: 'This tender document is locked. Purchase this tender or an active subscription to view it.',
+        });
       }
-      if (!tender) tender = await db.collection('tenders').findOne({ _id: tenderId }, pdfProjection);
-      if (!tender) tender = await db.collection('tenders').findOne({ id: tenderId }, pdfProjection);
-      if (!tender) return json({ error: 'PDF not found' }, 404);
+
+      // 🚀 PERF: `pdf_base64` can be several MB of BSON. Resolve the lightweight
+      // metadata first and only pull the blob if we actually end up needing it.
+      const metaProjection = {
+        projection: { pdf_url: 1, pdf_filename: 1, title: 1, file_url: 1, pdf_r2_key: 1 },
+      };
+      const idCandidates = [];
+      if (ObjectId.isValid(tenderId)) {
+        try { idCandidates.push({ _id: new ObjectId(tenderId) }); } catch (_) { /* not a real ObjectId */ }
+      }
+      idCandidates.push({ _id: tenderId }, { id: tenderId });
+
+      let tender = null;
+      let tenderQuery = null;
+      for (const candidate of idCandidates) {
+        tender = await db.collection('tenders').findOne(candidate, metaProjection);
+        if (tender) { tenderQuery = candidate; break; }
+      }
+      if (!tender) {
+        return documentError(request, {
+          status: 404,
+          code: 'TENDER_NOT_FOUND',
+          message: 'This tender no longer exists. It may have been removed by the admin.',
+        });
+      }
+
+      const pdfFileName = tender.pdf_filename || 'tender_document.pdf';
+      const pdfHeaders = (buffer) => ({
+        'Content-Type': 'application/pdf',
+        'Content-Length': String(buffer.length),
+        'Content-Disposition': `inline; filename="${pdfFileName}"`,
+        'Cache-Control': 'private, max-age=0, must-revalidate',
+        'X-Content-Type-Options': 'nosniff',
+      });
 
       const fileUrl = String(tender.pdf_url || tender.file_url || '').trim();
-      // 🚀 Prefer R2 public URL so the PDF never travels through Mongo/base64
-      // (avoids replica-set timeouts on large BSON reads). Legacy tenders that
-      // still only have pdf_base64 keep the previous in-process stream.
-      if (fileUrl) {
-        return NextResponse.redirect(fileUrl, 307);
-      }
 
-      if (tender.pdf_base64) {
-        if (format === 'json') {
-            return json({
-               pdf_base64: tender.pdf_base64,
-               pdf_filename: tender.pdf_filename || 'tender_document.pdf',
-               title: tender.title,
-               watermarked: true
-            });
-        }
+      // 🚀 FIX (blank PDF viewer): we used to 307-redirect to `pdf_url` unconditionally.
+      // When CLOUDFLARE_R2_PUBLIC_URL isn't configured, that URL is the private
+      // `*.r2.cloudflarestorage.com` S3 API endpoint, which rejects unsigned browser
+      // requests with a 401 XML body — the viewer renders it as an empty page. Only
+      // redirect to a genuinely public domain; otherwise proxy the bytes ourselves.
+      if (fileUrl && format !== 'json' && isPubliclyServableUrl(fileUrl)) {
         try {
-           const cleanBase64 = tender.pdf_base64.replace(/^data:(.*,)?/, '');
-           const pdfBuffer = Buffer.from(cleanBase64, 'base64');
-           return new NextResponse(pdfBuffer, {
-               status: 200,
-               headers: {
-                   'Content-Type': 'application/pdf',
-                   'Content-Disposition': `inline; filename="${tender.pdf_filename || 'tender_document.pdf'}"`,
-                   'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
-               }
-           });
-        } catch(err) {
-           return json({ error: 'Failed to parse PDF Data' }, 500);
+          return NextResponse.redirect(new URL(fileUrl).toString(), 307);
+        } catch (_) {
+          console.warn('[tenders/pdf] stored pdf_url is not a valid absolute URL:', fileUrl);
         }
       }
 
-      // R2 upload stored the object but pdf_url was never saved (null). Recover by key/filename.
+      // Source 1: the blob stored directly on the tender document.
+      const blobDoc = await db.collection('tenders').findOne(tenderQuery, {
+        projection: { pdf_base64: 1 },
+      });
+      if (typeof blobDoc?.pdf_base64 === 'string' && blobDoc.pdf_base64.length > 0) {
+        if (format === 'json') {
+          return json({
+            pdf_base64: blobDoc.pdf_base64,
+            pdf_filename: pdfFileName,
+            title: tender.title,
+            watermarked: true,
+          });
+        }
+        const cleanBase64 = blobDoc.pdf_base64.replace(/^data:[^;,]*(;base64)?,/, '');
+        const pdfBuffer = Buffer.from(cleanBase64, 'base64');
+        // Buffer.from never throws on malformed base64 — it returns garbage. Validate
+        // before serving so a corrupt record doesn't masquerade as a blank PDF.
+        if (isValidPDFBuffer(pdfBuffer)) {
+          return new NextResponse(new Uint8Array(pdfBuffer), { status: 200, headers: pdfHeaders(pdfBuffer) });
+        }
+        console.warn(`[tenders/pdf] pdf_base64 on tender ${tenderId} is not a valid PDF; trying R2.`);
+      }
+
+      // Source 2: authenticated read from R2 — covers both a private pdf_url and the
+      // case where the upload succeeded but pdf_url was never persisted.
       const r2Buffer = await fetchTenderPDFBuffer({
         pdf_url: fileUrl,
         pdf_filename: tender.pdf_filename,
         pdf_r2_key: tender.pdf_r2_key,
       });
-      if (r2Buffer) {
-        return new NextResponse(r2Buffer, {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': `inline; filename="${tender.pdf_filename || 'tender_document.pdf'}"`,
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
-          }
-        });
+      if (r2Buffer && isValidPDFBuffer(r2Buffer)) {
+        if (format === 'json') {
+          return json({
+            pdf_base64: r2Buffer.toString('base64'),
+            pdf_filename: pdfFileName,
+            title: tender.title,
+            watermarked: true,
+          });
+        }
+        return new NextResponse(new Uint8Array(r2Buffer), { status: 200, headers: pdfHeaders(r2Buffer) });
       }
 
-      return json({ error: 'PDF not found' }, 404);
+      // Source 3: a non-public URL we couldn't map to an R2 key (e.g. an external
+      // host). Fetch it server-side rather than bouncing the browser at it.
+      if (fileUrl) {
+        try {
+          const upstream = await fetch(fileUrl, { cache: 'no-store' });
+          if (upstream.ok) {
+            const proxied = Buffer.from(await upstream.arrayBuffer());
+            if (isValidPDFBuffer(proxied)) {
+              if (format === 'json') {
+                return json({
+                  pdf_base64: proxied.toString('base64'),
+                  pdf_filename: pdfFileName,
+                  title: tender.title,
+                  watermarked: true,
+                });
+              }
+              return new NextResponse(new Uint8Array(proxied), { status: 200, headers: pdfHeaders(proxied) });
+            }
+          }
+          console.warn(`[tenders/pdf] upstream fetch of ${fileUrl} returned ${upstream.status}`);
+        } catch (fetchErr) {
+          console.warn(`[tenders/pdf] upstream fetch of ${fileUrl} failed:`, fetchErr?.message || fetchErr);
+        }
+      }
+
+      // 🚀 Explicit, actionable failure. The old generic "PDF not found" made a
+      // missing *file* look like a broken *route*. Tenders created while the R2
+      // credentials were absent have neither pdf_url nor pdf_base64 and genuinely
+      // need the document re-uploaded.
+      console.error('[tenders/pdf] no readable source for tender', tenderId, {
+        has_pdf_url: Boolean(fileUrl),
+        pdf_url_public: fileUrl ? isPubliclyServableUrl(fileUrl) : null,
+        has_pdf_base64: typeof blobDoc?.pdf_base64 === 'string',
+        has_pdf_r2_key: Boolean(tender.pdf_r2_key),
+        r2_configured: isR2Configured(),
+      });
+      return documentError(request, {
+        status: 404,
+        code: 'PDF_SOURCE_MISSING',
+        message: 'The PDF file for this tender is missing from storage. Please ask the admin to re-upload the tender document.',
+        details: {
+          has_pdf_url: Boolean(fileUrl),
+          has_pdf_base64: typeof blobDoc?.pdf_base64 === 'string',
+          has_pdf_r2_key: Boolean(tender.pdf_r2_key),
+          r2_configured: isR2Configured(),
+        },
+      });
     }
 
     if (path === 'tickets' || path === 'api/tickets') {
@@ -436,21 +621,8 @@ async function handleGET(request, { params }, attempt = 1) {
         { _id: new ObjectId(taskId) },
         { projection: { file_base64: 1, file_name: 1 } }
       );
-      if (!dispatch?.file_base64) return json({ error: 'File not found' }, 404);
-      try {
-        const cleanBase64 = dispatch.file_base64.replace(/^data:(.*,)?/, '');
-        const buffer = Buffer.from(cleanBase64, 'base64');
-        return new NextResponse(buffer, {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': `inline; filename="${dispatch.file_name || 'attachment.pdf'}"`,
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          }
-        });
-      } catch (err) {
-        return json({ error: 'Failed to parse PDF Data' }, 500);
-      }
+      if (!dispatch) return documentError(request, { status: 404, code: 'DISPATCH_NOT_FOUND', message: 'This dispatch no longer exists.' });
+      return streamBase64Document(request, dispatch.file_base64, dispatch.file_name || 'attachment.pdf');
     }
 
     if (path === 'dispatches' || path === 'api/dispatches') {
@@ -478,21 +650,8 @@ async function handleGET(request, { params }, attempt = 1) {
          { _id: new ObjectId(docId) },
          { projection: { file_base64: 1, name: 1 } }
        );
-       if (!doc?.file_base64) return json({ error: 'Document not found' }, 404);
-       try {
-         const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
-         const buffer = Buffer.from(cleanBase64, 'base64');
-         return new NextResponse(buffer, {
-           status: 200,
-           headers: {
-             'Content-Type': 'application/pdf',
-             'Content-Disposition': `inline; filename="${doc.name || 'document.pdf'}"`,
-             'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-           }
-         });
-       } catch (err) {
-         return json({ error: 'Failed to parse PDF Data' }, 500);
-       }
+       if (!doc) return documentError(request, { status: 404, code: 'DOC_NOT_FOUND', message: 'This document no longer exists in operator storage.' });
+       return streamBase64Document(request, doc.file_base64, doc.name || 'document.pdf');
     }
 
     if (path === 'operator/docs' || path === 'api/operator/docs') {
@@ -703,30 +862,51 @@ export async function PUT(request, { params }) {
         // 🚀 FIX: Editing a tender with a new PDF crashed the server because the raw
         // base64 was passed straight to MongoDB (exceeding the 16MB BSON doc limit /
         // never uploaded to R2). Mirror the same Cloudflare R2 offload used on create.
-        if (updateFields.pdf_base64) {
-           try {
-              const cleanBase64 = updateFields.pdf_base64.replace(/^data:(.*,)?/, '');
-              const fileBuffer = Buffer.from(cleanBase64, 'base64');
-              const safeFileName = `${Date.now()}-${updateFields.pdf_filename || 'tender.pdf'}`;
+        const unsetFields = {};
+        let storageWarning = null;
 
+        if (updateFields.pdf_base64) {
+           const cleanBase64 = updateFields.pdf_base64.replace(/^data:[^;,]*(;base64)?,/, '');
+           const fileBuffer = Buffer.from(cleanBase64, 'base64');
+
+           if (!isValidPDFBuffer(fileBuffer)) {
+              return json({ error: 'The uploaded file is not a readable PDF. Please re-select the file and try again.' }, 400);
+           }
+
+           try {
+              const safeFileName = `${Date.now()}-${updateFields.pdf_filename || 'tender.pdf'}`;
               const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
               if (uploaded?.url) {
                  updateFields.pdf_url = uploaded.url;
                  updateFields.pdf_r2_key = uploaded.key;
                  delete updateFields.pdf_base64;
+                 // 🚀 FIX: `delete` only drops the field from this $set payload — the
+                 // OLD pdf_base64 stayed on the document, and since the reader prefers
+                 // the in-document blob it kept serving the previous file forever.
+                 // Explicitly clear it so the replacement actually takes effect.
+                 unsetFields.pdf_base64 = '';
               } else {
-                 console.error('Tender PDF upload to Cloudflare R2 failed during edit; keeping pdf_base64 so the file remains readable.');
+                 storageWarning = isR2Configured()
+                    ? 'Cloudflare R2 upload failed. The PDF was stored in the database instead.'
+                    : 'Cloudflare R2 is not configured on this server. The PDF was stored in the database instead.';
+                 // The new blob stays in updateFields, so drop the now-stale R2 pointers.
+                 unsetFields.pdf_url = '';
+                 unsetFields.pdf_r2_key = '';
+                 delete updateFields.pdf_url;
+                 delete updateFields.pdf_r2_key;
+                 console.error(`Tender PDF upload to Cloudflare R2 failed during edit; keeping pdf_base64 so the file remains readable. ${storageWarning}`);
               }
            } catch (uploadError) {
+              storageWarning = 'Cloudflare R2 upload errored. The PDF was stored in the database instead.';
               console.error('Failed to process tender PDF for upload during edit:', uploadError);
            }
         }
 
-        await db.collection('tenders').updateOne(
-           { _id: new ObjectId(tenderId) },
-           { $set: updateFields }
-        );
-        return json({ success: true, message: 'Tender Updated' });
+        const updateDoc = { $set: updateFields };
+        if (Object.keys(unsetFields).length > 0) updateDoc.$unset = unsetFields;
+
+        await db.collection('tenders').updateOne({ _id: new ObjectId(tenderId) }, updateDoc);
+        return json({ success: true, message: 'Tender Updated', storage_warning: storageWarning });
      }
 
      if (path === 'client-requests/reply' || path === 'api/client-requests/reply') {
@@ -1104,21 +1284,33 @@ export async function POST(request, { params }) {
       // resulting `pdf_url` is persisted, keeping tender documents lightweight.
       const { pdf_base64, ...tenderFields } = body;
       let pdf_url = tenderFields.pdf_url || null;
+      let storageWarning = null;
 
       if (pdf_base64) {
-        try {
-          const cleanBase64 = pdf_base64.replace(/^data:(.*,)?/, '');
-          const fileBuffer = Buffer.from(cleanBase64, 'base64');
-          const safeFileName = `${Date.now()}-${tenderFields.pdf_filename || 'tender.pdf'}`;
+        const cleanBase64 = pdf_base64.replace(/^data:[^;,]*(;base64)?,/, '');
+        const fileBuffer = Buffer.from(cleanBase64, 'base64');
 
+        // 🚀 Reject a bad upload here rather than storing bytes that will later open
+        // as a blank PDF for every client. Buffer.from() won't throw on malformed
+        // base64, so the magic-header check is the only real guard.
+        if (!isValidPDFBuffer(fileBuffer)) {
+          return json({ error: 'The uploaded file is not a readable PDF. Please re-select the file and try again.' }, 400);
+        }
+
+        try {
+          const safeFileName = `${Date.now()}-${tenderFields.pdf_filename || 'tender.pdf'}`;
           const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
           if (uploaded?.url) {
             pdf_url = uploaded.url;
             tenderFields.pdf_r2_key = uploaded.key;
           } else {
-            console.error('Tender PDF upload to Cloudflare R2 failed; keeping pdf_base64 so the file remains readable.');
+            storageWarning = isR2Configured()
+              ? 'Cloudflare R2 upload failed. The PDF was stored in the database instead.'
+              : 'Cloudflare R2 is not configured on this server. The PDF was stored in the database instead.';
+            console.error(`Tender PDF upload to Cloudflare R2 failed; keeping pdf_base64 so the file remains readable. ${storageWarning}`);
           }
         } catch (uploadError) {
+          storageWarning = 'Cloudflare R2 upload errored. The PDF was stored in the database instead.';
           console.error('Failed to process tender PDF for upload:', uploadError);
         }
       }
@@ -1126,7 +1318,7 @@ export async function POST(request, { params }) {
       const newTender = { ...tenderFields, pdf_url, created_at: new Date() };
       if (!pdf_url && pdf_base64) newTender.pdf_base64 = pdf_base64;
       const result = await db.collection('tenders').insertOne(newTender);
-      return json({ success: true, message: 'Tender published successfully', id: result.insertedId });
+      return json({ success: true, message: 'Tender published successfully', id: result.insertedId, storage_warning: storageWarning });
     }
 
     if (path === 'settings' || path === 'api/settings') {

@@ -268,9 +268,14 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
-      if (!r.ok) return toast.error(`Server Error (${r.status})`);
-      
+      const result = await r.json().catch(() => null);
+      // Show the server's actual reason (e.g. an unreadable PDF) instead of a bare status code.
+      if (!r.ok) return toast.error(result?.error || `Server Error (${r.status})`);
+
       toast.success(isEditingTender ? `Tender updated successfully!` : `Tender published successfully!`);
+      // A failed R2 upload still saves the tender, but silently — surface it so the
+      // storage misconfiguration gets fixed instead of accumulating fragile records.
+      if (result?.storage_warning) toast.warning(result.storage_warning, { duration: 8000 });
       setForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '', bid_no: '' });
       setPdfBase64(''); setPdfName(''); setIsEditingTender(null); refresh();
     } catch (err) { toast.error('Network Error.'); } finally { setLoading(false); }

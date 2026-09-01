@@ -387,6 +387,12 @@ export default function App() {
        return;
     }
 
+    // 🚀 FIX (PDF never opened): the window.open() below used to run *after* awaiting
+    // /api/me. By then the user-gesture chain is broken, so Chrome/Edge/Safari silently
+    // block the popup — nothing happened and nothing was logged. Claim the tab
+    // synchronously while still inside the click handler, then point it at the PDF once
+    // access is verified (or close it if access is denied).
+    const viewer = window.open('', '_blank');
     const toastId = toast.loading('Verifying secure access...');
     try {
        const res = await fetch(`/api/me?email=${encodeURIComponent(userMail)}`);
@@ -399,13 +405,19 @@ export default function App() {
 
        if (hasAccess) {
           toast.success('Access Granted!', { id: toastId });
-          window.open(`/api/tenders/${t._id || t.id}/pdf?email=${encodeURIComponent(userMail)}&role=guest`, '_blank');
+          const pdfUrl = `/api/tenders/${t._id || t.id}/pdf?email=${encodeURIComponent(userMail)}&role=guest`;
+          if (viewer && !viewer.closed) viewer.location.href = pdfUrl;
+          else window.location.href = pdfUrl; // popup blocked entirely — navigate in place
        } else {
+          if (viewer && !viewer.closed) viewer.close();
           toast.dismiss(toastId);
           setPendingTender(t);
           setPaywallModal(true);
        }
-    } catch (e) { toast.error('Network Error.', { id: toastId }); }
+    } catch (e) {
+       if (viewer && !viewer.closed) viewer.close();
+       toast.error('Network Error.', { id: toastId });
+    }
   };
 
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
