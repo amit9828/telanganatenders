@@ -54,7 +54,18 @@ export async function OPTIONS(request) {
 // =====================================================================
 // GET REQUESTS
 // =====================================================================
-export async function GET(request, { params }) {
+// 🚀 FIX: Transient network flakiness (packet loss / a single Atlas shard
+// member briefly timing out — common on mobile data or unstable Wi-Fi) was
+// surfacing as a hard 500 on every single dashboard call even though the DB
+// itself was healthy and the very next request would succeed. Rather than
+// give up on the first hiccup, retry the whole handler once after a short
+// delay before returning an error to the client.
+function isTransientDbError(error) {
+  const text = `${error?.name || ''} ${error?.message || ''}`;
+  return /timed out|ETIMEDOUT|ECONNRESET|ReplicaSetNoPrimary|MongoNetworkTimeoutError|MongoServerSelectionError|topology was destroyed/i.test(text);
+}
+
+async function handleGET(request, { params }, attempt = 1) {
   // 🚀 FIX: getDb()/param parsing used to sit OUTSIDE the try block — if the DB
   // connection failed (or params were malformed) it threw an unhandled error before
   // any response body was ever written, causing empty-body 500s that broke
@@ -508,8 +519,19 @@ export async function GET(request, { params }) {
     // 🔍 DEBUG: This is exactly what fires if getDb() times out / MongoDB is
     // unreachable — check the error message + elapsed time in Vercel logs first.
     console.error(`🔍 [API GET] ERROR after ${Date.now() - __reqStart}ms:`, error);
+
+    if (isTransientDbError(error) && attempt < 2) {
+      console.warn(`🔍 [API GET] Transient DB error, retrying once (attempt ${attempt + 1})...`);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return handleGET(request, { params }, attempt + 1);
+    }
+
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
+}
+
+export async function GET(request, { params }) {
+  return handleGET(request, { params });
 }
 
 // =====================================================================
