@@ -4,9 +4,17 @@
 
 body {
     margin: 0;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    line-height: 1.5; /* generous default line-height for readability */
+}
+
+/* Headings lean on Plus Jakarta Sans for a warmer, more distinctive display
+   face than body copy — falls back to the same stack if the variable is
+   somehow unavailable (e.g. a component rendered before hydration). */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading), var(--font-sans), -apple-system, sans-serif;
 }
 
 @layer base {
@@ -32,6 +40,40 @@ body {
     --input: 220 20% 88%;
     --ring: 224 64% 33%;
     --radius: 0.75rem;
+  }
+
+  /* 🚀 Dark-mode foundation (guideline #9: "fully Dark Mode ready"). Every
+     shadcn/ui primitive (Button, Card, Dialog, Input, Badge, Tabs, ...)
+     already consumes these semantic tokens via Tailwind's `bg-background`,
+     `text-foreground`, `bg-card`, `border-border`, etc., so simply defining
+     `.dark` here makes every one of those components dark-mode-correct with
+     zero per-component changes the moment a theme toggle sets `class="dark"`
+     on <html> (already wired via next-themes in app/providers.jsx).
+     NOTE: the large dashboards (admin/employee/client) still hardcode
+     one-off utility classes like `bg-white` / `text-slate-700` outside these
+     tokens — retrofitting every such class with a `dark:` variant is a much
+     larger, higher-risk pass across ~thousands of call sites and is
+     deliberately left as a follow-up rather than rushed in blind. */
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 96%;
+    --card: 222 44% 11%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 44% 11%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 213 70% 55%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 222 30% 16%;
+    --secondary-foreground: 210 40% 92%;
+    --muted: 222 30% 16%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 142 60% 50%;
+    --accent-foreground: 222 47% 8%;
+    --destructive: 0 63% 48%;
+    --destructive-foreground: 210 40% 96%;
+    --border: 222 25% 20%;
+    --input: 222 25% 22%;
+    --ring: 213 70% 55%;
   }
 }
 
@@ -91,6 +133,50 @@ body {
   box-shadow:
     0 4px 8px 0 rgba(15, 23, 42, 0.06),
     0 20px 40px -12px rgba(15, 23, 42, 0.18);
+}
+
+/* Frosted-glass treatment for sticky headers / floating toolbars. Needs a
+   translucent background (set per-usage, e.g. bg-white/80) — this class only
+   supplies the blur + hairline edge so it composes with whatever tint. */
+.glass-panel {
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Data tables: soft horizontal dividers only (no vertical borders), sticky
+   header, gentle row hover — the "spreadsheet in a nice suit" look used
+   across Master Reports / Ledger / CRM tables. Apply to the <table>. */
+.premium-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.premium-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.premium-table tbody td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+  vertical-align: middle;
+}
+.premium-table tbody tr:last-child td { border-bottom: none; }
+.premium-table tbody tr {
+  transition: background-color 150ms ease;
+}
+.premium-table tbody tr:hover {
+  background: hsl(var(--muted) / 0.5);
 }
 
 /* ==========================================================================

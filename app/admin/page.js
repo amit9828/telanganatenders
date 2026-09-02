@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, PlusCircle,
@@ -58,6 +59,48 @@ const DEFAULT_VAULT_DOCS = [
   { id: 'other_license', name: 'Other Trade Licenses', status: 'missing', file: null }
 ];
 
+// 🚀 Skeleton shown while the auth check resolves — shaped like the real header
+// + stat-card row + tab bar so the transition into real data feels instant
+// rather than a spinner-then-pop.
+function AdminDashboardSkeleton() {
+  return (
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
+        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <Skeleton className="w-9 h-9 rounded-xl bg-white/10" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-4 w-40 bg-white/10" />
+              <Skeleton className="h-2.5 w-28 bg-white/10" />
+            </div>
+          </div>
+          <Skeleton className="h-8 w-24 rounded-md bg-white/10 hidden sm:block" />
+        </div>
+      </header>
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="border-0 ring-1 ring-slate-200/80 bg-white">
+              <CardContent className="p-4 sm:p-5 space-y-3">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-7 w-16" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Skeleton className="h-12 w-full rounded-xl" />
+        <Card className="border-0 ring-1 ring-slate-200/80">
+          <CardContent className="p-5 space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
@@ -89,7 +132,7 @@ export default function AdminPage() {
   const [financialRequests, setFinancialRequests] = useState([]);
   const [ledgerTxns, setLedgerTxns] = useState([]);
   const [ledgerBalance, setLedgerBalance] = useState(0);
-  const [breakdown, setBreakdown] = useState({ offline: 0, online: 0 }); // ðŸš€ FIX: For Balance Breakdown
+  const [breakdown, setBreakdown] = useState({ offline: 0, online: 0 }); // 🚀 FIX: For Balance Breakdown
   const [ledgerForm, setLedgerForm] = useState({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' });
   const [ledgerProof, setLedgerProof] = useState('');
   const [ledgerProofName, setLedgerProofName] = useState('');
@@ -110,21 +153,21 @@ export default function AdminPage() {
   const [pdfName, setPdfName] = useState('');
   const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState('');
-  // ðŸš€ Pagination for the Published Tenders list (20 per page)
+  // 🚀 Pagination for the Published Tenders list (20 per page)
   const [tenderPage, setTenderPage] = useState(1);
   const tendersPerPage = 20;
   const tendersListRef = useRef(null);
 
-  // === à°¦à±€à°¨à°¿ à°•à°¿à°‚à°¦ à°ªà±‡à°¸à±à°Ÿà± à°šà±†à°¯à± (à°ªà°¾à°¤ à°•à±‹à°¡à±) ===
+  // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
   const [rejectReason, setRejectReason] = useState({});
   const [successfulPaymentsLog, setSuccessfulPaymentsLog] = useState([]);
 
-  // ðŸš€ à°‡à°•à±à°•à°¡ à°ªà±‡à°¸à±à°Ÿà± à°šà±†à°¯à± (à°•à±Šà°¤à±à°¤ à°•à±‹à°¡à±) ðŸš€
+  // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
   const [bulkDragActive, setBulkDragActive] = useState(false);
   const [bulkFileCount, setBulkFileCount] = useState(0);
 
-  // ðŸš€ AI Matchmaker & Competitor Intel
+  // 🚀 AI Matchmaker & Competitor Intel
   const [bidMatches, setBidMatches] = useState([]);
   const [matchSummary, setMatchSummary] = useState({ total: 0, new: 0, jv: 0 });
   const [matchTypeFilter, setMatchTypeFilter] = useState('all'); // all | DIRECT | JV
@@ -135,7 +178,7 @@ export default function AdminPage() {
   const [prediction, setPrediction] = useState(null); // { match, tender, history, prediction }
   const [stationeryClient, setStationeryClient] = useState(null);
 
-  // ðŸš€ Today's Live Scraped Tenders (text-only GeM hunter feed)
+  // 🚀 Today's Live Scraped Tenders (text-only GeM hunter feed)
   const [liveScrapedTenders, setLiveScrapedTenders] = useState([]);
   const [liveFeedToday, setLiveFeedToday] = useState('');
   const [liveFeedLoading, setLiveFeedLoading] = useState(false);
@@ -146,11 +189,11 @@ export default function AdminPage() {
     setAuthChecking(false);
   }, []);
 
-  // ðŸš€ FIX: Admin Live Tracking (Auto-Refresh without Cache)
+  // 🚀 FIX: Admin Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     if (token) {
       refresh();
-      // ðŸš€ FIX: Poll every 60s (not 10s) and only while this tab is visible, so we
+      // 🚀 FIX: Poll every 60s (not 10s) and only while this tab is visible, so we
       // stop hammering the database when the admin is on a different browser tab.
       const interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
@@ -162,10 +205,10 @@ export default function AdminPage() {
     // eslint-disable-next-line
   }, [token]);
 
-  // ðŸš€ Reset the Published Tenders pagination back to page 1 whenever the search changes
+  // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
 
-  // ðŸš€ FIX: Bulletproof refresh â€” one blocked/failing route (e.g. expired-tender
+  // 🚀 FIX: Bulletproof refresh — one blocked/failing route (e.g. expired-tender
   // filter accidentally hiding admin data, a network blip, a non-JSON error page)
   // used to throw inside Promise.all and take the ENTIRE dashboard down to zeros.
   // safeFetch isolates each request so a single failure never crashes the rest.
@@ -182,7 +225,7 @@ export default function AdminPage() {
     };
 
     try {
-      // ðŸš€ FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
+      // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
       // tenders" filter that's meant only for the public site.
       const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
         safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
@@ -258,7 +301,7 @@ export default function AdminPage() {
     } catch (err) { console.error('Refresh failed:', err); }
   };
 
-  // Independent of full-dashboard refresh â€” pulls only /api/tenders/live-feed.
+  // Independent of full-dashboard refresh — pulls only /api/tenders/live-feed.
   const refreshLiveFeed = async (authToken = token, { silent = false } = {}) => {
     if (!authToken) return;
     setLiveFeedLoading(true);
@@ -339,7 +382,7 @@ export default function AdminPage() {
       if (!r.ok) return toast.error(result?.error || `Server Error (${r.status})`);
 
       toast.success(isEditingTender ? `Tender updated successfully!` : `Tender published successfully!`);
-      // A failed R2 upload still saves the tender, but silently â€” surface it so the
+      // A failed R2 upload still saves the tender, but silently — surface it so the
       // storage misconfiguration gets fixed instead of accumulating fragile records.
       if (result?.storage_warning) toast.warning(result.storage_warning, { duration: 8000 });
       setForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '', bid_no: '' });
@@ -375,11 +418,11 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
 
-  // ðŸš€ AI Matchmaker & Competitor Intel ------------------------------------------------
+  // 🚀 AI Matchmaker & Competitor Intel ------------------------------------------------
   const formatINR = (value) => {
     const n = Number(value);
-    if (!Number.isFinite(n) || n <= 0) return 'â€”';
-    return `â‚¹${n.toLocaleString('en-IN')}`;
+    if (!Number.isFinite(n) || n <= 0) return '—';
+    return `₹${n.toLocaleString('en-IN')}`;
   };
 
   // Triggers the same job Vercel Cron runs nightly, so the MD never has to wait for the
@@ -404,13 +447,13 @@ export default function AdminPage() {
         // Zero matches is a valid outcome; the API explains which rule filtered
         // everything out so this doesn't look like a broken job.
         toast.info(
-          data?.explanation || `Scanned ${s.tenders_in_ts_ap || 0} open TS/AP tenders â€” no matches this time.`,
+          data?.explanation || `Scanned ${s.tenders_in_ts_ap || 0} open TS/AP tenders — no matches this time.`,
           { id: toastId, duration: 12000 }
         );
       } else {
         toast.success(
           `${s.matches_found} match(es) across ${s.tenders_in_ts_ap || 0} open TS/AP tenders` +
-          `${s.jv_opportunities ? ` â€” ${s.jv_opportunities} JV opportunity(ies)` : ''}.`,
+          `${s.jv_opportunities ? ` — ${s.jv_opportunities} JV opportunity(ies)` : ''}.`,
           { id: toastId, duration: 8000 }
         );
       }
@@ -509,12 +552,12 @@ export default function AdminPage() {
   const approveClient = async (email) => {
     try {
       await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email }) });
-      toast.success('âœ… Client Verified & Portal Unlocked!'); refresh();
+      toast.success('✅ Client Verified & Portal Unlocked!'); refresh();
     } catch(e) { toast.error('Network Error while approving.'); }
   };
 
   const deleteClientPermanently = async (email) => {
-    if (!confirm("ðŸš¨ WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data? This action CANNOT be undone.")) return;
+    if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data? This action CANNOT be undone.")) return;
     try {
       const res = await fetch(`/api/users?email=${encodeURIComponent(email)}`, { 
          method: 'DELETE', 
@@ -529,7 +572,7 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
-// ðŸš€ FIX: LocalStorage Injection for Instant MD Bypass
+// 🚀 FIX: LocalStorage Injection for Instant MD Bypass
   const impersonateUser = (type, email_or_id) => {
     const toastId = toast.loading(`Bypassing secure access to ${type} dashboard...`);
     try {
@@ -622,7 +665,7 @@ export default function AdminPage() {
        if(res.ok) { toast.success("Ticket deleted"); refresh(); } else toast.error("Failed to delete");
     } catch(e) { toast.error("Network error"); }
   };
-  // ðŸš€ MD Bulk AI Upload â€” sends the raw PDFs as multipart/form-data to the bulk
+  // 🚀 MD Bulk AI Upload — sends the raw PDFs as multipart/form-data to the bulk
   // pipeline, which stores each document in Cloudflare R2 and keeps only the extracted
   // JSON + R2 pointers in MongoDB. (The previous version base64-encoded every file into
   // a JSON body, which bloated MongoDB and made large batches time out.)
@@ -662,12 +705,12 @@ export default function AdminPage() {
               toast.success(`${saved} tender(s) sent to the employee review queue.`);
           }
           if (duplicates > 0) {
-              toast.warning(`${duplicates} file(s) skipped â€” already in drafts or already live.`);
+              toast.warning(`${duplicates} file(s) skipped — already in drafts or already live.`);
           }
           if (failed > 0) {
               const firstError = (data?.results || []).find(r => r.status === 'failed');
               toast.error(
-                  `${failed} file(s) failed${firstError ? `: ${firstError.fileName} â€” ${firstError.error}` : '.'}`,
+                  `${failed} file(s) failed${firstError ? `: ${firstError.fileName} — ${firstError.error}` : '.'}`,
                   { duration: 9000 }
               );
           }
@@ -767,7 +810,7 @@ export default function AdminPage() {
     } catch(e) { toast.error("Network error"); }
   };
 const handleViewDocument = (req) => {
-    // ðŸš€ FIX: MongoDB à°²à±‹ à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°«à±ˆà°²à± à°¸à±‡à°µà± à°…à°¯à±à°¯à±‡ à°…à°¨à±à°¨à°¿ à°°à°•à°¾à°² à°ªà±‡à°°à±à°²à°¨à± à°‡à°•à±à°•à°¡ à°¯à°¾à°¡à± à°šà±‡à°¶à°¾à°¨à±
+    // 🚀 FIX: MongoDB లో క్లయింట్ ఫైల్ సేవ్ అయ్యే అన్ని రకాల పేర్లను ఇక్కడ యాడ్ చేశాను
     const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file;
     
     if (docLink) {
@@ -825,10 +868,10 @@ const handleViewDocument = (req) => {
         });
         
         if (res.ok) {
-            const data = await res.json(); // Backend à°ªà°‚à°ªà±‡ à°°à±†à°¸à±à°ªà°¾à°¨à±à°¸à± à°šà°¦à°µà°¡à°‚
+            const data = await res.json(); // Backend పంపే రెస్పాన్స్ చదవడం
             toast.success(`Online payment link dispatched securely to client!`);
             
-            // ðŸš€ FIX: à°¡à°¿à°¸à±à°ªà°¾à°šà± à°šà±‡à°¯à°—à°¾à°¨à±‡ Live Tracking à°²à±‹ à°µà±†à°‚à°Ÿà°¨à±‡ à°•à°¨à°¿à°ªà°¿à°‚à°šà°¡à°¾à°¨à°¿à°•à°¿ à°†à°Ÿà±‹à°®à±‡à°Ÿà°¿à°•à± à°…à°ªà±â€Œà°¡à±‡à°Ÿà±
+            // 🚀 FIX: డిస్పాచ్ చేయగానే Live Tracking లో వెంటనే కనిపించడానికి ఆటోమేటిక్ అప్‌డేట్
             const newReq = {
                 id: data.id || Date.now(),
                 client_id: paymentRequestForm.client_id,
@@ -840,7 +883,7 @@ const handleViewDocument = (req) => {
             setFinancialRequests(prev => [newReq, ...prev]);
             
             setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
-            refresh(); // à°‡à°¦à°¿ à°¬à±à°¯à°¾à°²à±†à°¨à±à°¸à± à°·à±€à°Ÿà± à°®à°°à°¿à°¯à± à°‡à°¤à°° à°¡à±‡à°Ÿà°¾à°¨à± à°…à°ªà±â€Œà°¡à±‡à°Ÿà± à°šà±‡à°¸à±à°¤à±à°‚à°¦à°¿
+            refresh(); // ఇది బ్యాలెన్స్ షీట్ మరియు ఇతర డేటాను అప్‌డేట్ చేస్తుంది
         } else {
             toast.error("Failed to dispatch payment link.");
         }
@@ -897,7 +940,10 @@ const handleViewDocument = (req) => {
     } catch(err) { toast.error("Network error"); }
   };
 
-  if (authChecking) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+  // 🚀 FIX (guideline #20): a bare spinner blanks the whole screen and gives no
+  // sense of what's about to load. This skeleton mirrors the real header/stat-card/
+  // tab layout below, so the dashboard feels instant and never "pops" into place.
+  if (authChecking) return <AdminDashboardSkeleton />;
   if (!token) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
@@ -907,7 +953,7 @@ const handleViewDocument = (req) => {
      t.title?.toLowerCase().includes((tenderSearch || '').toLowerCase()) ||
      t.department?.toLowerCase().includes((tenderSearch || '').toLowerCase())
   );
-  // ðŸš€ Pagination: slice filteredTenders into pages of `tendersPerPage`
+  // 🚀 Pagination: slice filteredTenders into pages of `tendersPerPage`
   const totalTenderPages = Math.max(1, Math.ceil(filteredTenders.length / tendersPerPage));
   const paginatedTenders = filteredTenders.slice((tenderPage - 1) * tendersPerPage, tenderPage * tendersPerPage);
   const goToTenderPage = (page) => {
@@ -986,7 +1032,7 @@ const handleViewDocument = (req) => {
                  <StatCard icon={<UserPlus className="w-4 h-4 text-orange-500" />} label="Pending Appr." value={pendingUsers.length} accent={pendingUsers.length > 0} />
               </div>
               <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`â‚¹${ledgerBalance.toLocaleString()}`} />
+                 <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${ledgerBalance.toLocaleString()}`} />
               </div>
             </div>
 
@@ -994,44 +1040,44 @@ const handleViewDocument = (req) => {
                <Card className="border-0 ring-1 ring-slate-200/80">
                   <CardHeader className="bg-slate-50/80 border-b border-slate-200/80 pb-3 rounded-t-xl"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Logs</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     {employeeReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No active employees found.</p> : (
-                       <table className="w-full text-sm text-left border-collapse">
-                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-50 border-b border-slate-200">
-                             <tr><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Efficiency</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                             {employeeReports.map(emp => (
-                                <tr key={emp.id} className="hover:bg-slate-50 transition-colors duration-150">
-                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} â€¢ {emp.role}</p></td>
-                                   <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
-                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full transition-all duration-300 ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                     )}
+                    {employeeReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No active employees found.</p> : (
+                      <table className="premium-table text-sm text-left">
+                         <thead>
+                            <tr><th>Employee</th><th>Status</th><th>Efficiency</th></tr>
+                         </thead>
+                         <tbody>
+                            {employeeReports.map(emp => (
+                               <tr key={emp.id}>
+                                  <td><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
+                                  <td className="font-semibold text-emerald-700">{emp.login}</td>
+                                  <td><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full transition-all duration-300 ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
+                               </tr>
+                            ))}
+                         </tbody>
+                      </table>
+                    )}
                   </CardContent>
                </Card>
                <Card className="border-0 ring-1 ring-slate-200/80">
                   <CardHeader className="bg-slate-50/80 border-b border-slate-200/80 pb-3 rounded-t-xl"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Consultancy Funnel (Business Conversion)</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                     {clientReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No verified clients yet.</p> : (
-                       <table className="w-full text-sm text-left border-collapse">
-                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-50 border-b border-slate-200">
-                             <tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Applied</th><th className="px-3 py-2 text-emerald-600">Won</th><th className="px-3 py-2 text-red-600">Lost</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                             {clientReports.map(cr => (
-                                <tr key={cr.id} className="hover:bg-slate-50 transition-colors duration-150">
-                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
-                                   <td className="px-3 py-2 font-bold text-slate-700">{cr.total}</td>
-                                   <td className="px-3 py-2 font-black text-emerald-600">{cr.won}</td>
-                                   <td className="px-3 py-2 font-bold text-red-500">{cr.lost}</td>
-                                </tr>
-                             ))}
-                          </tbody>
-                       </table>
-                     )}
+                    {clientReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No verified clients yet.</p> : (
+                      <table className="premium-table text-sm text-left">
+                         <thead>
+                            <tr><th>Client</th><th>Applied</th><th className="text-emerald-600">Won</th><th className="text-red-600">Lost</th></tr>
+                         </thead>
+                         <tbody>
+                            {clientReports.map(cr => (
+                               <tr key={cr.id}>
+                                  <td><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
+                                  <td className="font-bold text-slate-700">{cr.total}</td>
+                                  <td className="font-black text-emerald-600">{cr.won}</td>
+                                  <td className="font-bold text-red-500">{cr.lost}</td>
+                               </tr>
+                            ))}
+                         </tbody>
+                      </table>
+                    )}
                   </CardContent>
                </Card>
             </div>
@@ -1186,7 +1232,7 @@ const handleViewDocument = (req) => {
                                 <div className="flex justify-between items-start mb-2">
                                    <div>
                                       <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
-                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} â€¢ {client.email}</p>
+                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
                                       {client.phone && (
                                         <div className="mt-1">
                                           <WhatsAppVerifiedBadge
@@ -1203,7 +1249,7 @@ const handleViewDocument = (req) => {
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{wonBidsCount}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">â‚¹{totalRevenue.toLocaleString()}</span></div>
+                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{totalRevenue.toLocaleString()}</span></div>
                                 </div>
                              </div>
                              
@@ -1260,7 +1306,7 @@ const handleViewDocument = (req) => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
-              <Label className="font-bold text-slate-700">Amount (â‚¹) *</Label>
+              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
               <Input type="number" placeholder="5000" value={ledgerForm.amount} onChange={e => setLedgerForm({...ledgerForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647]" />
             </div>
             <div className="col-span-2 sm:col-span-1">
@@ -1302,8 +1348,8 @@ const handleViewDocument = (req) => {
         <CardTitle className="text-[#0A2647] text-lg">Balance Sheet Book</CardTitle>
         <div className="text-right">
           <p className="text-[10px] text-slate-500 uppercase font-bold">Net Balance</p>
-          <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>â‚¹{ledgerBalance.toLocaleString()}</h3>
-          <p className="text-[9px] text-slate-400 font-mono mt-1">Offline: â‚¹{breakdown.offline.toLocaleString()} | Online: â‚¹{breakdown.online.toLocaleString()}</p>
+          <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{ledgerBalance.toLocaleString()}</h3>
+          <p className="text-[9px] text-slate-400 font-mono mt-1">Offline: ₹{breakdown.offline.toLocaleString()} | Online: ₹{breakdown.online.toLocaleString()}</p>
         </div>
       </CardHeader>
       <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
@@ -1323,7 +1369,7 @@ const handleViewDocument = (req) => {
                     {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
                     
                     <p className="text-[10px] font-bold text-slate-500 mt-1">
-                      Balance: <span className={txn.running_balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>â‚¹{txn.running_balance?.toLocaleString() || '---'}</span>
+                      Balance: <span className={txn.running_balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>₹{txn.running_balance?.toLocaleString() || '---'}</span>
                     </p>
 
                     {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer hover:bg-blue-100" onClick={() => {
@@ -1340,7 +1386,7 @@ const handleViewDocument = (req) => {
                     }}>View Proof</Badge>}
                   </td>
                   <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {txn.type === 'CREDIT' ? '+' : '-'}â‚¹{txn.amount.toLocaleString()}
+                    {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
                   </td>
                   <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                     <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
@@ -1376,11 +1422,11 @@ const handleViewDocument = (req) => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
-              <Label className="font-bold text-slate-700">Amount (â‚¹) *</Label>
+              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
               <Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" />
             </div>
             <div className="col-span-2 sm:col-span-1">
-              {/* à°®à±€ à°°à°¿à°•à±à°µà±†à°¸à±à°Ÿà± à°ªà±à°°à°•à°¾à°°à°‚ à°‡à°•à±à°•à°¡ à°¡à±à°°à°¾à°ªà± à°¡à±Œà°¨à± à°¤à±€à°¸à±‡à°¸à°¿ à°®à°¾à°¨à±à°¯à±à°µà°²à± à°‡à°¨à±â€Œà°ªà±à°Ÿà± à°ªà±†à°Ÿà±à°Ÿà°¾à°¨à± */}
+              {/* మీ రిక్వెస్ట్ ప్రకారం ఇక్కడ డ్రాప్ డౌన్ తీసేసి మాన్యువల్ ఇన్‌పుట్ పెట్టాను */}
               <Label className="font-bold text-slate-700">Reason / Purpose *</Label>
               <Input placeholder="Enter purpose of payment..." value={paymentRequestForm.reason} onChange={e => setPaymentRequestForm({...paymentRequestForm, reason: e.target.value})} required className="mt-1 bg-white border-slate-300" />
             </div>
@@ -1410,7 +1456,7 @@ const handleViewDocument = (req) => {
               {financialRequests.filter(req => req.status !== 'paid').map(req => (
                 <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
                   <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-bold text-[#0A2647] text-base">â‚¹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
+                    <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
                     <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
                   </div>
                   <div className="relative pt-2 pb-1 mx-2">
@@ -1443,7 +1489,7 @@ const handleViewDocument = (req) => {
       <Card className="shadow-sm border-t-4 border-t-emerald-500">
         <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
           <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Online Payments</CardTitle>
-          <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold shadow-sm">Total: â‚¹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
+          <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold shadow-sm">Total: ₹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
         </CardHeader>
         <CardContent className="pt-4 max-h-[300px] overflow-y-auto">
           {successfulPaymentsLog.length === 0 ? (
@@ -1454,7 +1500,7 @@ const handleViewDocument = (req) => {
                 <div key={i} className="bg-slate-50 border border-emerald-100 p-3 rounded-lg shadow-sm flex flex-col gap-2 border-l-4 border-l-emerald-500">
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-bold text-[#0A2647]">{pay.client_name} <span className="text-slate-400 font-normal">({pay.email})</span></span>
-                    <span className="font-black text-emerald-600">â‚¹{pay.amount}</span>
+                    <span className="font-black text-emerald-600">₹{pay.amount}</span>
                   </div>
                   <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
                     <span>{pay.reason || 'Service Fee'} (Cashfree)</span>
@@ -1534,7 +1580,7 @@ const handleViewDocument = (req) => {
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
                                     <div className="flex flex-col">
                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
-                                       <span className="text-sm font-mono font-bold text-[#0A2647]">{showPwdId === off.emp_id ? off.password : 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢'}</span>
+                                       <span className="text-sm font-mono font-bold text-[#0A2647]">{showPwdId === off.emp_id ? off.password : '••••••••'}</span>
                                     </div>
                                     <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 font-semibold" onClick={() => setShowPwdId(showPwdId === off.emp_id ? null : off.emp_id)}>
                                        {showPwdId === off.emp_id ? <EyeOff className="w-3.5 h-3.5 mr-1.5"/> : <Eye className="w-3.5 h-3.5 mr-1.5"/>}
@@ -1642,7 +1688,7 @@ const handleViewDocument = (req) => {
                                               </div>
                                            )}
                                            
-                                           {/* ðŸš€ FIX: à°…à°Ÿà°¾à°šà± à°šà±‡à°¸à°¿à°¨ PDF à°¨à°¿ à°µà±à°¯à±‚ à°šà±‡à°¸à±‡ à°†à°ªà±à°·à°¨à± */}
+                                           {/* 🚀 FIX: అటాచ్ చేసిన PDF ని వ్యూ చేసే ఆప్షన్ */}
                                            {task.file_name && (
                                               <Button size="sm" variant="outline" onClick={() => {
                                                   window.open(`/api/dispatches/${task._id || task.id}/file`, '_blank');
@@ -1691,11 +1737,11 @@ const handleViewDocument = (req) => {
                      ) : (
                         <div className="space-y-4">
                            {bidRequests.map(req => {
-                              // ðŸš€ FIX: à°‡à°•à±à°•à°¡ à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°¡à°¾à°•à±à°¯à±à°®à±†à°‚à°Ÿà± à°…à°ªà±â€Œà°²à±‹à°¡à± à°šà±‡à°¶à°¾à°¡à±‹ à°²à±‡à°¦à±‹ à°–à°šà±à°šà°¿à°¤à°‚à°—à°¾ à°šà±†à°•à± à°šà±‡à°¸à±à°¤à±à°‚à°¦à°¿
+                              // 🚀 FIX: ఇక్కడ క్లయింట్ డాక్యుమెంట్ అప్‌లోడ్ చేశాడో లేదో ఖచ్చితంగా చెక్ చేస్తుంది
                               const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file || (req.link_or_id && req.link_or_id.startsWith('http'));
                               
                               const matchedTender = tenders.find(t => t.bid_no === req.link_or_id);
-                              // ðŸš€ FIX: à°‡à°¦à°¿ à°Ÿà±†à°‚à°¡à°°à± à°•à°¾à°¦à±, à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°¸à±Šà°‚à°¤à°‚à°—à°¾ à°ªà±†à°Ÿà±à°Ÿà°¿à°¨ à°«à±ˆà°²à± à°…à°¨à°¿ à°—à±à°°à±à°¤à±à°ªà°Ÿà±à°Ÿà°¡à°¾à°¨à°¿à°•à°¿
+                              // 🚀 FIX: ఇది టెండర్ కాదు, క్లయింట్ సొంతంగా పెట్టిన ఫైల్ అని గుర్తుపట్టడానికి
                               const isClientUpload = hasDoc && !matchedTender;
 
                               return (
@@ -1709,7 +1755,7 @@ const handleViewDocument = (req) => {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
-                                 {/* ðŸš€ FIX: à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°…à°ªà±â€Œà°²à±‹à°¡à± à°šà±‡à°¸à±à°¤à±‡ "View Uploaded Document", à°²à±‡à°•à°ªà±‹à°¤à±‡ "View Original Tender PDF" */}
+                                 {/* 🚀 FIX: క్లయింట్ అప్‌లోడ్ చేస్తే "View Uploaded Document", లేకపోతే "View Original Tender PDF" */}
                                  <Button variant="outline" size="sm" disabled={!hasDoc && !matchedTender} onClick={() => {
                                      if (isClientUpload || !matchedTender) {
                                          handleViewDocument(req);
@@ -1755,7 +1801,7 @@ const handleViewDocument = (req) => {
             </div>
           </TabsContent>
           {/* ==================== 6. PUBLISHER ==================== */}
-          {/* ðŸš€ AI MATCHMAKER & COMPETITOR INTEL â€” matches produced by the nightly
+          {/* 🚀 AI MATCHMAKER & COMPETITOR INTEL — matches produced by the nightly
               /api/cron/matchmaker job, plus on-demand L1 price prediction. */}
           <TabsContent value="matchmaker" className="mt-4">
 
@@ -1789,8 +1835,8 @@ const handleViewDocument = (req) => {
                       className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm"
                     >
                       {launchingGem
-                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launchingâ€¦</>
-                        : <>ðŸš€ Launch GeM Live Hunter</>}
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
+                        : <>🚀 Launch GeM Live Hunter</>}
                     </Button>
                     <Button
                       onClick={runMatchmakerNow}
@@ -2020,7 +2066,7 @@ const handleViewDocument = (req) => {
               />
             </div>
             
-            {/* ðŸš€ à°‡à°•à±à°•à°¡ à°ªà±‡à°¸à±à°Ÿà± à°šà±†à°¯à± (à°•à±Šà°¤à±à°¤ à°•à±‹à°¡à±) - MD Bulk AI Dropzone ðŸš€ */}
+            {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) - MD Bulk AI Dropzone 🚀 */}
             <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mb-6">
                <CardHeader className="bg-purple-50/50 border-b pb-4">
                   <CardTitle className="text-purple-900 flex items-center gap-2"><UploadCloud className="w-5 h-5 text-purple-600"/> Bulk AI Tender Dropzone</CardTitle>
@@ -2054,7 +2100,7 @@ const handleViewDocument = (req) => {
                            <span className="text-base font-bold text-purple-900">
                               {bulkDragActive ? 'Release to upload' : 'Drag & drop PDFs here'}
                            </span>
-                           <span className="text-xs text-purple-600 mt-1">or click to browse â€” up to 25 files, 15MB each</span>
+                           <span className="text-xs text-purple-600 mt-1">or click to browse — up to 25 files, 15MB each</span>
                         </>
                      )}
                   </label>
@@ -2063,7 +2109,7 @@ const handleViewDocument = (req) => {
 
             <L1BenchmarkDropzone />
 
-            {/* === à°¦à±€à°¨à°¿ à°ªà±ˆà°¨ à°‰à°‚à°¦à°¨à°¿ à°¨à°¿à°°à±à°§à°¾à°°à°¿à°‚à°šà±à°•à±‹ (à°ªà°¾à°¤ à°•à±‹à°¡à±) === */}
+            {/* === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) === */}
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
                 <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
@@ -2149,7 +2195,7 @@ const handleViewDocument = (req) => {
                          </Button>
                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
                             <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
-                            <Input placeholder="Price (â‚¹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), price: e.target.value}}))}/>
+                            <Input placeholder="Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), price: e.target.value}}))}/>
                             <Input placeholder="Winner Name" className="h-8 text-xs bg-white w-full sm:flex-1 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), winner: e.target.value}}))}/>
                             <Button size="sm" className="h-8 text-[10px] w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 shadow-sm px-2" onClick={() => submitL1Price(t._id || t.id)}>Save</Button>
                          </div>
@@ -2157,7 +2203,7 @@ const handleViewDocument = (req) => {
                     </div>
                   ))}
 
-                  {/* ðŸš€ Pagination Controls (20 per page) */}
+                  {/* 🚀 Pagination Controls (20 per page) */}
                   {totalTenderPages > 1 && (
                     <div className="flex items-center justify-center gap-4 pt-2 pb-1">
                       <Button
@@ -2302,7 +2348,7 @@ const handleViewDocument = (req) => {
           </TabsContent>
         </Tabs>
 
-        {/* ðŸš€ MD Vault Approval Dialog */}
+        {/* 🚀 MD Vault Approval Dialog */}
         <Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
           <DialogContent className="sm:max-w-md border-0 shadow-2xl">
             <DialogHeader>
@@ -2345,7 +2391,7 @@ const handleViewDocument = (req) => {
           </DialogContent>
         </Dialog>
 
-        {/* ðŸš€ L1 PREDICTION â€” competitor intel and a suggested quote for one matched bid. */}
+        {/* 🚀 L1 PREDICTION — competitor intel and a suggested quote for one matched bid. */}
         <Dialog open={predictionOpen} onOpenChange={setPredictionOpen}>
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -2354,7 +2400,7 @@ const handleViewDocument = (req) => {
               </DialogTitle>
               <DialogDescription className="leading-snug">
                 {prediction?.tender?.title || 'Selected tender'}
-                {prediction?.tender?.bid_no ? ` Â· ${prediction.tender.bid_no}` : ''}
+                {prediction?.tender?.bid_no ? ` · ${prediction.tender.bid_no}` : ''}
               </DialogDescription>
             </DialogHeader>
 
@@ -2374,7 +2420,7 @@ const handleViewDocument = (req) => {
                       <TrendingDown className="w-4 h-4" />
                       {prediction.prediction?.suggested_l1_percentage != null
                         ? `${prediction.prediction.suggested_l1_percentage}%`
-                        : 'â€”'}
+                        : '—'}
                     </div>
                   </div>
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
@@ -2391,7 +2437,7 @@ const handleViewDocument = (req) => {
                   </div>
                 </div>
 
-                {/* Historical baseline â€” the numbers the model was given, so the MD can
+                {/* Historical baseline — the numbers the model was given, so the MD can
                     sanity-check the recommendation rather than trust it blindly. */}
                 <div className="bg-white border rounded-lg p-3">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-2">
@@ -2400,13 +2446,13 @@ const handleViewDocument = (req) => {
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div>
                       <div className="text-base font-bold text-slate-800">
-                        {prediction.history?.median_margin_pct != null ? `${prediction.history.median_margin_pct}%` : 'â€”'}
+                        {prediction.history?.median_margin_pct != null ? `${prediction.history.median_margin_pct}%` : '—'}
                       </div>
                       <div className="text-[10px] text-slate-400 uppercase">Median</div>
                     </div>
                     <div>
                       <div className="text-base font-bold text-slate-800">
-                        {prediction.history?.average_margin_pct != null ? `${prediction.history.average_margin_pct}%` : 'â€”'}
+                        {prediction.history?.average_margin_pct != null ? `${prediction.history.average_margin_pct}%` : '—'}
                       </div>
                       <div className="text-[10px] text-slate-400 uppercase">Average</div>
                     </div>
@@ -2456,7 +2502,7 @@ const handleViewDocument = (req) => {
                   </div>
                 )}
 
-                {/* JV recommendation â€” pre-seeded from the matchmaker where it found a pair. */}
+                {/* JV recommendation — pre-seeded from the matchmaker where it found a pair. */}
                 <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-3">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1.5 mb-1">
                     <Handshake className="w-3.5 h-3.5" /> Joint Venture
@@ -2485,7 +2531,7 @@ const handleViewDocument = (req) => {
                     <ul className="space-y-1">
                       {prediction.prediction.risks.map((risk, i) => (
                         <li key={i} className="text-sm text-slate-700 flex gap-2">
-                          <span className="text-red-400 shrink-0">â€¢</span> {risk}
+                          <span className="text-red-400 shrink-0">•</span> {risk}
                         </li>
                       ))}
                     </ul>
@@ -2749,7 +2795,7 @@ function BrandSettings({ token }) {
                  
                  <div className="sm:col-span-2 lg:col-span-4 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
                     <label className={`flex-1 w-full border ${newLeader.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
-                       <UploadCloud className="w-4 h-4"/> {newLeader.image ? 'Professional Photo Selected âœ“' : 'Upload Professional Photo *'}
+                       <UploadCloud className="w-4 h-4"/> {newLeader.image ? 'Professional Photo Selected ✓' : 'Upload Professional Photo *'}
                        <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewLeader({...newLeader, image: b64}))} className="hidden"/>
                     </label>
                     <Button type="button" onClick={addLeader} className="flex-1 w-full bg-blue-600 hover:bg-blue-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Leaders List</Button>
@@ -2790,7 +2836,7 @@ function BrandSettings({ token }) {
                  
                  <div className="sm:col-span-2 lg:col-span-3 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
                     <label className={`flex-1 w-full border ${newClient.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
-                       <UploadCloud className="w-4 h-4"/> {newClient.image ? 'Company Logo Selected âœ“' : 'Upload Company Logo *'}
+                       <UploadCloud className="w-4 h-4"/> {newClient.image ? 'Company Logo Selected ✓' : 'Upload Company Logo *'}
                        <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewClient({...newClient, image: b64}))} className="hidden"/>
                     </label>
                     <Button type="button" onClick={addClient} className="flex-1 w-full bg-emerald-600 hover:bg-emerald-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Public Showcase</Button>

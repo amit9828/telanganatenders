@@ -1,6 +1,15 @@
+import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 import Providers from './providers';
+
+// 🚀 FIX: `font-family: 'Inter'` was declared in globals.css but never actually
+// loaded anywhere — the browser silently fell back to the OS default sans-serif
+// the whole time. next/font/google self-hosts the font (no external request,
+// no layout shift) and exposes it as a CSS variable so both body copy (Inter)
+// and headings (Plus Jakarta Sans, a warmer/rounder display face) are real.
+const inter = Inter({ subsets: ['latin'], variable: '--font-sans', display: 'swap' });
+const plusJakarta = Plus_Jakarta_Sans({ subsets: ['latin'], variable: '--font-heading', display: 'swap' });
 
 export const viewport = {
   themeColor: "#0A2647",
@@ -100,7 +109,7 @@ export default function RootLayout({ children }) {
   };
 
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
       <head>
         <script
           type="application/ld+json"

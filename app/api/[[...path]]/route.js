@@ -45,6 +45,11 @@ function json(data, status = 200) {
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Pragma': 'no-cache',
       'Expires': '0',
+      // 🚀 FIX (Mojibake defense-in-depth): NextResponse.json() doesn't declare a
+      // charset by itself. JSON bodies are UTF-8 by spec so most clients decode
+      // correctly regardless, but declaring it explicitly removes any ambiguity
+      // for proxies/tools that inspect Content-Type before parsing.
+      'Content-Type': 'application/json; charset=utf-8',
     }
   });
 }
