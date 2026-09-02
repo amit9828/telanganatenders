@@ -22,14 +22,7 @@ import {
   IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature,
   Handshake, Landmark, Gavel, ScrollText
 } from 'lucide-react';
-
-// 🚀 Staff-only widgets (AI Match/JV Hub, EMD Loan / GeM Sahay, SCN reply draft) reuse
-// this same ₹ formatter used elsewhere on the site rather than each rolling their own.
-const formatINR = (value) => {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  return `₹${n.toLocaleString('en-IN')}`;
-};
+import { formatINR } from '@/lib/format';
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -1179,6 +1172,10 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
+          {/* Order per Enterprise UI/UX Blueprint (section A): the two most frequent
+              client actions — checking their dashboard and browsing live tenders — come
+              first, followed by wins/vault/finance/profile. Flat bar (no grouping) since
+              6-7 items doesn't need it. Staff-only "Bid Tools" stays last. */}
           <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 rounded-xl mb-6">
             <TabsTrigger value="dashboard" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Active Dashboard
@@ -1186,11 +1183,17 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
             <TabsTrigger value="live_tenders" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Globe className="w-4 h-4 mr-2 hidden sm:block"/> Live Tenders
             </TabsTrigger>
-            <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
-              <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> Client Profile
+            <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
+              <Trophy className="w-4 h-4 mr-2 hidden sm:block"/> Winning Bids
             </TabsTrigger>
             <TabsTrigger value="vault" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Lock className="w-4 h-4 mr-2 hidden sm:block"/> My Secure Vault
+            </TabsTrigger>
+            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              <Banknote className="w-4 h-4 mr-2 hidden sm:block"/> Finance/SLA
+            </TabsTrigger>
+            <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> Client Profile
             </TabsTrigger>
             {/* 🚀 RBAC: "Bid Tools" hidden exclusively for real clients — still fully
                 present in the DOM/functional for MD/employee staff-preview sessions,
@@ -1200,12 +1203,6 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 <Wand2 className="w-4 h-4 mr-2 hidden sm:block"/> Bid Tools
               </TabsTrigger>
             )}
-            <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
-              <Trophy className="w-4 h-4 mr-2 hidden sm:block"/> Winning Bids
-            </TabsTrigger>
-            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
-              <Banknote className="w-4 h-4 mr-2 hidden sm:block"/> Finance/SLA
-            </TabsTrigger>
           </TabsList>
 
           {/* ============================================================================== */}

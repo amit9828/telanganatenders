@@ -11,6 +11,8 @@ import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
+import DashboardNav from '@/components/DashboardNav';
+import { formatINR } from '@/lib/format';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -20,7 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -419,12 +421,6 @@ export default function AdminPage() {
   };
 
   // 🚀 AI Matchmaker & Competitor Intel ------------------------------------------------
-  const formatINR = (value) => {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n <= 0) return '—';
-    return `₹${n.toLocaleString('en-IN')}`;
-  };
-
   // Triggers the same job Vercel Cron runs nightly, so the MD never has to wait for the
   // schedule after publishing a batch of tenders.
   const runMatchmakerNow = async () => {
@@ -962,6 +958,37 @@ const handleViewDocument = (req) => {
     // Smoothly scroll the (internally scrollable) tenders list back to the top
     tendersListRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Grouped nav (Enterprise UI/UX Blueprint, section A) — replaces the old single-row
+  // flat TabsList (10 tabs wrapping into 2-3 ragged rows) with a left rail on desktop
+  // and a Sheet drawer on tablet/mobile. Same `activeTab` values as before, so every
+  // <TabsContent value="..."> below is untouched.
+  const ADMIN_NAV_GROUPS = [
+    { id: 'overview', label: 'Overview', items: [
+      { value: 'reports', label: 'Master Reports', icon: BarChart3, color: 'navy' },
+    ] },
+    { id: 'revenue-clients', label: 'Revenue & Clients', items: [
+      { value: 'finance', label: 'Finance Hub', icon: IndianRupee, color: 'emerald' },
+      { value: 'clients', label: 'Client CRM', icon: UserCheck, color: 'navy' },
+    ] },
+    { id: 'ai-operations', label: 'AI & Operations', items: [
+      { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo', badge: matchSummary.new },
+      { value: 'live-scraped', label: 'Live Scraped', icon: Activity, color: 'teal', badge: liveScrapedTenders.length },
+      { value: 'operations', label: 'Operations', icon: ClipboardList, color: 'purple' },
+      { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
+    ] },
+    { id: 'publishing', label: 'Publishing', items: [
+      { value: 'publisher', label: 'Published Tenders', icon: FileText, color: 'navy' },
+    ] },
+    { id: 'team-support', label: 'Team & Support', items: [
+      { value: 'team', label: 'Team Directory', icon: UserCog, color: 'blue' },
+      { value: 'tickets', label: 'Helpdesk', icon: MessageSquare, color: 'navy', badge: activeTickets.length },
+    ] },
+    { id: 'setup', label: 'Setup', items: [
+      { value: 'settings', label: 'Setup', icon: ShieldCheck, color: 'navy' },
+    ] },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
@@ -982,30 +1009,10 @@ const handleViewDocument = (req) => {
       </header>
 
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 items-start">
+        <DashboardNav groups={ADMIN_NAV_GROUPS} activeTab={activeTab} onChange={setActiveTab} title="MD Command Center" />
+        <div className="flex-1 w-full min-w-0 space-y-4 sm:space-y-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 rounded-xl mb-4">
-            <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><BarChart3 className="w-4 h-4 mr-2 hidden sm:block"/> Master Reports</TabsTrigger>
-            <TabsTrigger value="clients" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><UserCheck className="w-4 h-4 mr-2 hidden sm:block"/> Client CRM</TabsTrigger>
-            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-lg"><IndianRupee className="w-4 h-4 mr-2 hidden sm:block"/> Finance Hub</TabsTrigger>
-            <TabsTrigger value="team" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-blue-700 data-[state=active]:text-white font-semibold rounded-lg"><UserCog className="w-4 h-4 mr-2 hidden sm:block"/> Team Directory</TabsTrigger>
-            <TabsTrigger value="operations" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-purple-700 data-[state=active]:text-white font-semibold rounded-lg"><ClipboardList className="w-4 h-4 mr-2 hidden sm:block"/> Operations</TabsTrigger>
-            <TabsTrigger value="matchmaker" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-lg">
-               <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
-               {matchSummary.new > 0 && (
-                  <Badge className="ml-2 bg-indigo-600 text-white text-[10px] px-1.5 py-0 h-4">{matchSummary.new}</Badge>
-               )}
-            </TabsTrigger>
-            <TabsTrigger value="live-scraped" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-semibold rounded-lg">
-               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Live Scraped
-               {liveScrapedTenders.length > 0 && (
-                  <Badge className="ml-2 bg-teal-600 text-white text-[10px] px-1.5 py-0 h-4">{liveScrapedTenders.length}</Badge>
-               )}
-            </TabsTrigger>
-            <TabsTrigger value="publisher" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><FileText className="w-4 h-4 mr-2 hidden sm:block"/> Published Tenders</TabsTrigger>
-            <TabsTrigger value="copilot-desk" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-violet-700 data-[state=active]:text-white font-semibold rounded-lg"><Bot className="w-4 h-4 mr-2 hidden sm:block"/> Co-Pilot Chat Desk</TabsTrigger>
-            <TabsTrigger value="tickets" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk</TabsTrigger>
-            <TabsTrigger value="settings" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Setup</TabsTrigger>
-          </TabsList>
 
           {/* ==================== 1. MASTER REPORTS ==================== */}
           <TabsContent value="reports" className="space-y-4">
@@ -1356,15 +1363,15 @@ const handleViewDocument = (req) => {
         {ledgerTxns.length === 0 ? (
           <div className="text-center py-12 text-slate-400"><Database className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No ledger entries found.</p></div>
         ) : (
-          <table className="w-full text-sm text-left">
-            <thead className="text-[10px] uppercase bg-slate-100 text-slate-500 sticky top-0 z-10">
-              <tr><th className="p-2">Date</th><th className="p-2">Desc & Ref</th><th className="p-2 text-right">Amount</th><th className="p-2 w-10"></th></tr>
+          <table className="premium-table text-sm text-left">
+            <thead>
+              <tr><th>Date</th><th>Desc & Ref</th><th className="text-right">Amount</th><th className="w-10"></th></tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {ledgerTxns.map((txn) => (
-                <tr key={txn._id} className="hover:bg-slate-50 group">
-                  <td className="p-2 text-xs text-slate-500 whitespace-nowrap align-top">{new Date(txn.created_at).toLocaleDateString()}</td>
-                  <td className="p-2 align-top">
+                <tr key={txn._id} className="group">
+                  <td className="text-xs text-slate-500 whitespace-nowrap align-top">{new Date(txn.created_at).toLocaleDateString()}</td>
+                  <td className="align-top">
                     <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
                     {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
                     
@@ -1385,10 +1392,10 @@ const handleViewDocument = (req) => {
                         }
                     }}>View Proof</Badge>}
                   </td>
-                  <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <td className={`text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
                     {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
                   </td>
-                  <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                  <td className="align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                     <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
                     <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
                   </td>
@@ -2347,6 +2354,8 @@ const handleViewDocument = (req) => {
             <BrandSettings token={token} />
           </TabsContent>
         </Tabs>
+        </div>
+        </div>
 
         {/* 🚀 MD Vault Approval Dialog */}
         <Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>

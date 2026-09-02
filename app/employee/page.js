@@ -10,13 +10,14 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
 import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
+import DashboardNav from '@/components/DashboardNav';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea'; 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; 
@@ -43,6 +44,7 @@ const BORDER_COLORS = [
 
 export default function EmployeeDashboard() {
   const [isMounted, setIsMounted] = useState(false);
+  const [activeTab, setActiveTab] = useState('kanban');
   const [email, setEmail] = useState('');
   const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
   const [loading, setLoading] = useState(true);
@@ -1002,6 +1004,35 @@ export default function EmployeeDashboard() {
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
+  const pendingClientAlerts = mdTasks.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').length;
+
+  // Grouped nav (Enterprise UI/UX Blueprint, section A) — replaces the old single-row
+  // flat TabsList (11 tabs) with a left rail on desktop and a Sheet drawer on
+  // tablet/mobile. Same tab values as before, so every <TabsContent value="..."> below
+  // is untouched.
+  const EMPLOYEE_NAV_GROUPS = [
+    { id: 'my-work', label: 'My Work', items: [
+      { value: 'kanban', label: 'Active Bids', icon: Kanban, color: 'navy' },
+      { value: 'drafts', label: 'Ready to Publish', icon: Sparkles, color: 'navy', badge: aiDrafts.length },
+      { value: 'suggestions', label: 'Suggestions', icon: Lightbulb, color: 'navy' },
+    ] },
+    { id: 'clients-officers', label: 'Clients & Officers', items: [
+      { value: 'clients', label: 'Clients DB', icon: Users, color: 'navy' },
+      { value: 'officers', label: 'Govt Officers', icon: Contact, color: 'navy' },
+    ] },
+    { id: 'ai-tools', label: 'AI Tools', items: [
+      { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo' },
+      { value: 'live-scraped', label: 'Live Scraped', icon: Activity, color: 'teal' },
+      { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
+    ] },
+    { id: 'publishing', label: 'Publishing', items: [
+      { value: 'publisher', label: 'Published Tenders', icon: PlusCircle, color: 'navy' },
+    ] },
+    { id: 'alerts-support', label: 'Alerts & Support', items: [
+      { value: 'alerts', label: 'Alerts & Queries', icon: BellRing, color: 'navy', badge: pendingClientAlerts },
+      { value: 'sla', label: 'Helpdesk', icon: MessageSquare, color: 'navy', badge: activeTickets.length + guestQueries.length },
+    ] },
+  ];
 
 return (
     <div className="min-h-screen bg-slate-50">
@@ -1057,45 +1088,10 @@ return (
            </div>
         </div>
 
-        <Tabs defaultValue="kanban" className="w-full">
-          <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 mb-6 rounded-xl gap-1">
-            <TabsTrigger value="kanban" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Active Bids
-            </TabsTrigger>
-            <TabsTrigger value="suggestions" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Lightbulb className="w-4 h-4 mr-2 hidden sm:block"/> Suggestions
-            </TabsTrigger>
-            <TabsTrigger value="officers" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Contact className="w-4 h-4 mr-2 hidden sm:block"/> Govt Officers
-            </TabsTrigger>
-            <TabsTrigger value="clients" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Users className="w-4 h-4 mr-2 hidden sm:block"/> Clients DB
-            </TabsTrigger>
-            <TabsTrigger value="alerts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <BellRing className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Queries
-            </TabsTrigger>
-            <TabsTrigger value="matchmaker" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
-            </TabsTrigger>
-            <TabsTrigger value="live-scraped" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Live Scraped
-            </TabsTrigger>
-            <TabsTrigger value="publisher" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Published Tenders
-            </TabsTrigger>
-            <TabsTrigger value="copilot-desk" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-violet-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Bot className="w-4 h-4 mr-2 hidden sm:block"/> Co-Pilot Chat Desk
-            </TabsTrigger>
-            <TabsTrigger value="drafts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <Sparkles className="w-4 h-4 mr-2 hidden sm:block"/> Ready to Publish
-              {aiDrafts.length > 0 && (
-                <Badge className="ml-2 bg-purple-600 text-white hover:bg-purple-600 px-1.5 py-0 text-[10px]">{aiDrafts.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="sla" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 items-start">
+        <DashboardNav groups={EMPLOYEE_NAV_GROUPS} activeTab={activeTab} onChange={setActiveTab} title="Operations Desk" />
+        <div className="flex-1 w-full min-w-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
 
           {/* ==================== AI BULK PUBLISHER — REVIEW PIPELINE ==================== */}
           <TabsContent value="drafts" className="w-full space-y-6">
@@ -2069,6 +2065,8 @@ return (
             </Card>
           </TabsContent>
         </Tabs>
+        </div>
+        </div>
       </main>
 
       {/* MODALS */}

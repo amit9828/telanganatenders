@@ -232,26 +232,26 @@ function AccountPage() {
                 )}
                 {data?.payments?.length > 0 && (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="text-xs text-slate-500 uppercase bg-slate-100/50 border-b">
+                    <table className="premium-table text-sm text-left">
+                      <thead>
                         <tr>
-                          <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Plan Type</th>
-                          <th className="px-4 py-3">Amount</th>
-                          <th className="px-4 py-3">Status</th>
+                          <th>Date</th>
+                          <th>Plan Type</th>
+                          <th>Amount</th>
+                          <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
                         {data.payments.map((p, i) => (
-                          <tr key={i} className="border-b last:border-0 hover:bg-slate-50">
-                            <td className="px-4 py-3 font-medium text-[#0A2647]">
+                          <tr key={i}>
+                            <td className="font-medium text-[#0A2647]">
                               {p.paid_at ? new Date(p.paid_at).toLocaleDateString() : '-'}
                             </td>
-                            <td className="px-4 py-3 capitalize">{p.plan} Access</td>
-                            <td className="px-4 py-3 text-[#16a34a] font-bold flex items-center">
+                            <td className="capitalize">{p.plan} Access</td>
+                            <td className="text-[#16a34a] font-bold">
                               ₹{p.amount}
                             </td>
-                            <td className="px-4 py-3">
+                            <td>
                               <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">Success</Badge>
                             </td>
                           </tr>

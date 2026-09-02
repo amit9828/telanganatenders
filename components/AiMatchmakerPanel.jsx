@@ -9,6 +9,7 @@ import { launchGemHunter } from '@/lib/gem-hunter-client';
 import {
   Clock, FileText, Loader2, MapPin, MessageCircle, Radar, RefreshCw, Rocket, Sparkles, Target, Zap,
 } from 'lucide-react';
+import { formatINR } from '@/lib/format';
 
 function staffHeaders(extra = {}) {
   const headers = { ...extra };
@@ -17,12 +18,6 @@ function staffHeaders(extra = {}) {
     if (token) headers.Authorization = `Bearer ${token}`;
   }
   return headers;
-}
-
-function formatINR(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  return `₹${n.toLocaleString('en-IN')}`;
 }
 
 function countdownLabel(lastDate) {
