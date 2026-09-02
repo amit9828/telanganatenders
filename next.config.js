@@ -6,6 +6,10 @@ const nextConfig = {
   experimental: {
     // Remove if not using Server Components
     serverComponentsExternalPackages: ['mongodb'],
+    // Required on Next 14.x for instrumentation.js's register() hook to fire (it's
+    // stable/default from Next 15 onward). Used to auto-start the local GeM agent
+    // bridge — see instrumentation.js.
+    instrumentationHook: true,
   },
   webpack(config, { dev }) {
     if (dev) {

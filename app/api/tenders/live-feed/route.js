@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db';
 import { requireStaff, isStaffRole } from '@/lib/staff-auth';
 
@@ -207,6 +208,58 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error('[live-feed] POST failed:', error);
+    return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE — manual review cleanup for the Admin/Employee Live Scraped grid.
+ * Body: { id: "<mongo _id>" } deletes exactly that row, or
+ *       { scope: "unmapped" } bulk-deletes every row that never matched an
+ *       approved client's keyword profile (matched_keywords empty/missing).
+ * Requires one of the two — refuses anything else so a malformed request can
+ * never wipe the whole collection.
+ */
+export async function DELETE(request) {
+  try {
+    if (!(await isAuthorised(request, { allowStaffSession: true }))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => null);
+    const id = String(body?.id || '').trim();
+    const scope = String(body?.scope || '').trim().toLowerCase();
+
+    const db = await getDb();
+    const col = db.collection(COLLECTION);
+
+    if (id) {
+      if (!ObjectId.isValid(id)) {
+        return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+      }
+      const result = await col.deleteOne({ _id: new ObjectId(id) });
+      if (result.deletedCount === 0) {
+        return NextResponse.json({ error: 'That row no longer exists.' }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, deletedCount: 1 });
+    }
+
+    if (scope === 'unmapped') {
+      const result = await col.deleteMany({
+        $or: [
+          { matched_keywords: { $exists: false } },
+          { matched_keywords: { $size: 0 } },
+        ],
+      });
+      return NextResponse.json({ success: true, deletedCount: result.deletedCount || 0 });
+    }
+
+    return NextResponse.json(
+      { error: "Provide either { id } or { scope: 'unmapped' }." },
+      { status: 400 },
+    );
+  } catch (error) {
+    console.error('[live-feed] DELETE failed:', error);
     return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
   }
 }
