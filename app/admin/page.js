@@ -125,6 +125,7 @@ export default function AdminPage() {
   const [matchSummary, setMatchSummary] = useState({ total: 0, new: 0, jv: 0 });
   const [matchTypeFilter, setMatchTypeFilter] = useState('all'); // all | DIRECT | JV
   const [runningMatchmaker, setRunningMatchmaker] = useState(false);
+  const [launchingGem, setLaunchingGem] = useState(false);
   const [predictingMatchId, setPredictingMatchId] = useState(null);
   const [predictionOpen, setPredictionOpen] = useState(false);
   const [prediction, setPrediction] = useState(null); // { match, tender, history, prediction }
@@ -381,6 +382,19 @@ export default function AdminPage() {
       toast.error('Network error while running the matchmaker.', { id: toastId });
     } finally {
       setRunningMatchmaker(false);
+    }
+  };
+
+  const launchGemLiveHunter = async () => {
+    setLaunchingGem(true);
+    try {
+      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
+      if (!res.ok) throw new Error('launch failed');
+      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
+    } catch {
+      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+    } finally {
+      setLaunchingGem(false);
     }
   };
 
@@ -1714,15 +1728,27 @@ const handleViewDocument = (req) => {
                       manual WhatsApp alerts.
                     </CardDescription>
                   </div>
-                  <Button
-                    onClick={runMatchmakerNow}
-                    disabled={runningMatchmaker}
-                    className="bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm shrink-0"
-                  >
-                    {runningMatchmaker
-                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Scanning tenders...</>
-                      : <><RefreshCw className="w-4 h-4 mr-2" /> Refresh Cron Matches</>}
-                  </Button>
+                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                    <Button
+                      onClick={launchGemLiveHunter}
+                      disabled={launchingGem}
+                      variant="outline"
+                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm"
+                    >
+                      {launchingGem
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
+                        : <>🚀 Launch GeM Live Hunter</>}
+                    </Button>
+                    <Button
+                      onClick={runMatchmakerNow}
+                      disabled={runningMatchmaker}
+                      className="bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm"
+                    >
+                      {runningMatchmaker
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Scanning tenders...</>
+                        : <><RefreshCw className="w-4 h-4 mr-2" /> Refresh Cron Matches</>}
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
 

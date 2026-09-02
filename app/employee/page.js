@@ -49,6 +49,7 @@ export default function EmployeeDashboard() {
   const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
   const [analyzingTender, setAnalyzingTender] = useState(false);
+  const [launchingGem, setLaunchingGem] = useState(false);
   const [publicTenders, setPublicTenders] = useState([]); 
   const [suggestions, setSuggestions] = useState([]); 
   const [tickets, setTickets] = useState([]); 
@@ -210,6 +211,19 @@ export default function EmployeeDashboard() {
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`, '_blank');
     toast.success('Opening PDF Document...');
+  };
+
+  const launchGemLiveHunter = async () => {
+    setLaunchingGem(true);
+    try {
+      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
+      if (!res.ok) throw new Error('launch failed');
+      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
+    } catch {
+      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+    } finally {
+      setLaunchingGem(false);
+    }
   };
 
   // 🚀 AI Auto-Fill Function (FIXED)
@@ -1686,6 +1700,22 @@ return (
           </TabsContent>
 
           <TabsContent value="matchmaker" className="w-full space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3">
+              <div>
+                <p className="font-bold text-[#0A2647] text-sm">AI Matchmaker &amp; Competitor Intel</p>
+                <p className="text-xs text-slate-500 mt-0.5">Open Chrome via the local GeM agent, then run matching from the panel below.</p>
+              </div>
+              <Button
+                onClick={launchGemLiveHunter}
+                disabled={launchingGem}
+                variant="outline"
+                className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm shrink-0"
+              >
+                {launchingGem
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
+                  : <>🚀 Launch GeM Live Hunter</>}
+              </Button>
+            </div>
             <AiMatchmakerPanel />
             <L1BenchmarkDropzone />
           </TabsContent>
