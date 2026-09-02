@@ -2,6 +2,14 @@
 import { useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
+import GeminiWorkspace from '@/components/GeminiWorkspace';
+import StationeryUploader from '@/components/StationeryUploader';
+import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
+import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
+import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
+import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
+import LetterheadManager from '@/components/LetterheadManager';
+import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -16,7 +24,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay, Loader2,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle, PenTool, Activity, Bot
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -44,6 +52,7 @@ export default function EmployeeDashboard() {
   const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
   const [analyzingTender, setAnalyzingTender] = useState(false);
+  const [launchingGem, setLaunchingGem] = useState(false);
   const [publicTenders, setPublicTenders] = useState([]); 
   const [suggestions, setSuggestions] = useState([]); 
   const [tickets, setTickets] = useState([]); 
@@ -81,6 +90,7 @@ export default function EmployeeDashboard() {
 
   const [mdTaskReply, setMdTaskReply] = useState({});
   const [viewClientDocs, setViewClientDocs] = useState(null);
+  const [stationeryClient, setStationeryClient] = useState(null);
 
   const [ticketReply, setTicketReply] = useState({});
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
@@ -99,6 +109,11 @@ export default function EmployeeDashboard() {
   const [targetClientEmail, setTargetClientEmail] = useState('');
   const [uploadingOpPdf, setUploadingOpPdf] = useState(false);
   const [aiDrafts, setAiDrafts] = useState([]);
+  // 🚀 AI Bulk Publisher — review queue state
+  const [reviewDraft, setReviewDraft] = useState(null);
+  const [draftForm, setDraftForm] = useState({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', emd_amount: '', supply_details: '' });
+  const [publishingDraft, setPublishingDraft] = useState(false);
+  const [draftPdfRefs, setDraftPdfRefs] = useState({ pdf_url: null, pdf_r2_key: null });
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
@@ -201,6 +216,19 @@ export default function EmployeeDashboard() {
     toast.success('Opening PDF Document...');
   };
 
+  const launchGemLiveHunter = async () => {
+    setLaunchingGem(true);
+    try {
+      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
+      if (!res.ok) throw new Error('launch failed');
+      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
+    } catch {
+      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+    } finally {
+      setLaunchingGem(false);
+    }
+  };
+
   // 🚀 AI Auto-Fill Function (FIXED)
   const handleAITenderAnalysis = async (file, base64Data) => {
       setAnalyzingTender(true);
@@ -253,7 +281,73 @@ export default function EmployeeDashboard() {
       });
       setPdfBase64(draft.pdf_base64 || "");
       setPdfName(draft.pdf_filename || "AI_Draft_Document.pdf");
+      // 🚀 FIX: drafts are listed with pdf_base64 projected out (and bulk-uploaded ones
+      // never had it — the file lives in R2), so publishing from this form used to
+      // create a tender with no document attached. Carry the R2 pointers instead.
+      setDraftPdfRefs({ pdf_url: draft.pdf_url || null, pdf_r2_key: draft.pdf_r2_key || null });
       toast.success("AI Data Auto-Filled!");
+  };
+
+  // 🚀 AI BULK PUBLISHER — Review Pipeline
+  // Opens the reviewer with the Gemini-extracted values pre-filled so the employee only
+  // has to correct what the model got wrong.
+  const openDraftReview = (draft) => {
+      setReviewDraft(draft);
+      setDraftForm({
+          bid_no: draft.bid_no || '',
+          title: draft.title || '',
+          department: draft.department || '',
+          last_date: draft.last_date || '',
+          district: DISTRICTS.includes(draft.district) ? draft.district : '',
+          category: ['Product', 'Service', 'Works'].includes(draft.category) ? draft.category : 'Product',
+          emd_amount: draft.emd_amount || '',
+          supply_details: draft.supply_details || '',
+      });
+  };
+
+  const publishDraftToLive = async () => {
+      if (!reviewDraft) return;
+      if (!draftForm.title || !draftForm.department || !draftForm.last_date || !draftForm.bid_no) {
+          return toast.error('Bid number, title, department and last date are all required.');
+      }
+
+      setPublishingDraft(true);
+      try {
+          const res = await fetch('/api/ai/drafts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: reviewDraft._id, ...draftForm, publishedBy: empData.name || 'Employee' }),
+          });
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+              toast.error(data?.error || `Failed to publish (${res.status})`, { duration: 8000 });
+              return;
+          }
+
+          toast.success(`"${draftForm.title}" is now live on the portal.`);
+          setAiDrafts(prev => prev.filter(d => d._id !== reviewDraft._id));
+          setReviewDraft(null);
+          fetchLiveOperationsData(email);
+      } catch (err) {
+          console.error('Publish draft error:', err);
+          toast.error('Network error while publishing.');
+      } finally {
+          setPublishingDraft(false);
+      }
+  };
+
+  const discardDraft = async (draft) => {
+      if (!confirm(`Discard the draft for "${draft.title || draft.pdf_filename}"? This cannot be undone.`)) return;
+      try {
+          const res = await fetch(`/api/ai/drafts?id=${draft._id}`, { method: 'DELETE' });
+          if (!res.ok) return toast.error('Failed to discard draft.');
+          toast.success('Draft discarded.');
+          setAiDrafts(prev => prev.filter(d => d._id !== draft._id));
+          if (reviewDraft?._id === draft._id) setReviewDraft(null);
+      } catch (err) {
+          toast.error('Network error while discarding.');
+      }
   };
 
   // 🚀 పాత దానికి బదులు ఈ కొత్త ఫంక్షన్ పెట్టు: 
@@ -267,7 +361,15 @@ export default function EmployeeDashboard() {
       const r = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...tenderForm, pdf_base64: pdfBase64, pdf_filename: pdfName || 'tender.pdf' })
+        body: JSON.stringify({
+          ...tenderForm,
+          // Only send the blob when there is one; an auto-filled draft carries R2
+          // pointers instead so the file is never duplicated into MongoDB.
+          ...(pdfBase64 ? { pdf_base64: pdfBase64 } : {}),
+          ...(draftPdfRefs.pdf_url ? { pdf_url: draftPdfRefs.pdf_url } : {}),
+          ...(draftPdfRefs.pdf_r2_key ? { pdf_r2_key: draftPdfRefs.pdf_r2_key } : {}),
+          pdf_filename: pdfName || 'tender.pdf',
+        })
       });
       if(r.ok) {
         toast.success(isEditingTender ? 'Tender updated successfully!' : 'Tender published successfully!');
@@ -276,10 +378,12 @@ export default function EmployeeDashboard() {
         const drafted = aiDrafts.find(d => d.bid_no === tenderForm.bid_no);
         if (drafted) {
            await fetch(`/api/ai/drafts?id=${drafted._id}`, { method: 'DELETE' });
+           setAiDrafts(prev => prev.filter(d => d._id !== drafted._id));
         }
 
         setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
         setPdfBase64(''); setPdfName(''); setIsEditingTender(null);
+        setDraftPdfRefs({ pdf_url: null, pdf_r2_key: null });
         fetchLiveOperationsData(email); 
       } else {
         toast.error('Failed to save tender');
@@ -966,13 +1070,97 @@ return (
             <TabsTrigger value="alerts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <BellRing className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Queries
             </TabsTrigger>
+            <TabsTrigger value="matchmaker" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
+            </TabsTrigger>
+            <TabsTrigger value="live-scraped" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Live Scraped
+            </TabsTrigger>
             <TabsTrigger value="publisher" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders DB
+              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Published Tenders
+            </TabsTrigger>
+            <TabsTrigger value="copilot-desk" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-violet-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Bot className="w-4 h-4 mr-2 hidden sm:block"/> Co-Pilot Chat Desk
+            </TabsTrigger>
+            <TabsTrigger value="drafts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Sparkles className="w-4 h-4 mr-2 hidden sm:block"/> Ready to Publish
+              {aiDrafts.length > 0 && (
+                <Badge className="ml-2 bg-purple-600 text-white hover:bg-purple-600 px-1.5 py-0 text-[10px]">{aiDrafts.length}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="sla" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk
             </TabsTrigger>
           </TabsList>
+
+          {/* ==================== AI BULK PUBLISHER — REVIEW PIPELINE ==================== */}
+          <TabsContent value="drafts" className="w-full space-y-6">
+            <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
+              <CardHeader className="bg-purple-50/50 pb-4 border-b">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-600"/> Ready for Publishing (Pending Drafts)
+                </CardTitle>
+                <CardDescription>
+                  Tenders uploaded in bulk by the MD and read by AI. Review the extracted details, check the source PDF, then publish to the live portal.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {aiDrafts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                      <CheckCircle2 className="w-7 h-7 text-slate-400"/>
+                    </div>
+                    <p className="font-bold text-slate-700">The review queue is empty</p>
+                    <p className="text-sm text-slate-500 mt-1 max-w-md">
+                      When the MD drops tender PDFs into the Bulk AI Dropzone, they will appear here for your review.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {aiDrafts.map(draft => {
+                      const missingFields = ['bid_no', 'title', 'department', 'last_date'].filter(f => !draft[f]);
+                      return (
+                        <div key={draft._id} className="border border-slate-200 rounded-xl bg-white p-4 flex flex-col shadow-sm hover:shadow-md hover:border-purple-300 transition">
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700 font-mono text-[10px] truncate max-w-[70%]">
+                              {draft.bid_no || 'No Bid No.'}
+                            </Badge>
+                            {missingFields.length > 0 && (
+                              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px] shrink-0">
+                                {missingFields.length} field{missingFields.length > 1 ? 's' : ''} missing
+                              </Badge>
+                            )}
+                          </div>
+
+                          <p className="font-bold text-sm text-[#0A2647] leading-snug line-clamp-2 min-h-[2.5rem]">
+                            {draft.title || 'Untitled tender'}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1 truncate">{draft.department || 'Department not detected'}</p>
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 text-[11px] text-slate-500">
+                            <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {draft.last_date || 'No date'}</span>
+                            {draft.district && <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {draft.district}</span>}
+                          </div>
+
+                          <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
+                            <Button size="sm" onClick={() => openDraftReview(draft)} className="flex-1 bg-purple-600 hover:bg-purple-700 h-8 text-xs">
+                              <Pencil className="w-3.5 h-3.5 mr-1"/> Review
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => window.open(`/api/ai/drafts/${draft._id}/file`, '_blank')} className="h-8 text-xs" title="View source PDF">
+                              <Eye className="w-3.5 h-3.5"/>
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => discardDraft(draft)} className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50" title="Discard draft">
+                              <Trash2 className="w-3.5 h-3.5"/>
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="kanban" className="w-full space-y-6">
             <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
@@ -1336,6 +1524,14 @@ return (
                                    <div>
                                       <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
                                       <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                                      <div className="mt-1">
+                                        <WhatsAppVerifiedBadge
+                                          email={client.email}
+                                          phone={client.phone}
+                                          verified={client.whatsapp_verified === true}
+                                          onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
+                                        />
+                                      </div>
                                    </div>
                                    <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
                                 </div>
@@ -1344,6 +1540,9 @@ return (
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
                                 <Button size="sm" onClick={() => setViewClientDocs(client)} variant="outline" className="flex-1 text-purple-600 border-purple-200 hover:bg-purple-50 h-9">
                                    <FileText className="w-4 h-4 mr-2" /> View Vault Docs
+                                </Button>
+                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
+                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
                                 </Button>
                                 {client.drive_folder_link || client.drive_link ? (
                                    <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
@@ -1509,7 +1708,49 @@ return (
             </div>
           </TabsContent>
 
+          <TabsContent value="matchmaker" className="w-full space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3">
+              <div>
+                <p className="font-bold text-[#0A2647] text-sm">AI Matchmaker &amp; Competitor Intel</p>
+                <p className="text-xs text-slate-500 mt-0.5">Open Chrome via the local GeM agent, then run matching from the panel below.</p>
+              </div>
+              <Button
+                onClick={launchGemLiveHunter}
+                disabled={launchingGem}
+                variant="outline"
+                className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm shrink-0"
+              >
+                {launchingGem
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
+                  : <>🚀 Launch GeM Live Hunter</>}
+              </Button>
+            </div>
+            <AiMatchmakerPanel />
+            <L1BenchmarkDropzone />
+          </TabsContent>
+
+          <TabsContent value="live-scraped" className="w-full space-y-6">
+            <LiveScrapedTendersPanel />
+          </TabsContent>
+
+          <TabsContent value="copilot-desk" className="w-full space-y-6">
+            <GeminiWorkspace
+              embedded
+              tenderId={isEditingTender || null}
+              tenderLabel={isEditingTender ? (tenderForm.title || tenderForm.bid_no || 'this tender') : null}
+              clients={approvedClients}
+              tenders={publicTenders}
+            />
+          </TabsContent>
+
           <TabsContent value="publisher" className="w-full space-y-6">
+            <LetterheadManager />
+            <DocumentLetterheadGenerator
+              tenders={publicTenders}
+              clients={approvedClients}
+              defaultTenderId={isEditingTender || ''}
+            />
+            <L1BenchmarkDropzone />
             <div className="grid lg:grid-cols-5 gap-6">
                
                <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
@@ -1916,6 +2157,94 @@ return (
         </DialogContent>
       </Dialog>
 
+      {/* ========== AI DRAFT REVIEW & PUBLISH ========== */}
+      <Dialog open={!!reviewDraft} onOpenChange={(val) => { if (!val && !publishingDraft) setReviewDraft(null); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto border-0 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600"/> Review AI-Extracted Tender
+            </DialogTitle>
+            <DialogDescription>
+              Verify every field against the source document before publishing. AI extraction can be wrong — you are the final check.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wide">Source document</p>
+                <p className="text-sm font-semibold text-[#0A2647] truncate">{reviewDraft?.pdf_filename || 'draft.pdf'}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => reviewDraft && window.open(`/api/ai/drafts/${reviewDraft._id}/file`, '_blank')}
+                className="shrink-0 border-blue-200 text-blue-700 hover:bg-blue-50"
+              >
+                <Eye className="w-4 h-4 mr-1.5"/> View PDF
+              </Button>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
+                <Input value={draftForm.title} onChange={e => setDraftForm({ ...draftForm, title: e.target.value })} className="bg-white h-10"/>
+              </div>
+              <div>
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number *</Label>
+                <Input value={draftForm.bid_no} onChange={e => setDraftForm({ ...draftForm, bid_no: e.target.value })} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
+              </div>
+              <div>
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department *</Label>
+                <Input value={draftForm.department} onChange={e => setDraftForm({ ...draftForm, department: e.target.value })} className="bg-white h-10"/>
+              </div>
+              <div>
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label>
+                <Input type="date" value={draftForm.last_date} onChange={e => setDraftForm({ ...draftForm, last_date: e.target.value })} className="bg-white h-10 text-sm"/>
+              </div>
+              <div>
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District</Label>
+                <Select value={draftForm.district} onValueChange={val => setDraftForm({ ...draftForm, district: val })}>
+                  <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select district"/></SelectTrigger>
+                  <SelectContent className="max-h-[240px]">
+                    {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category</Label>
+                <Select value={draftForm.category} onValueChange={val => setDraftForm({ ...draftForm, category: val })}>
+                  <SelectTrigger className="bg-white h-10"><SelectValue/></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Product">Product</SelectItem>
+                    <SelectItem value="Service">Service</SelectItem>
+                    <SelectItem value="Works">Works</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">EMD Amount (₹)</Label>
+                <Input value={draftForm.emd_amount} onChange={e => setDraftForm({ ...draftForm, emd_amount: e.target.value })} placeholder="e.g. 50000" className="bg-white h-10"/>
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label>
+                <Textarea value={draftForm.supply_details} onChange={e => setDraftForm({ ...draftForm, supply_details: e.target.value })} rows={3} placeholder="Any extra notes shown to clients..." className="bg-white text-sm"/>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-5 gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setReviewDraft(null)} disabled={publishingDraft}>Cancel</Button>
+            <Button type="button" onClick={publishDraftToLive} disabled={publishingDraft} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+              {publishingDraft
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Publishing...</>
+                : <><CheckCircle2 className="w-4 h-4 mr-2"/> Publish to Live</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={lossModalOpen} onOpenChange={setLossModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1932,6 +2261,19 @@ return (
           </form>
         </DialogContent>
       </Dialog>
+
+      <StationeryUploader
+        client={stationeryClient}
+        open={!!stationeryClient}
+        onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
+      />
+
+      <GeminiWorkspace
+        tenderId={isEditingTender || null}
+        tenderLabel={isEditingTender ? (tenderForm.title || tenderForm.bid_no || 'this tender') : null}
+        clients={approvedClients}
+        tenders={publicTenders}
+      />
     </div>
   );
 }

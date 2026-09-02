@@ -9,10 +9,14 @@ import {
   isPubliclyServableUrl,
   isValidPDFBuffer,
   isR2Configured,
+  uploadVaultDocument,
+  fetchVaultDocumentBuffer,
 } from '@/lib/cloudflare-r2';
 // 🚀 SECURITY: Cashfree (Order/Verify/Webhook) + Offline Ledger logic now lives in
-// app/api/payments/route.js. Only thin delegating calls remain below.
-import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '../payments/route';
+// lib/payments.js (a plain module, not a route.js) so it can be imported safely from
+// both this catch-all route AND app/api/payments/route.js without violating
+// Next.js's route.js export contract. Only thin delegating calls remain below.
+import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '@/lib/payments';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const dynamic = 'force-dynamic';
@@ -86,6 +90,12 @@ function documentError(request, { status, message, code, details }) {
 // `Content-Type: application/pdf`. Combined with `X-Content-Type-Options: nosniff`
 // the browser refuses to render an image mislabelled as a PDF, producing an empty
 // viewer. Detect the real type from the magic bytes instead of guessing.
+// Vercel caps a serverless function's request body at ~4.5MB, so a bigger upload is
+// rejected by the platform before our handler runs. Staying just under that keeps the
+// failure inside our code where we can explain it. (Lifting this ceiling means moving to
+// presigned direct-to-R2 uploads from the browser, which bypasses the function entirely.)
+const VAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 function sniffContentType(buffer, fileName = '') {
   const head = Buffer.from(buffer.subarray(0, 12));
   const hex = head.toString('hex');
@@ -334,8 +344,45 @@ async function handleGET(request, { params }, attempt = 1) {
       const doc = user?.vault_docs?.[0];
 
       if (!doc) return documentError(request, { status: 404, code: 'DOC_NOT_FOUND', message: 'This vault document no longer exists.' });
-      if (doc.file_url) return NextResponse.redirect(doc.file_url, 307);
-      return streamBase64Document(request, doc.file_base64, doc.file_name || 'document.pdf');
+
+      const vaultFileName = doc.file_name || 'document.pdf';
+
+      // 🚀 Only redirect when the URL is genuinely public. The private R2 S3 endpoint
+      // answers unsigned browser requests with a 401 XML body, which renders as a blank
+      // viewer — so anything else must be streamed through here with credentials.
+      if (doc.file_url && isPubliclyServableUrl(doc.file_url)) {
+        return NextResponse.redirect(doc.file_url, 307);
+      }
+
+      if (doc.file_r2_key || doc.file_url) {
+        const buffer = await fetchVaultDocumentBuffer({
+          file_r2_key: doc.file_r2_key,
+          file_url: doc.file_url,
+          file_name: doc.file_name,
+          email: email.toLowerCase(),
+        });
+        if (buffer && buffer.length > 0) {
+          const contentType = sniffContentType(buffer, vaultFileName) || doc.content_type || 'application/octet-stream';
+          return new NextResponse(new Uint8Array(buffer), {
+            status: 200,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Length': String(buffer.length),
+              'Content-Disposition': `inline; filename="${vaultFileName}"`,
+              'Cache-Control': 'private, max-age=0, must-revalidate',
+              'X-Content-Type-Options': 'nosniff',
+            },
+          });
+        }
+        return documentError(request, {
+          status: 404,
+          code: 'FILE_SOURCE_MISSING',
+          message: 'This document is missing from secure storage. Please re-upload it.',
+        });
+      }
+
+      // Documents uploaded before the move to R2 still carry the blob inline.
+      return streamBase64Document(request, doc.file_base64, vaultFileName);
     }
 
     if (path === 'tenders/calendar' || path === 'api/tenders/calendar') {
@@ -856,6 +903,7 @@ export async function PUT(request, { params }) {
 
      if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
         const tenderId = pathArray[1];
+        if (!ObjectId.isValid(tenderId)) return json({ error: 'Invalid Tender ID' }, 400);
         let updateFields = { ...body, updated_at: new Date() };
         delete updateFields._id; 
 
@@ -911,6 +959,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'client-requests/reply' || path === 'api/client-requests/reply') {
         const { req_id, status, reply } = body;
+        if (!ObjectId.isValid(req_id)) return json({ error: 'Invalid Request ID' }, 400);
         await db.collection('client_requests').updateOne(
            { _id: new ObjectId(req_id) },
            { $set: { status, reply, updated_at: new Date() } }
@@ -920,7 +969,8 @@ export async function PUT(request, { params }) {
 
      if (path === 'client-requests/assign' || path === 'api/client-requests/assign') {
         const { req_id, emp_id, emp_name, status, reply } = body;
-        
+        if (!ObjectId.isValid(req_id)) return json({ error: 'Invalid Request ID' }, 400);
+
         await db.collection('client_requests').updateOne(
            { _id: new ObjectId(req_id) },
            { $set: { status: `Assigned to ${emp_name} (${emp_id})`, reply, updated_at: new Date() } }
@@ -944,6 +994,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'bids/update' || path === 'api/bids/update') {
         const { bid_id, status, bid_no, description, contract_value, validity } = body;
+        if (!ObjectId.isValid(bid_id)) return json({ error: 'Invalid Bid ID' }, 400);
         let updateData = { updated_at: new Date() };
         if (status) updateData.status = status;
         if (bid_no !== undefined) updateData.bid_no = bid_no;
@@ -960,6 +1011,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'dispatches/complete' || path === 'api/dispatches/complete') {
         const { task_id } = body;
+        if (!ObjectId.isValid(task_id)) return json({ error: 'Invalid Dispatch ID' }, 400);
         await db.collection('dispatches').updateOne(
            { _id: new ObjectId(task_id) },
            { $set: { status: 'Completed', completed_at: new Date() } }
@@ -969,6 +1021,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'dispatches/update' || path === 'api/dispatches/update') {
         const { task_id, status, reply, file_name, file_base64 } = body;
+        if (!ObjectId.isValid(task_id)) return json({ error: 'Invalid Dispatch ID' }, 400);
         let updateData = { status: status, updated_at: new Date() };
         if(reply) updateData.client_reply = reply;
         
@@ -984,7 +1037,7 @@ export async function PUT(request, { params }) {
         // 🚀 FIX: Broken Triangle — sync the employee's reply/status/attachment back
         // onto the originating client request so the client actually sees the update.
         const updatedDispatch = await db.collection('dispatches').findOne({ _id: new ObjectId(task_id) });
-        if (updatedDispatch?.client_request_id) {
+        if (updatedDispatch?.client_request_id && ObjectId.isValid(updatedDispatch.client_request_id)) {
            let clientRequestUpdate = { updated_at: new Date() };
            if (reply) clientRequestUpdate.reply = reply;
            if (status === 'Completed') clientRequestUpdate.status = 'Resolved by Employee';
@@ -1036,26 +1089,46 @@ export async function PUT(request, { params }) {
         );
 
         if (status === 'verified') {
-            if (user?.drive_folder_id && doc?.file_base64 && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+            if (user?.drive_folder_id && doc && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
                try {
-                   const auth = new google.auth.JWT(
-                       process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, null,
-                       process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-                       ['https://www.googleapis.com/auth/drive.file']
-                   );
-                   const drive = google.drive({ version: 'v3', auth });
-                   
-                   const cleanBase64 = doc.file_base64.replace(/^data:(.*,)?/, '');
-                   const buffer = Buffer.from(cleanBase64, 'base64');
-                   const stream = require('stream');
-                   const bufferStream = new stream.PassThrough();
-                   bufferStream.end(buffer);
+                   // 🚀 The document body now lives in R2, so fetch it back for the Drive
+                   // copy; older records still carry it inline.
+                   let buffer = null;
+                   if (doc.file_r2_key || doc.file_url) {
+                       buffer = await fetchVaultDocumentBuffer({
+                           file_r2_key: doc.file_r2_key,
+                           file_url: doc.file_url,
+                           file_name: doc.file_name,
+                           email: targetEmail,
+                       });
+                   }
+                   if (!buffer && doc.file_base64) {
+                       buffer = Buffer.from(doc.file_base64.replace(/^data:(.*,)?/, ''), 'base64');
+                   }
 
-                   await drive.files.create({
-                       requestBody: { name: finalFileName, parents: [user.drive_folder_id] },
-                       media: { mimeType: 'application/pdf', body: bufferStream },
-                       fields: 'id'
-                   });
+                   if (buffer && buffer.length > 0) {
+                       const auth = new google.auth.JWT(
+                           process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, null,
+                           process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+                           ['https://www.googleapis.com/auth/drive.file']
+                       );
+                       const drive = google.drive({ version: 'v3', auth });
+
+                       const stream = require('stream');
+                       const bufferStream = new stream.PassThrough();
+                       bufferStream.end(buffer);
+
+                       await drive.files.create({
+                           requestBody: { name: finalFileName, parents: [user.drive_folder_id] },
+                           media: {
+                               mimeType: sniffContentType(buffer, finalFileName) || 'application/pdf',
+                               body: bufferStream,
+                           },
+                           fields: 'id'
+                       });
+                   } else {
+                       console.warn('[vault/verify] no readable file body for Drive sync:', docId);
+                   }
                } catch(err) {
                    console.error("Drive upload failed silently:", err);
                }
@@ -1067,6 +1140,7 @@ export async function PUT(request, { params }) {
      if (path === 'finance/ledger' || path === 'api/finance/ledger') {
         const { id, ...updateFields } = body;
         if (!id) return json({ error: 'Missing Transaction ID' }, 400);
+        if (!ObjectId.isValid(id)) return json({ error: 'Invalid Transaction ID' }, 400);
         await db.collection('finance_ledger').updateOne(
             { _id: new ObjectId(id) },
             { $set: { ...updateFields, updated_at: new Date() } }
@@ -1115,6 +1189,9 @@ export async function DELETE(request, { params }) {
     if (path === 'guest-queries' || path === 'api/guest-queries') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing ID' }, 400);
+       // 🚀 FIX: `new ObjectId(id)` throws on a malformed id, which crashed this route
+       // with an unhandled 500 instead of a clean validation error.
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid ID' }, 400);
        await db.collection('guest_queries').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Query resolved and deleted' });
     }
@@ -1171,6 +1248,7 @@ export async function DELETE(request, { params }) {
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Transaction ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Transaction ID' }, 400);
        await db.collection('finance_ledger').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Transaction Deleted' });
     }
@@ -1178,6 +1256,7 @@ export async function DELETE(request, { params }) {
     if (path === 'client-requests' || path === 'api/client-requests') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Request ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Request ID' }, 400);
        await db.collection('client_requests').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Request Deleted Permanently' });
     }
@@ -1185,6 +1264,7 @@ export async function DELETE(request, { params }) {
     if (path === 'dispatches' || path === 'api/dispatches') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Dispatch ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Dispatch ID' }, 400);
        await db.collection('dispatches').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Dispatch Task Deleted' });
     }
@@ -1213,38 +1293,72 @@ export async function POST(request, { params }) {
          const file = formData.get('file');
          const docId = formData.get('docId');
          const email = formData.get('email');
+         const customName = formData.get('customName');
 
          if (!file || !email || !docId) return json({ error: 'Missing data' }, 400);
+         if (typeof file.arrayBuffer !== 'function') return json({ error: 'Uploaded value is not a file.' }, 400);
 
-         // 🚀 SECURITY FIX: Strictly enforce a 4MB max file size on the server side,
-         // regardless of what the client attempts to send.
-         if (file.size > 4 * 1024 * 1024) return json({ error: 'File size exceeds strictly enforced 4MB limit' }, 400);
+         // 🚀 The ceiling is Vercel's ~4.5MB serverless request body limit, not R2 —
+         // a larger file never reaches this handler at all, so reject it here with an
+         // explanation rather than letting the platform return an opaque 413.
+         if (file.size > VAULT_MAX_UPLOAD_BYTES) {
+           return json({
+             error: `This file is ${(file.size / 1024 / 1024).toFixed(1)}MB. The maximum upload size is ` +
+                    `${VAULT_MAX_UPLOAD_BYTES / 1024 / 1024}MB — please compress the scan or split the document.`,
+           }, 400);
+         }
+         if (file.size === 0) return json({ error: 'The selected file is empty.' }, 400);
 
-         const arrayBuffer = await file.arrayBuffer();
-         const buffer = Buffer.from(arrayBuffer);
-         const base64 = buffer.toString('base64');
+         const targetEmail = String(email).toLowerCase();
+         const buffer = Buffer.from(await file.arrayBuffer());
+         const fileName = file.name || `${docId}.pdf`;
+         const contentType = sniffContentType(buffer, fileName) || file.type || 'application/octet-stream';
 
          const newDoc = {
              id: docId,
-             name: docId.replace(/_/g, ' ').toUpperCase(),
-             file_name: file.name,
-             file_base64: base64,
+             name: customName ? String(customName) : String(docId).replace(/_/g, ' ').toUpperCase(),
+             file_name: fileName,
+             file_size: file.size,
+             content_type: contentType,
              status: 'uploaded', // This tells MD it's under review
-             upload_date: new Date().toLocaleDateString()
+             upload_date: new Date().toLocaleDateString(),
+             uploaded_at: new Date(),
          };
 
+         // 🚀 STORAGE: the document body goes to Cloudflare R2 and MongoDB keeps only the
+         // pointer. Embedding base64 here used to push `users` records past 1.5MB, which
+         // slowed down every query that touched a client.
+         if (isR2Configured()) {
+           const uploaded = await uploadVaultDocument(buffer, fileName, { email: targetEmail, contentType });
+           if (!uploaded?.key) {
+             return json({ error: 'Secure storage upload failed. Please try again in a moment.' }, 502);
+           }
+           newDoc.file_url = uploaded.url;
+           newDoc.file_r2_key = uploaded.key;
+         } else {
+           // Local development without R2 credentials: fall back to the legacy inline
+           // blob so the vault stays usable, and say so in the response.
+           console.warn('[vault/upload] R2 is not configured — falling back to inline storage.');
+           newDoc.file_base64 = buffer.toString('base64');
+         }
+
          await db.collection('users').updateOne(
-             { email: email.toLowerCase() },
+             { email: targetEmail },
              { $pull: { vault_docs: { id: docId } } }
          );
          await db.collection('users').updateOne(
-             { email: email.toLowerCase() },
+             { email: targetEmail },
              { $push: { vault_docs: newDoc } }
          );
 
-         return json({ success: true, message: "File processed and saved successfully." });
+         return json({
+           success: true,
+           message: 'File uploaded securely. It is now pending MD verification.',
+           storage: newDoc.file_r2_key ? 'r2' : 'inline',
+         });
        } catch(e) {
-         return json({ error: 'File upload failed' }, 500);
+         console.error('[vault/upload] failed:', e);
+         return json({ error: `File upload failed: ${e?.message || 'unknown error'}` }, 500);
        }
     }
 
@@ -1364,6 +1478,7 @@ export async function POST(request, { params }) {
 
     if (path === 'tickets/reply' || path === 'api/tickets/reply') {
       const { ticket_id, reply, admin_email } = body;
+      if (!ObjectId.isValid(ticket_id)) return json({ error: 'Invalid Ticket ID' }, 400);
       await db.collection('tickets').updateOne(
         { _id: new ObjectId(ticket_id) },
         { $set: { status: 'RESOLVED', reply: reply, replied_by: admin_email, replied_at: new Date() } }
@@ -1443,6 +1558,7 @@ export async function POST(request, { params }) {
     if (path === 'ai/drafts' || path === 'api/ai/drafts') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Draft ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Draft ID' }, 400);
        await db.collection('ai_draft_tenders').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true });
     }
@@ -1560,6 +1676,7 @@ export async function POST(request, { params }) {
     // 🚀 Operator Share Doc with Client
     if (path === 'operator/share' || path === 'api/operator/share') {
        const { docId, client_email } = body;
+       if (!ObjectId.isValid(docId)) return json({ error: 'Invalid Document ID' }, 400);
        const doc = await db.collection('operator_storage').findOne({ _id: new ObjectId(docId) });
        if (!doc) return json({ error: 'Document not found' }, 404);
 

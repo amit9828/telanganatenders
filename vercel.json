@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/gem-sync",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/matchmaker",
+      "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/gem-copilot-knowledge",
+      "schedule": "0 3 * * 0"
+    }
+  ]
+}

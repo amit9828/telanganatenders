@@ -1,7 +1,16 @@
-'use client';
+﻿'use client';
 import { useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
+import GeminiWorkspace from '@/components/GeminiWorkspace';
+import StationeryUploader from '@/components/StationeryUploader';
+import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
+import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
+import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
+import LetterheadManager from '@/components/LetterheadManager';
+import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
+import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
+import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -13,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, PlusCircle,
@@ -21,7 +31,7 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -79,7 +89,7 @@ export default function AdminPage() {
   const [financialRequests, setFinancialRequests] = useState([]);
   const [ledgerTxns, setLedgerTxns] = useState([]);
   const [ledgerBalance, setLedgerBalance] = useState(0);
-  const [breakdown, setBreakdown] = useState({ offline: 0, online: 0 }); // 🚀 FIX: For Balance Breakdown
+  const [breakdown, setBreakdown] = useState({ offline: 0, online: 0 }); // ðŸš€ FIX: For Balance Breakdown
   const [ledgerForm, setLedgerForm] = useState({ type: 'CREDIT', amount: '', reason: '', client_id: 'N/A', payment_mode: 'OFFLINE' });
   const [ledgerProof, setLedgerProof] = useState('');
   const [ledgerProofName, setLedgerProofName] = useState('');
@@ -100,17 +110,35 @@ export default function AdminPage() {
   const [pdfName, setPdfName] = useState('');
   const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState('');
-  // 🚀 Pagination for the Published Tenders list (20 per page)
+  // ðŸš€ Pagination for the Published Tenders list (20 per page)
   const [tenderPage, setTenderPage] = useState(1);
   const tendersPerPage = 20;
   const tendersListRef = useRef(null);
 
-  // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
+  // === à°¦à±€à°¨à°¿ à°•à°¿à°‚à°¦ à°ªà±‡à°¸à±à°Ÿà± à°šà±†à°¯à± (à°ªà°¾à°¤ à°•à±‹à°¡à±) ===
   const [rejectReason, setRejectReason] = useState({});
   const [successfulPaymentsLog, setSuccessfulPaymentsLog] = useState([]);
 
-  // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
+  // ðŸš€ à°‡à°•à±à°•à°¡ à°ªà±‡à°¸à±à°Ÿà± à°šà±†à°¯à± (à°•à±Šà°¤à±à°¤ à°•à±‹à°¡à±) ðŸš€
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
+  const [bulkDragActive, setBulkDragActive] = useState(false);
+  const [bulkFileCount, setBulkFileCount] = useState(0);
+
+  // ðŸš€ AI Matchmaker & Competitor Intel
+  const [bidMatches, setBidMatches] = useState([]);
+  const [matchSummary, setMatchSummary] = useState({ total: 0, new: 0, jv: 0 });
+  const [matchTypeFilter, setMatchTypeFilter] = useState('all'); // all | DIRECT | JV
+  const [runningMatchmaker, setRunningMatchmaker] = useState(false);
+  const [launchingGem, setLaunchingGem] = useState(false);
+  const [predictingMatchId, setPredictingMatchId] = useState(null);
+  const [predictionOpen, setPredictionOpen] = useState(false);
+  const [prediction, setPrediction] = useState(null); // { match, tender, history, prediction }
+  const [stationeryClient, setStationeryClient] = useState(null);
+
+  // ðŸš€ Today's Live Scraped Tenders (text-only GeM hunter feed)
+  const [liveScrapedTenders, setLiveScrapedTenders] = useState([]);
+  const [liveFeedToday, setLiveFeedToday] = useState('');
+  const [liveFeedLoading, setLiveFeedLoading] = useState(false);
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -118,11 +146,11 @@ export default function AdminPage() {
     setAuthChecking(false);
   }, []);
 
-  // 🚀 FIX: Admin Live Tracking (Auto-Refresh without Cache)
+  // ðŸš€ FIX: Admin Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     if (token) {
       refresh();
-      // 🚀 FIX: Poll every 60s (not 10s) and only while this tab is visible, so we
+      // ðŸš€ FIX: Poll every 60s (not 10s) and only while this tab is visible, so we
       // stop hammering the database when the admin is on a different browser tab.
       const interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
@@ -134,10 +162,10 @@ export default function AdminPage() {
     // eslint-disable-next-line
   }, [token]);
 
-  // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
+  // ðŸš€ Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
 
-  // 🚀 FIX: Bulletproof refresh — one blocked/failing route (e.g. expired-tender
+  // ðŸš€ FIX: Bulletproof refresh â€” one blocked/failing route (e.g. expired-tender
   // filter accidentally hiding admin data, a network blip, a non-JSON error page)
   // used to throw inside Promise.all and take the ENTIRE dashboard down to zeros.
   // safeFetch isolates each request so a single failure never crashes the rest.
@@ -154,9 +182,9 @@ export default function AdminPage() {
     };
 
     try {
-      // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
+      // ðŸš€ FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
       // tenders" filter that's meant only for the public site.
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
         safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
         safeFetch(`/api/admin/stats?t=${Date.now()}`),
         safeFetch(`/api/tickets?role=admin&t=${Date.now()}`),
@@ -167,7 +195,8 @@ export default function AdminPage() {
         safeFetch(`/api/employees?t=${Date.now()}`),
         safeFetch(`/api/finance/ledger?t=${Date.now()}`),
         safeFetch(`/api/guest-queries?t=${Date.now()}`),
-        safeFetch(`/api/payments/requests?t=${Date.now()}`)
+        safeFetch(`/api/payments/requests?t=${Date.now()}`),
+        safeFetch(`/api/bid-matches?t=${Date.now()}`)
       ]);
 
       if (tRes.status === 401) return logout();
@@ -185,6 +214,13 @@ export default function AdminPage() {
       if (finReqRes.ok) {
         setFinancialRequests((finReqRes.data.requests || []).filter(r => r.status !== 'SUCCESS' && r.status !== 'PAID'));
       }
+      if (matchRes.ok) {
+        setBidMatches(matchRes.data.matches || []);
+        setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
+      }
+
+      // Soft-refresh the live scraped feed without blocking the rest of the dashboard.
+      refreshLiveFeed(token, { silent: true });
 
       const approvedUsers = aRes.ok ? (aRes.data.users || []) : [];
       const allSuccess = [];
@@ -221,6 +257,32 @@ export default function AdminPage() {
       }));
     } catch (err) { console.error('Refresh failed:', err); }
   };
+
+  // Independent of full-dashboard refresh â€” pulls only /api/tenders/live-feed.
+  const refreshLiveFeed = async (authToken = token, { silent = false } = {}) => {
+    if (!authToken) return;
+    setLiveFeedLoading(true);
+    try {
+      const res = await fetch(`/api/tenders/live-feed?t=${Date.now()}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (!silent && res.status !== 401) {
+          toast.error(data?.error || `Live feed failed (${res.status})`);
+        }
+        return;
+      }
+      setLiveScrapedTenders(data?.tenders || []);
+      setLiveFeedToday(data?.today || '');
+    } catch (e) {
+      console.error('Live feed refresh failed:', e);
+      if (!silent) toast.error('Network error while loading live scraped tenders.');
+    } finally {
+      setLiveFeedLoading(false);
+    }
+  };
+
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.clear();
@@ -273,7 +335,7 @@ export default function AdminPage() {
       if (!r.ok) return toast.error(result?.error || `Server Error (${r.status})`);
 
       toast.success(isEditingTender ? `Tender updated successfully!` : `Tender published successfully!`);
-      // A failed R2 upload still saves the tender, but silently — surface it so the
+      // A failed R2 upload still saves the tender, but silently â€” surface it so the
       // storage misconfiguration gets fixed instead of accumulating fragile records.
       if (result?.storage_warning) toast.warning(result.storage_warning, { duration: 8000 });
       setForm({ title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '', bid_no: '' });
@@ -308,6 +370,124 @@ export default function AdminPage() {
       toast.success('L1 Intel saved successfully!'); refresh();
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
+
+  // ðŸš€ AI Matchmaker & Competitor Intel ------------------------------------------------
+  const formatINR = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 'â€”';
+    return `â‚¹${n.toLocaleString('en-IN')}`;
+  };
+
+  // Triggers the same job Vercel Cron runs nightly, so the MD never has to wait for the
+  // schedule after publishing a batch of tenders.
+  const runMatchmakerNow = async () => {
+    setRunningMatchmaker(true);
+    const toastId = toast.loading('Scanning open TS/AP tenders against client profiles...');
+    try {
+      const res = await fetch('/api/cron/matchmaker', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        toast.error(data?.error || `Matchmaker failed (${res.status})`, { id: toastId, duration: 9000 });
+        return;
+      }
+
+      const s = data?.stats || {};
+      if (!s.matches_found) {
+        // Zero matches is a valid outcome; the API explains which rule filtered
+        // everything out so this doesn't look like a broken job.
+        toast.info(
+          data?.explanation || `Scanned ${s.tenders_in_ts_ap || 0} open TS/AP tenders â€” no matches this time.`,
+          { id: toastId, duration: 12000 }
+        );
+      } else {
+        toast.success(
+          `${s.matches_found} match(es) across ${s.tenders_in_ts_ap || 0} open TS/AP tenders` +
+          `${s.jv_opportunities ? ` â€” ${s.jv_opportunities} JV opportunity(ies)` : ''}.`,
+          { id: toastId, duration: 8000 }
+        );
+      }
+      // A failed WhatsApp send is reported separately: the matches are still saved.
+      if (data?.alert?.error) toast.warning(`Matches saved, but the WhatsApp alert failed: ${data.alert.error}`, { duration: 9000 });
+      else if (data?.alert?.skipped && s.inserted > 0) toast.info(`WhatsApp alert skipped: ${data.alert.reason}`);
+
+      refresh();
+    } catch (e) {
+      console.error('Matchmaker run failed:', e);
+      toast.error('Network error while running the matchmaker.', { id: toastId });
+    } finally {
+      setRunningMatchmaker(false);
+    }
+  };
+
+  const launchGemLiveHunter = async () => {
+    setLaunchingGem(true);
+    try {
+      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
+      if (!res.ok) throw new Error('launch failed');
+      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
+    } catch {
+      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+    } finally {
+      setLaunchingGem(false);
+    }
+  };
+
+  const runL1Prediction = async (match) => {
+    const matchId = match._id || match.tender_id;
+    setPredictingMatchId(matchId);
+    try {
+      const res = await fetch('/api/ai/predict-l1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tender_id: match.tender_id }),
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        toast.error(data?.error || `Prediction failed (${res.status})`, { duration: 9000 });
+        return;
+      }
+
+      setPrediction({ match, ...data });
+      setPredictionOpen(true);
+    } catch (e) {
+      console.error('L1 prediction failed:', e);
+      toast.error('Network error while running the prediction.');
+    } finally {
+      setPredictingMatchId(null);
+    }
+  };
+
+  const updateMatchStatus = async (match, status) => {
+    const id = match._id;
+    if (!id) return;
+    // Optimistic: dismissed matches leave the feed immediately, reviewed ones stay but
+    // lose their "New" badge.
+    setBidMatches(prev => status === 'dismissed'
+      ? prev.filter(m => m._id !== id)
+      : prev.map(m => (m._id === id ? { ...m, status } : m)));
+
+    try {
+      const res = await fetch('/api/bid-matches', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id, status }),
+      });
+      if (!res.ok) throw new Error('Update rejected');
+      toast.success(status === 'dismissed' ? 'Match dismissed.' : 'Match marked as reviewed.');
+    } catch (e) {
+      toast.error('Could not update the match. Reloading.');
+      refresh();
+    }
+  };
+
+  const visibleMatches = matchTypeFilter === 'all'
+    ? bidMatches
+    : bidMatches.filter(m => m.match_type === matchTypeFilter);
   
   const handleSyncDrive = async (email, companyName) => {
      const toastId = toast.loading("Creating Google Drive Workspace...");
@@ -325,12 +505,12 @@ export default function AdminPage() {
   const approveClient = async (email) => {
     try {
       await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email }) });
-      toast.success('✅ Client Verified & Portal Unlocked!'); refresh();
+      toast.success('âœ… Client Verified & Portal Unlocked!'); refresh();
     } catch(e) { toast.error('Network Error while approving.'); }
   };
 
   const deleteClientPermanently = async (email) => {
-    if (!confirm("🚨 WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data? This action CANNOT be undone.")) return;
+    if (!confirm("ðŸš¨ WARNING: Are you sure you want to PERMANENTLY delete this client and ALL their associated data? This action CANNOT be undone.")) return;
     try {
       const res = await fetch(`/api/users?email=${encodeURIComponent(email)}`, { 
          method: 'DELETE', 
@@ -345,7 +525,7 @@ export default function AdminPage() {
     } catch(e) { toast.error('Network Error while deleting.'); }
   };
 
-// 🚀 FIX: LocalStorage Injection for Instant MD Bypass
+// ðŸš€ FIX: LocalStorage Injection for Instant MD Bypass
   const impersonateUser = (type, email_or_id) => {
     const toastId = toast.loading(`Bypassing secure access to ${type} dashboard...`);
     try {
@@ -438,57 +618,77 @@ export default function AdminPage() {
        if(res.ok) { toast.success("Ticket deleted"); refresh(); } else toast.error("Failed to delete");
     } catch(e) { toast.error("Network error"); }
   };
-  // 🚀 MD Bulk AI Upload Function
-  const handleBulkAIUpload = async (e) => {
-      const files = Array.from(e.target.files);
+  // ðŸš€ MD Bulk AI Upload â€” sends the raw PDFs as multipart/form-data to the bulk
+  // pipeline, which stores each document in Cloudflare R2 and keeps only the extracted
+  // JSON + R2 pointers in MongoDB. (The previous version base64-encoded every file into
+  // a JSON body, which bloated MongoDB and made large batches time out.)
+  const processBulkFiles = async (fileList) => {
+      const files = Array.from(fileList || []);
       if (files.length === 0) return;
 
-      const validFiles = files.filter(f => f.type === 'application/pdf');
-      if (validFiles.length === 0) return toast.error("Only PDF files are allowed.");
+      const validFiles = files.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+      const rejectedCount = files.length - validFiles.length;
+      if (validFiles.length === 0) return toast.error('Only PDF files are allowed.');
+      if (rejectedCount > 0) toast.warning(`${rejectedCount} non-PDF file(s) were skipped.`);
 
       setAnalyzingFiles(true);
-      let successCount = 0;
-      let failCount = 0;
+      setBulkFileCount(validFiles.length);
 
-      for (let i = 0; i < validFiles.length; i++) {
-          const file = validFiles[i];
-          toast.info(`AI is analyzing ${i + 1}/${validFiles.length}: ${file.name}...`, { duration: 3000 });
-          
-          try {
-              const reader = new FileReader();
-              const base64Data = await new Promise((resolve) => {
-                  reader.onload = () => resolve(reader.result.toString().split(',')[1]);
-                  reader.readAsDataURL(file);
-              });
+      try {
+          const formData = new FormData();
+          validFiles.forEach(file => formData.append('files', file));
+          formData.append('uploadedBy', 'MD Admin');
 
-              const res = await fetch('/api/ai/analyze', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ 
-                      pdfBase64: base64Data, 
-                      fileName: file.name,
-                      mimeType: 'application/pdf',
-                      uploadedBy: 'MD Admin',
-                      saveToDraft: true
-                  })
-              });
+          const res = await fetch('/api/ai/bulk-upload', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+              body: formData,
+          });
 
-              if (res.ok) {
-                  successCount++;
-              } else {
-                  if(res.status === 409) {
-                      toast.warning(`Skipped ${file.name}: Already exists in drafts.`);
-                  } else {
-                      failCount++;
-                  }
-              }
-          } catch (error) {
-              failCount++;
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok) {
+              toast.error(data?.error || `Bulk upload failed (${res.status})`, { duration: 9000 });
+              return;
           }
-      }
 
-      toast.success(`Analysis Complete! ${successCount} saved to Employee Drafts. ${failCount} failed.`);
-      setAnalyzingFiles(false);
+          const { saved = 0, duplicates = 0, failed = 0 } = data?.summary || {};
+
+          if (saved > 0) {
+              toast.success(`${saved} tender(s) sent to the employee review queue.`);
+          }
+          if (duplicates > 0) {
+              toast.warning(`${duplicates} file(s) skipped â€” already in drafts or already live.`);
+          }
+          if (failed > 0) {
+              const firstError = (data?.results || []).find(r => r.status === 'failed');
+              toast.error(
+                  `${failed} file(s) failed${firstError ? `: ${firstError.fileName} â€” ${firstError.error}` : '.'}`,
+                  { duration: 9000 }
+              );
+          }
+          if (saved === 0 && duplicates === 0 && failed === 0) {
+              toast.info('No files were processed.');
+          }
+      } catch (error) {
+          console.error('Bulk upload error:', error);
+          toast.error('Network error while uploading. Please try again.');
+      } finally {
+          setAnalyzingFiles(false);
+          setBulkFileCount(0);
+      }
+  };
+
+  const handleBulkAIUpload = async (e) => {
+      await processBulkFiles(e.target.files);
+      e.target.value = ''; // allow re-selecting the same file after a failure
+  };
+
+  const handleBulkDrop = async (e) => {
+      e.preventDefault();
+      setBulkDragActive(false);
+      if (analyzingFiles) return;
+      await processBulkFiles(e.dataTransfer?.files);
   };
   const handleProcessBidRequest = async (reqId, status) => {
     const reply = bidReply[reqId];
@@ -563,7 +763,7 @@ export default function AdminPage() {
     } catch(e) { toast.error("Network error"); }
   };
 const handleViewDocument = (req) => {
-    // 🚀 FIX: MongoDB లో క్లయింట్ ఫైల్ సేవ్ అయ్యే అన్ని రకాల పేర్లను ఇక్కడ యాడ్ చేశాను
+    // ðŸš€ FIX: MongoDB à°²à±‹ à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°«à±ˆà°²à± à°¸à±‡à°µà± à°…à°¯à±à°¯à±‡ à°…à°¨à±à°¨à°¿ à°°à°•à°¾à°² à°ªà±‡à°°à±à°²à°¨à± à°‡à°•à±à°•à°¡ à°¯à°¾à°¡à± à°šà±‡à°¶à°¾à°¨à±
     const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file;
     
     if (docLink) {
@@ -621,10 +821,10 @@ const handleViewDocument = (req) => {
         });
         
         if (res.ok) {
-            const data = await res.json(); // Backend పంపే రెస్పాన్స్ చదవడం
+            const data = await res.json(); // Backend à°ªà°‚à°ªà±‡ à°°à±†à°¸à±à°ªà°¾à°¨à±à°¸à± à°šà°¦à°µà°¡à°‚
             toast.success(`Online payment link dispatched securely to client!`);
             
-            // 🚀 FIX: డిస్పాచ్ చేయగానే Live Tracking లో వెంటనే కనిపించడానికి ఆటోమేటిక్ అప్‌డేట్
+            // ðŸš€ FIX: à°¡à°¿à°¸à±à°ªà°¾à°šà± à°šà±‡à°¯à°—à°¾à°¨à±‡ Live Tracking à°²à±‹ à°µà±†à°‚à°Ÿà°¨à±‡ à°•à°¨à°¿à°ªà°¿à°‚à°šà°¡à°¾à°¨à°¿à°•à°¿ à°†à°Ÿà±‹à°®à±‡à°Ÿà°¿à°•à± à°…à°ªà±â€Œà°¡à±‡à°Ÿà±
             const newReq = {
                 id: data.id || Date.now(),
                 client_id: paymentRequestForm.client_id,
@@ -636,7 +836,7 @@ const handleViewDocument = (req) => {
             setFinancialRequests(prev => [newReq, ...prev]);
             
             setPaymentRequestForm({ client_id: '', amount: '', reason: '' });
-            refresh(); // ఇది బ్యాలెన్స్ షీట్ మరియు ఇతర డేటాను అప్‌డేట్ చేస్తుంది
+            refresh(); // à°‡à°¦à°¿ à°¬à±à°¯à°¾à°²à±†à°¨à±à°¸à± à°·à±€à°Ÿà± à°®à°°à°¿à°¯à± à°‡à°¤à°° à°¡à±‡à°Ÿà°¾à°¨à± à°…à°ªà±â€Œà°¡à±‡à°Ÿà± à°šà±‡à°¸à±à°¤à±à°‚à°¦à°¿
         } else {
             toast.error("Failed to dispatch payment link.");
         }
@@ -703,7 +903,7 @@ const handleViewDocument = (req) => {
      t.title?.toLowerCase().includes((tenderSearch || '').toLowerCase()) ||
      t.department?.toLowerCase().includes((tenderSearch || '').toLowerCase())
   );
-  // 🚀 Pagination: slice filteredTenders into pages of `tendersPerPage`
+  // ðŸš€ Pagination: slice filteredTenders into pages of `tendersPerPage`
   const totalTenderPages = Math.max(1, Math.ceil(filteredTenders.length / tendersPerPage));
   const paginatedTenders = filteredTenders.slice((tenderPage - 1) * tendersPerPage, tenderPage * tendersPerPage);
   const goToTenderPage = (page) => {
@@ -739,7 +939,20 @@ const handleViewDocument = (req) => {
             <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md"><IndianRupee className="w-4 h-4 mr-2 hidden sm:block"/> Finance Hub</TabsTrigger>
             <TabsTrigger value="team" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-blue-700 data-[state=active]:text-white font-semibold rounded-md"><UserCog className="w-4 h-4 mr-2 hidden sm:block"/> Team Directory</TabsTrigger>
             <TabsTrigger value="operations" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-purple-700 data-[state=active]:text-white font-semibold rounded-md"><ClipboardList className="w-4 h-4 mr-2 hidden sm:block"/> Operations</TabsTrigger>
-            <TabsTrigger value="publisher" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><FileText className="w-4 h-4 mr-2 hidden sm:block"/> Publisher</TabsTrigger>
+            <TabsTrigger value="matchmaker" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
+               <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
+               {matchSummary.new > 0 && (
+                  <Badge className="ml-2 bg-indigo-600 text-white text-[10px] px-1.5 py-0 h-4">{matchSummary.new}</Badge>
+               )}
+            </TabsTrigger>
+            <TabsTrigger value="live-scraped" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-semibold rounded-md">
+               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Live Scraped
+               {liveScrapedTenders.length > 0 && (
+                  <Badge className="ml-2 bg-teal-600 text-white text-[10px] px-1.5 py-0 h-4">{liveScrapedTenders.length}</Badge>
+               )}
+            </TabsTrigger>
+            <TabsTrigger value="publisher" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><FileText className="w-4 h-4 mr-2 hidden sm:block"/> Published Tenders</TabsTrigger>
+            <TabsTrigger value="copilot-desk" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-violet-700 data-[state=active]:text-white font-semibold rounded-md"><Bot className="w-4 h-4 mr-2 hidden sm:block"/> Co-Pilot Chat Desk</TabsTrigger>
             <TabsTrigger value="tickets" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk</TabsTrigger>
             <TabsTrigger value="settings" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Setup</TabsTrigger>
           </TabsList>
@@ -769,7 +982,7 @@ const handleViewDocument = (req) => {
                  <StatCard icon={<UserPlus className="w-4 h-4 text-orange-500" />} label="Pending Appr." value={pendingUsers.length} accent={pendingUsers.length > 0} />
               </div>
               <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${ledgerBalance.toLocaleString()}`} />
+                 <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`â‚¹${ledgerBalance.toLocaleString()}`} />
               </div>
             </div>
 
@@ -785,7 +998,7 @@ const handleViewDocument = (req) => {
                           <tbody className="divide-y divide-slate-100">
                              {employeeReports.map(emp => (
                                 <tr key={emp.id} className="hover:bg-slate-50">
-                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
+                                   <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} â€¢ {emp.role}</p></td>
                                    <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
                                    <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
                                 </tr>
@@ -919,7 +1132,14 @@ const handleViewDocument = (req) => {
                              <Badge className="bg-amber-100 text-amber-800 border-0 uppercase tracking-widest text-[10px]">Awaiting Approval</Badge>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
-                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact</span> <span className="text-slate-800 font-semibold text-sm">{user.phone || 'Not Provided'}</span></div>
+                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact</span>
+                               <WhatsAppVerifiedBadge
+                                 email={user.email}
+                                 phone={user.phone}
+                                 verified={user.whatsapp_verified === true}
+                                 onChanged={(v) => setPendingUsers(prev => prev.map(u => u.email === user.email ? { ...u, whatsapp_verified: v } : u))}
+                               />
+                             </div>
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Company Type</span> <span className="text-slate-800 font-semibold">{user.company_type || 'N/A'}</span></div>
                              <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Interested Services</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
                           </div>
@@ -962,14 +1182,24 @@ const handleViewDocument = (req) => {
                                 <div className="flex justify-between items-start mb-2">
                                    <div>
                                       <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
-                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} â€¢ {client.email}</p>
+                                      {client.phone && (
+                                        <div className="mt-1">
+                                          <WhatsAppVerifiedBadge
+                                            email={client.email}
+                                            phone={client.phone}
+                                            verified={client.whatsapp_verified === true}
+                                            onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
+                                          />
+                                        </div>
+                                      )}
                                    </div>
                                    <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{wonBidsCount}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{totalRevenue.toLocaleString()}</span></div>
+                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">â‚¹{totalRevenue.toLocaleString()}</span></div>
                                 </div>
                              </div>
                              
@@ -983,6 +1213,9 @@ const handleViewDocument = (req) => {
                                       <Database className="w-4 h-4 mr-2" /> Sync Drive Space
                                    </Button>
                                 )}
+                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
+                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
+                                </Button>
                                 <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -1023,7 +1256,7 @@ const handleViewDocument = (req) => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
-              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
+              <Label className="font-bold text-slate-700">Amount (â‚¹) *</Label>
               <Input type="number" placeholder="5000" value={ledgerForm.amount} onChange={e => setLedgerForm({...ledgerForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647]" />
             </div>
             <div className="col-span-2 sm:col-span-1">
@@ -1065,8 +1298,8 @@ const handleViewDocument = (req) => {
         <CardTitle className="text-[#0A2647] text-lg">Balance Sheet Book</CardTitle>
         <div className="text-right">
           <p className="text-[10px] text-slate-500 uppercase font-bold">Net Balance</p>
-          <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{ledgerBalance.toLocaleString()}</h3>
-          <p className="text-[9px] text-slate-400 font-mono mt-1">Offline: ₹{breakdown.offline.toLocaleString()} | Online: ₹{breakdown.online.toLocaleString()}</p>
+          <h3 className={`text-2xl font-black ${ledgerBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>â‚¹{ledgerBalance.toLocaleString()}</h3>
+          <p className="text-[9px] text-slate-400 font-mono mt-1">Offline: â‚¹{breakdown.offline.toLocaleString()} | Online: â‚¹{breakdown.online.toLocaleString()}</p>
         </div>
       </CardHeader>
       <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
@@ -1086,7 +1319,7 @@ const handleViewDocument = (req) => {
                     {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
                     
                     <p className="text-[10px] font-bold text-slate-500 mt-1">
-                      Balance: <span className={txn.running_balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>₹{txn.running_balance?.toLocaleString() || '---'}</span>
+                      Balance: <span className={txn.running_balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>â‚¹{txn.running_balance?.toLocaleString() || '---'}</span>
                     </p>
 
                     {txn.proof_base64 && <Badge variant="outline" className="text-[8px] px-1 mt-1 bg-blue-50 cursor-pointer hover:bg-blue-100" onClick={() => {
@@ -1103,7 +1336,7 @@ const handleViewDocument = (req) => {
                     }}>View Proof</Badge>}
                   </td>
                   <td className={`p-2 text-right font-bold text-sm align-top ${txn.type === 'CREDIT' ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
+                    {txn.type === 'CREDIT' ? '+' : '-'}â‚¹{txn.amount.toLocaleString()}
                   </td>
                   <td className="p-2 align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                     <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
@@ -1139,11 +1372,11 @@ const handleViewDocument = (req) => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
-              <Label className="font-bold text-slate-700">Amount (₹) *</Label>
+              <Label className="font-bold text-slate-700">Amount (â‚¹) *</Label>
               <Input type="number" placeholder="5000" value={paymentRequestForm.amount} onChange={e => setPaymentRequestForm({...paymentRequestForm, amount: e.target.value})} required className="mt-1 font-bold text-lg text-[#0A2647] bg-white border-slate-300" />
             </div>
             <div className="col-span-2 sm:col-span-1">
-              {/* మీ రిక్వెస్ట్ ప్రకారం ఇక్కడ డ్రాప్ డౌన్ తీసేసి మాన్యువల్ ఇన్‌పుట్ పెట్టాను */}
+              {/* à°®à±€ à°°à°¿à°•à±à°µà±†à°¸à±à°Ÿà± à°ªà±à°°à°•à°¾à°°à°‚ à°‡à°•à±à°•à°¡ à°¡à±à°°à°¾à°ªà± à°¡à±Œà°¨à± à°¤à±€à°¸à±‡à°¸à°¿ à°®à°¾à°¨à±à°¯à±à°µà°²à± à°‡à°¨à±â€Œà°ªà±à°Ÿà± à°ªà±†à°Ÿà±à°Ÿà°¾à°¨à± */}
               <Label className="font-bold text-slate-700">Reason / Purpose *</Label>
               <Input placeholder="Enter purpose of payment..." value={paymentRequestForm.reason} onChange={e => setPaymentRequestForm({...paymentRequestForm, reason: e.target.value})} required className="mt-1 bg-white border-slate-300" />
             </div>
@@ -1173,7 +1406,7 @@ const handleViewDocument = (req) => {
               {financialRequests.filter(req => req.status !== 'paid').map(req => (
                 <div key={req.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-blue-300 transition">
                   <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-bold text-[#0A2647] text-base">₹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
+                    <h4 className="font-bold text-[#0A2647] text-base">â‚¹{req.amount} <span className="text-xs font-normal text-slate-500 ml-1">({req.reason})</span></h4>
                     <Badge className="bg-slate-100 text-slate-600 font-mono text-[10px] hover:bg-slate-200">{req.client_id}</Badge>
                   </div>
                   <div className="relative pt-2 pb-1 mx-2">
@@ -1206,7 +1439,7 @@ const handleViewDocument = (req) => {
       <Card className="shadow-sm border-t-4 border-t-emerald-500">
         <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
           <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Online Payments</CardTitle>
-          <Badge className="bg-emerald-600 text-white border-0">Total: ₹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
+          <Badge className="bg-emerald-600 text-white border-0">Total: â‚¹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
         </CardHeader>
         <CardContent className="pt-4 max-h-[300px] overflow-y-auto">
           {successfulPaymentsLog.length === 0 ? (
@@ -1217,7 +1450,7 @@ const handleViewDocument = (req) => {
                 <div key={i} className="bg-slate-50 border border-emerald-100 p-3 rounded-lg shadow-sm flex flex-col gap-2 border-l-4 border-l-emerald-500">
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-bold text-[#0A2647]">{pay.client_name} <span className="text-slate-400 font-normal">({pay.email})</span></span>
-                    <span className="font-black text-emerald-600">₹{pay.amount}</span>
+                    <span className="font-black text-emerald-600">â‚¹{pay.amount}</span>
                   </div>
                   <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
                     <span>{pay.reason || 'Service Fee'} (Cashfree)</span>
@@ -1297,7 +1530,7 @@ const handleViewDocument = (req) => {
                                  <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
                                     <div className="flex flex-col">
                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
-                                       <span className="text-sm font-mono font-bold text-[#0A2647]">{showPwdId === off.emp_id ? off.password : '••••••••'}</span>
+                                       <span className="text-sm font-mono font-bold text-[#0A2647]">{showPwdId === off.emp_id ? off.password : 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢'}</span>
                                     </div>
                                     <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 font-semibold" onClick={() => setShowPwdId(showPwdId === off.emp_id ? null : off.emp_id)}>
                                        {showPwdId === off.emp_id ? <EyeOff className="w-3.5 h-3.5 mr-1.5"/> : <Eye className="w-3.5 h-3.5 mr-1.5"/>}
@@ -1405,7 +1638,7 @@ const handleViewDocument = (req) => {
                                               </div>
                                            )}
                                            
-                                           {/* 🚀 FIX: అటాచ్ చేసిన PDF ని వ్యూ చేసే ఆప్షన్ */}
+                                           {/* ðŸš€ FIX: à°…à°Ÿà°¾à°šà± à°šà±‡à°¸à°¿à°¨ PDF à°¨à°¿ à°µà±à°¯à±‚ à°šà±‡à°¸à±‡ à°†à°ªà±à°·à°¨à± */}
                                            {task.file_name && (
                                               <Button size="sm" variant="outline" onClick={() => {
                                                   window.open(`/api/dispatches/${task._id || task.id}/file`, '_blank');
@@ -1454,11 +1687,11 @@ const handleViewDocument = (req) => {
                      ) : (
                         <div className="space-y-4">
                            {bidRequests.map(req => {
-                              // 🚀 FIX: ఇక్కడ క్లయింట్ డాక్యుమెంట్ అప్‌లోడ్ చేశాడో లేదో ఖచ్చితంగా చెక్ చేస్తుంది
+                              // ðŸš€ FIX: à°‡à°•à±à°•à°¡ à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°¡à°¾à°•à±à°¯à±à°®à±†à°‚à°Ÿà± à°…à°ªà±â€Œà°²à±‹à°¡à± à°šà±‡à°¶à°¾à°¡à±‹ à°²à±‡à°¦à±‹ à°–à°šà±à°šà°¿à°¤à°‚à°—à°¾ à°šà±†à°•à± à°šà±‡à°¸à±à°¤à±à°‚à°¦à°¿
                               const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file || (req.link_or_id && req.link_or_id.startsWith('http'));
                               
                               const matchedTender = tenders.find(t => t.bid_no === req.link_or_id);
-                              // 🚀 FIX: ఇది టెండర్ కాదు, క్లయింట్ సొంతంగా పెట్టిన ఫైల్ అని గుర్తుపట్టడానికి
+                              // ðŸš€ FIX: à°‡à°¦à°¿ à°Ÿà±†à°‚à°¡à°°à± à°•à°¾à°¦à±, à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°¸à±Šà°‚à°¤à°‚à°—à°¾ à°ªà±†à°Ÿà±à°Ÿà°¿à°¨ à°«à±ˆà°²à± à°…à°¨à°¿ à°—à±à°°à±à°¤à±à°ªà°Ÿà±à°Ÿà°¡à°¾à°¨à°¿à°•à°¿
                               const isClientUpload = hasDoc && !matchedTender;
 
                               return (
@@ -1472,7 +1705,7 @@ const handleViewDocument = (req) => {
                                  </div>
                                  <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
                                  
-                                 {/* 🚀 FIX: క్లయింట్ అప్‌లోడ్ చేస్తే "View Uploaded Document", లేకపోతే "View Original Tender PDF" */}
+                                 {/* ðŸš€ FIX: à°•à±à°²à°¯à°¿à°‚à°Ÿà± à°…à°ªà±â€Œà°²à±‹à°¡à± à°šà±‡à°¸à±à°¤à±‡ "View Uploaded Document", à°²à±‡à°•à°ªà±‹à°¤à±‡ "View Original Tender PDF" */}
                                  <Button variant="outline" size="sm" disabled={!hasDoc && !matchedTender} onClick={() => {
                                      if (isClientUpload || !matchedTender) {
                                          handleViewDocument(req);
@@ -1518,34 +1751,315 @@ const handleViewDocument = (req) => {
             </div>
           </TabsContent>
           {/* ==================== 6. PUBLISHER ==================== */}
+          {/* ðŸš€ AI MATCHMAKER & COMPETITOR INTEL â€” matches produced by the nightly
+              /api/cron/matchmaker job, plus on-demand L1 price prediction. */}
+          <TabsContent value="matchmaker" className="mt-4">
+
+            <AiMatchmakerPanel />
+
+            <div className="mb-6 mt-6">
+              <CopilotTrainDropzone />
+            </div>
+
+            <div className="mb-6 mt-6">
+              <L1BenchmarkDropzone />
+            </div>
+
+            <Card className="tender-shadow border-t-4 border-t-indigo-600 w-full mb-6">
+              <CardHeader className="bg-indigo-50/40 border-b pb-4">
+                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
+                      <Target className="w-5 h-5 text-indigo-600" /> Legacy Match Feed &amp; L1 Prediction
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Nightly cron matches with on-demand L1 competitor intel. Prefer the Suggested Bids panel above for
+                      manual WhatsApp alerts.
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                    <Button
+                      onClick={launchGemLiveHunter}
+                      disabled={launchingGem}
+                      variant="outline"
+                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm"
+                    >
+                      {launchingGem
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launchingâ€¦</>
+                        : <>ðŸš€ Launch GeM Live Hunter</>}
+                    </Button>
+                    <Button
+                      onClick={runMatchmakerNow}
+                      disabled={runningMatchmaker}
+                      className="bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm"
+                    >
+                      {runningMatchmaker
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Scanning tenders...</>
+                        : <><RefreshCw className="w-4 h-4 mr-2" /> Refresh Cron Matches</>}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-5">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Live Matches</div>
+                    <div className="text-2xl font-extrabold text-[#0A2647] mt-0.5">{bidMatches.length}</div>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Awaiting Review</div>
+                    <div className="text-2xl font-extrabold text-indigo-700 mt-0.5">{matchSummary.new || 0}</div>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500">JV Opportunities</div>
+                    <div className="text-2xl font-extrabold text-amber-700 mt-0.5">{matchSummary.jv || 0}</div>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Est. Pipeline</div>
+                    <div className="text-lg font-extrabold text-emerald-700 mt-1 truncate">
+                      {formatINR(bidMatches.reduce((sum, m) => sum + (Number(m.estimated_value) || 0), 0))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 mt-4 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Filter</span>
+                  {[
+                    { id: 'all', label: `All (${bidMatches.length})` },
+                    { id: 'DIRECT', label: `Direct (${bidMatches.filter(m => m.match_type === 'DIRECT').length})` },
+                    { id: 'JV', label: `Joint Venture (${bidMatches.filter(m => m.match_type === 'JV').length})` },
+                  ].map(opt => (
+                    <Button
+                      key={opt.id}
+                      size="sm"
+                      variant={matchTypeFilter === opt.id ? 'default' : 'outline'}
+                      onClick={() => setMatchTypeFilter(opt.id)}
+                      className={`h-7 text-xs ${matchTypeFilter === opt.id ? 'bg-[#0A2647] hover:bg-[#0A2647]/90' : 'text-slate-600'}`}
+                    >
+                      {opt.label}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="tender-shadow w-full">
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-base">
+                  <Handshake className="w-5 h-5 text-indigo-600" /> Matched Opportunities
+                </CardTitle>
+                <CardDescription>
+                  Confidence blends category overlap, district presence, vault completeness and proven contract value.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {visibleMatches.length === 0 ? (
+                  <div className="p-10 text-center">
+                    <Target className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                    <p className="font-bold text-slate-700">No matches to show yet</p>
+                    <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+                      {bidMatches.length === 0
+                        ? 'Run the matchmaker to score today\u2019s open TS/AP tenders against your approved clients. Matches need a client service-category overlap to qualify.'
+                        : 'No matches of this type. Try a different filter.'}
+                    </p>
+                  </div>
+                ) : (
+                  <Table className="min-w-[900px]">
+                    <TableHeader>
+                      <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Client</TableHead>
+                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Bid Details</TableHead>
+                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Value / Turnover</TableHead>
+                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Fit</TableHead>
+                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleMatches.map((m) => {
+                        const matchId = m._id || m.tender_id;
+                        const isPredicting = predictingMatchId === matchId;
+                        return (
+                          <TableRow key={matchId} className="align-top hover:bg-indigo-50/30">
+                            <TableCell className="py-3">
+                              <div className="font-bold text-sm text-[#0A2647] flex items-center gap-1.5">
+                                {m.client_company}
+                                {m.status === 'new' && (
+                                  <Badge className="bg-indigo-600 text-white text-[9px] px-1.5 py-0 h-4">NEW</Badge>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-500">{m.client_email}</div>
+                              <div className="text-[11px] text-slate-500 mt-1">
+                                Proven value: <span className="font-semibold text-slate-700">{formatINR(m.client_capacity)}</span>
+                              </div>
+                              {m.match_type === 'JV' && m.jv_partner && (
+                                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md p-2">
+                                  <div className="text-[9px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1">
+                                    <Handshake className="w-3 h-3" /> JV Partner
+                                  </div>
+                                  <div className="text-xs font-semibold text-amber-900">{m.jv_partner.company_name}</div>
+                                  <div className="text-[10px] text-amber-700">
+                                    Combined: {formatINR(m.jv_partner.combined_capacity)}
+                                  </div>
+                                </div>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="py-3 max-w-[320px]">
+                              <div className="font-semibold text-sm text-slate-800 leading-snug">{m.tender_title}</div>
+                              <div className="text-[11px] text-slate-500 mt-1 space-y-0.5">
+                                {m.tender_bid_no && <div className="font-mono">{m.tender_bid_no}</div>}
+                                {m.tender_department && <div>{m.tender_department}</div>}
+                                <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                                  {m.tender_district && (
+                                    <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> {m.tender_district}</span>
+                                  )}
+                                  {m.tender_last_date && (
+                                    <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" /> {m.tender_last_date}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="py-3">
+                              <div className="text-sm font-bold text-emerald-700">{formatINR(m.estimated_value)}</div>
+                              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Est. value</div>
+                              {m.required_turnover ? (
+                                <div className="text-[11px] text-slate-600 mt-1.5">
+                                  Turnover req: <span className="font-semibold">{formatINR(m.required_turnover)}</span>
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-slate-400 mt-1.5">No turnover clause found</div>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="py-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-lg font-extrabold ${
+                                  m.confidence >= 75 ? 'text-emerald-600' : m.confidence >= 60 ? 'text-blue-600' : 'text-amber-600'
+                                }`}>{m.confidence}%</span>
+                                <Badge variant="outline" className={
+                                  m.match_type === 'JV'
+                                    ? 'border-amber-300 text-amber-700 bg-amber-50 text-[10px]'
+                                    : 'border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px]'
+                                }>
+                                  {m.match_type === 'JV' ? 'JV' : 'DIRECT'}
+                                </Badge>
+                              </div>
+                              <div className="flex flex-wrap gap-1 mt-1.5 max-w-[180px]">
+                                {(m.category_hits || []).slice(0, 4).map(hit => (
+                                  <span key={hit} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
+                                    {hit}
+                                  </span>
+                                ))}
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="py-3">
+                              <div className="flex flex-col items-end gap-1.5">
+                                <Button
+                                  size="sm"
+                                  onClick={() => runL1Prediction(m)}
+                                  disabled={isPredicting}
+                                  className="h-8 text-xs bg-indigo-700 hover:bg-indigo-800 text-white w-full sm:w-auto shadow-sm"
+                                >
+                                  {isPredicting
+                                    ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Predicting...</>
+                                    : <><Sparkles className="w-3 h-3 mr-1.5" /> Run L1 Prediction</>}
+                                </Button>
+                                <div className="flex gap-1">
+                                  {m.status === 'new' && (
+                                    <Button size="sm" variant="outline" onClick={() => updateMatchStatus(m, 'reviewed')} className="h-7 text-[10px] text-slate-600">
+                                      <CheckCircle2 className="w-3 h-3 mr-1" /> Reviewed
+                                    </Button>
+                                  )}
+                                  <Button size="sm" variant="outline" onClick={() => updateMatchStatus(m, 'dismissed')} className="h-7 text-[10px] text-red-600 border-red-200 hover:bg-red-50">
+                                    <X className="w-3 h-3 mr-1" /> Dismiss
+                                  </Button>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+
+          <TabsContent value="live-scraped" className="mt-4">
+            <LiveScrapedTendersPanel />
+          </TabsContent>
+
+          <TabsContent value="copilot-desk" className="mt-4">
+            <GeminiWorkspace
+              embedded
+              tenderId={isEditingTender || null}
+              tenderLabel={isEditingTender ? (form.title || form.bid_no || 'this tender') : null}
+              clients={approvedClients}
+              tenders={tenders}
+            />
+          </TabsContent>
+
           <TabsContent value="publisher" className="mt-4">
+            <div className="mb-6">
+              <LetterheadManager />
+            </div>
+            <div className="mb-6">
+              <DocumentLetterheadGenerator
+                tenders={tenders}
+                clients={approvedClients}
+                defaultTenderId={isEditingTender || ''}
+              />
+            </div>
             
-            {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) - MD Bulk AI Dropzone 🚀 */}
+            {/* ðŸš€ à°‡à°•à±à°•à°¡ à°ªà±‡à°¸à±à°Ÿà± à°šà±†à°¯à± (à°•à±Šà°¤à±à°¤ à°•à±‹à°¡à±) - MD Bulk AI Dropzone ðŸš€ */}
             <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mb-6">
                <CardHeader className="bg-purple-50/50 border-b pb-4">
                   <CardTitle className="text-purple-900 flex items-center gap-2"><UploadCloud className="w-5 h-5 text-purple-600"/> Bulk AI Tender Dropzone</CardTitle>
-                  <CardDescription>Drop multiple tender PDFs here. AI will extract data and send them to the Employee's Pending Drafts.</CardDescription>
+                  <CardDescription>Drag &amp; drop multiple tender PDFs. Each document is stored securely in Cloudflare R2, read by AI, and queued for employee review before going live.</CardDescription>
                </CardHeader>
                <CardContent className="pt-6">
-                  <label className={`border-2 border-dashed border-purple-300 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition ${analyzingFiles ? 'bg-purple-100 animate-pulse' : 'bg-purple-50 hover:bg-purple-100'}`}>
+                  <label
+                     onDragOver={(e) => { e.preventDefault(); if (!analyzingFiles) setBulkDragActive(true); }}
+                     onDragLeave={(e) => { e.preventDefault(); setBulkDragActive(false); }}
+                     onDrop={handleBulkDrop}
+                     className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center transition-colors ${
+                        analyzingFiles
+                           ? 'border-purple-300 bg-purple-100 cursor-wait'
+                           : bulkDragActive
+                              ? 'border-purple-600 bg-purple-100 cursor-copy ring-2 ring-purple-300'
+                              : 'border-purple-300 bg-purple-50 hover:bg-purple-100 cursor-pointer'
+                     }`}
+                  >
                      <input type="file" accept="application/pdf" multiple onChange={handleBulkAIUpload} disabled={analyzingFiles} className="hidden"/>
                      {analyzingFiles ? (
                         <>
-                           <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-3" />
-                           <span className="text-sm font-bold text-purple-800">AI is analyzing files... Please wait.</span>
+                           <Loader2 className="w-9 h-9 text-purple-600 animate-spin mb-3" />
+                           <span className="text-sm font-bold text-purple-900">
+                              Uploading &amp; extracting {bulkFileCount > 0 ? `${bulkFileCount} document${bulkFileCount > 1 ? 's' : ''}` : 'documents'}...
+                           </span>
+                           <span className="text-xs text-purple-600 mt-1">This can take up to a minute. Please keep this tab open.</span>
                         </>
                      ) : (
                         <>
-                           <UploadCloud className="w-10 h-10 text-purple-500 mb-3" />
-                           <span className="text-base font-bold text-purple-900">Click to Select Multiple PDF Files</span>
-                           <span className="text-xs text-purple-600 mt-1">AI will process them one by one.</span>
+                           <UploadCloud className={`w-11 h-11 mb-3 transition-colors ${bulkDragActive ? 'text-purple-700' : 'text-purple-500'}`} />
+                           <span className="text-base font-bold text-purple-900">
+                              {bulkDragActive ? 'Release to upload' : 'Drag & drop PDFs here'}
+                           </span>
+                           <span className="text-xs text-purple-600 mt-1">or click to browse â€” up to 25 files, 15MB each</span>
                         </>
                      )}
                   </label>
                </CardContent>
             </Card>
 
-            {/* === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) === */}
+            <L1BenchmarkDropzone />
+
+            {/* === à°¦à±€à°¨à°¿ à°ªà±ˆà°¨ à°‰à°‚à°¦à°¨à°¿ à°¨à°¿à°°à±à°§à°¾à°°à°¿à°‚à°šà±à°•à±‹ (à°ªà°¾à°¤ à°•à±‹à°¡à±) === */}
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
               <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
                 <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
@@ -1631,7 +2145,7 @@ const handleViewDocument = (req) => {
                          </Button>
                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
                             <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
-                            <Input placeholder="Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), price: e.target.value}}))}/>
+                            <Input placeholder="Price (â‚¹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), price: e.target.value}}))}/>
                             <Input placeholder="Winner Name" className="h-8 text-xs bg-white w-full sm:flex-1 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.winner || t.l1_winner || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), winner: e.target.value}}))}/>
                             <Button size="sm" className="h-8 text-[10px] w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 shadow-sm px-2" onClick={() => submitL1Price(t._id || t.id)}>Save</Button>
                          </div>
@@ -1639,7 +2153,7 @@ const handleViewDocument = (req) => {
                     </div>
                   ))}
 
-                  {/* 🚀 Pagination Controls (20 per page) */}
+                  {/* ðŸš€ Pagination Controls (20 per page) */}
                   {totalTenderPages > 1 && (
                     <div className="flex items-center justify-center gap-4 pt-2 pb-1">
                       <Button
@@ -1784,7 +2298,7 @@ const handleViewDocument = (req) => {
           </TabsContent>
         </Tabs>
 
-        {/* 🚀 MD Vault Approval Dialog */}
+        {/* ðŸš€ MD Vault Approval Dialog */}
         <Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
           <DialogContent className="sm:max-w-md border-0 shadow-2xl">
             <DialogHeader>
@@ -1826,6 +2340,180 @@ const handleViewDocument = (req) => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* ðŸš€ L1 PREDICTION â€” competitor intel and a suggested quote for one matched bid. */}
+        <Dialog open={predictionOpen} onOpenChange={setPredictionOpen}>
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-[#0A2647]">
+                <Gauge className="w-5 h-5 text-indigo-600" /> L1 Prediction &amp; Competitor Intel
+              </DialogTitle>
+              <DialogDescription className="leading-snug">
+                {prediction?.tender?.title || 'Selected tender'}
+                {prediction?.tender?.bid_no ? ` Â· ${prediction.tender.bid_no}` : ''}
+              </DialogDescription>
+            </DialogHeader>
+
+            {prediction && (
+              <div className="space-y-4 pt-1">
+                {/* Headline numbers */}
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Suggested Quote</div>
+                    <div className="text-xl font-extrabold text-emerald-700 mt-0.5">
+                      {formatINR(prediction.prediction?.suggested_quote_inr)}
+                    </div>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Below Estimate By</div>
+                    <div className="text-xl font-extrabold text-indigo-700 mt-0.5 flex items-center gap-1">
+                      <TrendingDown className="w-4 h-4" />
+                      {prediction.prediction?.suggested_l1_percentage != null
+                        ? `${prediction.prediction.suggested_l1_percentage}%`
+                        : 'â€”'}
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Confidence</div>
+                    <div className={`text-xl font-extrabold mt-0.5 capitalize ${
+                      prediction.prediction?.confidence === 'high' ? 'text-emerald-700'
+                        : prediction.prediction?.confidence === 'medium' ? 'text-amber-600' : 'text-slate-500'
+                    }`}>
+                      {prediction.prediction?.confidence || 'low'}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      {prediction.history?.comparable_records || 0} comparable record(s)
+                    </div>
+                  </div>
+                </div>
+
+                {/* Historical baseline â€” the numbers the model was given, so the MD can
+                    sanity-check the recommendation rather than trust it blindly. */}
+                <div className="bg-white border rounded-lg p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-2">
+                    <BarChart3 className="w-3.5 h-3.5" /> Historical L1 Margins (our records)
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <div className="text-base font-bold text-slate-800">
+                        {prediction.history?.median_margin_pct != null ? `${prediction.history.median_margin_pct}%` : 'â€”'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 uppercase">Median</div>
+                    </div>
+                    <div>
+                      <div className="text-base font-bold text-slate-800">
+                        {prediction.history?.average_margin_pct != null ? `${prediction.history.average_margin_pct}%` : 'â€”'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 uppercase">Average</div>
+                    </div>
+                    <div>
+                      <div className="text-base font-bold text-slate-800">{formatINR(prediction.tender?.estimated_value)}</div>
+                      <div className="text-[10px] text-slate-400 uppercase">Est. Value</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Competitors */}
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-2">
+                    <Users className="w-3.5 h-3.5" /> Likely Competitors
+                  </div>
+                  {(prediction.prediction?.likely_competitors || []).length === 0 ? (
+                    <p className="text-sm text-slate-500 bg-slate-50 border rounded-lg p-3">
+                      No competitor names appear in our historical records for this category yet. Record L1 winners
+                      on lost bids to build this intel up.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {prediction.prediction.likely_competitors.map((c, i) => (
+                        <div key={`${c.name}-${i}`} className="flex items-start justify-between gap-3 bg-slate-50 border rounded-lg p-2.5">
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-[#0A2647]">{c.name}</div>
+                            {c.typical_behaviour && (
+                              <div className="text-[11px] text-slate-600 leading-snug">{c.typical_behaviour}</div>
+                            )}
+                          </div>
+                          <Badge variant="outline" className="shrink-0 text-[10px] border-slate-300">
+                            <Trophy className="w-3 h-3 mr-1 text-amber-500" /> {c.wins_observed} win(s)
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Rationale */}
+                {prediction.prediction?.rationale && (
+                  <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 flex items-center gap-1.5 mb-1">
+                      <TrendingUp className="w-3.5 h-3.5" /> Strategy
+                    </div>
+                    <p className="text-sm text-slate-700 leading-relaxed">{prediction.prediction.rationale}</p>
+                  </div>
+                )}
+
+                {/* JV recommendation â€” pre-seeded from the matchmaker where it found a pair. */}
+                <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1.5 mb-1">
+                    <Handshake className="w-3.5 h-3.5" /> Joint Venture
+                  </div>
+                  {prediction.match?.match_type === 'JV' && prediction.match?.jv_partner ? (
+                    <p className="text-sm text-amber-900 leading-relaxed">
+                      <span className="font-bold">{prediction.match.client_company}</span> cannot meet the{' '}
+                      {formatINR(prediction.match.required_turnover)} turnover requirement alone
+                      ({formatINR(prediction.match.client_capacity)} proven). Pair with{' '}
+                      <span className="font-bold">{prediction.match.jv_partner.company_name}</span> for a combined{' '}
+                      {formatINR(prediction.match.jv_partner.combined_capacity)}.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-amber-900 leading-relaxed">
+                      {prediction.prediction?.jv_recommendation || 'Not required'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Risks */}
+                {(prediction.prediction?.risks || []).length > 0 && (
+                  <div className="bg-red-50/60 border border-red-100 rounded-lg p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-red-500 flex items-center gap-1.5 mb-1.5">
+                      <ShieldAlert className="w-3.5 h-3.5" /> Risks
+                    </div>
+                    <ul className="space-y-1">
+                      {prediction.prediction.risks.map((risk, i) => (
+                        <li key={i} className="text-sm text-slate-700 flex gap-2">
+                          <span className="text-red-400 shrink-0">â€¢</span> {risk}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-400 leading-snug border-t pt-3">
+                  AI-generated guidance based only on L1 outcomes recorded in this platform. Estimated values are
+                  derived from EMD at the standard 2% convention where the tender does not state a value. Verify
+                  against the tender document before quoting.
+                </p>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPredictionOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <StationeryUploader
+          client={stationeryClient}
+          open={!!stationeryClient}
+          onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
+        />
+
+        <GeminiWorkspace
+          tenderId={isEditingTender || null}
+          tenderLabel={isEditingTender ? (form.title || form.bid_no || 'this tender') : null}
+          clients={approvedClients}
+          tenders={tenders}
+        />
       </main>
     </div>
   );
@@ -2055,7 +2743,7 @@ function BrandSettings({ token }) {
                  
                  <div className="sm:col-span-2 lg:col-span-4 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
                     <label className={`flex-1 w-full border ${newLeader.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
-                       <UploadCloud className="w-4 h-4"/> {newLeader.image ? 'Professional Photo Selected ✓' : 'Upload Professional Photo *'}
+                       <UploadCloud className="w-4 h-4"/> {newLeader.image ? 'Professional Photo Selected âœ“' : 'Upload Professional Photo *'}
                        <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewLeader({...newLeader, image: b64}))} className="hidden"/>
                     </label>
                     <Button type="button" onClick={addLeader} className="flex-1 w-full bg-blue-600 hover:bg-blue-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Leaders List</Button>
@@ -2096,7 +2784,7 @@ function BrandSettings({ token }) {
                  
                  <div className="sm:col-span-2 lg:col-span-3 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
                     <label className={`flex-1 w-full border ${newClient.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
-                       <UploadCloud className="w-4 h-4"/> {newClient.image ? 'Company Logo Selected ✓' : 'Upload Company Logo *'}
+                       <UploadCloud className="w-4 h-4"/> {newClient.image ? 'Company Logo Selected âœ“' : 'Upload Company Logo *'}
                        <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewClient({...newClient, image: b64}))} className="hidden"/>
                     </label>
                     <Button type="button" onClick={addClient} className="flex-1 w-full bg-emerald-600 hover:bg-emerald-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Public Showcase</Button>
