@@ -152,7 +152,11 @@ export async function GET(request) {
  */
 export async function POST(request) {
   try {
-    if (!isAuthorised(request)) {
+    // 🚀 FIX: `isAuthorised` is async — calling it without `await` returned a
+    // Promise (always truthy), so `!isAuthorised(...)` was always `false` and this
+    // check never actually rejected an unauthenticated POST. Anyone could inject
+    // fake bids into live_scraped_bids without a valid token.
+    if (!(await isAuthorised(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

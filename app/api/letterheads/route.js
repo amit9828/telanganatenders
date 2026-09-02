@@ -12,7 +12,11 @@ import { LETTERHEAD_COLLECTION } from '@/lib/letterhead-compose';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_ASSET_BYTES = 8 * 1024 * 1024;
+// 🚀 FIX: Vercel hard-caps the whole serverless request body at ~4.5MB regardless of
+// what this constant says — a file between 4.5MB and the old 8MB limit was rejected by
+// the platform with an opaque 413 before this handler ever ran. 4MB (still multipart,
+// no base64 inflation) leaves a safe margin under that ceiling.
+const MAX_ASSET_BYTES = 4 * 1024 * 1024;
 
 function sniffType(buffer) {
   const hex = Buffer.from(buffer.subarray(0, 12)).toString('hex');

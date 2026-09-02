@@ -634,14 +634,10 @@ async function handleGET(request, { params }, attempt = 1) {
       return json({ users });
     }
 
-    if (path === 'ai/drafts' || path === 'api/ai/drafts') {
-       const drafts = await db.collection('ai_draft_tenders')
-         .find({ status: 'Pending Verification' })
-         .project({ pdf_base64: 0 }) // 🚀 FIX: Block heavy AI PDF loads
-         .sort({ created_at: -1 })
-         .toArray();
-       return json({ drafts });
-    }
+    // NOTE: GET /api/ai/drafts is handled by the dedicated app/api/ai/drafts/route.js
+    // (Next.js always prefers a static route over this catch-all), which also matches
+    // both 'Pending Review' and 'Pending Verification' statuses. A stale duplicate used
+    // to live here — removed to avoid the two copies drifting apart again.
     
     if (path === 'users/approved' || path === 'api/users/approved') {
       const __t = Date.now();
@@ -1554,14 +1550,8 @@ export async function POST(request, { params }) {
        return json({ success: true, id: reqId }); // 🚀 FIX: Return ID to frontend
     }
     
-    // 🚀 Delete AI Draft once Published
-    if (path === 'ai/drafts' || path === 'api/ai/drafts') {
-       const id = searchParams.get('id');
-       if (!id) return json({ error: 'Missing Draft ID' }, 400);
-       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Draft ID' }, 400);
-       await db.collection('ai_draft_tenders').deleteOne({ _id: new ObjectId(id) });
-       return json({ success: true });
-    }
+    // NOTE: DELETE /api/ai/drafts is handled by the dedicated app/api/ai/drafts/route.js
+    // (see matching note above the removed GET duplicate).
     
     if (path === 'client-requests' || path === 'api/client-requests') {
        const { client_email, client_id, link_or_id, description } = body;

@@ -255,18 +255,19 @@ export async function POST(request) {
       ? PACKAGE_100X_TYPES.map(findDocType).filter(Boolean)
       : [primaryType];
 
-    const files = [];
-    for (const docType of typesToDraft) {
-      files.push(await draftOne({
-        model,
-        docType,
-        client,
-        tender,
-        copilotContext,
-        letterhead,
-        signatureSrc,
-      }));
-    }
+    // 🚀 FIX (Timeout Prevention): the 100x package drafts multiple document types —
+    // each is an independent Gemini call + PDF render, so run them concurrently
+    // instead of one-at-a-time to keep the whole request comfortably inside
+    // maxDuration on Vercel.
+    const files = await Promise.all(typesToDraft.map((docType) => draftOne({
+      model,
+      docType,
+      client,
+      tender,
+      copilotContext,
+      letterhead,
+      signatureSrc,
+    })));
 
     if (format === 'txt' || format === 'text') {
       const combined = files.map((f) => `===== ${f.doc_type.label} =====\n\n${f.text}`).join('\n\n');

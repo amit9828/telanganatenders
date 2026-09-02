@@ -295,7 +295,11 @@ export default function AdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
-    if (file.size > 4 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 4MB.');
+    // 🚀 FIX: this file is sent as a base64 string inside the tender's JSON payload,
+    // which inflates it by ~33%. Vercel hard-caps the whole serverless request body at
+    // ~4.5MB, so a 4MB raw PDF (≈5.3MB once base64-encoded) used to fail with an opaque
+    // 413 after the toast already said it was fine. 3MB raw stays safely under that cap.
+    if (file.size > 3 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 3MB.');
     const reader = new FileReader();
     reader.onload = () => { setPdfBase64(reader.result?.toString().split(',')[1] || ''); setPdfName(file.name); toast.success(`PDF loaded: ${file.name}`); };
     reader.readAsDataURL(file);
@@ -2574,7 +2578,9 @@ function BrandSettings({ token }) {
   const onBannerUpload = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > 4 * 1024 * 1024) return toast.error('Banner too large. Keep under 4 MB.');
+    // 🚀 FIX: same base64-inflation issue as onPdfChange above — 4MB raw becomes
+    // ~5.3MB once base64-encoded in the JSON body, over Vercel's ~4.5MB hard cap.
+    if (f.size > 3 * 1024 * 1024) return toast.error('Banner too large. Keep under 3 MB.');
     const reader = new FileReader();
     reader.onload = () => { setBanners(prev => [...prev, reader.result?.toString() || '']); toast.success('Banner added to preview!'); };
     reader.readAsDataURL(f);

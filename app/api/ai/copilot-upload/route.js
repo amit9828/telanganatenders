@@ -15,6 +15,24 @@ export const dynamic = 'force-dynamic';
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_FILES = 8;
+// 🚀 FIX (Timeout Prevention): up to MAX_FILES PDFs used to be extracted one at a
+// time inside maxDuration=60. A batch of 8 large PDFs could easily exceed that
+// budget on Vercel's Hobby plan cap. Mirrors the bounded worker pool already used
+// by app/api/ai/bulk-upload/route.js so a full batch fits inside the window.
+const CONCURRENCY = 3;
+
+async function runPool(items, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index]);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
 
 const EXTRACT_PROMPT =
   'Extract the full readable text of this document. Preserve headings, clause numbers ' +
@@ -171,18 +189,17 @@ export async function POST(request) {
   // GEMINI_API_KEY is actually entitled to (verified live).
   const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
-  const results = [];
-  for (const file of files) {
+  const results = await runPool(files, async (file) => {
     try {
-      results.push(await trainOneFile(file, { db, model, uploadedBy, categoryOverride }));
+      return await trainOneFile(file, { db, model, uploadedBy, categoryOverride });
     } catch (err) {
-      results.push({
+      return {
         fileName: file?.name || 'document.pdf',
         status: 'failed',
         error: err?.message || 'Unexpected server error.',
-      });
+      };
     }
-  }
+  });
 
   const trained = results.filter((r) => r.status === 'trained').length;
   const failed = results.filter((r) => r.status === 'failed').length;

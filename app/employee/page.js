@@ -197,7 +197,11 @@ export default function EmployeeDashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
-    if (file.size > 4 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 4MB.');
+    // 🚀 FIX: this file travels as a base64 string inside the tender's JSON payload,
+    // which inflates it by ~33%. Vercel hard-caps the whole serverless request body at
+    // ~4.5MB, so a 4MB raw PDF (≈5.3MB once base64-encoded) used to fail with an opaque
+    // 413 after the toast already said it was fine. 3MB raw stays safely under that cap.
+    if (file.size > 3 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 3MB.');
     
     const reader = new FileReader();
     reader.onload = () => { 

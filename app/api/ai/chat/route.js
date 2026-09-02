@@ -165,7 +165,7 @@ async function loadTenderContext(db, tenderId) {
   ].filter(Boolean).join('\n');
 
   // Attach the source PDF so the model reads the actual document rather than only the
-  // handful of fields we extracted from it. Gemini 1.5 Flash reads PDFs natively.
+  // handful of fields we extracted from it. Gemini reads PDFs natively.
   let pdfBuffer = await fetchTenderPDFBuffer({
     pdf_url: tender.pdf_url,
     pdf_filename: tender.pdf_filename,

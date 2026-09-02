@@ -143,7 +143,7 @@ export default function LetterheadManager({ onChanged } = {}) {
           <span className="text-sm font-bold text-slate-800">
             {uploading ? 'Uploading letterhead…' : 'Drop letterhead image or PDF'}
           </span>
-          <span className="text-xs text-slate-500 mt-1">PNG / JPEG / WebP / PDF · max 8MB</span>
+          <span className="text-xs text-slate-500 mt-1">PNG / JPEG / WebP / PDF · max 4MB</span>
         </label>
 
         {loading && items.length === 0 ? (
