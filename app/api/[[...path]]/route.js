@@ -838,7 +838,8 @@ async function handleGET(request, { params }, attempt = 1) {
        let allRequests = [];
        usersWithPayments.forEach(user => {
            user.pending_payments.forEach(req => {
-               if (req.status !== 'PAID') {
+               const st = String(req.status || '').toUpperCase();
+               if (st !== 'PAID' && st !== 'SUCCESS' && st !== 'CANCELLED' && st !== 'FAILED') {
                    allRequests.push({
                        id: req.id,
                        db_id: req.id, 
@@ -1165,10 +1166,10 @@ export async function PUT(request, { params }) {
 // DELETE REQUESTS 
 // =====================================================================
 export async function DELETE(request, { params }) {
-  const db = await getDb();
   const pathArray = params?.path || [];
   const path = pathArray.join('/');
   const { searchParams } = new URL(request.url);
+  const db = await getDb();
   
   try {
     if (path === 'users' || path === 'api/users') {
@@ -1269,7 +1270,17 @@ export async function DELETE(request, { params }) {
        await db.collection('dispatches').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Dispatch Task Deleted' });
     }
-    
+
+    if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing Request ID' }, 400);
+       await db.collection('users').updateOne(
+           { "pending_payments.id": id },
+           { $pull: { pending_payments: { id: id } } }
+       );
+       return json({ success: true, message: 'Payment Request Cancelled' });
+    }
+
     return json({ error: 'DELETE endpoint not found' }, 404);
   } catch (error) {
     console.error('Delete API Error:', error);
@@ -1618,7 +1629,7 @@ export async function POST(request, { params }) {
         { email: client_email.toLowerCase() },
         { $push: { officer_queries: { id: queryId, subject, message, created_at: new Date() } } }
       );
-      return json({ success: true });
+      return json({ success: true, id: queryId });
     }
 
     // 🚀 FIX: Client submits reply (Updates query with data instead of deleting)

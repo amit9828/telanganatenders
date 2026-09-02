@@ -86,7 +86,9 @@ export default function AiMatchmakerPanel({ compact = false } = {}) {
       toast.success(
         result.already_running
           ? 'Chrome is already open on your screen. Solve CAPTCHA if prompted.'
-          : 'Chrome opened on your screen. Solve CAPTCHA if prompted.',
+          : result.via_popup
+            ? 'Opened the local hunter tab. If Chrome did not start, the agent is not running on this PC.'
+            : 'Chrome opened on your screen. Solve CAPTCHA if prompted.',
         { id: toastId, duration: 9000 },
       );
     } finally {

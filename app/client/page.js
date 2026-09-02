@@ -775,7 +775,8 @@ export default function ClientDashboard() {
         body: JSON.stringify({ 
             email: email, 
             plan: 'single', 
-            tenderId: payRecord._id || payRecord.id, 
+            tenderId: payRecord.tenderId || null,
+            pending_payment_id: payRecord.id,
             customAmount: payRecord.amount,
             reason: payRecord.reason 
         }) 
@@ -1024,10 +1025,15 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
   const criticalAlerts = userData?.action_alerts?.filter(a => !a.subject.includes('Suggestion') && a.status !== 'Completed') || [];
   
   // 🚀 FIX: Automatically filter out payments that match a SUCCESS status in the main payments array
-  const pendingPayments = userData?.pending_payments?.filter(p => 
-      p.status !== 'SUCCESS' && p.status !== 'PAID' && 
-      !(userData?.payments || []).some(past => past.amount == p.amount && past.reason == p.reason && past.status === 'SUCCESS')
-  ) || []; 
+  const pendingPayments = userData?.pending_payments?.filter(p => {
+      const st = String(p.status || '').toUpperCase();
+      if (st === 'SUCCESS' || st === 'PAID' || st === 'CANCELLED' || st === 'FAILED') return false;
+      const paidById = (userData?.payments || []).some(past =>
+        past.pending_payment_id && p.id && String(past.pending_payment_id) === String(p.id) && String(past.status).toUpperCase() === 'SUCCESS'
+      );
+      if (paidById) return false;
+      return !(userData?.payments || []).some(past => past.amount == p.amount && past.reason == p.reason && past.status === 'SUCCESS');
+  }) || []; 
 
   const totalEmd = userData?.emd_ledger?.total_paid || 0;
 
@@ -2010,11 +2016,10 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        
                        <div className="border-t pt-4">
                           <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
-                          {!pendingPayments || pendingPayments.filter(p => p.status !== 'paid' && p.status !== 'SUCCESS').length === 0 ? (
+                          {!pendingPayments || pendingPayments.length === 0 ? (
                              <p className="text-xs text-slate-500 text-center py-2">No pending fees requested.</p>
                           ) : (
                              pendingPayments
-                               .filter(pay => pay.status !== 'paid' && pay.status !== 'SUCCESS')
                                .map((pay, i) => (
                                <div key={i} className="mb-2 border border-red-200 bg-red-50 p-3 rounded-lg flex flex-col gap-2">
                                   <div className="flex justify-between items-center text-sm">

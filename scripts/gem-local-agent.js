@@ -1329,13 +1329,31 @@ async function clickNextPage(page) {
       }).catch(() => false);
       if (disabled) return false;
 
-      const before = page.url();
+      const beforeUrl = page.url();
+      const beforeStamp = await page.evaluate(() => {
+        const m = (document.body?.innerText || '').match(/GEM\/\d{4}\/B\/\d+/i);
+        return m ? m[0].toUpperCase() : '';
+      }).catch(() => '');
+
       await next.click({ timeout: 3000 });
       await page.waitForTimeout(1400);
       await waitForCaptchaClear(page);
-      // If the URL and first bid stamp did not change, treat as end-of-list.
-      if (page.url() === before) {
+
+      const afterStamp = await page.evaluate(() => {
+        const m = (document.body?.innerText || '').match(/GEM\/\d{4}\/B\/\d+/i);
+        return m ? m[0].toUpperCase() : '';
+      }).catch(() => '');
+
+      // AJAX lists often keep the same URL. If neither the URL nor the first
+      // visible bid changed, we are stuck on the last page — stop instead of
+      // looping until DISTRICT_TIMEOUT_MS.
+      if (page.url() === beforeUrl && afterStamp && afterStamp === beforeStamp) {
         await page.waitForTimeout(600);
+        const again = await page.evaluate(() => {
+          const m = (document.body?.innerText || '').match(/GEM\/\d{4}\/B\/\d+/i);
+          return m ? m[0].toUpperCase() : '';
+        }).catch(() => '');
+        if (again === beforeStamp) return false;
       }
       return true;
     } catch {

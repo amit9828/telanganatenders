@@ -13,6 +13,7 @@ import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import { formatINR } from '@/lib/format';
+import { launchGemHunter } from '@/lib/gem-hunter-client';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -166,6 +167,7 @@ export default function AdminPage() {
 
   // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
+  const [analyzingTender, setAnalyzingTender] = useState(false);
   const [bulkDragActive, setBulkDragActive] = useState(false);
   const [bulkFileCount, setBulkFileCount] = useState(0);
 
@@ -346,8 +348,46 @@ export default function AdminPage() {
     // 413 after the toast already said it was fine. 3MB raw stays safely under that cap.
     if (file.size > 3 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 3MB.');
     const reader = new FileReader();
-    reader.onload = () => { setPdfBase64(reader.result?.toString().split(',')[1] || ''); setPdfName(file.name); toast.success(`PDF loaded: ${file.name}`); };
+    reader.onload = () => {
+      const base64Str = reader.result?.toString().split(',')[1] || '';
+      setPdfBase64(base64Str);
+      setPdfName(file.name);
+      toast.success(`PDF loaded: ${file.name}`);
+      handleAdminPdfAnalysis(file, base64Str);
+    };
     reader.readAsDataURL(file);
+  };
+
+  const handleAdminPdfAnalysis = async (file, base64Data) => {
+    setAnalyzingTender(true);
+    toast.info('AI is reading the document. Please wait...', { duration: 3000 });
+    try {
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdfBase64: base64Data, saveToDraft: false, fileName: file?.name })
+      });
+      if (!res.ok) {
+        toast.error('AI Analysis failed. You may need to enter manually.');
+        return;
+      }
+      const { data } = await res.json();
+      if (!data) return;
+      setForm(prev => ({
+        ...prev,
+        bid_no: data.bid_no && data.bid_no !== 'N/A' ? data.bid_no : prev.bid_no,
+        title: data.title && data.title !== 'N/A' ? data.title : prev.title,
+        department: data.department && data.department !== 'N/A' ? data.department : prev.department,
+        last_date: data.last_date && data.last_date !== 'N/A' ? data.last_date : prev.last_date,
+        district: data.district && DISTRICTS.includes(data.district) ? data.district : prev.district,
+        supply_details: prev.supply_details || `EMD: ${data.emd_amount}\nTurnover Req: ${data.turnover_req}\nMandatory Docs: ${(data.mandatory_docs || []).join(', ')}`
+      }));
+      toast.success('AI Successfully auto-filled the tender details!');
+    } catch (err) {
+      toast.error('Network error during AI analysis.');
+    } finally {
+      setAnalyzingTender(false);
+    }
   };
 
   const onLedgerProofChange = (e) => {
@@ -469,11 +509,22 @@ export default function AdminPage() {
   const launchGemLiveHunter = async () => {
     setLaunchingGem(true);
     try {
-      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
-      if (!res.ok) throw new Error('launch failed');
-      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
-    } catch {
-      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+      const result = await launchGemHunter();
+      if (result.offline) {
+        toast.error(result.error || "Local agent not running. Run 'npm run gem:agent' in terminal.");
+        return;
+      }
+      if (!result.ok) {
+        toast.error(result.error || 'Could not launch the hunter.');
+        return;
+      }
+      toast.success(
+        result.already_running
+          ? 'Chrome is already open on your screen. Solve CAPTCHA if prompted.'
+          : result.via_popup
+            ? 'Opened the local hunter tab. If Chrome did not start, the agent is not running on this PC.'
+            : 'Chrome opened on your screen. Solve CAPTCHA if prompted.',
+      );
     } finally {
       setLaunchingGem(false);
     }
@@ -2153,9 +2204,9 @@ const handleViewDocument = (req) => {
                     <div>
                       <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
                       <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
-                         <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                         <input type="file" accept="application/pdf" onChange={onPdfChange} disabled={analyzingTender} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
                          <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                         <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF')}</span>
+                         <span className="text-sm font-bold text-[#0A2647]">{analyzingTender ? 'AI is reading the PDF…' : (pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF'))}</span>
                       </div>
                     </div>
                     <Button type="submit" disabled={loading} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>

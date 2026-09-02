@@ -72,6 +72,30 @@ app.get(['/health', '/api/health'], (_req, res) => {
   res.json({ ok: true, hunter_running: isHunterAlive(), pid: hunter?.pid || null });
 });
 
+function launchHtml(result) {
+  const title = result.already_running ? 'Hunter already running' : 'Chrome launched';
+  const body = result.already_running
+    ? 'The visible Chrome window is already hunting. You can close this tab.'
+    : 'Chrome opened on your screen. Solve CAPTCHA if prompted, then close this tab.';
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>${title}</title></head>
+<body style="font-family:Segoe UI,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1.25rem;color:#0A2647">
+  <h1 style="font-size:1.25rem">${title}</h1>
+  <p>${body}</p>
+</body></html>`;
+}
+
+// GET /launch is the HTTPS-dashboard fallback: browsers block fetch() from
+// https://www.tgtenders.in to http://localhost:4001 (mixed content), but a
+// top-level navigation / window.open to localhost is allowed.
+app.get('/launch', (_req, res) => {
+  try {
+    const result = launchHunter();
+    res.status(200).type('html').send(launchHtml(result));
+  } catch (err) {
+    res.status(500).type('html').send(`<p>${err?.message || 'Could not launch the hunter.'}</p>`);
+  }
+});
+
 app.post('/api/launch-gem', (_req, res) => {
   try {
     const result = launchHunter();

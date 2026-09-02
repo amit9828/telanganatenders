@@ -11,6 +11,7 @@ import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerato
 import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import DashboardNav from '@/components/DashboardNav';
+import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -225,11 +226,22 @@ export default function EmployeeDashboard() {
   const launchGemLiveHunter = async () => {
     setLaunchingGem(true);
     try {
-      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
-      if (!res.ok) throw new Error('launch failed');
-      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
-    } catch {
-      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+      const result = await launchGemHunter();
+      if (result.offline) {
+        toast.error(result.error || "Local agent not running. Run 'npm run gem:agent' in terminal.");
+        return;
+      }
+      if (!result.ok) {
+        toast.error(result.error || 'Could not launch the hunter.');
+        return;
+      }
+      toast.success(
+        result.already_running
+          ? 'Chrome is already open on your screen. Solve CAPTCHA if prompted.'
+          : result.via_popup
+            ? 'Opened the local hunter tab. If Chrome did not start, the agent is not running on this PC.'
+            : 'Chrome opened on your screen. Solve CAPTCHA if prompted.',
+      );
     } finally {
       setLaunchingGem(false);
     }
@@ -811,8 +823,17 @@ export default function EmployeeDashboard() {
         body: JSON.stringify(queryForm)
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         toast.success(`Query Raised! Client's dashboard is now locked until they reply.`);
         logActivity('RAISED_QUERY', `Locked client ${queryForm.client_email} for document request.`);
+        if (data?.id) {
+          const raised = { id: data.id, subject: queryForm.subject, message: queryForm.message, created_at: new Date().toISOString() };
+          setApprovedClients(prev => prev.map(c =>
+            c.email === queryForm.client_email
+              ? { ...c, officer_queries: [...(c.officer_queries || []), raised] }
+              : c
+          ));
+        }
         setQueryForm({ client_email: '', subject: '', message: '' });
         fetchLiveOperationsData(email);
       } else { toast.error('Failed to raise query.'); }
@@ -822,12 +843,17 @@ export default function EmployeeDashboard() {
   const handleCloseQuery = async (queryId, clientEmail) => {
     if(!confirm("Are you sure you want to close this query?")) return;
     try {
-      const res = await fetch('/api/queries/reply', {
+      const res = await fetch('/api/queries/close', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queryId, email: clientEmail })
       });
       if (res.ok) {
         toast.success(`Query Closed successfully.`);
+        setApprovedClients(prev => prev.map(c =>
+          c.email === clientEmail
+            ? { ...c, officer_queries: (c.officer_queries || []).map(q => q.id === queryId ? { ...q, is_closed: true } : q) }
+            : c
+        ));
         fetchLiveOperationsData(email);
       }
     } catch (err) { toast.error('Network Error.'); }
