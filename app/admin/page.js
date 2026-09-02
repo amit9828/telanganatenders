@@ -918,47 +918,47 @@ const handleViewDocument = (req) => {
   };
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-[#0A2647] text-white border-b sticky top-0 z-40 shadow-sm">
+      <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-             <ShieldCheck className="w-6 h-6 text-[#16a34a]" />
+             <div className="bg-white/10 p-2 rounded-xl ring-1 ring-white/10"><ShieldCheck className="w-5 h-5 text-emerald-400" /></div>
              <div>
                <h1 className="font-bold text-lg leading-tight tracking-wide">MD Command Center</h1>
                <p className="text-[10px] text-emerald-300 font-mono tracking-widest">ENTERPRISE ADMINISTRATION</p>
              </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-slate-800"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
-            <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-slate-600 text-slate-200 hover:text-white hover:bg-slate-800">View Public Site</Button>
-            <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-400 hover:text-red-300 hover:bg-red-900/50"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
+            <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-white/20 text-slate-200 hover:text-white hover:bg-white/10 transition-all duration-200">View Public Site</Button>
+            <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-300 hover:text-red-200 hover:bg-red-500/15 transition-all duration-200"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-4">
-            <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><BarChart3 className="w-4 h-4 mr-2 hidden sm:block"/> Master Reports</TabsTrigger>
-            <TabsTrigger value="clients" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><UserCheck className="w-4 h-4 mr-2 hidden sm:block"/> Client CRM</TabsTrigger>
-            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md"><IndianRupee className="w-4 h-4 mr-2 hidden sm:block"/> Finance Hub</TabsTrigger>
-            <TabsTrigger value="team" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-blue-700 data-[state=active]:text-white font-semibold rounded-md"><UserCog className="w-4 h-4 mr-2 hidden sm:block"/> Team Directory</TabsTrigger>
-            <TabsTrigger value="operations" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-purple-700 data-[state=active]:text-white font-semibold rounded-md"><ClipboardList className="w-4 h-4 mr-2 hidden sm:block"/> Operations</TabsTrigger>
-            <TabsTrigger value="matchmaker" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
+          <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 rounded-xl mb-4">
+            <TabsTrigger value="reports" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><BarChart3 className="w-4 h-4 mr-2 hidden sm:block"/> Master Reports</TabsTrigger>
+            <TabsTrigger value="clients" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><UserCheck className="w-4 h-4 mr-2 hidden sm:block"/> Client CRM</TabsTrigger>
+            <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-lg"><IndianRupee className="w-4 h-4 mr-2 hidden sm:block"/> Finance Hub</TabsTrigger>
+            <TabsTrigger value="team" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-blue-700 data-[state=active]:text-white font-semibold rounded-lg"><UserCog className="w-4 h-4 mr-2 hidden sm:block"/> Team Directory</TabsTrigger>
+            <TabsTrigger value="operations" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-purple-700 data-[state=active]:text-white font-semibold rounded-lg"><ClipboardList className="w-4 h-4 mr-2 hidden sm:block"/> Operations</TabsTrigger>
+            <TabsTrigger value="matchmaker" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-lg">
                <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
                {matchSummary.new > 0 && (
                   <Badge className="ml-2 bg-indigo-600 text-white text-[10px] px-1.5 py-0 h-4">{matchSummary.new}</Badge>
                )}
             </TabsTrigger>
-            <TabsTrigger value="live-scraped" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-semibold rounded-md">
+            <TabsTrigger value="live-scraped" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-semibold rounded-lg">
                <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Live Scraped
                {liveScrapedTenders.length > 0 && (
                   <Badge className="ml-2 bg-teal-600 text-white text-[10px] px-1.5 py-0 h-4">{liveScrapedTenders.length}</Badge>
                )}
             </TabsTrigger>
-            <TabsTrigger value="publisher" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><FileText className="w-4 h-4 mr-2 hidden sm:block"/> Published Tenders</TabsTrigger>
-            <TabsTrigger value="copilot-desk" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-violet-700 data-[state=active]:text-white font-semibold rounded-md"><Bot className="w-4 h-4 mr-2 hidden sm:block"/> Co-Pilot Chat Desk</TabsTrigger>
-            <TabsTrigger value="tickets" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk</TabsTrigger>
-            <TabsTrigger value="settings" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Setup</TabsTrigger>
+            <TabsTrigger value="publisher" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><FileText className="w-4 h-4 mr-2 hidden sm:block"/> Published Tenders</TabsTrigger>
+            <TabsTrigger value="copilot-desk" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-violet-700 data-[state=active]:text-white font-semibold rounded-lg"><Bot className="w-4 h-4 mr-2 hidden sm:block"/> Co-Pilot Chat Desk</TabsTrigger>
+            <TabsTrigger value="tickets" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><MessageSquare className="w-4 h-4 mr-2 hidden sm:block"/> Helpdesk</TabsTrigger>
+            <TabsTrigger value="settings" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-lg"><ShieldCheck className="w-4 h-4 mr-2 hidden sm:block"/> Setup</TabsTrigger>
           </TabsList>
 
           {/* ==================== 1. MASTER REPORTS ==================== */}
@@ -991,20 +991,20 @@ const handleViewDocument = (req) => {
             </div>
 
             <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Logs</CardTitle></CardHeader>
+               <Card className="border-0 ring-1 ring-slate-200/80">
+                  <CardHeader className="bg-slate-50/80 border-b border-slate-200/80 pb-3 rounded-t-xl"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Logs</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
                      {employeeReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No active employees found.</p> : (
                        <table className="w-full text-sm text-left border-collapse">
-                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
+                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-50 border-b border-slate-200">
                              <tr><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Efficiency</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                              {employeeReports.map(emp => (
-                                <tr key={emp.id} className="hover:bg-slate-50">
+                                <tr key={emp.id} className="hover:bg-slate-50 transition-colors duration-150">
                                    <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} â€¢ {emp.role}</p></td>
                                    <td className="px-3 py-2 font-semibold text-emerald-700">{emp.login}</td>
-                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
+                                   <td className="px-3 py-2"><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full transition-all duration-300 ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
                                 </tr>
                              ))}
                           </tbody>
@@ -1012,17 +1012,17 @@ const handleViewDocument = (req) => {
                      )}
                   </CardContent>
                </Card>
-               <Card className="shadow-sm border-0 ring-1 ring-slate-200">
-                  <CardHeader className="bg-slate-50 border-b pb-3"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Consultancy Funnel (Business Conversion)</CardTitle></CardHeader>
+               <Card className="border-0 ring-1 ring-slate-200/80">
+                  <CardHeader className="bg-slate-50/80 border-b border-slate-200/80 pb-3 rounded-t-xl"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Consultancy Funnel (Business Conversion)</CardTitle></CardHeader>
                   <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
                      {clientReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No verified clients yet.</p> : (
                        <table className="w-full text-sm text-left border-collapse">
-                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-100 border-b">
+                          <thead className="text-[10px] text-slate-500 uppercase font-bold bg-slate-50 border-b border-slate-200">
                              <tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Applied</th><th className="px-3 py-2 text-emerald-600">Won</th><th className="px-3 py-2 text-red-600">Lost</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                              {clientReports.map(cr => (
-                                <tr key={cr.id} className="hover:bg-slate-50">
+                                <tr key={cr.id} className="hover:bg-slate-50 transition-colors duration-150">
                                    <td className="px-3 py-2"><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
                                    <td className="px-3 py-2 font-bold text-slate-700">{cr.total}</td>
                                    <td className="px-3 py-2 font-black text-emerald-600">{cr.won}</td>
@@ -1443,7 +1443,7 @@ const handleViewDocument = (req) => {
       <Card className="shadow-sm border-t-4 border-t-emerald-500">
         <CardHeader className="bg-emerald-50/50 border-b pb-4 flex flex-row items-center justify-between">
           <CardTitle className="text-emerald-900 text-base flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Successful Online Payments</CardTitle>
-          <Badge className="bg-emerald-600 text-white border-0">Total: â‚¹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
+          <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold shadow-sm">Total: â‚¹{successfulPaymentsLog.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toLocaleString()}</Badge>
         </CardHeader>
         <CardContent className="pt-4 max-h-[300px] overflow-y-auto">
           {successfulPaymentsLog.length === 0 ? (
@@ -2525,7 +2525,7 @@ const handleViewDocument = (req) => {
 
 function StatCard({ icon, label, value, accent }) {
   return (
-    <Card className={`border-0 shadow-sm ring-1 ${accent ? 'ring-emerald-500/50 bg-emerald-50/80' : 'ring-slate-200 bg-white'}`}>
+    <Card className={`border-0 ring-1 premium-hover ${accent ? 'ring-emerald-500/40 bg-emerald-50/60' : 'ring-slate-200/80 bg-white'}`}>
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-center gap-2 text-muted-foreground text-[11px] sm:text-xs font-bold uppercase tracking-wider mb-2">{icon} {label}</div>
         <div className={`text-2xl sm:text-3xl font-black ${accent ? 'text-emerald-700' : 'text-[#0A2647]'}`}>{value}</div>

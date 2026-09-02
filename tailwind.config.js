@@ -69,11 +69,19 @@ module.exports = {
     				ring: 'hsl(var(--sidebar-ring))'
     			}
     		},
-    		borderRadius: {
-    			lg: 'var(--radius)',
-    			md: 'calc(var(--radius) - 2px)',
-    			sm: 'calc(var(--radius) - 4px)'
-    		},
+    	borderRadius: {
+    		lg: 'var(--radius)',
+    		md: 'calc(var(--radius) - 2px)',
+    		sm: 'calc(var(--radius) - 4px)'
+    	},
+    	boxShadow: {
+    		// Softer, layered "premium" default shadow so any element using the bare
+    		// `shadow` utility (e.g. the base Card component) floats gently instead of
+    		// looking flat. Named shadow-sm/md/lg/xl/2xl overrides used elsewhere in the
+    		// app are untouched, so intentional emphasis (e.g. `shadow-2xl` on a modal)
+    		// still wins via tailwind-merge.
+    		DEFAULT: '0 1px 2px 0 rgba(15, 23, 42, 0.04), 0 6px 20px -4px rgba(15, 23, 42, 0.10)'
+    	},
     		keyframes: {
     			'accordion-down': {
     				from: {

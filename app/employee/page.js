@@ -1005,18 +1005,18 @@ export default function EmployeeDashboard() {
 
 return (
     <div className="min-h-screen bg-slate-50">
-      <header className="bg-[#0A2647] border-b sticky top-0 z-30 shadow-md text-white">
+      <header className="navy-gradient border-b border-white/10 sticky top-0 z-30 shadow-lg text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="bg-white/10 p-2 rounded-lg"><Briefcase className="w-6 h-6 text-[#16a34a]" /></div>
+             <div className="bg-white/10 p-2 rounded-xl ring-1 ring-white/10"><Briefcase className="w-5 h-5 text-emerald-400" /></div>
              <div>
                <h1 className="font-bold text-lg leading-tight">Operations Desk</h1>
                <p className="text-[10px] text-emerald-300 font-mono tracking-widest">{empData.id} • {email}</p>
              </div>
           </div>
           <div className="flex gap-3 items-center">
-             <Badge className="bg-[#16a34a] border-0 hidden sm:inline-flex">Session Active</Badge>
-             <a href="/"><Button variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:text-white hover:bg-slate-800"><ArrowLeft className="w-4 h-4 mr-2"/> Exit System</Button></a>
+             <Badge className="bg-emerald-500/90 border border-emerald-400/40 shadow-sm hidden sm:inline-flex">Session Active</Badge>
+             <a href="/"><Button variant="outline" size="sm" className="border-white/20 text-slate-300 hover:text-white hover:bg-white/10 transition-all duration-200"><ArrowLeft className="w-4 h-4 mr-2"/> Exit System</Button></a>
           </div>
         </div>
       </header>
@@ -1058,7 +1058,7 @@ return (
         </div>
 
         <Tabs defaultValue="kanban" className="w-full">
-          <TabsList className="flex flex-wrap w-full bg-slate-200 h-auto p-1 mb-6 rounded-lg gap-1">
+          <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 mb-6 rounded-xl gap-1">
             <TabsTrigger value="kanban" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Kanban className="w-4 h-4 mr-2 hidden sm:block"/> Active Bids
             </TabsTrigger>

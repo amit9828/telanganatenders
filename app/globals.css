@@ -11,27 +11,27 @@ body {
 
 @layer base {
   :root {
-    /* Telangana Tenders Theme: Navy + Green */
-    --background: 0 0% 100%;
-    --foreground: 213 80% 14%;
+    /* Telangana Tenders Theme: Navy + Indigo/Green (premium corporate palette) */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 213 80% 14%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 213 80% 14%;
+    --popover-foreground: 222 47% 11%;
     --primary: 213 80% 14%;            /* Dark Navy Blue #0A2647 */
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 213 80% 14%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --secondary: 220 40% 96%;
+    --secondary-foreground: 222 47% 20%;
+    --muted: 220 30% 96%;
+    --muted-foreground: 215 20% 45%;
     --accent: 142 71% 45%;             /* Green #16a34a */
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 213 80% 14%;
-    --radius: 0.5rem;
+    --border: 220 20% 90%;
+    --input: 220 20% 88%;
+    --ring: 224 64% 33%;
+    --radius: 0.75rem;
   }
 }
 
@@ -40,14 +40,58 @@ body {
   body { @apply bg-background text-foreground; }
 }
 
+@layer base {
+  /* Smooth, consistent interaction feedback across every interactive element
+     that doesn't already declare its own transition. Purely cosmetic — no
+     effect on layout, state, or behavior. */
+  button, a, [role="button"], [role="tab"], [role="menuitem"] {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* Refined scrollbar for a more premium feel (WebKit/Blink + Firefox) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: rgba(15, 23, 42, 0.18);
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(15, 23, 42, 0.32); }
+* { scrollbar-width: thin; scrollbar-color: rgba(15, 23, 42, 0.18) transparent; }
+
 .navy-gradient {
-  background: linear-gradient(135deg, #0A2647 0%, #144272 100%);
+  background: linear-gradient(135deg, #0A2647 0%, #144272 55%, #1B4F8C 100%);
 }
 .green-gradient {
   background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
 }
-.tender-shadow { box-shadow: 0 4px 14px 0 rgba(10, 38, 71, 0.08); }
-.tender-shadow-lg { box-shadow: 0 10px 30px 0 rgba(10, 38, 71, 0.12); }
+/* Soft, layered "premium" shadows — replace flat single-layer shadows with a
+   subtle ambient + directional pair so cards feel like they float gently
+   above the page instead of looking pasted on. */
+.tender-shadow {
+  box-shadow:
+    0 1px 2px 0 rgba(15, 23, 42, 0.04),
+    0 6px 20px -4px rgba(15, 23, 42, 0.10);
+}
+.tender-shadow-lg {
+  box-shadow:
+    0 2px 4px 0 rgba(15, 23, 42, 0.06),
+    0 16px 40px -8px rgba(15, 23, 42, 0.16);
+}
+/* Sprinkle onto cards / rows that should feel clickable — lifts gently and
+   deepens the shadow on hover instead of an abrupt flat-to-shadow jump. */
+.premium-hover {
+  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1), border-color 220ms ease;
+}
+.premium-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 8px 0 rgba(15, 23, 42, 0.06),
+    0 20px 40px -12px rgba(15, 23, 42, 0.18);
+}
 
 /* ==========================================================================
    AI-generated tender documents — A4 preview + print

@@ -964,12 +964,12 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white border-b sticky top-0 z-40 shadow-sm">
+      <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-40 tender-shadow">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <BrandLogo subtitle="Enterprise Portal" />
           
           <div className="flex items-center gap-4">
-             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="hidden sm:flex border-slate-300 text-slate-700 font-bold hover:bg-slate-100">
+             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="hidden sm:flex border-slate-300 text-slate-700 font-bold hover:bg-slate-100 transition-all duration-200">
                 <Globe className="w-4 h-4 mr-2" /> View Public Site
              </Button>
 
@@ -1064,14 +1064,14 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
 
         {/* --- TOP FUNNEL METRICS --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-           <Card onClick={() => handleCardClick('dashboard', 'recommended-section')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('dashboard', 'recommended-section')} className="border-0 ring-1 ring-slate-200/80 bg-white cursor-pointer premium-hover hover:ring-blue-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recommended</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('dashboard', 'tracking-section')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('dashboard', 'tracking-section')} className="border-0 ring-1 ring-slate-200/80 bg-white cursor-pointer premium-hover hover:ring-blue-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <FileText className="w-5 h-5 text-slate-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Participated</p>
@@ -1079,21 +1079,21 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
               </CardContent>
            </Card>
            {/* 🚀 FIX: Live Tenders Routing & Real Public Tenders Count */}
-           <Card onClick={() => { setActiveTab('live_tenders'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="border-0 shadow-sm ring-1 ring-blue-500/50 bg-blue-50/50 cursor-pointer hover:ring-blue-600 hover:shadow-md transition">
+           <Card onClick={() => { setActiveTab('live_tenders'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="border-0 ring-1 ring-blue-500/40 bg-blue-50/50 cursor-pointer premium-hover hover:ring-blue-500">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Live Tenders</p>
                  <p className="text-2xl font-black text-blue-700">{publicTenders.length}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('wins', '')} className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80 cursor-pointer hover:ring-emerald-600 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('wins', '')} className="border-0 ring-1 ring-emerald-500/40 bg-emerald-50/80 cursor-pointer premium-hover hover:ring-emerald-500">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Trophy className="w-5 h-5 text-emerald-600 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Tenders Won</p>
                  <p className="text-2xl font-black text-emerald-700">{clientStats.won}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('finance', '')} className="border-0 shadow-sm ring-1 ring-emerald-500 bg-emerald-600 text-white col-span-2 lg:col-span-1 cursor-pointer hover:ring-emerald-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('finance', '')} className="border-0 ring-1 ring-emerald-400 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white col-span-2 lg:col-span-1 cursor-pointer premium-hover hover:ring-emerald-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Banknote className="w-5 h-5 text-emerald-200 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Project Revenue</p>
@@ -1103,7 +1103,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
-          <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-6">
+          <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 rounded-xl mb-6">
             <TabsTrigger value="dashboard" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Active Dashboard
             </TabsTrigger>
@@ -1332,7 +1332,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                          <div key={doc.id} className="bg-white p-4 border rounded-xl shadow-sm border-emerald-200 bg-emerald-50/30">
                             <div className="flex justify-between items-center mb-3">
                               <Label className="font-bold text-emerald-900 text-sm">{doc.name}</Label>
-                              <Badge className="bg-emerald-500 text-white border-0 text-[10px] uppercase font-bold tracking-wider"><CheckCircle2 className="w-3 h-3 mr-1"/> MD Approved</Badge>
+                              <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] uppercase font-bold tracking-wider"><CheckCircle2 className="w-3 h-3 mr-1"/> MD Approved</Badge>
                             </div>
                             <div className="bg-white p-2.5 border border-emerald-100 rounded-lg flex flex-col gap-2 shadow-inner">
                                <div className="flex justify-between items-center">
