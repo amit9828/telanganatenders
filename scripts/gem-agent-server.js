@@ -87,7 +87,18 @@ app.post('/api/launch-gem', (_req, res) => {
   }
 });
 
-app.listen(PORT, '127.0.0.1', () => {
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`[gem-agent] listening on http://localhost:${PORT}`);
   console.log('[gem-agent] POST /api/launch-gem from the Admin or Employee dashboard to open Chrome.');
+});
+
+server.on('error', (err) => {
+  if (err?.code === 'EADDRINUSE') {
+    console.error(`[gem-agent] Port ${PORT} is already in use — the agent is probably already running.`);
+    console.error('[gem-agent] Do not start a second copy. Use Launch GeM Live Hunter in the dashboard.');
+    console.error(`[gem-agent] To restart: stop the other terminal (Ctrl+C), or run: Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force`);
+    process.exit(0);
+  }
+  console.error('[gem-agent] failed to listen:', err?.message || err);
+  process.exit(1);
 });

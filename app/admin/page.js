@@ -5,6 +5,7 @@ import BrandLogo from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
+import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import {
@@ -131,6 +132,11 @@ export default function AdminPage() {
   const [prediction, setPrediction] = useState(null); // { match, tender, history, prediction }
   const [stationeryClient, setStationeryClient] = useState(null);
 
+  // 🚀 Today's Live Scraped Tenders (text-only GeM hunter feed)
+  const [liveScrapedTenders, setLiveScrapedTenders] = useState([]);
+  const [liveFeedToday, setLiveFeedToday] = useState('');
+  const [liveFeedLoading, setLiveFeedLoading] = useState(false);
+
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
     if (t) setToken(t);
@@ -210,6 +216,9 @@ export default function AdminPage() {
         setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
       }
 
+      // Soft-refresh the live scraped feed without blocking the rest of the dashboard.
+      refreshLiveFeed(token, { silent: true });
+
       const approvedUsers = aRes.ok ? (aRes.data.users || []) : [];
       const allSuccess = [];
       approvedUsers.forEach(client => {
@@ -245,6 +254,32 @@ export default function AdminPage() {
       }));
     } catch (err) { console.error('Refresh failed:', err); }
   };
+
+  // Independent of full-dashboard refresh — pulls only /api/tenders/live-feed.
+  const refreshLiveFeed = async (authToken = token, { silent = false } = {}) => {
+    if (!authToken) return;
+    setLiveFeedLoading(true);
+    try {
+      const res = await fetch(`/api/tenders/live-feed?t=${Date.now()}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (!silent && res.status !== 401) {
+          toast.error(data?.error || `Live feed failed (${res.status})`);
+        }
+        return;
+      }
+      setLiveScrapedTenders(data?.tenders || []);
+      setLiveFeedToday(data?.today || '');
+    } catch (e) {
+      console.error('Live feed refresh failed:', e);
+      if (!silent) toast.error('Network error while loading live scraped tenders.');
+    } finally {
+      setLiveFeedLoading(false);
+    }
+  };
+
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.clear();
@@ -905,6 +940,12 @@ const handleViewDocument = (req) => {
                <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
                {matchSummary.new > 0 && (
                   <Badge className="ml-2 bg-indigo-600 text-white text-[10px] px-1.5 py-0 h-4">{matchSummary.new}</Badge>
+               )}
+            </TabsTrigger>
+            <TabsTrigger value="live-scraped" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-semibold rounded-md">
+               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Live Scraped
+               {liveScrapedTenders.length > 0 && (
+                  <Badge className="ml-2 bg-teal-600 text-white text-[10px] px-1.5 py-0 h-4">{liveScrapedTenders.length}</Badge>
                )}
             </TabsTrigger>
             <TabsTrigger value="publisher" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md"><FileText className="w-4 h-4 mr-2 hidden sm:block"/> Publisher</TabsTrigger>
@@ -1713,6 +1754,10 @@ const handleViewDocument = (req) => {
             <AiMatchmakerPanel />
 
             <div className="mb-6 mt-6">
+              <CopilotTrainDropzone />
+            </div>
+
+            <div className="mb-6 mt-6">
               <L1BenchmarkDropzone />
             </div>
 
@@ -1936,6 +1981,103 @@ const handleViewDocument = (req) => {
                     </TableBody>
                   </Table>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ==================== TODAY'S LIVE SCRAPED TENDERS ==================== */}
+          <TabsContent value="live-scraped" className="mt-4">
+            <Card className="tender-shadow border border-slate-300 border-t-4 border-t-teal-600 w-full overflow-hidden">
+              <CardHeader className="bg-teal-50/50 border-b border-slate-200 py-3 px-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-[#0A2647] text-base">
+                      <Activity className="w-5 h-5 text-teal-700" /> Today&apos;s Live Scraped Tenders
+                    </CardTitle>
+                    <CardDescription className="mt-0.5 text-xs">
+                      Text-only GeM hunter feed for {liveFeedToday || 'today'} (IST). No PDF binaries.
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-semibold text-slate-500 tabular-nums">
+                      {liveScrapedTenders.length} row{liveScrapedTenders.length === 1 ? '' : 's'}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => refreshLiveFeed()}
+                      disabled={liveFeedLoading}
+                      className="h-8 border-teal-300 text-teal-800 hover:bg-teal-50"
+                    >
+                      {liveFeedLoading
+                        ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Refreshing…</>
+                        : <><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Refresh Feed</>}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[960px] border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-300">
+                        <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[140px]">Match Keyword</th>
+                        <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[170px]">GeM Bid Number</th>
+                        <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600">Work Title &amp; Department</th>
+                        <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[130px]">District</th>
+                        <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[110px]">Start Date</th>
+                        <th className="px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[110px]">Last Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {liveFeedLoading && liveScrapedTenders.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                            <Loader2 className="w-5 h-5 animate-spin inline-block mr-2 align-middle" />
+                            Loading today&apos;s feed…
+                          </td>
+                        </tr>
+                      ) : liveScrapedTenders.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                            <p className="font-semibold text-slate-700">No live scraped bids for today yet</p>
+                            <p className="text-xs mt-1">Launch GeM Live Hunter from the Matchmaker tab — matches appear here as text rows.</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        liveScrapedTenders.map((row, idx) => (
+                          <tr
+                            key={row._id || row.bid_no || idx}
+                            className={`border-b border-slate-200 hover:bg-teal-50/40 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}`}
+                          >
+                            <td className="border-r border-slate-200 px-2 py-1.5 align-top">
+                              <span className="text-xs font-semibold text-teal-800 break-words">
+                                {row.matched_keyword
+                                  || (Array.isArray(row.matched_keywords) ? row.matched_keywords.join(', ') : '—')}
+                              </span>
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-1.5 align-top font-mono text-xs text-[#0A2647] whitespace-nowrap">
+                              {row.bid_no || '—'}
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-1.5 align-top">
+                              <div className="font-semibold text-slate-800 text-xs leading-snug">{row.title || '—'}</div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">{row.department || '—'}</div>
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-1.5 align-top text-xs text-slate-700">
+                              {row.district || '—'}
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-1.5 align-top text-xs tabular-nums text-slate-700 whitespace-nowrap">
+                              {row.start_date || '—'}
+                            </td>
+                            <td className="px-2 py-1.5 align-top text-xs tabular-nums text-slate-700 whitespace-nowrap">
+                              {row.last_date || '—'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

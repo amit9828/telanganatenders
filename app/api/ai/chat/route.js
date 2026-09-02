@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
+import { searchCopilotKnowledge } from '@/lib/gem-copilot-knowledge';
 import {
   cosineSimilarity,
   embedQuery,
@@ -83,7 +84,37 @@ async function inMemorySearch(db, queryVector) {
     .slice(0, TOP_K);
 }
 
+/**
+ * Prefer the Sunday-harvested `gem_copilot_knowledge` store (local memory + R2)
+ * before spending Atlas vector / live embedding quota.
+ */
+async function retrieveCopilotMemory(db, query) {
+  try {
+    const docs = await searchCopilotKnowledge(db, query, { limit: TOP_K });
+    if (!docs.length) return null;
+
+    return {
+      results: docs.map((d) => ({
+        text: String(d.content_text || '').slice(0, 6000),
+        document_title: d.title || 'GeM Co-Pilot knowledge',
+        source_url: d.r2_url || d.source_url || null,
+        score: Number(d.score || 1),
+        type: 'copilot_memory',
+      })),
+      strategy: 'gem_copilot_knowledge',
+    };
+  } catch (err) {
+    console.warn('[ai/chat] gem_copilot_knowledge lookup failed:', err?.message || err);
+    return null;
+  }
+}
+
 async function retrieveGemKnowledge(db, query) {
+  // 1) Cached Co-Pilot memory first (Sunday scraper / weekly cron).
+  const memory = await retrieveCopilotMemory(db, query);
+  if (memory?.results?.length) return memory;
+
+  // 2) Fall back to embedded vector KB (daily gem-sync).
   const queryVector = await embedQuery(query);
 
   try {
@@ -175,6 +206,7 @@ export async function POST(request) {
     const parts = [];
     let sources = [];
     let mode;
+    let retrieval;
 
     if (tenderId) {
       // Context Logic A — strictly bounded to this one tender.
@@ -205,13 +237,16 @@ export async function POST(request) {
     } else {
       // Context Logic B — retrieve the most relevant GeM rules.
       mode = 'gem_knowledge';
-      const { results, strategy } = await retrieveGemKnowledge(db, query);
+      const knowledge = await retrieveGemKnowledge(db, query);
+      const { results, strategy } = knowledge;
+      retrieval = strategy;
 
       if (results.length === 0) {
         return NextResponse.json({
           answer:
             'My GeM knowledge base is empty, so I have no source material to answer from. ' +
-            'Please run the GeM knowledge sync (/api/cron/gem-sync) and try again.',
+            'Please run the Sunday Co-Pilot harvest (/api/cron/gem-copilot-knowledge) or the ' +
+            'daily GeM sync (/api/cron/gem-sync) and try again.',
           sources: [],
           mode,
           retrieval: strategy,
@@ -222,8 +257,12 @@ export async function POST(request) {
         title: r.document_title,
         url: r.source_url || null,
         score: Number(r.score?.toFixed?.(4) ?? r.score ?? 0),
-        type: 'gem_rule',
+        type: r.type === 'copilot_memory' ? 'copilot_memory' : 'gem_rule',
       }));
+
+      const contextLabel = strategy === 'gem_copilot_knowledge'
+        ? 'cached GeM Co-Pilot knowledge (local memory)'
+        : 'GeM knowledge base';
 
       const context = results
         .map((r, i) => `--- SOURCE ${i + 1}: ${r.document_title} ---\n${r.text}`)
@@ -231,7 +270,7 @@ export async function POST(request) {
 
       parts.push(
         `${SYSTEM_PROMPT}\n\n` +
-        `CONTEXT — extracts from the GeM knowledge base:\n\n${context}\n\n` +
+        `CONTEXT — extracts from the ${contextLabel}:\n\n${context}\n\n` +
         `QUESTION: ${query}`
       );
     }
@@ -248,7 +287,7 @@ export async function POST(request) {
       );
     }
 
-    return NextResponse.json({ answer, sources, mode });
+    return NextResponse.json({ answer, sources, mode, retrieval });
   } catch (error) {
     console.error('[ai/chat] fatal error:', error);
     return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
