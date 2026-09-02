@@ -48,6 +48,14 @@ export default function ClientDashboard() {
   const [isMounted, setIsMounted] = useState(false);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(true);
+  // 🚀 RBAC: this dashboard has no separate "client" vs "MD"/"employee" route — an
+  // MD/employee reaches this exact page via the admin panel's "Login as Client
+  // (Bypass)" button (app/admin/page.js -> impersonateUser), which just sets the
+  // same `tt_email` this page normally reads for a real client login. The one
+  // reliable signal that the current browser tab belongs to staff previewing the
+  // client view (rather than an actual client) is that their OWN admin/employee
+  // token is also present in localStorage — a real client never has those set.
+  const [isStaffPreview, setIsStaffPreview] = useState(false);
 
   // --- Core State ---
   const [userData, setUserData] = useState(null);
@@ -111,6 +119,12 @@ export default function ClientDashboard() {
 
     const e = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '') || 'client@tgtenders.in';
     setEmail(e);
+
+    // 🚀 RBAC: see isStaffPreview declaration above — MD carries `tt_admin`,
+    // an employee carries `tt_emp_email`; a genuine client has neither.
+    if (typeof window !== 'undefined') {
+      setIsStaffPreview(!!(localStorage.getItem('tt_admin') || localStorage.getItem('tt_emp_email')));
+    }
     fetchPublicTenders();
     fetchClientData(e); 
     
@@ -1116,9 +1130,14 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
             <TabsTrigger value="vault" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Lock className="w-4 h-4 mr-2 hidden sm:block"/> My Secure Vault
             </TabsTrigger>
-            <TabsTrigger value="bid_tools" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
-              <Wand2 className="w-4 h-4 mr-2 hidden sm:block"/> Bid Tools
-            </TabsTrigger>
+            {/* 🚀 RBAC: "Bid Tools" hidden exclusively for real clients — still fully
+                present in the DOM/functional for MD/employee staff-preview sessions,
+                and its TabsContent below is untouched (nothing deleted). */}
+            {isStaffPreview && (
+              <TabsTrigger value="bid_tools" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
+                <Wand2 className="w-4 h-4 mr-2 hidden sm:block"/> Bid Tools
+              </TabsTrigger>
+            )}
             <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
               <Trophy className="w-4 h-4 mr-2 hidden sm:block"/> Winning Bids
             </TabsTrigger>
