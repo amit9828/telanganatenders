@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { requireStaff, isStaffRole } from '@/lib/staff-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -38,7 +39,7 @@ function normaliseGemBidNo(value) {
   return m ? `GEM/${m[1]}/B/${m[2]}` : null;
 }
 
-function isAuthorised(request) {
+async function isAuthorised(request, { allowStaffSession = false } = {}) {
   const adminToken = String(process.env.ADMIN_TOKEN || '').trim();
   const agentToken = String(process.env.GEM_AGENT_TOKEN || process.env.CRON_SECRET || '').trim();
   const bearer = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
@@ -47,6 +48,10 @@ function isAuthorised(request) {
   if (!adminToken && !agentToken) return true;
   if (adminToken && bearer === adminToken) return true;
   if (agentToken && bearer === agentToken) return true;
+  if (allowStaffSession) {
+    const staff = await requireStaff(request);
+    if (staff.ok) return true;
+  }
   return false;
 }
 
@@ -88,15 +93,26 @@ function buildDoc(payload) {
  */
 export async function GET(request) {
   try {
-    if (!isAuthorised(request)) {
+    const { searchParams } = new URL(request.url);
+    const db = await getDb();
+
+    let allowed = await isAuthorised(request, { allowStaffSession: true });
+    if (!allowed) {
+      const email = String(searchParams.get('email') || '').trim().toLowerCase();
+      if (email) {
+        const user = await db.collection('users').findOne(
+          { email },
+          { projection: { role: 1, employee_id: 1 } },
+        );
+        allowed = Boolean(user && (isStaffRole(user.role) || user.employee_id));
+      }
+    }
+    if (!allowed) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
     const all = searchParams.get('all') === '1' || searchParams.get('all') === 'true';
     const today = todayIsoIst();
-
-    const db = await getDb();
     const col = db.collection(COLLECTION);
     await col.createIndex({ bid_no: 1 }, { unique: true }).catch(() => {});
     await col.createIndex({ start_date: -1, updated_at: -1 }).catch(() => {});

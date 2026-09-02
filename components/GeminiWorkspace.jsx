@@ -89,6 +89,7 @@ export default function GeminiWorkspace({
   tenderLabel = null,
   clients = [],
   tenders = [],
+  embedded = false,
 }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -114,11 +115,11 @@ export default function GeminiWorkspace({
   useEffect(() => {
     if (!threadRef.current) return;
     threadRef.current.scrollTop = threadRef.current.scrollHeight;
-  }, [messages, sending, open]);
+  }, [messages, sending, open, embedded]);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+    if (open || embedded) inputRef.current?.focus();
+  }, [open, embedded]);
 
   useEffect(() => {
     if (!open) return;
@@ -288,6 +289,7 @@ export default function GeminiWorkspace({
 
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
+        credentials: 'include',
         headers: staffHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ query: question, tender_id: askedTender || undefined }),
       });
@@ -300,6 +302,12 @@ export default function GeminiWorkspace({
         role: 'assistant',
         kind: 'markdown',
         text: data.answer || data.text || 'No answer was returned.',
+        meta: data.retrieval === 'gem_copilot_knowledge'
+          ? 'Answered from Co-Pilot knowledge memory'
+          : data.retrieval
+            ? `Retrieval: ${data.retrieval}`
+            : undefined,
+        sources: data.sources || [],
       }]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'error', text: 'Network error. Please try again.' }]);
@@ -308,45 +316,29 @@ export default function GeminiWorkspace({
     }
   };
 
-  return (
-    <>
-      {!open && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Open Gemini Workspace"
-          className="fixed bottom-6 right-6 z-40 no-print h-14 px-4 rounded-full bg-[#0A2647] text-white shadow-xl hover:bg-[#144272] flex items-center gap-2 font-semibold"
-        >
-                  <Sparkles className="w-5 h-5 text-amber-300" />
-          <span className="hidden sm:inline">Gemini Enterprise Co-Pilot</span>
-          <Bot className="w-5 h-5 sm:hidden" />
-        </button>
-      )}
-
-      {open && (
-        <div className="fixed inset-0 z-50 no-print">
-          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setOpen(false)} />
-          <aside
-            className="absolute top-0 right-0 h-full w-full md:w-[48vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col"
-            role="dialog"
-            aria-label="Gemini Workspace"
-          >
+  const chatColumn = (
+            <>
             <header className="px-4 py-3 border-b bg-[#0A2647] text-white flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-                  <p className="font-bold text-sm">Gemini Workspace</p>
+                  <p className="font-bold text-sm">{embedded ? 'Co-Pilot Chat Desk' : 'Gemini Workspace'}</p>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                   <Badge className="bg-white/15 text-white border-0 text-[10px] font-medium">Gemini 1.5 Flash — Enterprise</Badge>
                   <Badge className="bg-indigo-400/30 text-indigo-50 border-0 text-[10px] font-medium truncate max-w-[220px]">
                     {contextBadge}
                   </Badge>
+                  <Badge className="bg-emerald-400/25 text-emerald-50 border-0 text-[10px] font-medium">
+                    Memory: gem_copilot_knowledge first
+                  </Badge>
                 </div>
               </div>
-              <button type="button" onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-white/10">
-                <X className="w-4 h-4" />
-              </button>
+              {!embedded && (
+                <button type="button" onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-white/10">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </header>
 
             <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50">
@@ -357,7 +349,7 @@ export default function GeminiWorkspace({
                     <li>• “What is the scope of work for GEM/2026/B/123?” — reads SOW/ATC PDFs.</li>
                     <li>• “Generate an OEM Authorization for CLI-XXXX on that tender.” — prints on their letterhead.</li>
                     <li>• “Search tenders on GeM” / “run live hunter” — opens Chrome via the local agent.</li>
-                    <li>• Anything else hits the GeM knowledge base.</li>
+                    <li>• Anything else hits Co-Pilot memory (`gem_copilot_knowledge`) first, then the vector KB.</li>
                   </ul>
                 </div>
               )}
@@ -455,6 +447,41 @@ export default function GeminiWorkspace({
                 </Button>
               </form>
             </footer>
+            </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-[min(78vh,820px)] w-full bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
+        {chatColumn}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {!open && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Open Gemini Workspace"
+          className="fixed bottom-6 right-6 z-40 no-print h-14 px-4 rounded-full bg-[#0A2647] text-white shadow-xl hover:bg-[#144272] flex items-center gap-2 font-semibold"
+        >
+                  <Sparkles className="w-5 h-5 text-amber-300" />
+          <span className="hidden sm:inline">Gemini Enterprise Co-Pilot</span>
+          <Bot className="w-5 h-5 sm:hidden" />
+        </button>
+      )}
+
+      {open && (
+        <div className="fixed inset-0 z-50 no-print">
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setOpen(false)} />
+          <aside
+            className="absolute top-0 right-0 h-full w-full md:w-[48vw] bg-white shadow-2xl border-l border-slate-200 flex flex-col"
+            role="dialog"
+            aria-label="Gemini Workspace"
+          >
+            {chatColumn}
           </aside>
         </div>
       )}

@@ -7,6 +7,9 @@ import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
+import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
+import LetterheadManager from '@/components/LetterheadManager';
+import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,7 +24,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay, Loader2,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle, PenTool
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle, PenTool, Activity, Bot
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -1070,8 +1073,14 @@ return (
             <TabsTrigger value="matchmaker" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
             </TabsTrigger>
+            <TabsTrigger value="live-scraped" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Live Scraped
+            </TabsTrigger>
             <TabsTrigger value="publisher" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
-              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders DB
+              <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Published Tenders
+            </TabsTrigger>
+            <TabsTrigger value="copilot-desk" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-violet-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Bot className="w-4 h-4 mr-2 hidden sm:block"/> Co-Pilot Chat Desk
             </TabsTrigger>
             <TabsTrigger value="drafts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <Sparkles className="w-4 h-4 mr-2 hidden sm:block"/> Ready to Publish
@@ -1720,7 +1729,27 @@ return (
             <L1BenchmarkDropzone />
           </TabsContent>
 
+          <TabsContent value="live-scraped" className="w-full space-y-6">
+            <LiveScrapedTendersPanel />
+          </TabsContent>
+
+          <TabsContent value="copilot-desk" className="w-full space-y-6">
+            <GeminiWorkspace
+              embedded
+              tenderId={isEditingTender || null}
+              tenderLabel={isEditingTender ? (tenderForm.title || tenderForm.bid_no || 'this tender') : null}
+              clients={approvedClients}
+              tenders={publicTenders}
+            />
+          </TabsContent>
+
           <TabsContent value="publisher" className="w-full space-y-6">
+            <LetterheadManager />
+            <DocumentLetterheadGenerator
+              tenders={publicTenders}
+              clients={approvedClients}
+              defaultTenderId={isEditingTender || ''}
+            />
             <L1BenchmarkDropzone />
             <div className="grid lg:grid-cols-5 gap-6">
                
