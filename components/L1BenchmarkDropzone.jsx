@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { BarChart3, Loader2, UploadCloud } from 'lucide-react';
+import { formatINR } from '@/lib/format';
 
 function staffHeaders() {
   const headers = {};
@@ -12,12 +13,6 @@ function staffHeaders() {
     if (token) headers.Authorization = `Bearer ${token}`;
   }
   return headers;
-}
-
-function formatINR(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  return `₹${n.toLocaleString('en-IN')}`;
 }
 
 /**

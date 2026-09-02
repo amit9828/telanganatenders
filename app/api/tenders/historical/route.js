@@ -10,6 +10,7 @@ import {
   parseCsv,
   summariseBaseline,
 } from '@/lib/historical-l1';
+import { getGeminiApiKey } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -191,7 +192,8 @@ export async function POST(request) {
     const needsAI = files.some((f) => !/\.(csv|tsv|txt)$/i.test(f.name || ''));
     let model = null;
     if (needsAI) {
-      if (!process.env.GEMINI_API_KEY) {
+      const geminiApiKey = getGeminiApiKey();
+      if (!geminiApiKey) {
         return NextResponse.json(
           { error: 'GEMINI_API_KEY is not configured, so PDFs cannot be read. Upload a CSV export instead.' },
           { status: 500 }
@@ -199,7 +201,7 @@ export async function POST(request) {
       }
       // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
       // GEMINI_API_KEY is actually entitled to (verified live).
-      model = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({ model: 'gemini-3.6-flash' });
+      model = new GoogleGenerativeAI(geminiApiKey).getGenerativeModel({ model: 'gemini-3.6-flash' });
     }
 
     const results = [];

@@ -79,15 +79,15 @@ export default function LiveScrapedTendersPanel() {
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] border-collapse text-sm">
+          <table className="premium-table min-w-[960px] text-sm">
             <thead>
-              <tr className="bg-slate-100 border-b border-slate-300">
-                <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[140px]">Match Keyword</th>
-                <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[170px]">GeM Bid Number</th>
-                <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600">Work Title &amp; Department</th>
-                <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[130px]">District</th>
-                <th className="border-r border-slate-300 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[110px]">Start Date</th>
-                <th className="px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-600 w-[110px]">Last Date</th>
+              <tr>
+                <th className="w-[140px]">Match Keyword</th>
+                <th className="w-[170px]">GeM Bid Number</th>
+                <th>Work Title &amp; Department</th>
+                <th className="w-[130px]">District</th>
+                <th className="w-[110px]">Start Date</th>
+                <th className="w-[110px]">Last Date</th>
               </tr>
             </thead>
             <tbody>
@@ -107,30 +107,27 @@ export default function LiveScrapedTendersPanel() {
                 </tr>
               ) : (
                 rows.map((row, idx) => (
-                  <tr
-                    key={row._id || row.bid_no || idx}
-                    className={`border-b border-slate-200 hover:bg-teal-50/40 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}`}
-                  >
-                    <td className="border-r border-slate-200 px-2 py-1.5 align-top">
+                  <tr key={row._id || row.bid_no || idx}>
+                    <td className="align-top">
                       <span className="text-xs font-semibold text-teal-800 break-words">
                         {row.matched_keyword
                           || (Array.isArray(row.matched_keywords) ? row.matched_keywords.join(', ') : '—')}
                       </span>
                     </td>
-                    <td className="border-r border-slate-200 px-2 py-1.5 align-top font-mono text-xs text-[#0A2647] whitespace-nowrap">
+                    <td className="align-top font-mono text-xs text-[#0A2647] whitespace-nowrap">
                       {row.bid_no || '—'}
                     </td>
-                    <td className="border-r border-slate-200 px-2 py-1.5 align-top">
+                    <td className="align-top">
                       <div className="font-semibold text-slate-800 text-xs leading-snug">{row.title || '—'}</div>
                       <div className="text-[11px] text-slate-500 mt-0.5">{row.department || '—'}</div>
                     </td>
-                    <td className="border-r border-slate-200 px-2 py-1.5 align-top text-xs text-slate-700">
+                    <td className="align-top text-xs text-slate-700">
                       {row.district || '—'}
                     </td>
-                    <td className="border-r border-slate-200 px-2 py-1.5 align-top text-xs tabular-nums text-slate-700 whitespace-nowrap">
+                    <td className="align-top text-xs tabular-nums text-slate-700 whitespace-nowrap">
                       {row.start_date || '—'}
                     </td>
-                    <td className="px-2 py-1.5 align-top text-xs tabular-nums text-slate-700 whitespace-nowrap">
+                    <td className="align-top text-xs tabular-nums text-slate-700 whitespace-nowrap">
                       {row.last_date || '—'}
                     </td>
                   </tr>

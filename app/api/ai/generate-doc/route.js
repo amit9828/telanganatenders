@@ -7,6 +7,7 @@ import { sanitizeGeneratedHtml } from '@/lib/html-sanitize';
 import { findTenderByAnyId } from '@/lib/tender-lookup';
 import { fetchStationeryBuffer, isPubliclyServableUrl } from '@/lib/cloudflare-r2';
 import { bufferToDataUrl, wrapWithStationery } from '@/lib/stationery-html';
+import { getGeminiApiKey } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -89,7 +90,8 @@ export async function POST(request) {
         { status: 400 }
       );
     }
-    if (!process.env.GEMINI_API_KEY) {
+    const geminiApiKey = getGeminiApiKey();
+    if (!geminiApiKey) {
       return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
     }
 
@@ -124,7 +126,7 @@ export async function POST(request) {
       instructions: String(body?.instructions || '').trim().slice(0, MAX_INSTRUCTION_CHARS),
     });
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
     // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
     // GEMINI_API_KEY is actually entitled to (verified live).
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });

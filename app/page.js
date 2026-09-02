@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import Script from 'next/script';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -504,10 +505,10 @@ export default function App() {
          <div className="relative w-24 h-24 shrink-0 [perspective:1000px] mb-6">
             <div className={`w-full h-full absolute transition-transform duration-1000 [transform-style:preserve-3d] ${logoFlip ? '[transform:rotateX(180deg)]' : ''}`}>
                <div className="absolute inset-0 [backface-visibility:hidden] bg-white rounded-full p-2 border shadow-lg flex items-center justify-center">
-                  {brandSettings.logo ? <img src={brandSettings.logo} className="w-full h-full object-contain"/> : <div className="text-[#16a34a] font-bold text-2xl">TT</div>}
+                  {brandSettings.logo ? <Image src={brandSettings.logo} alt="" width={96} height={96} className="w-full h-full object-contain"/> : <div className="text-[#16a34a] font-bold text-2xl">TT</div>}
                </div>
                <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateX(180deg)] bg-white rounded-full p-2 border shadow-lg flex items-center justify-center">
-                  {brandSettings.gem_logo ? <img src={brandSettings.gem_logo} className="w-full h-full object-contain"/> : <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" className="w-full h-full object-contain"/>}
+                  {brandSettings.gem_logo ? <Image src={brandSettings.gem_logo} alt="" width={96} height={96} className="w-full h-full object-contain"/> : <Image src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="" width={96} height={96} className="w-full h-full object-contain"/>}
                </div>
             </div>
          </div>
@@ -603,7 +604,14 @@ export default function App() {
           {/* Left Side: Telangana Tenders */}
           <div className="flex items-center gap-3">
              {brandSettings?.logo ? (
-                <img src={brandSettings.logo} alt="Logo" className="w-14 h-14 md:w-16 md:h-16 rounded object-contain" />
+                <Image
+                  src={brandSettings.logo}
+                  alt="Telangana Tenders company logo — GeM & government tender consultancy"
+                  width={64}
+                  height={64}
+                  priority
+                  className="w-14 h-14 md:w-16 md:h-16 rounded object-contain"
+                />
              ) : (
                 <div className="w-14 h-14 bg-[#16a34a] rounded flex items-center justify-center text-white font-bold text-2xl">TT</div>
              )}
@@ -621,9 +629,22 @@ export default function App() {
             {/* GeM Logo Block */}
             <div className="hidden lg:flex flex-col items-center border-r pr-4 mr-1 border-slate-200">
                {brandSettings?.gem_logo ? (
-                  <img src={brandSettings.gem_logo} alt="GeM Logo" className="w-14 h-14 md:w-16 md:h-16 object-contain" />
+                  <Image
+                    src={brandSettings.gem_logo}
+                    alt="Government e-Marketplace (GeM) official logo — GeM Tenders bidding partner"
+                    width={64}
+                    height={64}
+                    className="w-14 h-14 md:w-16 md:h-16 object-contain"
+                  />
                ) : (
-                  <img src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg" alt="GeM" className="w-14 h-14 md:w-16 md:h-16 object-contain" onError={(e) => e.target.style.display='none'}/>
+                  <Image
+                    src="https://gem.gov.in/resources/images/gem-new-logo-v6.svg"
+                    alt="Government e-Marketplace (GeM) official logo — GeM Tenders bidding partner"
+                    width={64}
+                    height={64}
+                    className="w-14 h-14 md:w-16 md:h-16 object-contain"
+                    onError={(e) => e.target.style.display='none'}
+                  />
                )}
                <span className="text-[10px] md:text-xs font-black text-[#0A2647] uppercase mt-1 tracking-wide">Bidding Service</span>
             </div>
@@ -676,7 +697,15 @@ export default function App() {
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
             {brandSettings.banners.map((imgUrl, idx) => (
-              <img key={idx} src={imgUrl} alt={`Banner ${idx}`} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`} />
+              <Image
+                key={idx}
+                src={imgUrl}
+                alt="Telangana Tenders and Andhra Tenders — official B2B Tenders Portal for government & GeM tenders"
+                fill
+                priority={idx === activeBanner}
+                sizes="100vw"
+                className={`object-cover transition-opacity duration-1000 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`}
+              />
             ))}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end justify-center pb-8">
                 <Badge className="bg-[#16a34a] text-white border-0 text-sm md:text-base px-4 py-1 shadow-2xl">Official B2B Tenders Portal</Badge>
@@ -732,13 +761,13 @@ export default function App() {
       <main className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
         <div className="lg:col-span-3 space-y-6 w-full min-w-0" ref={tendersListRef}>
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
+            <h2 className="text-xl font-black text-[#0A2647] uppercase tracking-wide">
               {appliedDay
                 ? `Closing on ${appliedDay} ${monthName(appliedMonth - 1)}`
                 : (appliedMonth && appliedYear)
                   ? `Active Tenders for ${monthName(appliedMonth - 1)}`
                   : 'All Active Tenders'}
-            </h3>
+            </h2>
             <Badge variant="outline" className="bg-white font-bold">{filteredTenders.length} Results</Badge>
           </div>
 
@@ -763,7 +792,7 @@ export default function App() {
                              <Clock className="w-3 h-3 mr-1" /> Ends: {new Date(t.last_date).toDateString()}
                            </span>
                          </div>
-                         <h4 className="font-bold text-slate-800 text-lg mb-1 leading-snug line-clamp-2">{t.title}</h4>
+                         <h3 className="font-bold text-slate-800 text-lg mb-1 leading-snug line-clamp-2">{t.title}</h3>
                          <p className="text-sm text-slate-500 flex items-center gap-1 font-semibold"><Building2 className="w-4 h-4 text-slate-400" /> {t.department}</p>
                        </div>
                        <Button onClick={() => tryUnlockPDF(t)} className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white shrink-0 w-full sm:w-auto h-11 shadow-md font-bold">
@@ -856,7 +885,7 @@ export default function App() {
             <CardContent className="p-6 relative z-10 w-full">
               <div className="flex items-center gap-2 mb-1">
                 <Star className="w-5 h-5 text-yellow-200 fill-yellow-200" />
-                <h3 className="font-black text-xl text-white uppercase tracking-wide">Register as Client</h3>
+                <h2 className="font-black text-xl text-white uppercase tracking-wide">Register as Client</h2>
               </div>
               <p className="text-[11px] text-orange-100 mb-4 font-bold uppercase tracking-wider border-b border-orange-400/50 pb-2">Premium Partner Pre-Registration</p>
               
@@ -874,7 +903,7 @@ export default function App() {
           <Card className="border-0 shadow-xl bg-[#0A2647] text-white rounded-xl overflow-hidden relative w-full">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 opacity-20 rounded-full blur-3xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
             <CardContent className="p-6 relative z-10 w-full">
-              <h3 className="font-black text-xl mb-1 text-emerald-400">Need Expert Help?</h3>
+              <h2 className="font-black text-xl mb-1 text-emerald-400">Need Expert Help?</h2>
               <p className="text-xs text-slate-300 mb-4 font-medium">Drop your query, and our MD's office will get back to you directly.</p>
               <form onSubmit={handleGuestQuery} className="flex flex-col gap-3 w-full">
                 <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Full Name</Label><Input required placeholder="E.g., John Doe" value={queryForm.name} onChange={e => setQueryForm({...queryForm, name: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10 w-full" /></div>
@@ -899,7 +928,7 @@ export default function App() {
         <div className="container mx-auto px-4 relative z-10 w-full">
            <div className="max-w-4xl mx-auto text-center mb-20 bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-3xl shadow-2xl">
               <TrendingUp className="w-14 h-14 mx-auto text-emerald-400 mb-6 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)]" />
-              <h3 className="text-3xl md:text-5xl font-black text-white mb-6 uppercase tracking-tight">Our Corporate Vision</h3>
+              <h2 className="text-3xl md:text-5xl font-black text-white mb-6 uppercase tracking-tight">Our Corporate Vision</h2>
               <p className="text-lg md:text-2xl text-slate-300 font-medium leading-relaxed">
                 {brandSettings.vision_text || '"Empowering every young individual to become an entrepreneur and transforming middle-class dreams into business reality. We turn private individuals into trusted partners of the Government."'}
               </p>
@@ -918,7 +947,7 @@ export default function App() {
                   <div className="bg-white/10 w-16 h-16 rounded-xl flex items-center justify-center mb-5 group-hover:bg-white/20 transition-colors">
                     {svc.icon}
                   </div>
-                  <h4 className="font-bold text-white text-xl mb-2">{svc.title}</h4>
+                  <h3 className="font-bold text-white text-xl mb-2">{svc.title}</h3>
                   <p className="text-slate-400 text-sm leading-relaxed">{svc.desc}</p>
                 </div>
               ))}
@@ -932,7 +961,7 @@ export default function App() {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-1 bg-emerald-500 rounded-b-full"></div>
           <div className="container mx-auto px-4 w-full">
             <div className="text-center mb-16">
-               <h3 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-4">Our Leadership</h3>
+               <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-4">Our Leadership</h2>
                <p className="text-slate-500 font-medium max-w-2xl mx-auto">Meet the visionaries driving our consultancy forward. Connect directly with our core management team.</p>
             </div>
             
@@ -940,9 +969,9 @@ export default function App() {
               {brandSettings.leaders.map((leader, i) => (
                 <div key={i} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-sm hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 group">
                   <div className="relative w-36 h-36 mx-auto rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors mb-5 shadow-lg bg-white">
-                    <img src={leader.image} alt={leader.name} className="w-full h-full object-cover object-top" />
+                    <Image src={leader.image} alt={`${leader.name} — Telangana Tenders leadership team`} fill sizes="144px" className="object-cover object-top" />
                   </div>
-                  <h4 className="font-black text-2xl text-[#0A2647] mb-2">{leader.name}</h4>
+                  <h3 className="font-black text-2xl text-[#0A2647] mb-2">{leader.name}</h3>
                   <Badge className="bg-emerald-100 text-emerald-800 border-0 font-bold px-4 py-1.5 mb-5 text-xs tracking-wide uppercase">
                     {leader.role}
                   </Badge>
@@ -972,16 +1001,16 @@ export default function App() {
         <section className="bg-white py-20 border-t-4 border-[#16a34a] w-full relative">
           <div className="container mx-auto px-4 w-full">
             <div className="text-center mb-16">
-               <h3 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-4">Our Prestigious Clients</h3>
+               <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-4">Our Prestigious Clients</h2>
                <p className="text-slate-500 font-medium max-w-2xl mx-auto">Proudly serving top enterprises and successfully executing government contracts.</p>
             </div>
             <div className="flex flex-wrap justify-center gap-8 w-full max-w-6xl mx-auto">
               {brandSettings.clients.map((client, i) => (
                 <div key={i} className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-md text-center w-full max-w-xs hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
                   <div className="relative w-24 h-24 mx-auto rounded-full overflow-hidden border-4 border-white shadow-md mb-4 bg-white">
-                    <img src={client.image || 'https://via.placeholder.com/150'} alt={client.company_name} className="w-full h-full object-cover" />
+                    <Image src={client.image || 'https://via.placeholder.com/150'} alt={`${client.company_name} — Telangana Tenders client`} fill sizes="96px" className="object-cover" />
                   </div>
-                  <h4 className="font-black text-xl text-[#0A2647] mb-1">{client.company_name}</h4>
+                  <h3 className="font-black text-xl text-[#0A2647] mb-1">{client.company_name}</h3>
                   <p className="text-sm font-bold text-slate-600 mb-3">{client.client_name}</p>
                   <Badge className="bg-blue-100 text-blue-800 border-0 font-mono tracking-widest text-[10px]">
                     UDYAM: {client.udyam_no || 'N/A'}

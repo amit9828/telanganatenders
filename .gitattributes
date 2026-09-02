@@ -1,0 +1,24 @@
+# Force UTF-8 + LF for all text source files so a Windows editor/tool that
+# defaults to a legacy code page (Windows-1252) can never silently re-encode
+# non-ASCII characters (₹, •, —, emoji, Telugu comments, etc.) into mojibake
+# on save, and line endings stay consistent across contributors' machines.
+* text=auto eol=lf
+
+*.js text working-tree-encoding=UTF-8
+*.jsx text working-tree-encoding=UTF-8
+*.ts text working-tree-encoding=UTF-8
+*.tsx text working-tree-encoding=UTF-8
+*.json text working-tree-encoding=UTF-8
+*.css text working-tree-encoding=UTF-8
+*.md text working-tree-encoding=UTF-8
+
+# Binary assets — never touch line endings/encoding.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

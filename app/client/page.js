@@ -19,8 +19,10 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature
+  IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature,
+  Handshake, Landmark, Gavel, ScrollText
 } from 'lucide-react';
+import { formatINR } from '@/lib/format';
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -48,6 +50,14 @@ export default function ClientDashboard() {
   const [isMounted, setIsMounted] = useState(false);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(true);
+  // 🚀 RBAC: this dashboard has no separate "client" vs "MD"/"employee" route — an
+  // MD/employee reaches this exact page via the admin panel's "Login as Client
+  // (Bypass)" button (app/admin/page.js -> impersonateUser), which just sets the
+  // same `tt_email` this page normally reads for a real client login. The one
+  // reliable signal that the current browser tab belongs to staff previewing the
+  // client view (rather than an actual client) is that their OWN admin/employee
+  // token is also present in localStorage — a real client never has those set.
+  const [isStaffPreview, setIsStaffPreview] = useState(false);
 
   // --- Core State ---
   const [userData, setUserData] = useState(null);
@@ -105,12 +115,25 @@ export default function ClientDashboard() {
   const [recommendedTenders, setRecommendedTenders] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
 
+  // 🚀 STAFF-ONLY: AI Win Probability + JV Partner data for the "AI Tender Match & JV
+  // Hub" widget. Only ever fetched when isStaffPreview is true — a real client never
+  // triggers this call, and the underlying /api/bid-matches route requires the MD's
+  // ADMIN_TOKEN anyway, so a real client couldn't read it even if they tried.
+  const [staffBidMatches, setStaffBidMatches] = useState([]);
+  const [submittingLead, setSubmittingLead] = useState('');
+
   useEffect(() => {
     setIsMounted(true);
     if (status === "loading") return; 
 
     const e = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '') || 'client@tgtenders.in';
     setEmail(e);
+
+    // 🚀 RBAC: see isStaffPreview declaration above — MD carries `tt_admin`,
+    // an employee carries `tt_emp_email`; a genuine client has neither.
+    if (typeof window !== 'undefined') {
+      setIsStaffPreview(!!(localStorage.getItem('tt_admin') || localStorage.getItem('tt_emp_email')));
+    }
     fetchPublicTenders();
     fetchClientData(e); 
     
@@ -119,6 +142,24 @@ export default function ClientDashboard() {
     // document type the backend would reject.
     fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
   }, [session, status]);
+
+  // 🚀 STAFF-ONLY: fetch the MD's AI matchmaker feed and narrow it to this one client,
+  // for the "AI Tender Match & JV Hub" widget. Skipped entirely for real clients.
+  useEffect(() => {
+    if (!isStaffPreview || !email || typeof window === 'undefined') return;
+    const adminToken = localStorage.getItem('tt_admin');
+    fetch('/api/bid-matches', {
+      headers: adminToken ? { Authorization: `Bearer ${adminToken}` } : {},
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d?.matches) return;
+        setStaffBidMatches(
+          d.matches.filter(m => (m.client_email || '').toLowerCase() === email.toLowerCase())
+        );
+      })
+      .catch(() => {});
+  }, [isStaffPreview, email]);
 
  // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
   useEffect(() => {
@@ -603,6 +644,34 @@ export default function ClientDashboard() {
     } catch(err) { toast.error("Network Error."); }
   };
 
+  // 🚀 STAFF-ONLY: "Apply for EMD Loan" / "GeM Sahay" have no real lender/partner
+  // integration yet, so both are lead-capture — they raise a normal support ticket
+  // (visible to the MD in the Helpdesk tab) tagged under Finance, rather than
+  // fabricating loan numbers or a fake partner API.
+  const submitLeadRequest = async (kind) => {
+    const subject = kind === 'emd_loan' ? 'EMD Loan Request' : 'GeM Sahay Bill Discounting Request';
+    setSubmittingLead(kind);
+    try {
+      const r = await fetch('/api/tickets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email, department: 'Finance', subject,
+          message: `Client requested more information about ${subject.toLowerCase()} from the dashboard.`,
+        })
+      });
+      if (r.ok) {
+        toast.success(`${subject} sent to the Finance desk. The MD will follow up shortly.`);
+        fetchClientData(email);
+      } else {
+        toast.error('Could not submit the request. Please try again.');
+      }
+    } catch (err) {
+      toast.error('Network error.');
+    } finally {
+      setSubmittingLead('');
+    }
+  };
+
   const submitTicketReplyClient = async (ticket_id) => {
     const replyText = ticketReplyClient[ticket_id];
     if(!replyText) return toast.error('Please write a reply first.');
@@ -964,12 +1033,12 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white border-b sticky top-0 z-40 shadow-sm">
+      <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-40 tender-shadow">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <BrandLogo subtitle="Enterprise Portal" />
           
           <div className="flex items-center gap-4">
-             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="hidden sm:flex border-slate-300 text-slate-700 font-bold hover:bg-slate-100">
+             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="hidden sm:flex border-slate-300 text-slate-700 font-bold hover:bg-slate-100 transition-all duration-200">
                 <Globe className="w-4 h-4 mr-2" /> View Public Site
              </Button>
 
@@ -1064,14 +1133,14 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
 
         {/* --- TOP FUNNEL METRICS --- */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-           <Card onClick={() => handleCardClick('dashboard', 'recommended-section')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('dashboard', 'recommended-section')} className="border-0 ring-1 ring-slate-200/80 bg-white cursor-pointer premium-hover hover:ring-blue-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recommended</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('dashboard', 'tracking-section')} className="border-0 shadow-sm ring-1 ring-slate-200 bg-white cursor-pointer hover:ring-blue-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('dashboard', 'tracking-section')} className="border-0 ring-1 ring-slate-200/80 bg-white cursor-pointer premium-hover hover:ring-blue-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <FileText className="w-5 h-5 text-slate-500 mb-2"/>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Participated</p>
@@ -1079,21 +1148,21 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
               </CardContent>
            </Card>
            {/* 🚀 FIX: Live Tenders Routing & Real Public Tenders Count */}
-           <Card onClick={() => { setActiveTab('live_tenders'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="border-0 shadow-sm ring-1 ring-blue-500/50 bg-blue-50/50 cursor-pointer hover:ring-blue-600 hover:shadow-md transition">
+           <Card onClick={() => { setActiveTab('live_tenders'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="border-0 ring-1 ring-blue-500/40 bg-blue-50/50 cursor-pointer premium-hover hover:ring-blue-500">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Activity className="w-5 h-5 text-blue-600 mb-2"/>
                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Live Tenders</p>
                  <p className="text-2xl font-black text-blue-700">{publicTenders.length}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('wins', '')} className="border-0 shadow-sm ring-1 ring-emerald-500/50 bg-emerald-50/80 cursor-pointer hover:ring-emerald-600 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('wins', '')} className="border-0 ring-1 ring-emerald-500/40 bg-emerald-50/80 cursor-pointer premium-hover hover:ring-emerald-500">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Trophy className="w-5 h-5 text-emerald-600 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Tenders Won</p>
                  <p className="text-2xl font-black text-emerald-700">{clientStats.won}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('finance', '')} className="border-0 shadow-sm ring-1 ring-emerald-500 bg-emerald-600 text-white col-span-2 lg:col-span-1 cursor-pointer hover:ring-emerald-400 hover:shadow-md transition">
+           <Card onClick={() => handleCardClick('finance', '')} className="border-0 ring-1 ring-emerald-400 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white col-span-2 lg:col-span-1 cursor-pointer premium-hover hover:ring-emerald-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Banknote className="w-5 h-5 text-emerald-200 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Project Revenue</p>
@@ -1103,28 +1172,37 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
-          <TabsList className="flex flex-wrap w-full bg-white shadow-sm border border-slate-200 h-auto p-1.5 rounded-lg mb-6">
+          {/* Order per Enterprise UI/UX Blueprint (section A): the two most frequent
+              client actions — checking their dashboard and browsing live tenders — come
+              first, followed by wins/vault/finance/profile. Flat bar (no grouping) since
+              6-7 items doesn't need it. Staff-only "Bid Tools" stays last. */}
+          <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 rounded-xl mb-6">
             <TabsTrigger value="dashboard" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Active Dashboard
             </TabsTrigger>
             <TabsTrigger value="live_tenders" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Globe className="w-4 h-4 mr-2 hidden sm:block"/> Live Tenders
             </TabsTrigger>
-            <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
-              <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> Client Profile
+            <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
+              <Trophy className="w-4 h-4 mr-2 hidden sm:block"/> Winning Bids
             </TabsTrigger>
             <TabsTrigger value="vault" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Lock className="w-4 h-4 mr-2 hidden sm:block"/> My Secure Vault
             </TabsTrigger>
-            <TabsTrigger value="bid_tools" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
-              <Wand2 className="w-4 h-4 mr-2 hidden sm:block"/> Bid Tools
-            </TabsTrigger>
-            <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
-              <Trophy className="w-4 h-4 mr-2 hidden sm:block"/> Winning Bids
-            </TabsTrigger>
             <TabsTrigger value="finance" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Banknote className="w-4 h-4 mr-2 hidden sm:block"/> Finance/SLA
             </TabsTrigger>
+            <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> Client Profile
+            </TabsTrigger>
+            {/* 🚀 RBAC: "Bid Tools" hidden exclusively for real clients — still fully
+                present in the DOM/functional for MD/employee staff-preview sessions,
+                and its TabsContent below is untouched (nothing deleted). */}
+            {isStaffPreview && (
+              <TabsTrigger value="bid_tools" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
+                <Wand2 className="w-4 h-4 mr-2 hidden sm:block"/> Bid Tools
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* ============================================================================== */}
@@ -1332,7 +1410,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                          <div key={doc.id} className="bg-white p-4 border rounded-xl shadow-sm border-emerald-200 bg-emerald-50/30">
                             <div className="flex justify-between items-center mb-3">
                               <Label className="font-bold text-emerald-900 text-sm">{doc.name}</Label>
-                              <Badge className="bg-emerald-500 text-white border-0 text-[10px] uppercase font-bold tracking-wider"><CheckCircle2 className="w-3 h-3 mr-1"/> MD Approved</Badge>
+                              <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] uppercase font-bold tracking-wider"><CheckCircle2 className="w-3 h-3 mr-1"/> MD Approved</Badge>
                             </div>
                             <div className="bg-white p-2.5 border border-emerald-100 rounded-lg flex flex-col gap-2 shadow-inner">
                                <div className="flex justify-between items-center">
@@ -1603,6 +1681,44 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 <CardDescription>Handpicked high-probability tenders assigned by your MD/Operations Officer.</CardDescription>
               </CardHeader>
               <CardContent className="p-5">
+                 {/* 🚀 STAFF-ONLY: AI Tender Match & JV Hub — surfaces the MD's AI matchmaker
+                     feed (confidence score + JV partner suggestion) for this one client.
+                     Invisible to real clients; nothing below this block changes for them. */}
+                 {isStaffPreview && staffBidMatches.length > 0 && (
+                    <div className="mb-5 space-y-3">
+                       <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                          <Sparkles className="w-3.5 h-3.5" /> AI Tender Match & JV Hub
+                          <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
+                       </div>
+                       <div className="grid md:grid-cols-2 gap-3">
+                          {staffBidMatches.map((m) => (
+                             <div key={m._id || m.tender_id} className="border-t-4 border-t-indigo-600 border border-indigo-100 rounded-xl p-4 bg-indigo-50/30 tender-shadow">
+                                <div className="flex justify-between items-start gap-2 mb-2 flex-wrap">
+                                   <Badge className="bg-indigo-600 text-white border-0 text-[10px] font-bold">
+                                      AI Win Probability: {Math.round((Number(m.confidence) || 0) * 100)}%
+                                   </Badge>
+                                   {m.match_type === 'JV' && (
+                                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">JV Opportunity</Badge>
+                                   )}
+                                </div>
+                                <h4 className="font-bold text-[#0A2647] text-sm leading-tight mb-1">{m.tender_title}</h4>
+                                <p className="text-xs text-slate-500">
+                                   {m.tender_department}{m.tender_bid_no ? ` • ${m.tender_bid_no}` : ''}
+                                </p>
+                                {m.match_type === 'JV' && m.jv_partner && (
+                                   <div className="mt-3 bg-amber-50 border border-amber-200 rounded-md p-2.5">
+                                      <div className="text-[9px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1">
+                                         <Handshake className="w-3 h-3" /> Find JV Partner
+                                      </div>
+                                      <div className="text-xs font-semibold text-amber-900 mt-0.5">{m.jv_partner.company_name}</div>
+                                      <div className="text-[10px] text-amber-700">Combined Capacity: {formatINR(m.jv_partner.combined_capacity)}</div>
+                                   </div>
+                                )}
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                 )}
                  {recommendedTenders.length === 0 ? (
                     <div className="text-center py-6 text-slate-400 border-2 border-dashed rounded-xl border-blue-200 bg-white">
                       <Target className="w-8 h-8 mx-auto text-blue-200 mb-2" />
@@ -1856,6 +1972,41 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           <span className="text-sm font-semibold text-slate-700">Total EMD Paid</span>
                           <span className="text-lg font-black text-slate-800">₹{totalEmd.toLocaleString()}</span>
                        </div>
+
+                       {/* 🚀 STAFF-ONLY: Financial Powerhouse — EMD Loan / GeM Sahay have no
+                           real lender integration yet, so both are lead-capture (raise a
+                           Finance ticket to the MD). Invisible to real clients. */}
+                       {isStaffPreview && (
+                          <div className="border-t pt-4">
+                             <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                <Landmark className="w-4 h-4 text-amber-600"/> Working Capital & Funding
+                                <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
+                             </h4>
+                             <div className="space-y-2">
+                                <Button
+                                  onClick={() => submitLeadRequest('emd_loan')}
+                                  disabled={submittingLead === 'emd_loan'}
+                                  className="w-full bg-[#0A2647] hover:bg-[#144272] h-10 justify-between"
+                                >
+                                   <span className="flex items-center gap-2">
+                                      {submittingLead === 'emd_loan' ? <Loader2 className="w-4 h-4 animate-spin"/> : <IndianRupee className="w-4 h-4"/>}
+                                      Apply for EMD Loan
+                                   </span>
+                                </Button>
+                                <Button
+                                  onClick={() => submitLeadRequest('gem_sahay')}
+                                  disabled={submittingLead === 'gem_sahay'}
+                                  variant="outline"
+                                  className="w-full h-10 justify-between border-amber-200 text-amber-800 hover:bg-amber-50"
+                                >
+                                   <span className="flex items-center gap-2">
+                                      {submittingLead === 'gem_sahay' ? <Loader2 className="w-4 h-4 animate-spin"/> : <Landmark className="w-4 h-4"/>}
+                                      GeM Sahay (Bill Discounting)
+                                   </span>
+                                </Button>
+                             </div>
+                          </div>
+                       )}
                        
                        <div className="border-t pt-4">
                           <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
@@ -1914,6 +2065,29 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                     <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-slate-700"/> 24/7 SLA Support Desk</CardTitle>
                   </CardHeader>
                   <CardContent className="pt-5 space-y-6">
+                    {/* 🚀 STAFF-ONLY: Legal Defense & Support quick action — deep-links into the
+                        existing Bid Tools document generator with the new "GeM Show-Cause Notice
+                        Reply" doc type preselected. No new API route; reuses handleGenerateDoc. */}
+                    {isStaffPreview && (
+                       <div className="border border-slate-200 bg-slate-50 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-2.5">
+                             <Gavel className="w-5 h-5 text-slate-700 shrink-0 mt-0.5"/>
+                             <div>
+                                <p className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                   Legal Defense & Support
+                                   <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
+                                </p>
+                                <p className="text-xs text-slate-500 mt-0.5">Draft a formal reply to a GeM Show-Cause Notice on this client's behalf.</p>
+                             </div>
+                          </div>
+                          <Button
+                            onClick={() => { setDocForm(prev => ({ ...prev, doc_type: 'scn_reply' })); setActiveTab('bid_tools'); }}
+                            className="bg-slate-800 hover:bg-slate-900 h-10 shrink-0 w-full sm:w-auto"
+                          >
+                             <ScrollText className="w-4 h-4 mr-2"/> Generate GeM SCN Reply Draft
+                          </Button>
+                       </div>
+                    )}
                     <form onSubmit={handleTicketSubmit} className="space-y-4 border-b pb-6">
                       <div>
                         <Label className="text-xs text-slate-600 font-bold">Ticket Subject *</Label>

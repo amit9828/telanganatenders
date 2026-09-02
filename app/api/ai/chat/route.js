@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
+import { getGeminiApiKey } from '@/lib/env';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import { searchCopilotKnowledge } from '@/lib/gem-copilot-knowledge';
 import {
@@ -165,7 +166,7 @@ async function loadTenderContext(db, tenderId) {
   ].filter(Boolean).join('\n');
 
   // Attach the source PDF so the model reads the actual document rather than only the
-  // handful of fields we extracted from it. Gemini 1.5 Flash reads PDFs natively.
+  // handful of fields we extracted from it. Gemini reads PDFs natively.
   let pdfBuffer = await fetchTenderPDFBuffer({
     pdf_url: tender.pdf_url,
     pdf_filename: tender.pdf_filename,
@@ -195,12 +196,13 @@ export async function POST(request) {
     if (!query) {
       return NextResponse.json({ error: 'Please enter a question.' }, { status: 400 });
     }
-    if (!process.env.GEMINI_API_KEY) {
+    const geminiApiKey = getGeminiApiKey();
+    if (!geminiApiKey) {
       return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
     }
 
     const db = await getDb();
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
     // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
     // GEMINI_API_KEY is actually entitled to (verified live).
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });

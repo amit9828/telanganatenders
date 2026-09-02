@@ -325,7 +325,7 @@ export default function GeminiWorkspace({
                   <p className="font-bold text-sm">{embedded ? 'Co-Pilot Chat Desk' : 'Gemini Workspace'}</p>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  <Badge className="bg-white/15 text-white border-0 text-[10px] font-medium">Gemini 1.5 Flash — Enterprise</Badge>
+                  <Badge className="bg-white/15 text-white border-0 text-[10px] font-medium">Gemini Enterprise</Badge>
                   <Badge className="bg-indigo-400/30 text-indigo-50 border-0 text-[10px] font-medium truncate max-w-[220px]">
                     {contextBadge}
                   </Badge>
