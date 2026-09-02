@@ -13,8 +13,10 @@ import {
   fetchVaultDocumentBuffer,
 } from '@/lib/cloudflare-r2';
 // 🚀 SECURITY: Cashfree (Order/Verify/Webhook) + Offline Ledger logic now lives in
-// app/api/payments/route.js. Only thin delegating calls remain below.
-import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '../payments/route';
+// lib/payments.js (a plain module, not a route.js) so it can be imported safely from
+// both this catch-all route AND app/api/payments/route.js without violating
+// Next.js's route.js export contract. Only thin delegating calls remain below.
+import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '@/lib/payments';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const dynamic = 'force-dynamic';
@@ -901,6 +903,7 @@ export async function PUT(request, { params }) {
 
      if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
         const tenderId = pathArray[1];
+        if (!ObjectId.isValid(tenderId)) return json({ error: 'Invalid Tender ID' }, 400);
         let updateFields = { ...body, updated_at: new Date() };
         delete updateFields._id; 
 
@@ -956,6 +959,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'client-requests/reply' || path === 'api/client-requests/reply') {
         const { req_id, status, reply } = body;
+        if (!ObjectId.isValid(req_id)) return json({ error: 'Invalid Request ID' }, 400);
         await db.collection('client_requests').updateOne(
            { _id: new ObjectId(req_id) },
            { $set: { status, reply, updated_at: new Date() } }
@@ -965,7 +969,8 @@ export async function PUT(request, { params }) {
 
      if (path === 'client-requests/assign' || path === 'api/client-requests/assign') {
         const { req_id, emp_id, emp_name, status, reply } = body;
-        
+        if (!ObjectId.isValid(req_id)) return json({ error: 'Invalid Request ID' }, 400);
+
         await db.collection('client_requests').updateOne(
            { _id: new ObjectId(req_id) },
            { $set: { status: `Assigned to ${emp_name} (${emp_id})`, reply, updated_at: new Date() } }
@@ -989,6 +994,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'bids/update' || path === 'api/bids/update') {
         const { bid_id, status, bid_no, description, contract_value, validity } = body;
+        if (!ObjectId.isValid(bid_id)) return json({ error: 'Invalid Bid ID' }, 400);
         let updateData = { updated_at: new Date() };
         if (status) updateData.status = status;
         if (bid_no !== undefined) updateData.bid_no = bid_no;
@@ -1005,6 +1011,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'dispatches/complete' || path === 'api/dispatches/complete') {
         const { task_id } = body;
+        if (!ObjectId.isValid(task_id)) return json({ error: 'Invalid Dispatch ID' }, 400);
         await db.collection('dispatches').updateOne(
            { _id: new ObjectId(task_id) },
            { $set: { status: 'Completed', completed_at: new Date() } }
@@ -1014,6 +1021,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'dispatches/update' || path === 'api/dispatches/update') {
         const { task_id, status, reply, file_name, file_base64 } = body;
+        if (!ObjectId.isValid(task_id)) return json({ error: 'Invalid Dispatch ID' }, 400);
         let updateData = { status: status, updated_at: new Date() };
         if(reply) updateData.client_reply = reply;
         
@@ -1029,7 +1037,7 @@ export async function PUT(request, { params }) {
         // 🚀 FIX: Broken Triangle — sync the employee's reply/status/attachment back
         // onto the originating client request so the client actually sees the update.
         const updatedDispatch = await db.collection('dispatches').findOne({ _id: new ObjectId(task_id) });
-        if (updatedDispatch?.client_request_id) {
+        if (updatedDispatch?.client_request_id && ObjectId.isValid(updatedDispatch.client_request_id)) {
            let clientRequestUpdate = { updated_at: new Date() };
            if (reply) clientRequestUpdate.reply = reply;
            if (status === 'Completed') clientRequestUpdate.status = 'Resolved by Employee';
@@ -1132,6 +1140,7 @@ export async function PUT(request, { params }) {
      if (path === 'finance/ledger' || path === 'api/finance/ledger') {
         const { id, ...updateFields } = body;
         if (!id) return json({ error: 'Missing Transaction ID' }, 400);
+        if (!ObjectId.isValid(id)) return json({ error: 'Invalid Transaction ID' }, 400);
         await db.collection('finance_ledger').updateOne(
             { _id: new ObjectId(id) },
             { $set: { ...updateFields, updated_at: new Date() } }
@@ -1180,6 +1189,9 @@ export async function DELETE(request, { params }) {
     if (path === 'guest-queries' || path === 'api/guest-queries') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing ID' }, 400);
+       // 🚀 FIX: `new ObjectId(id)` throws on a malformed id, which crashed this route
+       // with an unhandled 500 instead of a clean validation error.
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid ID' }, 400);
        await db.collection('guest_queries').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Query resolved and deleted' });
     }
@@ -1236,6 +1248,7 @@ export async function DELETE(request, { params }) {
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Transaction ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Transaction ID' }, 400);
        await db.collection('finance_ledger').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Transaction Deleted' });
     }
@@ -1243,6 +1256,7 @@ export async function DELETE(request, { params }) {
     if (path === 'client-requests' || path === 'api/client-requests') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Request ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Request ID' }, 400);
        await db.collection('client_requests').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Request Deleted Permanently' });
     }
@@ -1250,6 +1264,7 @@ export async function DELETE(request, { params }) {
     if (path === 'dispatches' || path === 'api/dispatches') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Dispatch ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Dispatch ID' }, 400);
        await db.collection('dispatches').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Dispatch Task Deleted' });
     }
@@ -1463,6 +1478,7 @@ export async function POST(request, { params }) {
 
     if (path === 'tickets/reply' || path === 'api/tickets/reply') {
       const { ticket_id, reply, admin_email } = body;
+      if (!ObjectId.isValid(ticket_id)) return json({ error: 'Invalid Ticket ID' }, 400);
       await db.collection('tickets').updateOne(
         { _id: new ObjectId(ticket_id) },
         { $set: { status: 'RESOLVED', reply: reply, replied_by: admin_email, replied_at: new Date() } }
@@ -1542,6 +1558,7 @@ export async function POST(request, { params }) {
     if (path === 'ai/drafts' || path === 'api/ai/drafts') {
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Draft ID' }, 400);
+       if (!ObjectId.isValid(id)) return json({ error: 'Invalid Draft ID' }, 400);
        await db.collection('ai_draft_tenders').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true });
     }
@@ -1659,6 +1676,7 @@ export async function POST(request, { params }) {
     // 🚀 Operator Share Doc with Client
     if (path === 'operator/share' || path === 'api/operator/share') {
        const { docId, client_email } = body;
+       if (!ObjectId.isValid(docId)) return json({ error: 'Invalid Document ID' }, 400);
        const doc = await db.collection('operator_storage').findOne({ _id: new ObjectId(docId) });
        if (!doc) return json({ error: 'Document not found' }, 404);
 
