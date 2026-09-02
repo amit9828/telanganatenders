@@ -4,6 +4,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { parseAIJson } from '@/lib/ai-extraction';
 import { estimateTenderValue, parseIndianAmount } from '@/lib/matchmaking';
+import {
+  HISTORICAL_COLLECTION,
+  summariseBaseline,
+  titleKeywords,
+} from '@/lib/historical-l1';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -15,8 +20,13 @@ const SYSTEM_PROMPT = `
 You are a Senior Bid Strategist for Indian government e-procurement (GeM and state
 e-procurement portals). You advise a tender consultancy on competitive pricing.
 
-You will be given: the tender under consideration, and historical L1 (lowest bidder)
-outcomes recorded by this consultancy for comparable tenders.
+You will be given: the tender under consideration, a curated L1 Benchmark Repository of
+verified past award outcomes, and historical L1 (lowest bidder) outcomes recorded by this
+consultancy against its own tracked bids.
+
+The L1 Benchmark Repository is the authoritative baseline. Where it and the consultancy's
+own records disagree, anchor on the repository and treat the consultancy records as
+supporting evidence.
 
 Return STRICTLY a single JSON object in this exact shape, and nothing else:
 
@@ -39,8 +49,9 @@ Rules:
   (e.g. 7.5 means quote 7.5% below the estimated contract value).
 - suggested_quote_inr must be consistent with that percentage and the estimated value.
   If no estimated value is available, return 0 and say so in the rationale.
-- Set confidence to "low" when there are fewer than 3 comparable historical records, and
-  say plainly in the rationale that the sample is thin.
+- Set confidence to "low" when the repository and consultancy records together give fewer
+  than 3 comparable outcomes, and say plainly in the rationale that the sample is thin.
+  Only use "high" when the repository match scope is "category".
 - Never recommend a discount so deep it would be commercially unviable; if the history
   shows aggressive undercutting, flag it as a risk instead.
 - Output raw JSON only. No markdown fences, no commentary.
@@ -68,6 +79,52 @@ async function loadTender(db, tenderId) {
     if (tender) return tender;
   }
   return null;
+}
+
+/**
+ * Reads category-specific baselines out of the L1 Benchmark Repository — past award
+ * outcomes ingested by staff, which are far more reliable than our own thin bid history.
+ *
+ * Widens the search in stages so a prediction is never starved of context: exact category
+ * first, then title keywords and department, then the overall repository average.
+ */
+async function loadBenchmarks(db, tender) {
+  const collection = db.collection(HISTORICAL_COLLECTION);
+  const projection = {
+    projection: {
+      tender_title: 1, department: 1, category: 1, l1_price: 1,
+      estimate_value: 1, discount_pct: 1, winner_name: 1, award_year: 1,
+    },
+  };
+
+  const attempts = [];
+  if (tender.category) attempts.push({ scope: 'category', filter: { category: { $regex: escapeRegex(tender.category), $options: 'i' } } });
+
+  const keywords = titleKeywords(tender.title);
+  const broadClauses = [];
+  if (tender.department) broadClauses.push({ department: { $regex: escapeRegex(tender.department), $options: 'i' } });
+  keywords.forEach((kw) => broadClauses.push({ tender_title: { $regex: escapeRegex(kw), $options: 'i' } }));
+  if (broadClauses.length > 0) attempts.push({ scope: 'similar_work', filter: { $or: broadClauses } });
+
+  attempts.push({ scope: 'all_categories', filter: {} });
+
+  for (const { scope, filter } of attempts) {
+    const records = await collection.find(filter, projection)
+      .sort({ award_year: -1, created_at: -1 })
+      .limit(MAX_HISTORY)
+      .toArray();
+
+    // A single record is not a baseline; keep widening rather than anchoring on noise.
+    if (records.length >= 2 || (records.length > 0 && scope === 'all_categories')) {
+      return { scope, records, baseline: summariseBaseline(records) };
+    }
+  }
+
+  return { scope: 'none', records: [], baseline: summariseBaseline([]) };
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -210,7 +267,14 @@ export async function POST(request) {
       return NextResponse.json({ error: 'That tender could not be found.' }, { status: 404 });
     }
 
-    const history = await loadHistory(db, tender);
+    const [history, benchmarks] = await Promise.all([
+      loadHistory(db, tender),
+      loadBenchmarks(db, tender).catch((err) => {
+        // A missing or empty repository must not block a prediction.
+        console.warn('[predict-l1] benchmark lookup failed:', err?.message || err);
+        return { scope: 'none', records: [], baseline: summariseBaseline([]) };
+      }),
+    ]);
     const stats = summariseHistory(history);
     const estimatedValue = estimateTenderValue(tender);
 
@@ -227,6 +291,18 @@ export async function POST(request) {
       `unless stated): ${estimatedValue ?? 'unknown'}\n` +
       `Closing date: ${tender.last_date || 'n/a'}\n` +
       (tender.supply_details ? `Supply details: ${tender.supply_details}\n` : '') +
+      `\nL1 BENCHMARK REPOSITORY (authoritative — match scope: ${benchmarks.scope})\n` +
+      `${JSON.stringify(benchmarks.baseline, null, 2)}\n\n` +
+      `BENCHMARK RECORDS\n` +
+      `${JSON.stringify(
+        benchmarks.records.map((r) => ({
+          title: r.tender_title, department: r.department, category: r.category,
+          estimate_value: r.estimate_value, l1_price: r.l1_price,
+          discount_pct: r.discount_pct, winner: r.winner_name, year: r.award_year,
+        })),
+        null,
+        2
+      )}\n` +
       `\nHISTORICAL L1 DATA RECORDED BY THIS CONSULTANCY\n` +
       `${JSON.stringify(stats, null, 2)}\n\n` +
       `RAW COMPARABLE RECORDS\n` +
@@ -290,6 +366,12 @@ export async function POST(request) {
         estimated_value: estimatedValue,
       },
       history: stats,
+      benchmarks: {
+        // Which slice of the repository backed this call, so the MD can judge how much
+        // weight the recommendation deserves.
+        scope: benchmarks.scope,
+        ...benchmarks.baseline,
+      },
       prediction: normalised,
     });
   } catch (error) {

@@ -2,7 +2,10 @@
 import { useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
-import GemCoPilot from '@/components/GemCoPilot';
+import GeminiWorkspace from '@/components/GeminiWorkspace';
+import StationeryUploader from '@/components/StationeryUploader';
+import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
+import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -17,7 +20,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay, Loader2,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle, PenTool
 } from 'lucide-react';
 
 const DISTRICTS = [
@@ -82,6 +85,7 @@ export default function EmployeeDashboard() {
 
   const [mdTaskReply, setMdTaskReply] = useState({});
   const [viewClientDocs, setViewClientDocs] = useState(null);
+  const [stationeryClient, setStationeryClient] = useState(null);
 
   const [ticketReply, setTicketReply] = useState({});
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
@@ -1493,6 +1497,14 @@ return (
                                    <div>
                                       <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
                                       <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                                      <div className="mt-1">
+                                        <WhatsAppVerifiedBadge
+                                          email={client.email}
+                                          phone={client.phone}
+                                          verified={client.whatsapp_verified === true}
+                                          onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
+                                        />
+                                      </div>
                                    </div>
                                    <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
                                 </div>
@@ -1501,6 +1513,9 @@ return (
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
                                 <Button size="sm" onClick={() => setViewClientDocs(client)} variant="outline" className="flex-1 text-purple-600 border-purple-200 hover:bg-purple-50 h-9">
                                    <FileText className="w-4 h-4 mr-2" /> View Vault Docs
+                                </Button>
+                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
+                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
                                 </Button>
                                 {client.drive_folder_link || client.drive_link ? (
                                    <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
@@ -1667,6 +1682,7 @@ return (
           </TabsContent>
 
           <TabsContent value="publisher" className="w-full space-y-6">
+            <L1BenchmarkDropzone />
             <div className="grid lg:grid-cols-5 gap-6">
                
                <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
@@ -2178,12 +2194,17 @@ return (
         </DialogContent>
       </Dialog>
 
-      {/* 🚀 GeM AI Co-Pilot — context-aware: while a live tender is open for editing the
-          chat is scoped to that tender. Drafts are deliberately excluded, since they are
-          not yet in the `tenders` collection the chat API reads from. */}
-      <GemCoPilot
+      <StationeryUploader
+        client={stationeryClient}
+        open={!!stationeryClient}
+        onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
+      />
+
+      <GeminiWorkspace
         tenderId={isEditingTender || null}
         tenderLabel={isEditingTender ? (tenderForm.title || tenderForm.bid_no || 'this tender') : null}
+        clients={approvedClients}
+        tenders={publicTenders}
       />
     </div>
   );

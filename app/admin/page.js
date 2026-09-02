@@ -2,7 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
-import GemCoPilot from '@/components/GemCoPilot';
+import GeminiWorkspace from '@/components/GeminiWorkspace';
+import StationeryUploader from '@/components/StationeryUploader';
+import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
+import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -124,6 +127,7 @@ export default function AdminPage() {
   const [predictingMatchId, setPredictingMatchId] = useState(null);
   const [predictionOpen, setPredictionOpen] = useState(false);
   const [prediction, setPrediction] = useState(null); // { match, tender, history, prediction }
+  const [stationeryClient, setStationeryClient] = useState(null);
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -1068,7 +1072,14 @@ const handleViewDocument = (req) => {
                              <Badge className="bg-amber-100 text-amber-800 border-0 uppercase tracking-widest text-[10px]">Awaiting Approval</Badge>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
-                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact</span> <span className="text-slate-800 font-semibold text-sm">{user.phone || 'Not Provided'}</span></div>
+                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact</span>
+                               <WhatsAppVerifiedBadge
+                                 email={user.email}
+                                 phone={user.phone}
+                                 verified={user.whatsapp_verified === true}
+                                 onChanged={(v) => setPendingUsers(prev => prev.map(u => u.email === user.email ? { ...u, whatsapp_verified: v } : u))}
+                               />
+                             </div>
                              <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Company Type</span> <span className="text-slate-800 font-semibold">{user.company_type || 'N/A'}</span></div>
                              <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Interested Services</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
                           </div>
@@ -1112,6 +1123,16 @@ const handleViewDocument = (req) => {
                                    <div>
                                       <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
                                       <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                                      {client.phone && (
+                                        <div className="mt-1">
+                                          <WhatsAppVerifiedBadge
+                                            email={client.email}
+                                            phone={client.phone}
+                                            verified={client.whatsapp_verified === true}
+                                            onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
+                                          />
+                                        </div>
+                                      )}
                                    </div>
                                    <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
                                 </div>
@@ -1132,6 +1153,9 @@ const handleViewDocument = (req) => {
                                       <Database className="w-4 h-4 mr-2" /> Sync Drive Space
                                    </Button>
                                 )}
+                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
+                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
+                                </Button>
                                 <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -1739,6 +1763,10 @@ const handleViewDocument = (req) => {
               </CardContent>
             </Card>
 
+            <div className="mb-6">
+              <L1BenchmarkDropzone />
+            </div>
+
             <Card className="tender-shadow w-full">
               <CardHeader className="border-b pb-4">
                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-base">
@@ -1926,6 +1954,8 @@ const handleViewDocument = (req) => {
                   </label>
                </CardContent>
             </Card>
+
+            <L1BenchmarkDropzone />
 
             {/* === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) === */}
             <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
@@ -2370,11 +2400,17 @@ const handleViewDocument = (req) => {
           </DialogContent>
         </Dialog>
 
-        {/* 🚀 GeM AI Co-Pilot — context-aware: while a tender is open for editing, the
-            chat is silently scoped to that tender instead of the general GeM rulebook. */}
-        <GemCoPilot
+        <StationeryUploader
+          client={stationeryClient}
+          open={!!stationeryClient}
+          onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
+        />
+
+        <GeminiWorkspace
           tenderId={isEditingTender || null}
           tenderLabel={isEditingTender ? (form.title || form.bid_no || 'this tender') : null}
+          clients={approvedClients}
+          tenders={tenders}
         />
       </main>
     </div>

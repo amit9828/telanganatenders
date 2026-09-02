@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
-import { ObjectId } from 'mongodb';
 import { getToken } from 'next-auth/jwt';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { buildDocumentPrompt, DOC_TYPES, findDocType } from '@/lib/document-templates';
 import { sanitizeGeneratedHtml } from '@/lib/html-sanitize';
+import { findTenderByAnyId } from '@/lib/tender-lookup';
+import { fetchStationeryBuffer, isPubliclyServableUrl } from '@/lib/cloudflare-r2';
+import { bufferToDataUrl, wrapWithStationery } from '@/lib/stationery-html';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -48,24 +50,19 @@ async function authorise(request, requestedEmail) {
 }
 
 async function loadTender(db, tenderId) {
-  const projection = {
+  return findTenderByAnyId(db, tenderId, {
     projection: {
       bid_no: 1, title: 1, department: 1, last_date: 1, district: 1,
       category: 1, emd_amount: 1, supply_details: 1,
     },
-  };
+  });
+}
 
-  const filters = [];
-  if (ObjectId.isValid(tenderId)) {
-    try { filters.push({ _id: new ObjectId(tenderId) }); } catch { /* not an ObjectId */ }
-  }
-  filters.push({ _id: tenderId }, { id: tenderId }, { bid_no: tenderId });
-
-  for (const filter of filters) {
-    const tender = await db.collection('tenders').findOne(filter, projection);
-    if (tender) return tender;
-  }
-  return null;
+async function loadStationerySrc(url, r2Key) {
+  if (url && isPubliclyServableUrl(url)) return url;
+  const fetched = await fetchStationeryBuffer({ file_url: url, file_r2_key: r2Key });
+  if (!fetched?.buffer) return null;
+  return bufferToDataUrl(fetched.buffer, fetched.contentType);
 }
 
 // Exposes the catalogue so the client dropdown and the server can never drift apart.
@@ -104,6 +101,7 @@ export async function POST(request) {
         projection: {
           email: 1, client_name: 1, company_name: 1, company_type: 1, phone: 1,
           address: 1, gstin: 1, udyam: 1, service_category: 1,
+          letterhead_url: 1, letterhead_r2_key: 1, signature_url: 1, signature_r2_key: 1,
         },
       }
     );
@@ -159,9 +157,21 @@ export async function POST(request) {
       );
     }
 
+    // Letterhead and signature are fetched here and inlined as data URLs so the print
+    // preview does not depend on a public R2 domain or a follow-up authenticated <img>.
+    const [letterheadSrc, signatureSrc] = await Promise.all([
+      loadStationerySrc(client.letterhead_url, client.letterhead_r2_key),
+      loadStationerySrc(client.signature_url, client.signature_r2_key),
+    ]);
+
     return NextResponse.json({
       success: true,
-      html,
+      html: wrapWithStationery(html, { letterheadSrc, signatureSrc }),
+      body_html: html,
+      stationery: {
+        letterhead: Boolean(letterheadSrc),
+        signature: Boolean(signatureSrc),
+      },
       doc_type: { id: docType.id, label: docType.label },
       generated_at: new Date().toISOString(),
       client: {
