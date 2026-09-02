@@ -106,7 +106,9 @@ async function runSync() {
   let model = null;
   if (process.env.GEMINI_API_KEY) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
+    // GEMINI_API_KEY is actually entitled to (verified live).
+    model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
   }
 
   const results = [];

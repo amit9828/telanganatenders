@@ -197,7 +197,9 @@ export async function POST(request) {
           { status: 500 }
         );
       }
-      model = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({ model: 'gemini-1.5-flash' });
+      // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
+      // GEMINI_API_KEY is actually entitled to (verified live).
+      model = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({ model: 'gemini-3.6-flash' });
     }
 
     const results = [];

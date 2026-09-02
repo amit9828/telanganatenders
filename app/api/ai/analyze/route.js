@@ -12,7 +12,9 @@ export async function POST(request) {
     if (!process.env.GEMINI_API_KEY) return NextResponse.json({ error: 'GEMINI_API_KEY is not configured in Vercel' }, { status: 500 });
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
+    // GEMINI_API_KEY is actually entitled to (verified live).
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
     const prompt = `
       You are an expert Tender Analyst. Read this document and extract ONLY the following key details. 

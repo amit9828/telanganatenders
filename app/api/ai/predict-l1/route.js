@@ -316,7 +316,10 @@ export async function POST(request) {
       )}\n`;
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // 🚀 FIX: Google retired gemini-1.5-flash; the new GEMINI_API_KEY's account
+    // is not entitled to gemini-2.5-flash either ("no longer available to new
+    // users") — Google's own error response points to this model instead.
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
     let prediction;
     try {
