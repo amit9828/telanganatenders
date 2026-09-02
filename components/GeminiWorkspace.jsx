@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { classifyWorkspacePrompt, INTENT, resolveClient } from '@/lib/workspace-intent';
 import { markdownToPlainText, markdownToSafeHtml } from '@/lib/markdown-lite';
+import { launchGemHunter } from '@/lib/gem-hunter-client';
 import {
   Bot, Copy, FileText, Loader2, Mic, MicOff, Printer, Send, Sparkles, Volume2, VolumeX, X,
 } from 'lucide-react';
@@ -194,6 +195,34 @@ export default function GeminiWorkspace({
     setSending(true);
 
     try {
+      if (classified.intent === INTENT.LIVE_HUNTER) {
+        const result = await launchGemHunter();
+        if (result.offline) {
+          setMessages((prev) => [...prev, {
+            role: 'assistant',
+            kind: 'text',
+            text: "Local GeM agent is offline. On this computer run `npm run gem:agent` in a terminal, then ask me again to launch the hunter.",
+          }]);
+          return;
+        }
+        if (!result.ok) {
+          setMessages((prev) => [...prev, {
+            role: 'error',
+            text: result.error || 'Could not launch the GeM Live Hunter.',
+          }]);
+          return;
+        }
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          kind: 'text',
+          text: result.already_running
+            ? 'Chrome is already open on your screen. Solve any CAPTCHA there — the hunter will resume automatically.'
+            : 'Chrome opened on your screen for GeM BidPlus. Solve CAPTCHA if prompted; the hunter will scrape Telangana & Andhra Pradesh bids and upsert them into MongoDB.',
+          meta: result.pid ? `pid ${result.pid}` : undefined,
+        }]);
+        return;
+      }
+
       if (classified.intent === INTENT.DEEP_DIVE) {
         if (!askedTender) {
           setMessages((prev) => [...prev, {
@@ -288,8 +317,8 @@ export default function GeminiWorkspace({
           aria-label="Open Gemini Workspace"
           className="fixed bottom-6 right-6 z-40 no-print h-14 px-4 rounded-full bg-[#0A2647] text-white shadow-xl hover:bg-[#144272] flex items-center gap-2 font-semibold"
         >
-          <Sparkles className="w-5 h-5 text-amber-300" />
-          <span className="hidden sm:inline">Gemini Workspace</span>
+                  <Sparkles className="w-5 h-5 text-amber-300" />
+          <span className="hidden sm:inline">Gemini Enterprise Co-Pilot</span>
           <Bot className="w-5 h-5 sm:hidden" />
         </button>
       )}
@@ -327,6 +356,7 @@ export default function GeminiWorkspace({
                   <ul className="space-y-1 text-[13px]">
                     <li>• “What is the scope of work for GEM/2026/B/123?” — reads SOW/ATC PDFs.</li>
                     <li>• “Generate an OEM Authorization for CLI-XXXX on that tender.” — prints on their letterhead.</li>
+                    <li>• “Search tenders on GeM” / “run live hunter” — opens Chrome via the local agent.</li>
                     <li>• Anything else hits the GeM knowledge base.</li>
                   </ul>
                 </div>

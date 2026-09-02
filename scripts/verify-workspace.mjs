@@ -26,6 +26,12 @@ assert.equal(oem.tenderHint, 'GEM/2026/B/99');
 const general = classifyWorkspacePrompt('How does GeM calculate Make in India local content?');
 assert.equal(general.intent, INTENT.GENERAL);
 
+const hunter = classifyWorkspacePrompt('Please search tenders on GeM for Telangana');
+assert.equal(hunter.intent, INTENT.LIVE_HUNTER);
+
+const hunter2 = classifyWorkspacePrompt('run live hunter now');
+assert.equal(hunter2.intent, INTENT.LIVE_HUNTER);
+
 const clients = [
   { email: 'acme@example.com', client_id: 'CLI-ACME1', company_name: 'Acme' },
   { email: 'beta@tgtenders.in', company_name: 'Beta' },

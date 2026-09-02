@@ -6,6 +6,7 @@ import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
+import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -1695,17 +1696,22 @@ const handleViewDocument = (req) => {
               /api/cron/matchmaker job, plus on-demand L1 price prediction. */}
           <TabsContent value="matchmaker" className="mt-4">
 
+            <AiMatchmakerPanel />
+
+            <div className="mb-6 mt-6">
+              <L1BenchmarkDropzone />
+            </div>
+
             <Card className="tender-shadow border-t-4 border-t-indigo-600 w-full mb-6">
               <CardHeader className="bg-indigo-50/40 border-b pb-4">
                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                   <div className="flex-1">
                     <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
-                      <Target className="w-5 h-5 text-indigo-600" /> AI Matchmaker &amp; Competitor Intel
+                      <Target className="w-5 h-5 text-indigo-600" /> Legacy Match Feed &amp; L1 Prediction
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      Open Telangana &amp; Andhra Pradesh tenders scored against every approved client&apos;s
-                      service profile, document readiness and proven contract value. Where a single client
-                      falls short of the turnover bar, a joint-venture partner is proposed automatically.
+                      Nightly cron matches with on-demand L1 competitor intel. Prefer the Suggested Bids panel above for
+                      manual WhatsApp alerts.
                     </CardDescription>
                   </div>
                   <Button
@@ -1715,7 +1721,7 @@ const handleViewDocument = (req) => {
                   >
                     {runningMatchmaker
                       ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Scanning tenders...</>
-                      : <><RefreshCw className="w-4 h-4 mr-2" /> Run Matchmaker Now</>}
+                      : <><RefreshCw className="w-4 h-4 mr-2" /> Refresh Cron Matches</>}
                   </Button>
                 </div>
               </CardHeader>
@@ -1762,10 +1768,6 @@ const handleViewDocument = (req) => {
                 </div>
               </CardContent>
             </Card>
-
-            <div className="mb-6">
-              <L1BenchmarkDropzone />
-            </div>
 
             <Card className="tender-shadow w-full">
               <CardHeader className="border-b pb-4">

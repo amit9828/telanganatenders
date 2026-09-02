@@ -6,6 +6,7 @@ import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
+import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -1052,6 +1053,9 @@ return (
             <TabsTrigger value="alerts" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <BellRing className="w-4 h-4 mr-2 hidden sm:block"/> Alerts & Queries
             </TabsTrigger>
+            <TabsTrigger value="matchmaker" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-bold text-xs sm:text-sm">
+              <Target className="w-4 h-4 mr-2 hidden sm:block"/> AI Matchmaker
+            </TabsTrigger>
             <TabsTrigger value="publisher" className="flex-1 min-w-[150px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-bold text-xs sm:text-sm">
               <PlusCircle className="w-4 h-4 mr-2 hidden sm:block"/> Tenders DB
             </TabsTrigger>
@@ -1679,6 +1683,11 @@ return (
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="matchmaker" className="w-full space-y-6">
+            <AiMatchmakerPanel />
+            <L1BenchmarkDropzone />
           </TabsContent>
 
           <TabsContent value="publisher" className="w-full space-y-6">
