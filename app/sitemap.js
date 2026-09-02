@@ -10,7 +10,19 @@ export default async function sitemap() {
       lastModified: new Date(),
       changeFrequency: 'hourly',
       priority: 1.0,
-    }
+    },
+    {
+      url: `${baseUrl}/archive`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.7,
+    },
+    {
+      url: `${baseUrl}/legal`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.3,
+    },
   ];
 
   try {
