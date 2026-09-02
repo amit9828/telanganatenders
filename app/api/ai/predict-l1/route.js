@@ -9,6 +9,7 @@ import {
   summariseBaseline,
   titleKeywords,
 } from '@/lib/historical-l1';
+import { getGeminiApiKey } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -246,7 +247,8 @@ export async function POST(request) {
     if (!isAuthorised(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (!process.env.GEMINI_API_KEY) {
+    const geminiApiKey = getGeminiApiKey();
+    if (!geminiApiKey) {
       return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
     }
 
@@ -315,7 +317,7 @@ export async function POST(request) {
         2
       )}\n`;
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
     // 🚀 FIX: Google retired gemini-1.5-flash; the new GEMINI_API_KEY's account
     // is not entitled to gemini-2.5-flash either ("no longer available to new
     // users") — Google's own error response points to this model instead.

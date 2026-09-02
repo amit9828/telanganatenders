@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { uploadTenderPDF, isR2Configured, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import { EXTRACTION_PROMPT, parseAIJson, normaliseExtraction } from '@/lib/ai-extraction';
+import { getGeminiApiKey } from '@/lib/env';
 
 // The AI call is the slow part, so keep this on the Node runtime with the longest
 // duration the Vercel Hobby plan allows. Files are processed with bounded
@@ -121,7 +122,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
+    const geminiApiKey = getGeminiApiKey();
+    if (!geminiApiKey) {
       return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
     }
     // The whole point of this pipeline is that PDFs live in R2, not MongoDB. Without
@@ -154,7 +156,7 @@ export async function POST(request) {
 
     const uploadedBy = String(formData.get('uploadedBy') || 'MD Admin');
     const db = await getDb();
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
     // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
     // GEMINI_API_KEY is actually entitled to (verified live).
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });

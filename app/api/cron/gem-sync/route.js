@@ -9,6 +9,7 @@ import {
   normaliseWhitespace,
   VECTOR_COLLECTION,
 } from '@/lib/gem-embeddings';
+import { getGeminiApiKey } from '@/lib/env';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -104,8 +105,9 @@ async function runSync() {
   const indexResult = await ensureVectorIndex(db);
 
   let model = null;
-  if (process.env.GEMINI_API_KEY) {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const geminiApiKeyForSync = getGeminiApiKey();
+  if (geminiApiKeyForSync) {
+    const genAI = new GoogleGenerativeAI(geminiApiKeyForSync);
     // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
     // GEMINI_API_KEY is actually entitled to (verified live).
     model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
@@ -190,7 +192,7 @@ export async function GET(request) {
   if (!isAuthorised(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (!process.env.GEMINI_API_KEY) {
+  if (!getGeminiApiKey()) {
     return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
   }
 

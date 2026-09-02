@@ -19,8 +19,17 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature
+  IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature,
+  Handshake, Landmark, Gavel, ScrollText
 } from 'lucide-react';
+
+// 🚀 Staff-only widgets (AI Match/JV Hub, EMD Loan / GeM Sahay, SCN reply draft) reuse
+// this same ₹ formatter used elsewhere on the site rather than each rolling their own.
+const formatINR = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  return `₹${n.toLocaleString('en-IN')}`;
+};
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -113,6 +122,13 @@ export default function ClientDashboard() {
   const [recommendedTenders, setRecommendedTenders] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
 
+  // 🚀 STAFF-ONLY: AI Win Probability + JV Partner data for the "AI Tender Match & JV
+  // Hub" widget. Only ever fetched when isStaffPreview is true — a real client never
+  // triggers this call, and the underlying /api/bid-matches route requires the MD's
+  // ADMIN_TOKEN anyway, so a real client couldn't read it even if they tried.
+  const [staffBidMatches, setStaffBidMatches] = useState([]);
+  const [submittingLead, setSubmittingLead] = useState('');
+
   useEffect(() => {
     setIsMounted(true);
     if (status === "loading") return; 
@@ -133,6 +149,24 @@ export default function ClientDashboard() {
     // document type the backend would reject.
     fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
   }, [session, status]);
+
+  // 🚀 STAFF-ONLY: fetch the MD's AI matchmaker feed and narrow it to this one client,
+  // for the "AI Tender Match & JV Hub" widget. Skipped entirely for real clients.
+  useEffect(() => {
+    if (!isStaffPreview || !email || typeof window === 'undefined') return;
+    const adminToken = localStorage.getItem('tt_admin');
+    fetch('/api/bid-matches', {
+      headers: adminToken ? { Authorization: `Bearer ${adminToken}` } : {},
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d?.matches) return;
+        setStaffBidMatches(
+          d.matches.filter(m => (m.client_email || '').toLowerCase() === email.toLowerCase())
+        );
+      })
+      .catch(() => {});
+  }, [isStaffPreview, email]);
 
  // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
   useEffect(() => {
@@ -615,6 +649,34 @@ export default function ClientDashboard() {
         fetchClientData(email); 
       }
     } catch(err) { toast.error("Network Error."); }
+  };
+
+  // 🚀 STAFF-ONLY: "Apply for EMD Loan" / "GeM Sahay" have no real lender/partner
+  // integration yet, so both are lead-capture — they raise a normal support ticket
+  // (visible to the MD in the Helpdesk tab) tagged under Finance, rather than
+  // fabricating loan numbers or a fake partner API.
+  const submitLeadRequest = async (kind) => {
+    const subject = kind === 'emd_loan' ? 'EMD Loan Request' : 'GeM Sahay Bill Discounting Request';
+    setSubmittingLead(kind);
+    try {
+      const r = await fetch('/api/tickets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email, department: 'Finance', subject,
+          message: `Client requested more information about ${subject.toLowerCase()} from the dashboard.`,
+        })
+      });
+      if (r.ok) {
+        toast.success(`${subject} sent to the Finance desk. The MD will follow up shortly.`);
+        fetchClientData(email);
+      } else {
+        toast.error('Could not submit the request. Please try again.');
+      }
+    } catch (err) {
+      toast.error('Network error.');
+    } finally {
+      setSubmittingLead('');
+    }
   };
 
   const submitTicketReplyClient = async (ticket_id) => {
@@ -1622,6 +1684,44 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 <CardDescription>Handpicked high-probability tenders assigned by your MD/Operations Officer.</CardDescription>
               </CardHeader>
               <CardContent className="p-5">
+                 {/* 🚀 STAFF-ONLY: AI Tender Match & JV Hub — surfaces the MD's AI matchmaker
+                     feed (confidence score + JV partner suggestion) for this one client.
+                     Invisible to real clients; nothing below this block changes for them. */}
+                 {isStaffPreview && staffBidMatches.length > 0 && (
+                    <div className="mb-5 space-y-3">
+                       <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                          <Sparkles className="w-3.5 h-3.5" /> AI Tender Match & JV Hub
+                          <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
+                       </div>
+                       <div className="grid md:grid-cols-2 gap-3">
+                          {staffBidMatches.map((m) => (
+                             <div key={m._id || m.tender_id} className="border-t-4 border-t-indigo-600 border border-indigo-100 rounded-xl p-4 bg-indigo-50/30 tender-shadow">
+                                <div className="flex justify-between items-start gap-2 mb-2 flex-wrap">
+                                   <Badge className="bg-indigo-600 text-white border-0 text-[10px] font-bold">
+                                      AI Win Probability: {Math.round((Number(m.confidence) || 0) * 100)}%
+                                   </Badge>
+                                   {m.match_type === 'JV' && (
+                                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">JV Opportunity</Badge>
+                                   )}
+                                </div>
+                                <h4 className="font-bold text-[#0A2647] text-sm leading-tight mb-1">{m.tender_title}</h4>
+                                <p className="text-xs text-slate-500">
+                                   {m.tender_department}{m.tender_bid_no ? ` • ${m.tender_bid_no}` : ''}
+                                </p>
+                                {m.match_type === 'JV' && m.jv_partner && (
+                                   <div className="mt-3 bg-amber-50 border border-amber-200 rounded-md p-2.5">
+                                      <div className="text-[9px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1">
+                                         <Handshake className="w-3 h-3" /> Find JV Partner
+                                      </div>
+                                      <div className="text-xs font-semibold text-amber-900 mt-0.5">{m.jv_partner.company_name}</div>
+                                      <div className="text-[10px] text-amber-700">Combined Capacity: {formatINR(m.jv_partner.combined_capacity)}</div>
+                                   </div>
+                                )}
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                 )}
                  {recommendedTenders.length === 0 ? (
                     <div className="text-center py-6 text-slate-400 border-2 border-dashed rounded-xl border-blue-200 bg-white">
                       <Target className="w-8 h-8 mx-auto text-blue-200 mb-2" />
@@ -1875,6 +1975,41 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           <span className="text-sm font-semibold text-slate-700">Total EMD Paid</span>
                           <span className="text-lg font-black text-slate-800">₹{totalEmd.toLocaleString()}</span>
                        </div>
+
+                       {/* 🚀 STAFF-ONLY: Financial Powerhouse — EMD Loan / GeM Sahay have no
+                           real lender integration yet, so both are lead-capture (raise a
+                           Finance ticket to the MD). Invisible to real clients. */}
+                       {isStaffPreview && (
+                          <div className="border-t pt-4">
+                             <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                <Landmark className="w-4 h-4 text-amber-600"/> Working Capital & Funding
+                                <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
+                             </h4>
+                             <div className="space-y-2">
+                                <Button
+                                  onClick={() => submitLeadRequest('emd_loan')}
+                                  disabled={submittingLead === 'emd_loan'}
+                                  className="w-full bg-[#0A2647] hover:bg-[#144272] h-10 justify-between"
+                                >
+                                   <span className="flex items-center gap-2">
+                                      {submittingLead === 'emd_loan' ? <Loader2 className="w-4 h-4 animate-spin"/> : <IndianRupee className="w-4 h-4"/>}
+                                      Apply for EMD Loan
+                                   </span>
+                                </Button>
+                                <Button
+                                  onClick={() => submitLeadRequest('gem_sahay')}
+                                  disabled={submittingLead === 'gem_sahay'}
+                                  variant="outline"
+                                  className="w-full h-10 justify-between border-amber-200 text-amber-800 hover:bg-amber-50"
+                                >
+                                   <span className="flex items-center gap-2">
+                                      {submittingLead === 'gem_sahay' ? <Loader2 className="w-4 h-4 animate-spin"/> : <Landmark className="w-4 h-4"/>}
+                                      GeM Sahay (Bill Discounting)
+                                   </span>
+                                </Button>
+                             </div>
+                          </div>
+                       )}
                        
                        <div className="border-t pt-4">
                           <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
@@ -1933,6 +2068,29 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                     <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-slate-700"/> 24/7 SLA Support Desk</CardTitle>
                   </CardHeader>
                   <CardContent className="pt-5 space-y-6">
+                    {/* 🚀 STAFF-ONLY: Legal Defense & Support quick action — deep-links into the
+                        existing Bid Tools document generator with the new "GeM Show-Cause Notice
+                        Reply" doc type preselected. No new API route; reuses handleGenerateDoc. */}
+                    {isStaffPreview && (
+                       <div className="border border-slate-200 bg-slate-50 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-2.5">
+                             <Gavel className="w-5 h-5 text-slate-700 shrink-0 mt-0.5"/>
+                             <div>
+                                <p className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                   Legal Defense & Support
+                                   <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
+                                </p>
+                                <p className="text-xs text-slate-500 mt-0.5">Draft a formal reply to a GeM Show-Cause Notice on this client's behalf.</p>
+                             </div>
+                          </div>
+                          <Button
+                            onClick={() => { setDocForm(prev => ({ ...prev, doc_type: 'scn_reply' })); setActiveTab('bid_tools'); }}
+                            className="bg-slate-800 hover:bg-slate-900 h-10 shrink-0 w-full sm:w-auto"
+                          >
+                             <ScrollText className="w-4 h-4 mr-2"/> Generate GeM SCN Reply Draft
+                          </Button>
+                       </div>
+                    )}
                     <form onSubmit={handleTicketSubmit} className="space-y-4 border-b pb-6">
                       <div>
                         <Label className="text-xs text-slate-600 font-bold">Ticket Subject *</Label>
