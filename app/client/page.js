@@ -19,7 +19,7 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee, PenTool, Printer, UserCog
+  IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature
 } from 'lucide-react';
 
 const DEFAULT_VAULT_DOCS = [
@@ -36,6 +36,11 @@ const DEFAULT_VAULT_DOCS = [
   { id: 'firm_reg', name: 'Firm / Pvt Ltd Registration', status: 'missing', file: null },
   { id: 'other_license', name: 'Other Trade Licenses', status: 'missing', file: null }
 ];
+
+// Mirrors VAULT_MAX_UPLOAD_BYTES on the server. The ceiling comes from Vercel's ~4.5MB
+// serverless request body limit, not from R2 — a larger file is rejected by the platform
+// before our handler ever sees it, so we check here first and explain it properly.
+const VAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export default function ClientDashboard() {
   const { data: session, status } = useSession(); 
@@ -66,6 +71,13 @@ export default function ClientDashboard() {
 
   const [customDocForm, setCustomDocForm] = useState({ name: '', file: null });
   const [uploadingCustom, setUploadingCustom] = useState(false);
+  const [uploadingDocId, setUploadingDocId] = useState(null);
+
+  // --- AI Document Generator ---
+  const [docTypes, setDocTypes] = useState([]);
+  const [docForm, setDocForm] = useState({ doc_type: '', tender_id: '', instructions: '' });
+  const [generatingDoc, setGeneratingDoc] = useState(false);
+  const [generatedDoc, setGeneratedDoc] = useState(null);
 
   const [submittingAgreement, setSubmittingAgreement] = useState(false);
 
@@ -103,6 +115,9 @@ export default function ClientDashboard() {
     fetchClientData(e); 
     
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
+    // The generator's catalogue is served by the API so the dropdown can never offer a
+    // document type the backend would reject.
+    fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
   }, [session, status]);
 
  // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
@@ -300,24 +315,98 @@ export default function ClientDashboard() {
 
   const handleFileUpload = async (docId, e, customName = null) => {
     const file = e?.target?.files?.[0];
-    if(file) {
-      toast.info(`Uploading ${file.name} to Secure Vault...`);
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('docId', docId);
-      formData.append('email', email);
-      formData.append('clientName', profileForm.companyName || profileForm.clientName); 
-      if (customName) formData.append('customName', customName);
+    if (!file) return;
 
-      try {
-        const res = await fetch('/api/vault/upload', { method: 'POST', body: formData });
-        if(res.ok) {
-          toast.success(`Document uploaded successfully! Pending MD Approval.`);
-          if(customName) setCustomDocForm({ name: '', file: null });
-          fetchClientData(email); 
-        } else { toast.error('Upload failed. Please try again.'); }
-      } catch (err) { toast.error('Network Error during upload.'); }
+    // Check the size before spending the upload: the server rejects anything over this
+    // anyway, and a failed 5MB upload on mobile data is a wasted minute.
+    if (file.size > VAULT_MAX_UPLOAD_BYTES) {
+      return toast.error(
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)}MB. The limit is ${VAULT_MAX_UPLOAD_BYTES / 1024 / 1024}MB — ` +
+        'please compress the scan or split the document into parts.',
+        { duration: 9000 }
+      );
     }
+    if (file.size === 0) return toast.error('That file appears to be empty.');
+
+    setUploadingDocId(docId);
+    const toastId = toast.loading(`Uploading ${file.name} to your secure vault...`);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('docId', docId);
+    formData.append('email', email);
+    formData.append('clientName', profileForm.companyName || profileForm.clientName);
+    if (customName) formData.append('customName', customName);
+
+    try {
+      const res = await fetch('/api/vault/upload', { method: 'POST', body: formData });
+      const data = await res.json().catch(() => null);
+
+      if (res.ok) {
+        toast.success('Uploaded securely. Your Operations Officer will verify it shortly.', { id: toastId });
+        if (customName) setCustomDocForm({ name: '', file: null });
+        fetchClientData(email);
+      } else {
+        // Surface the server's reason (size, storage outage) instead of a generic failure.
+        toast.error(data?.error || `Upload failed (${res.status}). Please try again.`, { id: toastId, duration: 9000 });
+      }
+    } catch (err) {
+      toast.error('Network error during upload. Please check your connection and retry.', { id: toastId });
+    } finally {
+      setUploadingDocId(null);
+    }
+  };
+
+  // 🚀 AI Document Generator ------------------------------------------------------
+  const handleGenerateDoc = async (e) => {
+    e?.preventDefault?.();
+    if (!docForm.doc_type) return toast.error('Please choose a document type.');
+
+    setGeneratingDoc(true);
+    setGeneratedDoc(null);
+    try {
+      const res = await fetch('/api/ai/generate-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_email: email,
+          doc_type: docForm.doc_type,
+          tender_id: docForm.tender_id || undefined,
+          instructions: docForm.instructions || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        toast.error(data?.error || `Generation failed (${res.status})`, { duration: 9000 });
+        return;
+      }
+
+      setGeneratedDoc(data);
+      toast.success(`${data.doc_type?.label || 'Document'} drafted. Review it before printing.`);
+    } catch (err) {
+      console.error('Document generation failed:', err);
+      toast.error('Network error while generating the document.');
+    } finally {
+      setGeneratingDoc(false);
+    }
+  };
+
+  // Print only the A4 sheet. The body class drives the @media print rules in globals.css,
+  // which hide the dashboard chrome so the letter lands cleanly on pre-printed letterhead.
+  const handlePrintDoc = () => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.add('printing-document');
+
+    const cleanup = () => {
+      document.body.classList.remove('printing-document');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+
+    window.print();
+    // Safari/iOS does not always fire afterprint, so remove the class defensively.
+    setTimeout(cleanup, 1500);
   };
 
   const handleSignAgreement = async (e) => {
@@ -1025,7 +1114,10 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
               <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> Client Profile
             </TabsTrigger>
             <TabsTrigger value="vault" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
-              <Database className="w-4 h-4 mr-2 hidden sm:block"/> Corp Vault
+              <Lock className="w-4 h-4 mr-2 hidden sm:block"/> My Secure Vault
+            </TabsTrigger>
+            <TabsTrigger value="bid_tools" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
+              <Wand2 className="w-4 h-4 mr-2 hidden sm:block"/> Bid Tools
             </TabsTrigger>
             <TabsTrigger value="wins" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white font-semibold rounded-md">
               <Trophy className="w-4 h-4 mr-2 hidden sm:block"/> Winning Bids
@@ -1170,8 +1262,12 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
           <TabsContent value="vault" className="space-y-6">
             <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
               <CardHeader className="bg-slate-50 border-b pb-4">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2"><Database className="w-5 h-5 text-[#16a34a]"/> Corporate Document Vault</CardTitle>
-                <CardDescription>Upload your KYC and business documents. Approved documents are directly synced to your secure Google Drive folder.</CardDescription>
+                <CardTitle className="text-[#0A2647] flex items-center gap-2"><Lock className="w-5 h-5 text-[#16a34a]"/> My Secure Vault</CardTitle>
+                <CardDescription>
+                  Your KYC and business documents, held in encrypted cloud storage and released only to your
+                  Operations Officer. Approved documents are synced to your private Google Drive folder.
+                  Accepted formats: PDF or image scan, up to {VAULT_MAX_UPLOAD_BYTES / 1024 / 1024}MB per file.
+                </CardDescription>
               </CardHeader>
               <CardContent className="pt-6 space-y-8">
                  
@@ -1188,11 +1284,21 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                               </Badge>
                             </div>
                             {doc.status === 'rejected' && doc.reject_reason && (
-                               <p className="text-xs text-red-700 font-semibold mb-3">Reason: {doc.reject_reason}</p>
+                               <div className="bg-red-100 border border-red-300 rounded-lg p-2.5 mb-3">
+                                  <p className="text-[10px] font-black uppercase tracking-wider text-red-600 flex items-center gap-1 mb-0.5">
+                                     <XCircle className="w-3 h-3"/> Rejected by Verification Officer
+                                  </p>
+                                  <p className="text-xs text-red-800 font-semibold leading-snug">{doc.reject_reason}</p>
+                                  <p className="text-[10px] text-red-600 mt-1">Please correct this and upload the document again.</p>
+                               </div>
                             )}
-                            <label className="cursor-pointer flex items-center justify-center w-full bg-[#0A2647] hover:bg-[#144272] text-white p-2.5 rounded-lg transition text-xs font-semibold shadow-sm">
-                              <UploadCloud className="w-4 h-4 mr-2" /> Upload PDF
-                              <input type="file" className="hidden" accept=".pdf, image/*" onChange={(e) => handleFileUpload(doc.id, e)} />
+                            <label className={`flex items-center justify-center w-full text-white p-2.5 rounded-lg transition text-xs font-semibold shadow-sm ${
+                               uploadingDocId === doc.id ? 'bg-slate-400 cursor-wait' : 'bg-[#0A2647] hover:bg-[#144272] cursor-pointer'
+                            }`}>
+                              {uploadingDocId === doc.id
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading securely...</>
+                                : <><UploadCloud className="w-4 h-4 mr-2" /> {doc.status === 'rejected' ? 'Re-upload Document' : 'Upload PDF / Scan'}</>}
+                              <input type="file" className="hidden" disabled={uploadingDocId === doc.id} accept=".pdf, image/*" onChange={(e) => handleFileUpload(doc.id, e)} />
                             </label>
                          </div>
                        ))}
@@ -1282,6 +1388,163 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
 
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ============================================================================== */}
+          {/* TAB: BID TOOLS — AI AUTO-DOCUMENT GENERATOR */}
+          {/* ============================================================================== */}
+          <TabsContent value="bid_tools" className="space-y-6">
+            <Card className="tender-shadow border-t-4 border-t-indigo-600 no-print">
+              <CardHeader className="bg-indigo-50/40 border-b pb-4">
+                <CardTitle className="text-[#0A2647] flex items-center gap-2">
+                  <Wand2 className="w-5 h-5 text-indigo-600"/> Generate Tender Documents
+                </CardTitle>
+                <CardDescription>
+                  Draft formal bid paperwork from your company profile and the selected tender. Every draft is
+                  a starting point — review it, fill in the placeholders, then print it onto your letterhead.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <form onSubmit={handleGenerateDoc} className="space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-bold text-slate-600 mb-1.5 block">Document Type *</Label>
+                      <Select value={docForm.doc_type} onValueChange={(v) => setDocForm({ ...docForm, doc_type: v })}>
+                        <SelectTrigger className="h-11 bg-white">
+                          <SelectValue placeholder="Choose the document to draft..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {docTypes.map(t => (
+                            <SelectItem key={t.id} value={t.id}>
+                              <span className="font-semibold">{t.label}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {docForm.doc_type && (
+                        <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                          {docTypes.find(t => t.id === docForm.doc_type)?.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label className="text-xs font-bold text-slate-600 mb-1.5 block">Linked Tender (optional)</Label>
+                      <Select
+                        value={docForm.tender_id || 'none'}
+                        onValueChange={(v) => setDocForm({ ...docForm, tender_id: v === 'none' ? '' : v })}
+                      >
+                        <SelectTrigger className="h-11 bg-white">
+                          <SelectValue placeholder="No specific tender" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No specific tender</SelectItem>
+                          {publicTenders.map(t => (
+                            <SelectItem key={t._id || t.id} value={String(t._id || t.id)}>
+                              {t.bid_no ? `${t.bid_no} — ` : ''}{(t.title || 'Untitled').slice(0, 55)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                        Linking a tender fills in the bid number, department and closing date automatically.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-bold text-slate-600 mb-1.5 block">Special Instructions (optional)</Label>
+                    <Textarea
+                      rows={2}
+                      placeholder="e.g. Mention that we are an MSME and request EMD exemption under the MSE procurement policy."
+                      value={docForm.instructions}
+                      onChange={(e) => setDocForm({ ...docForm, instructions: e.target.value })}
+                      className="bg-white resize-none"
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between border-t pt-4">
+                    <p className="text-[11px] text-slate-500 leading-snug max-w-md">
+                      Drafts use your saved profile: company name, address, GSTIN and Udyam number. Keep your
+                      Client Profile up to date for accurate documents.
+                    </p>
+                    <Button
+                      type="submit"
+                      disabled={generatingDoc || !docForm.doc_type}
+                      className="bg-indigo-700 hover:bg-indigo-800 text-white h-11 px-6 shadow-sm shrink-0"
+                    >
+                      {generatingDoc
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Drafting document...</>
+                        : <><Sparkles className="w-4 h-4 mr-2"/> Generate Document</>}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+
+            {generatingDoc && (
+              <Card className="tender-shadow no-print">
+                <CardContent className="py-16 flex flex-col items-center justify-center">
+                  <Loader2 className="w-9 h-9 text-indigo-600 animate-spin mb-4" />
+                  <p className="font-bold text-[#0A2647]">Drafting your document...</p>
+                  <p className="text-sm text-slate-500 mt-1">This usually takes 10–20 seconds.</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {generatedDoc && !generatingDoc && (
+              <div className="space-y-4">
+                <Card className="tender-shadow no-print">
+                  <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-[#0A2647] flex items-center gap-2">
+                        <FileSignature className="w-4 h-4 text-indigo-600 shrink-0"/>
+                        {generatedDoc.doc_type?.label}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                        {generatedDoc.tender?.bid_no
+                          ? `Linked to ${generatedDoc.tender.bid_no}`
+                          : 'No tender linked'}
+                        {' · Review every [PLACEHOLDER] before submitting.'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <Button variant="outline" onClick={() => setGeneratedDoc(null)} className="h-9 text-xs">
+                        <XCircle className="w-3.5 h-3.5 mr-1.5"/> Discard
+                      </Button>
+                      <Button onClick={handlePrintDoc} className="h-9 text-xs bg-[#0A2647] hover:bg-[#144272] text-white shadow-sm">
+                        <Printer className="w-3.5 h-3.5 mr-1.5"/> Print / Save as PDF
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="bg-slate-200/70 rounded-xl p-4 sm:p-8 overflow-x-auto print-area">
+                  {/* 🚀 A4 sheet. `id` is what the @media print rules isolate, so the
+                      dashboard chrome disappears and only this page reaches the printer. */}
+                  <div id="a4-print-sheet" className="a4-sheet">
+                    {/* Letterhead spacer: the physical page already carries the printed
+                        letterhead, so leave room for it rather than reprinting it. */}
+                    <div className="letterhead-space no-print-border">
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-300 text-center">
+                        — space reserved for your pre-printed letterhead —
+                      </p>
+                    </div>
+
+                    <div
+                      className="a4-body"
+                      dangerouslySetInnerHTML={{ __html: generatedDoc.html }}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-400 text-center no-print max-w-2xl mx-auto leading-snug">
+                  AI-generated draft. Verify all facts, figures and clause references against the tender document
+                  before submission. Your consultancy is responsible for the final content of any document filed
+                  with a government department.
+                </p>
+              </div>
+            )}
           </TabsContent>
 
           {/* ============================================================================== */}
