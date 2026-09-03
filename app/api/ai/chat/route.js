@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { getGeminiApiKey } from '@/lib/env';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
-import { searchCopilotKnowledge } from '@/lib/gem-copilot-knowledge';
+import { searchCopilotKnowledge, isUsableCopilotText } from '@/lib/gem-copilot-knowledge';
 import {
   cosineSimilarity,
   embedQuery,
@@ -94,16 +94,24 @@ async function retrieveCopilotMemory(db, query) {
     const docs = await searchCopilotKnowledge(db, query, { limit: TOP_K });
     if (!docs.length) return null;
 
-    return {
-      results: docs.map((d) => ({
+    const results = docs
+      // 🚀 FIX: searchCopilotKnowledge already excludes extraction_ok:false docs,
+      // but this is a defense-in-depth belt-and-suspenders check — a doc with no
+      // usable text (legacy record predating the extraction_ok flag, etc.) must
+      // never be handed to Gemini as "context", or it reports empty/missing
+      // extractions instead of correctly falling through to the vector KB below.
+      .filter((d) => isUsableCopilotText(d.content_text))
+      .map((d) => ({
         text: String(d.content_text || '').slice(0, 6000),
         document_title: d.title || 'GeM Co-Pilot knowledge',
         source_url: d.r2_url || d.source_url || null,
         score: Number(d.score || 1),
         type: 'copilot_memory',
-      })),
-      strategy: 'gem_copilot_knowledge',
-    };
+      }));
+
+    if (!results.length) return null;
+
+    return { results, strategy: 'gem_copilot_knowledge' };
   } catch (err) {
     console.warn('[ai/chat] gem_copilot_knowledge lookup failed:', err?.message || err);
     return null;

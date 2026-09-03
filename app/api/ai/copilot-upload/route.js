@@ -60,6 +60,27 @@ async function extractPdfText(buffer, model) {
   return String(result.response.text() || '').trim();
 }
 
+// 🚀 FIX: extraction only "failed" the whole upload when Gemini *threw* — a call
+// that succeeded but returned almost nothing (blank/garbled scan, refusal, etc.)
+// fell through to a "[PDF stored in R2] <title>" placeholder and was still saved
+// as status: 'trained'. That placeholder then got fed to the Co-Pilot chat as if
+// it were real document content, producing "context text extractions are
+// empty/missing" replies. One retry covers a transient blip; if it still comes
+// back too short we now fail honestly instead of pretending it succeeded.
+async function extractPdfTextWithRetry(buffer, model, attempts = 2) {
+  let lastError = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const text = await extractPdfText(buffer, model);
+      if (text && text.length > 20) return { ok: true, text };
+      lastError = new Error('extraction returned too little text');
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  return { ok: false, error: lastError?.message || 'unknown error' };
+}
+
 async function trainOneFile(file, { db, model, uploadedBy, categoryOverride }) {
   const fileName = file?.name || 'document.pdf';
   if (typeof file?.arrayBuffer !== 'function') {
@@ -84,16 +105,13 @@ async function trainOneFile(file, { db, model, uploadedBy, categoryOverride }) {
     return { fileName, status: 'failed', error: 'Upload to Cloudflare R2 failed.' };
   }
 
-  let content_text = `[PDF stored in R2] ${title}`;
-  try {
-    const extracted = await extractPdfText(buffer, model);
-    if (extracted && extracted.length > 20) content_text = extracted.slice(0, 200000);
-  } catch (err) {
-    console.warn('[copilot-upload] text extract failed:', err?.message || err);
+  const extraction = await extractPdfTextWithRetry(buffer, model);
+  if (!extraction.ok) {
+    console.warn('[copilot-upload] text extract failed after retry:', extraction.error);
     return {
       fileName,
       status: 'failed',
-      error: `PDF stored, but text extraction failed: ${err?.message || 'unknown error'}`,
+      error: `PDF stored, but text extraction failed: ${extraction.error}`,
     };
   }
 
@@ -108,7 +126,8 @@ async function trainOneFile(file, { db, model, uploadedBy, categoryOverride }) {
     r2_key: uploaded.key,
     r2_url: uploaded.url,
     content_type: 'application/pdf',
-    content_text,
+    content_text: extraction.text.slice(0, 200000),
+    extraction_ok: true,
   });
 
   return {

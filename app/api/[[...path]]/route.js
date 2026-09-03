@@ -1166,12 +1166,16 @@ export async function PUT(request, { params }) {
 // DELETE REQUESTS 
 // =====================================================================
 export async function DELETE(request, { params }) {
-  const pathArray = params?.path || [];
-  const path = pathArray.join('/');
-  const { searchParams } = new URL(request.url);
-  const db = await getDb();
-  
+  // 🚀 FIX: getDb()/param parsing used to sit OUTSIDE the try block (like the old
+  // GET/PUT/POST bug already fixed elsewhere in this file) — a transient DB hiccup
+  // threw an unhandled error before any response body was ever written, so callers
+  // like "Cancel Request" just saw a bare failed fetch with no diagnosable JSON body.
   try {
+    const pathArray = params?.path || [];
+    const path = pathArray.join('/');
+    const { searchParams } = new URL(request.url);
+    const db = await getDb();
+
     if (path === 'users' || path === 'api/users') {
        const email = searchParams.get('email');
        if (!email) return json({ error: 'Missing Client Email' }, 400);
@@ -1635,6 +1639,15 @@ export async function POST(request, { params }) {
     // 🚀 FIX: Client submits reply (Updates query with data instead of deleting)
     if (path === 'queries/reply' || path === 'api/queries/reply') {
       const { queryId, email, description, fileName } = body;
+      // 🚀 FIX: the client form already marks this field required, but the API
+      // trusted that blindly — a stripped/empty request body silently saved a
+      // blank reply as if the officer's query had genuinely been answered.
+      if (!queryId || !email) {
+        return json({ error: 'Missing queryId or email' }, 400);
+      }
+      if (!String(description || '').trim()) {
+        return json({ error: 'Reply description cannot be empty' }, 400);
+      }
       await db.collection('users').updateOne(
         { email: email.toLowerCase(), "officer_queries.id": queryId },
         { $set: { 

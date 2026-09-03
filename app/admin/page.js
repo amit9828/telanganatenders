@@ -961,7 +961,11 @@ const handleViewDocument = (req) => {
               setFinancialRequests(prev => prev.filter(r => r.id !== reqId));
               toast.success("Payment Link Cancelled & Removed");
           } else {
-              toast.error("Failed to cancel payment.");
+              // 🚀 FIX: show the server's actual error instead of a fixed generic
+              // string, so a future failure (DB hiccup, bad id, etc.) is diagnosable
+              // straight from the toast instead of a dead end.
+              const data = await res.json().catch(() => null);
+              toast.error(data?.error || `Failed to cancel payment (${res.status}).`);
           }
       } catch(e) {
           toast.error("Network Error");
