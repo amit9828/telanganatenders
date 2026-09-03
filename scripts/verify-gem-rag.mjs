@@ -3,6 +3,11 @@
 import assert from 'node:assert/strict';
 import { chunkText, cosineSimilarity, normaliseWhitespace } from '../lib/gem-embeddings.js';
 import { htmlToText, SEED_DOCUMENTS, REMOTE_SOURCES } from '../lib/gem-knowledge.js';
+import { bidDocumentId } from '../lib/rag-ingest.js';
+import { classifyLink, isSafeRemoteUrl } from '../lib/tender-links.js';
+import { containsTelugu, languageContract, resolveAnswerLanguage, LANGUAGES } from '../lib/language.js';
+import { missingSlots, PHASE, REQUIRED_SLOTS } from '../lib/doc-session.js';
+import { FETCH_FAILURE, shouldRetryViaLocalAgent } from '../lib/remote-document.js';
 
 // --- normaliseWhitespace: PDF/HTML extraction produces whitespace soup that would
 // otherwise eat a large share of every chunk's token budget.
@@ -87,5 +92,68 @@ for (const src of REMOTE_SOURCES) {
   assert.ok(['pdf', 'html'].includes(src.type), `unknown source type: ${src.type}`);
   assert.ok(/^https:\/\//.test(src.url), `source ${src.id} must use https`);
 }
+
+// --- Per-bid vector ids: a typo here would mix two tenders' clauses in retrieval.
+assert.equal(bidDocumentId('GEM/2026/B/1234567', 'SOW', 0), 'bid::GEM-2026-B-1234567::SOW::0');
+assert.equal(bidDocumentId('gem/2026/b/99', 'ATC', 2), 'bid::GEM-2026-B-99::ATC::2');
+assert.ok(bidDocumentId('GEM/2026/B/1', 'SOW') !== bidDocumentId('GEM/2026/B/2', 'SOW'));
+
+// --- SSRF guard: a URL that came out of an AI-extracted PDF is attacker-influenced.
+assert.equal(isSafeRemoteUrl('https://bidplus.gem.gov.in/docs/sow.pdf'), true);
+assert.equal(isSafeRemoteUrl('https://mkp.gem.gov.in/documents/GTC.pdf'), true);
+assert.equal(isSafeRemoteUrl('http://127.0.0.1/secret'), false);
+assert.equal(isSafeRemoteUrl('http://localhost:3000/admin'), false);
+assert.equal(isSafeRemoteUrl('http://169.254.169.254/latest/meta-data/'), false);
+assert.equal(isSafeRemoteUrl('http://10.0.0.8/internal'), false);
+assert.equal(isSafeRemoteUrl('http://192.168.1.1/x'), false);
+assert.equal(isSafeRemoteUrl('ftp://gem.gov.in/file'), false);
+assert.equal(isSafeRemoteUrl('not a url'), false);
+
+// --- Link classification from surrounding prose, which is how GeM labels attachments.
+assert.equal(classifyLink('https://example.gov.in/x.pdf', 'Buyer Additional Terms'), 'ATC');
+assert.equal(classifyLink('https://example.gov.in/x.pdf', 'Scope of Work annexure'), 'SOW');
+assert.equal(classifyLink('https://example.gov.in/corrigendum-1.pdf', ''), 'CORRIGENDUM');
+assert.equal(classifyLink('https://example.gov.in/boq.xlsx', 'Bill of Quantity'), 'BOQ');
+
+// --- Telugu: detect script, honour the selector, pin the glossary, never-translate list.
+assert.equal(containsTelugu('What is the EMD?'), false);
+assert.equal(containsTelugu('ఈ బిడ్ యొక్క EMD ఎంత?'), true);
+assert.equal(resolveAnswerLanguage('What is the EMD?', LANGUAGES.AUTO), LANGUAGES.ENGLISH);
+assert.equal(resolveAnswerLanguage('ఈ బిడ్ యొక్క EMD ఎంత?', LANGUAGES.AUTO), LANGUAGES.TELUGU);
+assert.equal(resolveAnswerLanguage('ఈ బిడ్ యొక్క EMD ఎంత?', LANGUAGES.ENGLISH), LANGUAGES.ENGLISH);
+assert.equal(resolveAnswerLanguage('What is the EMD?', LANGUAGES.TELUGU), LANGUAGES.TELUGU);
+
+const teContract = languageContract(LANGUAGES.TELUGU);
+assert.ok(teContract.includes('Telugu'), 'Telugu contract must name the language');
+assert.ok(teContract.includes('GFR 2017'), 'statutory names must stay in English');
+assert.ok(teContract.includes('GEM/2026/B/1234567'), 'bid numbers must stay verbatim');
+assert.ok(teContract.includes('అండర్‌టేకింగ్'), 'glossary must pin a Telugu form for undertaking');
+assert.ok(teContract.includes('IN TELUGU'), 'refusals must stay in Telugu');
+
+const enContract = languageContract(LANGUAGES.ENGLISH);
+assert.ok(enContract.includes('English'));
+assert.ok(!enContract.includes('IN TELUGU'));
+
+// --- Document Studio gate: generation is forbidden while required slots are empty.
+assert.deepEqual(REQUIRED_SLOTS, ['doc_type', 'client_email', 'letterhead_id']);
+assert.deepEqual(missingSlots({}), REQUIRED_SLOTS);
+assert.deepEqual(
+  missingSlots({ doc_type: { ok: true }, client_email: { ok: true }, letterhead_id: { ok: true } }),
+  [],
+);
+assert.deepEqual(
+  missingSlots({ doc_type: { ok: true }, client_email: { ok: false }, letterhead_id: { ok: true } }),
+  ['client_email'],
+);
+assert.equal(PHASE.GATHERING, 'gathering');
+assert.equal(PHASE.OUTLINE_PENDING, 'outline_pending');
+assert.equal(PHASE.CONFIRMED, 'confirmed');
+assert.equal(PHASE.RENDERED, 'rendered');
+
+// --- Local agent is only the rescue for a login wall, never for a blocked or oversized URL.
+assert.equal(shouldRetryViaLocalAgent(FETCH_FAILURE.LOGIN_WALL), true);
+assert.equal(shouldRetryViaLocalAgent(FETCH_FAILURE.BLOCKED), false);
+assert.equal(shouldRetryViaLocalAgent(FETCH_FAILURE.TOO_LARGE), false);
+assert.equal(shouldRetryViaLocalAgent(FETCH_FAILURE.NOT_PDF), false);
 
 console.log('All GeM RAG checks passed.');

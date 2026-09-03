@@ -6,7 +6,7 @@ import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
-import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
+import DocStudio from '@/components/doc-studio/DocStudio';
 import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
@@ -2132,11 +2132,7 @@ const handleViewDocument = (req) => {
               <LetterheadManager />
             </div>
             <div className="mb-6">
-              <DocumentLetterheadGenerator
-                tenders={tenders}
-                clients={approvedClients}
-                defaultTenderId={isEditingTender || ''}
-              />
+              <DocStudio defaultTenderId={isEditingTender || ''} />
             </div>
             
             {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) - MD Bulk AI Dropzone 🚀 */}

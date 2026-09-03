@@ -7,7 +7,7 @@ import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
-import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
+import DocStudio from '@/components/doc-studio/DocStudio';
 import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import DashboardNav from '@/components/DashboardNav';
@@ -1771,11 +1771,7 @@ return (
 
           <TabsContent value="publisher" className="w-full space-y-6">
             <LetterheadManager />
-            <DocumentLetterheadGenerator
-              tenders={publicTenders}
-              clients={approvedClients}
-              defaultTenderId={isEditingTender || ''}
-            />
+            <DocStudio defaultTenderId={isEditingTender || ''} />
             <L1BenchmarkDropzone />
             <div className="grid lg:grid-cols-5 gap-6">
                
