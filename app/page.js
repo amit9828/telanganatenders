@@ -431,7 +431,13 @@ export default function App() {
       const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
       const r1 = await fetch(endpoint, { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ email: userEmail, phone: userPhone, plan: planId, tenderId: pendingTender?._id || pendingTender?.id }) 
+        body: JSON.stringify({
+          email: userEmail,
+          phone: userPhone,
+          plan: planId,
+          tenderId: pendingTender?._id || pendingTender?.id,
+          return_to: '/',
+        })
       });
       const d1 = await r1.json();
       

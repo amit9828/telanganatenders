@@ -122,6 +122,15 @@ export default function ClientDashboard() {
   const [staffBidMatches, setStaffBidMatches] = useState([]);
   const [submittingLead, setSubmittingLead] = useState('');
 
+  // Deep-link support for ?tab= — used by the post-payment redirect so a client who
+  // paid an invoice lands back on Finance instead of the default dashboard tab.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools'];
+    if (requested && allowed.includes(requested)) setActiveTab(requested);
+  }, []);
+
   useEffect(() => {
     setIsMounted(true);
     if (status === "loading") return; 
@@ -778,7 +787,11 @@ export default function ClientDashboard() {
             tenderId: payRecord.tenderId || null,
             pending_payment_id: payRecord.id,
             customAmount: payRecord.amount,
-            reason: payRecord.reason 
+            reason: payRecord.reason,
+            // 🚀 FIX: after Cashfree verification the client used to be dropped on the
+            // public home page, which looks like being logged out. Send them straight
+            // back to the finance tab they paid from.
+            return_to: '/client?tab=finance'
         }) 
       });
       const d1 = await r1.json();

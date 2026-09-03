@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
-import { getGeminiApiKey } from '@/lib/env';
+import { generateContent } from '@/lib/gemini';
 
 export const maxDuration = 60; // 🚀 FIX: Prevents Vercel 504 Timeout for AI
 
@@ -10,13 +9,6 @@ export async function POST(request) {
     const { pdfBase64, fileName, mimeType, uploadedBy, saveToDraft } = await request.json();
 
     if (!pdfBase64) return NextResponse.json({ error: 'PDF data missing' }, { status: 400 });
-    const geminiApiKey = getGeminiApiKey();
-    if (!geminiApiKey) return NextResponse.json({ error: 'GEMINI_API_KEY is not configured in Vercel' }, { status: 500 });
-
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-    // GEMINI_API_KEY is actually entitled to (verified live).
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
     const prompt = `
       You are an expert Tender Analyst. Read this document and extract ONLY the following key details. 
@@ -38,11 +30,13 @@ export async function POST(request) {
     
     let responseText = "";
     try {
-        const result = await model.generateContent([prompt, documentPart]);
-        responseText = result.response.text();
+        // Pro tier: a misread bid number or closing date here propagates into the
+        // published tender and every document generated from it.
+        const result = await generateContent({ parts: [prompt, documentPart], tier: 'pro' });
+        responseText = result.text;
     } catch (aiError) {
         console.error("Gemini API Error:", aiError);
-        return NextResponse.json({ error: `AI Error: ${aiError.message}` }, { status: 500 });
+        return NextResponse.json({ error: `AI Error: ${aiError.message}` }, { status: aiError?.status || 500 });
     }
     
     let parsedData = {};

@@ -98,6 +98,9 @@ export default function GeminiWorkspace({
   const [listening, setListening] = useState(false);
   const [speakingId, setSpeakingId] = useState(null);
   const [micSupported, setMicSupported] = useState(false);
+  // Server-side transcript id. Kept in localStorage so closing the panel, switching
+  // tabs or reloading the dashboard resumes the same conversation instead of wiping it.
+  const [conversationId, setConversationId] = useState(null);
 
   const threadRef = useRef(null);
   const inputRef = useRef(null);
@@ -110,6 +113,41 @@ export default function GeminiWorkspace({
 
   useEffect(() => {
     setMicSupported(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
+  }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('tt_copilot_conversation');
+    if (!stored) return;
+    setConversationId(stored);
+
+    let cancelled = false;
+    fetch(`/api/ai/chat?conversation_id=${encodeURIComponent(stored)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.messages?.length) return;
+        setMessages(data.messages.map((m) => ({
+          role: m.role === 'user' ? 'user' : 'assistant',
+          kind: m.role === 'user' ? undefined : 'markdown',
+          text: m.text,
+          sources: m.sources || [],
+        })));
+      })
+      .catch(() => {
+        // A missing or purged transcript just means starting fresh.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const rememberConversation = useCallback((id) => {
+    if (!id) return;
+    setConversationId(id);
+    try { localStorage.setItem('tt_copilot_conversation', id); } catch { /* private mode */ }
+  }, []);
+
+  const startNewConversation = useCallback(() => {
+    setConversationId(null);
+    setMessages([]);
+    try { localStorage.removeItem('tt_copilot_conversation'); } catch { /* private mode */ }
   }, []);
 
   useEffect(() => {
@@ -202,7 +240,8 @@ export default function GeminiWorkspace({
           setMessages((prev) => [...prev, {
             role: 'assistant',
             kind: 'text',
-            text: "Local GeM agent is offline. On this computer run `npm run gem:agent` in a terminal, then ask me again to launch the hunter.",
+            text: result.error
+              || 'I could not start the hunter from here. It opens a real Chrome window, so it only works from the app running on your own computer.',
           }]);
           return;
         }
@@ -217,8 +256,8 @@ export default function GeminiWorkspace({
           role: 'assistant',
           kind: 'text',
           text: result.already_running
-            ? 'Chrome is already open on your screen. Solve any CAPTCHA there — the hunter will resume automatically.'
-            : 'Chrome opened on your screen for GeM BidPlus. Solve CAPTCHA if prompted; the hunter will scrape Telangana & Andhra Pradesh bids and upsert them into MongoDB.',
+            ? 'The hunter is already running in the Chrome window on your screen.'
+            : 'Chrome is opening on GeM BidPlus and the search starts on its own. It will work through Telangana and Andhra Pradesh district by district and save every bid it finds. If GeM ever shows a real challenge on screen, solve it and the hunter resumes by itself.',
           meta: result.pid ? `pid ${result.pid}` : undefined,
         }]);
         return;
@@ -291,13 +330,18 @@ export default function GeminiWorkspace({
         method: 'POST',
         credentials: 'include',
         headers: staffHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ query: question, tender_id: askedTender || undefined }),
+        body: JSON.stringify({
+          query: question,
+          tender_id: askedTender || undefined,
+          conversation_id: conversationId || undefined,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setMessages((prev) => [...prev, { role: 'error', text: data?.error || `The Co-Pilot failed (${res.status}).` }]);
         return;
       }
+      rememberConversation(data.conversation_id);
       setMessages((prev) => [...prev, {
         role: 'assistant',
         kind: 'markdown',
@@ -332,13 +376,28 @@ export default function GeminiWorkspace({
                   <Badge className="bg-emerald-400/25 text-emerald-50 border-0 text-[10px] font-medium">
                     Memory: gem_copilot_knowledge first
                   </Badge>
+                  {conversationId && (
+                    <Badge className="bg-amber-400/25 text-amber-50 border-0 text-[10px] font-medium">
+                      Chat history saved
+                    </Badge>
+                  )}
                 </div>
               </div>
-              {!embedded && (
-                <button type="button" onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-white/10">
-                  <X className="w-4 h-4" />
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={startNewConversation}
+                  title="Start a new conversation"
+                  className="px-2 py-1 rounded-md hover:bg-white/10 text-[10px] font-bold uppercase tracking-wider"
+                >
+                  New chat
                 </button>
-              )}
+                {!embedded && (
+                  <button type="button" onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-white/10">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </header>
 
             <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50">

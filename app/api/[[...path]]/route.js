@@ -725,11 +725,72 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
-      // 🚀 FIX: Prevent ledger images from lagging the admin panel
-      const transactions = await db.collection('finance_ledger').find({}).project({ proof_base64: 0 }).sort({ created_at: -1 }).toArray();
-      const totalCredit = transactions.filter(t => t.type === 'CREDIT').reduce((sum, t) => sum + Number(t.amount), 0);
-      const totalDebit = transactions.filter(t => t.type === 'DEBIT').reduce((sum, t) => sum + Number(t.amount), 0);
-      return json({ transactions, balance: totalCredit - totalDebit });
+      // 🚀 FIX: Cashfree payments only ever landed in the `payments` collection, so the
+      // Balance Sheet Book (which reads `finance_ledger`) showed offline collections
+      // only, while the Net Balance figure added online revenue on top — the money was
+      // in the total but had no matching line item. Successful online payments are now
+      // projected into the same ledger view as read-only CREDIT rows. Doing it on read
+      // rather than writing duplicate ledger documents means every historical payment
+      // shows up immediately and there is no way for the two stores to drift apart.
+      const [manualTxns, onlinePayments, clientDirectory] = await Promise.all([
+        db.collection('finance_ledger').find({}).project({ proof_base64: 0 }).sort({ created_at: -1 }).toArray(),
+        db.collection('payments').find({ status: 'SUCCESS' }).sort({ paid_at: -1 }).toArray(),
+        db.collection('users').find({}, { projection: { email: 1, company_name: 1, client_name: 1, name: 1, client_id: 1 } }).toArray(),
+      ]);
+
+      const nameByEmail = new Map(
+        clientDirectory.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
+      );
+
+      const onlineTxns = onlinePayments.map(p => {
+        const email = String(p.email || '').toLowerCase();
+        return {
+          _id: `online-${p.order_id || p._id}`,
+          type: 'CREDIT',
+          amount: Number(p.amount) || 0,
+          reason: p.reason || `${p.plan === 'single' ? 'Tender/Service' : `${p.plan} subscription`} payment`,
+          client_id: email || 'N/A',
+          client_name: nameByEmail.get(email) || email,
+          email,
+          payment_mode: 'ONLINE',
+          source: 'cashfree',
+          order_id: p.order_id || null,
+          // Projected from `payments`, so there is no ledger document to edit or delete.
+          readonly: true,
+          created_at: p.paid_at || p.created_at || new Date(),
+        };
+      });
+
+      // Oldest → newest so each row can carry the balance as it stood after that entry,
+      // then flipped back to newest-first for display.
+      const chronological = [...manualTxns, ...onlineTxns]
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      let running = 0;
+      for (const txn of chronological) {
+        running += (txn.type === 'DEBIT' ? -1 : 1) * (Number(txn.amount) || 0);
+        txn.running_balance = running;
+      }
+      const transactions = chronological.reverse();
+
+      const sum = (rows, type) => rows
+        .filter(t => t.type === type)
+        .reduce((total, t) => total + (Number(t.amount) || 0), 0);
+
+      // The MD can also tag a hand-entered ledger row as ONLINE (a bank transfer, for
+      // example), so the split follows how the money arrived rather than which
+      // collection it lives in.
+      const manualOnline = manualTxns.filter(t => t.payment_mode === 'ONLINE');
+      const manualOffline = manualTxns.filter(t => t.payment_mode !== 'ONLINE');
+
+      const offlineBalance = sum(manualOffline, 'CREDIT') - sum(manualOffline, 'DEBIT');
+      const onlineBalance = sum(manualOnline, 'CREDIT') - sum(manualOnline, 'DEBIT') + sum(onlineTxns, 'CREDIT');
+
+      return json({
+        transactions,
+        balance: offlineBalance + onlineBalance,
+        breakdown: { offline: offlineBalance, online: onlineBalance },
+        online_payments: onlineTxns,
+      });
     }
 
     if (path === 'me' || path === 'api/me') {

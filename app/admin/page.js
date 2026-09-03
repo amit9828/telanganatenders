@@ -270,20 +270,20 @@ export default function AdminPage() {
       refreshLiveFeed(token, { silent: true });
 
       const approvedUsers = aRes.ok ? (aRes.data.users || []) : [];
-      const allSuccess = [];
-      approvedUsers.forEach(client => {
-          if (client.payments && client.payments.length > 0) {
-              client.payments.filter(p => p.status === 'SUCCESS').forEach(p => {
-                  allSuccess.push({ ...p, client_name: client.company_name || client.name, email: client.email });
-              });
-          }
-      });
-      setSuccessfulPaymentsLog(allSuccess.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
 
-      const onlineRevenue = sRes.ok ? (sRes.data.revenue || 0) : 0;
-      const offlineBal = ledgerRes.ok ? (ledgerRes.data.balance || 0) : 0;
-      setBreakdown({ offline: offlineBal, online: onlineRevenue });
-      setLedgerBalance(offlineBal + onlineRevenue);
+      // 🚀 FIX: this list used to be built from `client.payments`, a field the users
+      // collection never had — Cashfree payments live in their own `payments`
+      // collection — so "Successful Online Payments" was permanently empty even after
+      // a client had paid. The ledger endpoint now projects those payments, names
+      // already resolved, so read them straight from there.
+      if (ledgerRes.ok) {
+        setSuccessfulPaymentsLog(ledgerRes.data.online_payments || []);
+        // Net Balance previously added /api/admin/stats revenue on top of the ledger
+        // balance. Now that the ledger view already includes online credits, taking
+        // its own balance/breakdown is what keeps the total and the line items agreeing.
+        setLedgerBalance(ledgerRes.data.balance || 0);
+        setBreakdown(ledgerRes.data.breakdown || { offline: 0, online: 0 });
+      }
 
       setClientReports(approvedUsers.map(c => {
          const wonBids = (c.bids || []).filter(b => b.status === 'Won').length || c.stats?.won || 0;
@@ -520,10 +520,10 @@ export default function AdminPage() {
       }
       toast.success(
         result.already_running
-          ? 'Chrome is already open on your screen. Solve CAPTCHA if prompted.'
+          ? 'The hunter is already running in the Chrome window on your screen.'
           : result.via_popup
-            ? 'Opened the local hunter tab. If Chrome did not start, the agent is not running on this PC.'
-            : 'Chrome opened on your screen. Solve CAPTCHA if prompted.',
+            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
+            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
       );
     } finally {
       setLaunchingGem(false);
@@ -1427,7 +1427,12 @@ const handleViewDocument = (req) => {
                 <tr key={txn._id} className="group">
                   <td className="text-xs text-slate-500 whitespace-nowrap align-top">{new Date(txn.created_at).toLocaleDateString()}</td>
                   <td className="align-top">
-                    <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
+                    <p className="font-semibold text-slate-800 text-xs">
+                      {txn.reason}
+                      {txn.source === 'cashfree' && (
+                        <Badge className="ml-2 bg-sky-100 text-sky-800 border border-sky-200 text-[8px] px-1 py-0 align-middle">Cashfree</Badge>
+                      )}
+                    </p>
                     {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
                     
                     <p className="text-[10px] font-bold text-slate-500 mt-1">
@@ -1451,8 +1456,14 @@ const handleViewDocument = (req) => {
                     {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
                   </td>
                   <td className="align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
-                    <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
+                    {/* Cashfree rows are projected from the payments collection, not
+                        ledger documents — there is nothing to edit or delete. */}
+                    {!txn.readonly && (
+                      <>
+                        <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
+                        <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

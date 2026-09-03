@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { buildDocumentPrompt, DOC_TYPES, findDocType } from '@/lib/document-templates';
 import { sanitizeGeneratedHtml } from '@/lib/html-sanitize';
 import { findTenderByAnyId } from '@/lib/tender-lookup';
 import { fetchStationeryBuffer, isPubliclyServableUrl } from '@/lib/cloudflare-r2';
 import { bufferToDataUrl, wrapWithStationery } from '@/lib/stationery-html';
-import { getGeminiApiKey } from '@/lib/env';
+import { generateContent } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -90,11 +89,6 @@ export async function POST(request) {
         { status: 400 }
       );
     }
-    const geminiApiKey = getGeminiApiKey();
-    if (!geminiApiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
-    }
-
     const db = await getDb();
 
     const client = await db.collection('users').findOne(
@@ -126,20 +120,16 @@ export async function POST(request) {
       instructions: String(body?.instructions || '').trim().slice(0, MAX_INSTRUCTION_CHARS),
     });
 
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-    // GEMINI_API_KEY is actually entitled to (verified live).
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-
     let rawHtml;
     try {
-      const result = await model.generateContent(prompt);
-      rawHtml = result.response.text();
+      // Pro tier: these are signed legal declarations submitted to a government portal.
+      const result = await generateContent({ parts: prompt, tier: 'pro' });
+      rawHtml = result.text;
     } catch (aiError) {
       console.error('[generate-doc] Gemini call failed:', aiError?.message || aiError);
       return NextResponse.json(
         { error: `The AI service did not respond: ${aiError?.message || 'unknown error'}` },
-        { status: 502 }
+        { status: aiError?.status || 502 }
       );
     }
 

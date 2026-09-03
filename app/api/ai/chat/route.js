@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { ObjectId } from 'mongodb';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
-import { getGeminiApiKey } from '@/lib/env';
+import { generateContent } from '@/lib/gemini';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import { searchCopilotKnowledge, isUsableCopilotText } from '@/lib/gem-copilot-knowledge';
+import { findTenderByAnyId, suggestSimilarTenders } from '@/lib/tender-lookup';
+import { appendTurn, listConversations, loadConversation, renderHistory } from '@/lib/copilot-memory';
+import { requireStaff } from '@/lib/staff-auth';
 import {
   cosineSimilarity,
   embedQuery,
@@ -141,25 +142,17 @@ async function retrieveGemKnowledge(db, query) {
 // --- Tender-scoped context -------------------------------------------------
 
 async function loadTenderContext(db, tenderId) {
-  const projection = {
+  // 🚀 FIX: this used to match only `_id`/`id`, so a bid number typed into the chat
+  // ("GEM/2026/B/7938430") could never resolve and every such question died on
+  // "That tender could not be found." findTenderByAnyId also matches bid numbers,
+  // ignoring case and separator noise, plus the aliases the AI reads off the PDF.
+  const tender = await findTenderByAnyId(db, tenderId, {
     projection: {
-      title: 1, department: 1, bid_no: 1, last_date: 1, district: 1,
+      title: 1, department: 1, bid_no: 1, bid_no_aliases: 1, last_date: 1, district: 1,
       category: 1, emd_amount: 1, supply_details: 1,
       pdf_url: 1, pdf_r2_key: 1, pdf_filename: 1, pdf_base64: 1,
     },
-  };
-
-  const candidates = [];
-  if (ObjectId.isValid(tenderId)) {
-    try { candidates.push({ _id: new ObjectId(tenderId) }); } catch (_) { /* not an ObjectId */ }
-  }
-  candidates.push({ _id: tenderId }, { id: tenderId });
-
-  let tender = null;
-  for (const filter of candidates) {
-    tender = await db.collection('tenders').findOne(filter, projection);
-    if (tender) break;
-  }
+  });
   if (!tender) return null;
 
   const summary = [
@@ -195,25 +188,61 @@ async function loadTenderContext(db, tenderId) {
 
 // --- Handler ---------------------------------------------------------------
 
+/**
+ * Restores a saved thread so reopening the Co-Pilot does not start from a blank page.
+ * With no `conversation_id`, returns the caller's recent conversations.
+ */
+export async function GET(request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const conversationId = searchParams.get('conversation_id');
+
+    if (conversationId) {
+      const conversation = await loadConversation(db, conversationId);
+      if (!conversation) return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 });
+      return NextResponse.json({
+        conversation_id: conversation.conversation_id,
+        tender_id: conversation.tender_id || null,
+        messages: (conversation.messages || []).map((m) => ({
+          role: m.role,
+          text: m.text,
+          sources: m.sources || [],
+          at: m.at,
+        })),
+      });
+    }
+
+    const auth = await requireStaff(request).catch(() => ({ ok: false }));
+    const owner = auth.ok ? (auth.email || auth.actor || 'staff') : 'staff';
+    return NextResponse.json({ conversations: await listConversations(db, owner) });
+  } catch (error) {
+    console.error('[ai/chat] history load failed:', error);
+    return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
+  }
+}
+
 export async function POST(request) {
   try {
     const body = await request.json().catch(() => null);
     const query = String(body?.query || '').trim().slice(0, MAX_QUERY_CHARS);
     const tenderId = body?.tender_id ? String(body.tender_id) : null;
+    const conversationId = body?.conversation_id ? String(body.conversation_id) : null;
 
     if (!query) {
       return NextResponse.json({ error: 'Please enter a question.' }, { status: 400 });
     }
-    const geminiApiKey = getGeminiApiKey();
-    if (!geminiApiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
-    }
 
     const db = await getDb();
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-    // GEMINI_API_KEY is actually entitled to (verified live).
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+
+    // Identity is best-effort: the floating client-side Co-Pilot is unauthenticated, and
+    // it only decides which transcript a turn is filed under.
+    const auth = await requireStaff(request).catch(() => ({ ok: false }));
+    const owner = auth.ok ? (auth.email || auth.actor || 'staff') : 'staff';
+
+    // Prior turns of this conversation, so follow-ups like "and its EMD?" resolve.
+    const conversation = await loadConversation(db, conversationId);
+    const history = renderHistory(conversation);
 
     const parts = [];
     let sources = [];
@@ -224,7 +253,16 @@ export async function POST(request) {
       // Context Logic A — strictly bounded to this one tender.
       const tender = await loadTenderContext(db, tenderId);
       if (!tender) {
-        return NextResponse.json({ error: 'That tender could not be found.' }, { status: 404 });
+        // A bare "not found" hides the real cause, which is almost always a bid number
+        // typed into the tender record that disagrees with the one printed on the PDF.
+        const suggestions = await suggestSimilarTenders(db, tenderId);
+        return NextResponse.json({
+          error: suggestions.length
+            ? `No tender is recorded under ${tenderId}. Closest matches on file: `
+              + `${suggestions.map((s) => s.bid_no || s.id).join(', ')}.`
+            : `No tender is recorded under ${tenderId}. Publish it, or open the tender in the dashboard and ask again.`,
+          suggestions,
+        }, { status: 404 });
       }
 
       mode = 'tender';
@@ -232,6 +270,7 @@ export async function POST(request) {
 
       parts.push(
         `${SYSTEM_PROMPT}\n\n` +
+        (history ? `EARLIER IN THIS CONVERSATION:\n${history}\n\n` : '') +
         `CONTEXT — the officer is asking about this specific live tender.\n\n` +
         `${tender.summary}\n\n` +
         (tender.pdfBuffer
@@ -282,24 +321,46 @@ export async function POST(request) {
 
       parts.push(
         `${SYSTEM_PROMPT}\n\n` +
+        (history ? `EARLIER IN THIS CONVERSATION:\n${history}\n\n` : '') +
         `CONTEXT — extracts from the ${contextLabel}:\n\n${context}\n\n` +
         `QUESTION: ${query}`
       );
     }
 
     let answer;
+    let model;
     try {
-      const result = await model.generateContent(parts);
-      answer = result.response.text();
+      // Pro tier: bid documents are legal text where a paraphrase is a wrong answer.
+      const result = await generateContent({ parts, tier: 'pro' });
+      answer = result.text;
+      model = result.model;
     } catch (aiError) {
       console.error('[ai/chat] Gemini call failed:', aiError?.message || aiError);
       return NextResponse.json(
         { error: `The AI service did not respond: ${aiError?.message || 'unknown error'}` },
-        { status: 502 }
+        { status: aiError?.status || 502 }
       );
     }
 
-    return NextResponse.json({ answer, sources, mode, retrieval });
+    const savedConversationId = await appendTurn(db, {
+      conversationId,
+      owner,
+      tenderId,
+      question: query,
+      answer,
+      sources,
+      mode,
+      model,
+    });
+
+    return NextResponse.json({
+      answer,
+      sources,
+      mode,
+      retrieval,
+      model,
+      conversation_id: savedConversationId,
+    });
   } catch (error) {
     console.error('[ai/chat] fatal error:', error);
     return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });

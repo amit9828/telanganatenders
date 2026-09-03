@@ -228,7 +228,7 @@ export default function EmployeeDashboard() {
     try {
       const result = await launchGemHunter();
       if (result.offline) {
-        toast.error(result.error || "Local agent not running. Run 'npm run gem:agent' in terminal.");
+        toast.error(result.error || 'Could not start the hunter on this computer.');
         return;
       }
       if (!result.ok) {
@@ -237,10 +237,10 @@ export default function EmployeeDashboard() {
       }
       toast.success(
         result.already_running
-          ? 'Chrome is already open on your screen. Solve CAPTCHA if prompted.'
+          ? 'The hunter is already running in the Chrome window on your screen.'
           : result.via_popup
-            ? 'Opened the local hunter tab. If Chrome did not start, the agent is not running on this PC.'
-            : 'Chrome opened on your screen. Solve CAPTCHA if prompted.',
+            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
+            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
       );
     } finally {
       setLaunchingGem(false);

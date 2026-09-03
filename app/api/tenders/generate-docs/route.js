@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { requireDashboardStaff } from '@/lib/staff-auth';
 import { findTenderByAnyId } from '@/lib/tender-lookup';
 import { sanitizeGeneratedHtml } from '@/lib/html-sanitize';
 import { searchCopilotKnowledge } from '@/lib/gem-copilot-knowledge';
-import { getGeminiApiKey } from '@/lib/env';
+import { generateContent } from '@/lib/gemini';
 import {
   DOC_TYPES,
   PACKAGE_100X_TYPES,
@@ -110,7 +109,7 @@ async function buildPdf({ title, plainText, letterhead }) {
   return Buffer.from(await pdf.save());
 }
 
-async function draftOne({ model, docType, client, tender, copilotContext, letterhead, signatureSrc }) {
+async function draftOne({ docType, client, tender, copilotContext, letterhead, signatureSrc }) {
   const prompt = buildDocumentPrompt({
     docType,
     client,
@@ -121,8 +120,9 @@ async function draftOne({ model, docType, client, tender, copilotContext, letter
       'address block or logo — those are already on the letterhead. Start with the date and recipient, then the body.',
   });
 
-  const result = await model.generateContent(prompt);
-  const unfenced = String(result.response.text() || '')
+  // Pro tier: each of these is signed and uploaded to the bid.
+  const result = await generateContent({ parts: prompt, tier: 'pro' });
+  const unfenced = String(result.text || '')
     .replace(/^\s*```(?:html)?/i, '')
     .replace(/```\s*$/, '')
     .trim();
@@ -168,11 +168,6 @@ export async function GET() {
 export async function POST(request) {
   const auth = await requireDashboardStaff(request);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
-  const geminiApiKey = getGeminiApiKey();
-  if (!geminiApiKey) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
-  }
 
   try {
     const body = await request.json().catch(() => null);
@@ -248,11 +243,6 @@ export async function POST(request) {
     }
     signatureSrc = (await loadStationerySrc(client.signature_url, client.signature_r2_key)).src;
 
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-    // GEMINI_API_KEY is actually entitled to (verified live).
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-
     const typesToDraft = isPackage
       ? PACKAGE_100X_TYPES.map(findDocType).filter(Boolean)
       : [primaryType];
@@ -262,7 +252,6 @@ export async function POST(request) {
     // instead of one-at-a-time to keep the whole request comfortably inside
     // maxDuration on Vercel.
     const files = await Promise.all(typesToDraft.map((docType) => draftOne({
-      model,
       docType,
       client,
       tender,

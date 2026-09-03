@@ -38,6 +38,8 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  // Server-side transcript id, so a follow-up question keeps the earlier context.
+  const [conversationId, setConversationId] = useState(null);
 
   const threadRef = useRef(null);
   const inputRef = useRef(null);
@@ -75,7 +77,11 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: question, tender_id: askedWithTender || undefined }),
+        body: JSON.stringify({
+          query: question,
+          tender_id: askedWithTender || undefined,
+          conversation_id: conversationId || undefined,
+        }),
       });
       const data = await res.json().catch(() => null);
 
@@ -87,6 +93,7 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
         return;
       }
 
+      if (data?.conversation_id) setConversationId(data.conversation_id);
       setMessages(prev => [...prev, {
         role: 'assistant',
         text: data?.answer || 'No answer was returned.',
@@ -152,7 +159,7 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
         </button>
         <button
           type="button"
-          onClick={() => { setOpen(false); setMessages([]); }}
+          onClick={() => { setOpen(false); setMessages([]); setConversationId(null); }}
           aria-label="Close and clear conversation"
           className="p-1.5 rounded-md hover:bg-white/10 transition"
         >

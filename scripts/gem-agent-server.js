@@ -76,7 +76,7 @@ function launchHtml(result) {
   const title = result.already_running ? 'Hunter already running' : 'Chrome launched';
   const body = result.already_running
     ? 'The visible Chrome window is already hunting. You can close this tab.'
-    : 'Chrome opened on your screen. Solve CAPTCHA if prompted, then close this tab.';
+    : 'Chrome is opening and the search starts on its own. You can close this tab.';
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>${title}</title></head>
 <body style="font-family:Segoe UI,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1.25rem;color:#0A2647">
   <h1 style="font-size:1.25rem">${title}</h1>
@@ -103,7 +103,7 @@ app.post('/api/launch-gem', (_req, res) => {
       success: true,
       message: result.already_running
         ? 'Hunter is already running in the visible Chrome window.'
-        : 'Chrome launched. Solve CAPTCHA on screen if prompted.',
+        : 'Chrome is opening and the search starts on its own.',
       ...result,
     });
   } catch (err) {

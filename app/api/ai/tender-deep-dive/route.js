@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { requireStaff } from '@/lib/staff-auth';
-import { findTenderByAnyId } from '@/lib/tender-lookup';
+import { findTenderByAnyId, suggestSimilarTenders } from '@/lib/tender-lookup';
 import { extractTenderLinks, isSafeRemoteUrl } from '@/lib/tender-links';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
-import { getGeminiApiKey } from '@/lib/env';
+import { generateContent } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -113,18 +112,22 @@ export async function POST(request) {
     const auth = await requireStaff(request);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-    const geminiApiKey = getGeminiApiKey();
-    if (!geminiApiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
-    }
-
     const body = await request.json().catch(() => null);
     const tenderId = body?.tender_id ? String(body.tender_id).trim() : '';
     if (!tenderId) return NextResponse.json({ error: 'tender_id is required.' }, { status: 400 });
 
     const db = await getDb();
     const tender = await findTenderByAnyId(db, tenderId);
-    if (!tender) return NextResponse.json({ error: 'That tender could not be found.' }, { status: 404 });
+    if (!tender) {
+      const suggestions = await suggestSimilarTenders(db, tenderId);
+      return NextResponse.json({
+        error: suggestions.length
+          ? `No tender is recorded under ${tenderId}. Closest matches on file: `
+            + `${suggestions.map((s) => s.bid_no || s.id).join(', ')}.`
+          : `No tender is recorded under ${tenderId}.`,
+        suggestions,
+      }, { status: 404 });
+    }
 
     // Reading three PDFs through Gemini costs real time and tokens, so a completed dive is
     // cached on the tender and replayed unless the caller explicitly asks to redo it.
@@ -194,20 +197,19 @@ export async function POST(request) {
       `EMD: ${tender.emd_amount || 'n/a'}\n\n` +
       `Documents supplied: ${documentsRead.map((d) => d.type).join(', ')}\n`;
 
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-    // GEMINI_API_KEY is actually entitled to (verified live).
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-
     let markdown;
     try {
-      const result = await model.generateContent([DEEP_DIVE_PROMPT, contextHeader, ...parts]);
-      markdown = String(result.response.text() || '').trim();
+      // Pro tier: eligibility clauses decide whether a bid is worth entering.
+      const result = await generateContent({
+        parts: [DEEP_DIVE_PROMPT, contextHeader, ...parts],
+        tier: 'pro',
+      });
+      markdown = result.text.trim();
     } catch (aiError) {
       console.error('[tender-deep-dive] Gemini call failed:', aiError?.message || aiError);
       return NextResponse.json(
         { error: `The AI service could not read the documents: ${aiError?.message || 'unknown error'}` },
-        { status: 502 }
+        { status: aiError?.status || 502 }
       );
     }
 
