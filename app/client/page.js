@@ -1983,6 +1983,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 </Card>
              </div>
 
+
              {/* 3. OFFICER DOCUMENT QUERIES TRACKER CARD */}
              <Card className="tender-shadow border-t-4 border-t-orange-500">
                <CardHeader className="pb-4 border-b bg-orange-50/50">
