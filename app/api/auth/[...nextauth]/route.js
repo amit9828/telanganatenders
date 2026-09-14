@@ -40,12 +40,18 @@ const handler = NextAuth({
         });
         
         if (employee) {
+          // 🚀 RBAC: binary access role used for data-isolation filters (Bids /
+          // Suggestions). Independent of `employee.role`, which stays a job-title
+          // label ("Tender Officer" / "Data Entry Emp" / "Manager (MD)") used
+          // elsewhere and is left untouched.
+          const mdEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+          const isMD = Boolean(mdEmail) && String(employee.email || '').toLowerCase() === mdEmail;
           return { 
              id: employee._id.toString(), 
              email: employee.email, 
              name: employee.name, 
              emp_id: employee.emp_id, 
-             role: employee.role || 'Employee' 
+             role: isMD ? 'MD' : 'EMPLOYEE',
           };
         }
         return null; // Invalid credentials
@@ -97,12 +103,14 @@ const handler = NextAuth({
            });
 
            if (emp) {
+              const mdEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+              const isMD = Boolean(mdEmail) && String(emp.email || '').toLowerCase() === mdEmail;
               return { 
                  id: emp._id.toString(), 
                  email: emp.email, 
                  name: emp.name, 
                  emp_id: emp.emp_id, 
-                 role: emp.role || 'Employee',
+                 role: isMD ? 'MD' : 'EMPLOYEE',
                  is_bypass: true
               };
            }
@@ -158,6 +166,12 @@ const handler = NextAuth({
     async jwt({ token, user }) {
       if (user) {
          token.email = user.email?.toLowerCase();
+         // 🚀 RBAC: id/name weren't previously copied onto the token, so
+         // session.user.id/name resolved to undefined for employee logins.
+         // resolveActorRole() (lib/staff-auth.js) and the record-stamping routes
+         // depend on token.name for denormalized attribution.
+         if (user.id) token.id = user.id;
+         if (user.name) token.name = user.name;
          if (user.client_id) token.client_id = user.client_id;
          if (user.emp_id) token.emp_id = user.emp_id; 
          if (user.role) token.role = user.role;
@@ -173,6 +187,8 @@ const handler = NextAuth({
     async session({ session, token }) {
       if (token?.email) {
          session.user.email = token.email;
+         if (token.id) session.user.id = token.id;
+         if (token.name) session.user.name = token.name;
          if (token.client_id) session.user.client_id = token.client_id;
          if (token.emp_id) session.user.emp_id = token.emp_id; 
          if (token.role) session.user.role = token.role; 

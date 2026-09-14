@@ -17,6 +17,10 @@ import {
 // both this catch-all route AND app/api/payments/route.js without violating
 // Next.js's route.js export contract. Only thin delegating calls remain below.
 import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '@/lib/payments';
+// 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
+// bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
+// bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
+import { resolveActorRole } from '@/lib/staff-auth';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const dynamic = 'force-dynamic';
@@ -677,12 +681,56 @@ async function handleGET(request, { params }, attempt = 1) {
       const targetId = searchParams.get('target_id');
       let query = {};
       if (targetId) query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') }; 
+      else {
+        // 🚀 RBAC: Employee dashboard call (no target_id — it loads everything and
+        // splits client_alert vs employee_task client-side, see mdTasks in
+        // app/employee/page.js). Isolate only the 'client_alert' suggestions this
+        // employee authored to their own employee_id; 'employee_task' (MD -> employee
+        // assignments) and every other target_type stay fully visible so the
+        // employee still sees work the MD assigned to them. MD/unresolved: unfiltered.
+        const actor = await resolveActorRole(request);
+        if (actor.role === 'EMPLOYEE') {
+          query.$or = [
+            { target_type: { $ne: 'client_alert' } },
+            { target_type: 'client_alert', employee_id: actor.empId },
+          ];
+        }
+      }
       const dispatches = await db.collection('dispatches')
          .find(query)
          .project({ file_base64: 0 }) // 🚀 FIX: Block heavy task attachment loads
          .sort({ created_at: -1 })
          .toArray();
       return json({ dispatches });
+    }
+
+    // 🚀 RBAC: MD-only global module — every officer's client_alert tender
+    // suggestions across the whole team, with employee attribution, so the MD can
+    // see who suggested what without any employee seeing a teammate's suggestions
+    // (that isolation lives in the plain 'dispatches' branch above).
+    if (path === 'dispatches/suggestions' || path === 'api/dispatches/suggestions') {
+      const actor = await resolveActorRole(request);
+      if (actor.role !== 'MD') return json({ error: 'This view is restricted to the MD.' }, 403);
+
+      const [suggestions, clientDirectory] = await Promise.all([
+        db.collection('dispatches').find({ target_type: 'client_alert' }).sort({ created_at: -1 }).toArray(),
+        db.collection('users').find({}, { projection: { email: 1, company_name: 1, client_name: 1, name: 1, client_id: 1 } }).toArray(),
+      ]);
+
+      // Same in-memory-map lookup pattern as `nameByEmail` in the finance/ledger
+      // handler below — target_id on a client_alert dispatch is always the
+      // client's email (proved by the client-dashboard read at target_id: user.email).
+      const nameByEmail = new Map(
+        clientDirectory.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
+      );
+
+      const enriched = suggestions.map(s => ({
+        ...s,
+        client_display_name: nameByEmail.get(String(s.target_id || '').toLowerCase()) || s.target_id || 'Unknown Client',
+        employee_name: s.employee_name || 'Legacy / Unassigned',
+      }));
+
+      return json({ suggestions: enriched });
     }
 
     if (path === 'gov-officers' || path === 'api/gov-officers') {
@@ -714,9 +762,42 @@ async function handleGET(request, { params }, attempt = 1) {
     if (path === 'bids' || path === 'api/bids') {
       const clientEmail = searchParams.get('client_email');
       let query = {};
-      if (clientEmail) query.client_email = clientEmail.toLowerCase();
+      if (clientEmail) {
+        // Client's own "My Bids" view — scoped by client, never by employee.
+        query.client_email = clientEmail.toLowerCase();
+      } else {
+        // 🚀 RBAC: Employee dashboard call (no client_email). Strictly isolate to
+        // bids this employee created/claimed; MD (and unresolved/legacy callers)
+        // keep the unfiltered global view.
+        const actor = await resolveActorRole(request);
+        if (actor.role === 'EMPLOYEE') query.employee_id = actor.empId;
+      }
       const bids = await db.collection('bids').find(query).sort({ created_at: -1 }).toArray();
       return json({ bids });
+    }
+
+    // 🚀 RBAC: MD-only global module — every live (non-terminal) bid across the
+    // whole team, with employee attribution.
+    if (path === 'bids/tracking' || path === 'api/bids/tracking') {
+      const actor = await resolveActorRole(request);
+      if (actor.role !== 'MD') return json({ error: 'This view is restricted to the MD.' }, 403);
+
+      const [tracking, clientDirectory] = await Promise.all([
+        db.collection('bids').find({ status: { $nin: ['Won', 'Lost'] } }).sort({ created_at: -1 }).toArray(),
+        db.collection('users').find({}, { projection: { email: 1, company_name: 1, client_name: 1, name: 1, client_id: 1 } }).toArray(),
+      ]);
+
+      const nameByEmail = new Map(
+        clientDirectory.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
+      );
+
+      const enriched = tracking.map(b => ({
+        ...b,
+        client_display_name: nameByEmail.get(String(b.client_email || '').toLowerCase()) || b.client_email || 'Unknown Client',
+        employee_name: b.employee_name || 'Legacy / Unassigned',
+      }));
+
+      return json({ tracking: enriched });
     }
 
     if (path === 'employees' || path === 'api/employees') {
@@ -1069,6 +1150,19 @@ export async function PUT(request, { params }) {
            { _id: new ObjectId(bid_id) },
            { $set: updateData }
         );
+
+        // 🚀 RBAC: auto-claim on first touch. Bids created before this rollout (or by
+        // the MD) have no employee_id; the first employee to update one becomes its
+        // owner for isolation going forward. The $exists:false filter guarantees this
+        // never overwrites a bid another employee already claimed.
+        const actor = await resolveActorRole(request);
+        if (actor.role === 'EMPLOYEE') {
+           await db.collection('bids').updateOne(
+              { _id: new ObjectId(bid_id), employee_id: { $exists: false } },
+              { $set: { employee_id: actor.empId, employee_email: actor.email, employee_name: actor.name } }
+           );
+        }
+
         return json({ success: true });
      }
 
@@ -1645,8 +1739,17 @@ export async function POST(request, { params }) {
 
     if (path === 'dispatches' || path === 'api/dispatches') {
        const { target_type, target_id, subject, message } = body;
+       // 🚀 RBAC: 'client_alert' is an officer suggesting a tender to a client
+       // (handleSuggestTender in app/employee/page.js) — stamp who made the
+       // suggestion so it isolates per-employee (GET /api/dispatches below).
+       // 'employee_task' (MD assigning work to an employee) and every other
+       // target_type already carries its own meaning via target_id and is untouched.
+       const actor = await resolveActorRole(request);
+       const ownerFields = (target_type === 'client_alert' && actor.role === 'EMPLOYEE')
+          ? { employee_id: actor.empId, employee_email: actor.email, employee_name: actor.name }
+          : {};
        const result = await db.collection('dispatches').insertOne({
-          target_type, target_id, subject, message, status: 'Sent', created_at: new Date()
+          target_type, target_id, subject, message, status: 'Sent', created_at: new Date(), ...ownerFields
        });
        return json({ success: true, id: result.insertedId });
     }
@@ -1660,8 +1763,15 @@ export async function POST(request, { params }) {
 
     if (path === 'bids' || path === 'api/bids') {
        const status = body.status || 'Doc Preparation';
+       // 🚀 RBAC: stamp task ownership at creation — the employee who added this bid
+       // tracking row is the only one who should see it later (GET /api/bids below).
+       // MD-created rows (admin_token) get no employee_id, same bucket as legacy data.
+       const actor = await resolveActorRole(request);
+       const ownerFields = actor.role === 'EMPLOYEE'
+          ? { employee_id: actor.empId, employee_email: actor.email, employee_name: actor.name }
+          : {};
        const result = await db.collection('bids').insertOne({
-          ...body, status: status, created_at: new Date()
+          ...body, status: status, created_at: new Date(), ...ownerFields
        });
        return json({ success: true, id: result.insertedId });
     }

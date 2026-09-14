@@ -14,6 +14,7 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import { formatINR } from '@/lib/format';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
+import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -38,14 +39,9 @@ import {
   ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot
 } from 'lucide-react';
 
-const DISTRICTS = [
-  'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
-  'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
-  'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad',
-  'Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore',
-  'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru',
-  'Srikakulam', 'Vizianagaram', 'Prakasam'
-];
+// 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
+// drifted from the AP district list used elsewhere.
+const DISTRICTS = TS_AP_DISTRICTS;
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -187,6 +183,14 @@ export default function AdminPage() {
   const [liveFeedToday, setLiveFeedToday] = useState('');
   const [liveFeedLoading, setLiveFeedLoading] = useState(false);
 
+  // 🚀 RBAC: MD-only "Team Activity" — every officer's suggestions + every live bid
+  // across the whole team, with attribution (GET /api/dispatches/suggestions,
+  // GET /api/bids/tracking). Lazy-loaded only when that tab opens, not part of the
+  // main polling refresh() below.
+  const [teamSuggestions, setTeamSuggestions] = useState([]);
+  const [teamTracking, setTeamTracking] = useState([]);
+  const [teamActivityLoading, setTeamActivityLoading] = useState(false);
+
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
     if (t) setToken(t);
@@ -211,6 +215,15 @@ export default function AdminPage() {
 
   // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
+
+  // 🚀 Lazy-load the Team Activity module only when its tab opens — same
+  // "independent of the main refresh cycle" pattern as refreshLiveFeed().
+  useEffect(() => {
+    if (activeTab === 'team-activity' && token) {
+      fetchTeamActivity();
+    }
+    // eslint-disable-next-line
+  }, [activeTab, token]);
 
   // 🚀 FIX: Bulletproof refresh — one blocked/failing route (e.g. expired-tender
   // filter accidentally hiding admin data, a network blip, a non-JSON error page)
@@ -327,6 +340,34 @@ export default function AdminPage() {
       if (!silent) toast.error('Network error while loading live scraped tenders.');
     } finally {
       setLiveFeedLoading(false);
+    }
+  };
+
+  // 🚀 RBAC: MD-only global attribution views — independent of the main refresh()
+  // Promise.all so every employee's suggestions/tracking don't get pulled on every
+  // 60s poll; only fetched when the "Team Activity" tab is actually open.
+  const fetchTeamActivity = async (authToken = token) => {
+    if (!authToken) return;
+    setTeamActivityLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${authToken}` };
+      const [sugRes, trkRes] = await Promise.all([
+        fetch(`/api/dispatches/suggestions?t=${Date.now()}`, { headers }),
+        fetch(`/api/bids/tracking?t=${Date.now()}`, { headers }),
+      ]);
+      const sugData = await sugRes.json().catch(() => null);
+      const trkData = await trkRes.json().catch(() => null);
+
+      if (sugRes.ok) setTeamSuggestions(sugData?.suggestions || []);
+      else if (sugRes.status !== 401) toast.error(sugData?.error || 'Failed to load global suggestions.');
+
+      if (trkRes.ok) setTeamTracking(trkData?.tracking || []);
+      else if (trkRes.status !== 401) toast.error(trkData?.error || 'Failed to load live tracking.');
+    } catch (e) {
+      console.error('Team activity refresh failed:', e);
+      toast.error('Network error while loading team activity.');
+    } finally {
+      setTeamActivityLoading(false);
     }
   };
 
@@ -1032,6 +1073,12 @@ const handleViewDocument = (req) => {
       { value: 'operations', label: 'Operations', icon: ClipboardList, color: 'purple' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
     ] },
+    // 🚀 RBAC: MD-only oversight into per-employee work — Global Suggestions +
+    // Master Live Tracking — kept as its own focused group rather than sprawling
+    // the "Team & Support" group with two more tabs (see Team Directory below).
+    { id: 'team-activity', label: 'Team Activity', items: [
+      { value: 'team-activity', label: 'Team Activity', icon: Users, color: 'blue' },
+    ] },
     { id: 'publishing', label: 'Publishing', items: [
       { value: 'publisher', label: 'Published Tenders', icon: FileText, color: 'navy' },
     ] },
@@ -1670,6 +1717,93 @@ const handleViewDocument = (req) => {
                      )}
                   </CardContent>
                </Card>
+            </div>
+          </TabsContent>
+
+          {/* ==================== 4b. TEAM ACTIVITY (MD-ONLY GLOBAL ATTRIBUTION) ====================
+              Net-new, additive module: every officer's client_alert suggestions and every
+              live (non-Won/Lost) bid, across the whole team, each row attributed to the
+              employee who owns it. Employee dashboards never see this — GET /api/dispatches
+              and GET /api/bids strictly isolate each officer to their own employee_id there. */}
+          <TabsContent value="team-activity" className="mt-4">
+            <div className="space-y-6">
+              <Card className="shadow-sm border-t-4 border-t-blue-600">
+                <CardHeader className="bg-blue-50/50 border-b pb-4 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Send className="w-5 h-5 text-blue-600"/> Global Suggestions</CardTitle>
+                    <CardDescription>Every tender suggestion every officer has sent to a client — who suggested it, and to whom.</CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => fetchTeamActivity()} disabled={teamActivityLoading}>
+                    <RefreshCw className={`w-4 h-4 ${teamActivityLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
+                  {teamActivityLoading ? (
+                    <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading team suggestions...</p></div>
+                  ) : teamSuggestions.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400"><Send className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No tender suggestions sent yet.</p></div>
+                  ) : (
+                    <table className="premium-table text-sm text-left">
+                      <thead>
+                        <tr><th>Client</th><th>Suggestion</th><th>Status</th><th>Employee</th><th>Date</th></tr>
+                      </thead>
+                      <tbody>
+                        {teamSuggestions.map((s) => (
+                          <tr key={s._id}>
+                            <td className="align-top">
+                              <p className="font-semibold text-slate-800 text-xs">{s.client_display_name}</p>
+                              <p className="text-[9px] text-slate-400 font-mono">{s.target_id}</p>
+                            </td>
+                            <td className="align-top text-xs text-slate-600 max-w-xs">{s.message}</td>
+                            <td className="align-top">
+                              <Badge className={`text-[10px] border ${s.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>{s.status || 'Sent'}</Badge>
+                            </td>
+                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{s.employee_name}</td>
+                            <td className="align-top text-[10px] text-slate-500 whitespace-nowrap">{s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm border-t-4 border-t-purple-600">
+                <CardHeader className="bg-purple-50/50 border-b pb-4">
+                  <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Briefcase className="w-5 h-5 text-purple-600"/> Master Live Tracking</CardTitle>
+                  <CardDescription>Every bid currently in progress (not yet Won or Lost) across the whole team — who's working it.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
+                  {teamActivityLoading ? (
+                    <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading live tracking...</p></div>
+                  ) : teamTracking.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No bids are currently being tracked.</p></div>
+                  ) : (
+                    <table className="premium-table text-sm text-left">
+                      <thead>
+                        <tr><th>Client</th><th>Bid Detail</th><th>Status</th><th>Employee</th><th className="text-right">Value</th></tr>
+                      </thead>
+                      <tbody>
+                        {teamTracking.map((b) => (
+                          <tr key={b._id}>
+                            <td className="align-top">
+                              <p className="font-semibold text-slate-800 text-xs">{b.client_display_name}</p>
+                              <p className="text-[9px] text-slate-400 font-mono">{b.client_email}</p>
+                            </td>
+                            <td className="align-top">
+                              <p className="font-semibold text-slate-800 text-xs">{b.bid_no || 'PENDING'}</p>
+                              <p className="text-[10px] text-slate-500">{b.description}</p>
+                            </td>
+                            <td className="align-top"><Badge variant="outline" className="text-[10px]">{b.status}</Badge></td>
+                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{b.employee_name}</td>
+                            <td className="align-top text-right text-xs font-bold text-slate-600 whitespace-nowrap">{b.contract_value ? `₹${Number(b.contract_value).toLocaleString()}` : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 

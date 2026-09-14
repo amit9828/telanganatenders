@@ -12,6 +12,7 @@ import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import DashboardNav from '@/components/DashboardNav';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
+import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -29,14 +30,9 @@ import {
   Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle, PenTool, Activity, Bot
 } from 'lucide-react';
 
-const DISTRICTS = [
-  'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
-  'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
-  'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad',
-  'Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore',
-  'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru',
-  'Srikakulam', 'Vizianagaram', 'Prakasam'
-];
+// 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
+// drifted from the AP district list used elsewhere.
+const DISTRICTS = TS_AP_DISTRICTS;
 
 const BORDER_COLORS = [
   'border-blue-500', 'border-purple-500', 'border-emerald-500', 
