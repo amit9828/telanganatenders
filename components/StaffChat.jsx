@@ -13,6 +13,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { Menu, MessageSquare, Paperclip, Pencil, Search, Send, Trash2, Forward } from 'lucide-react';
 
 const MD_PEER = { emp_id: 'MD', name: 'Managing Director', designation: 'MD' };
+const CHAT_MAX_BYTES = 4 * 1024 * 1024;
 
 function contactId(row) {
   return String(row?.emp_id || '').trim();
@@ -161,7 +162,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       seen.add(id);
       out.push(row);
     };
-    add(MD_PEER);
+    if (selfId !== 'MD') add(MD_PEER);
     (people || []).filter(isActiveEmployee).forEach(add);
     return out;
   }, [people, selfId]);
@@ -217,13 +218,16 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       if (target) qs.set('peer', target);
       if (jobId) qs.set('job_id', jobId);
       const data = await workflowFetch(`/api/staff-chat?${qs.toString()}`);
-      const next = data.messages || [];
+      const next = (data.messages || []).filter((m) =>
+        (m.from_emp_id === selfId && m.to_emp_id === target)
+        || (m.from_emp_id === target && m.to_emp_id === selfId)
+      );
       cacheRef.current.set(threadCacheKey(target, jobId), next);
       setMessages(next);
     } catch (e) {
       if (!silent) toast.error(e.message);
     }
-  }, [peer, jobId]);
+  }, [peer, jobId, selfId]);
 
   const loadInbox = useCallback(async () => {
     try {
@@ -289,6 +293,9 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       return;
     }
     if (!text && !file) return;
+    if (file && file.size > CHAT_MAX_BYTES) {
+      return toast.error('File must be 4 MB or smaller.');
+    }
     setBusy(true);
     try {
       if (file) {
@@ -338,7 +345,11 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       await workflowFetch('/api/staff-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to_emp_id: toId, forwarded_from_id: forwardMsg._id }),
+        body: JSON.stringify({
+          to_emp_id: toId,
+          forwarded_from_id: String(forwardMsg._id),
+          ...(jobId ? { job_id: jobId } : {}),
+        }),
       });
       toast.success('Forwarded.');
       setForwardMsg(null);
@@ -489,7 +500,20 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
           <div className="flex items-center gap-2">
             <label className="h-9 w-9 shrink-0 rounded-full bg-white border flex items-center justify-center cursor-pointer text-slate-500 hover:text-[#0A2647]">
               <Paperclip className="w-4 h-4" />
-              <input type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+              <input
+                type="file"
+                className="sr-only"
+                accept="image/*,.pdf,application/pdf"
+                onChange={(e) => {
+                  const picked = e.target.files?.[0] || null;
+                  e.target.value = '';
+                  if (picked && picked.size > CHAT_MAX_BYTES) {
+                    toast.error('File must be 4 MB or smaller.');
+                    return;
+                  }
+                  setFile(picked);
+                }}
+              />
             </label>
             <Input
               value={text}

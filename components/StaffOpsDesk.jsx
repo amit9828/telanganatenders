@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
+import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
+import MatchedOpportunitiesPanel from '@/components/MatchedOpportunitiesPanel';
 import GemCoPilot from '@/components/GemCoPilot';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
@@ -53,7 +55,7 @@ export default function StaffOpsDesk({ desk }) {
   const [publishing, setPublishing] = useState(false);
   const [pendingJobId, setPendingJobId] = useState('');
 
-  const selfId = session?.user?.emp_id || session?.user?.email;
+  const selfId = session?.user?.emp_id || '';
   const staffEmail = session?.user?.email;
   const isGm = desk === 'gm';
   const isTl = desk === 'tl';
@@ -94,6 +96,7 @@ export default function StaffOpsDesk({ desk }) {
 
   const liveJobs = jobs.filter((j) => j.status === 'LIVE' && !j.parked_client_email);
   const parkedJobs = jobs.filter((j) => j.status === 'LIVE' && j.parked_client_email);
+  const pendingClientJobs = jobs.filter((j) => j.status === 'AWAITING_CLIENT');
   const internal = internalJobs;
   const submitted = submittedJobs;
   const awaitingPublish = jobs.filter((j) => j.status === 'AWAITING_PUBLISH');
@@ -114,7 +117,7 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
         ] },
         { id: 'ai', label: 'AI', items: [
-          { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo' },
+          { value: 'matchmaker', label: 'AI Matchmaker / Live Hunting', icon: Target, color: 'indigo' },
           { value: 'scraped', label: 'Live Scraped', icon: Activity, color: 'teal' },
           { value: 'copilot', label: 'Co-Pilot', icon: Bot, color: 'violet' },
         ] },
@@ -268,6 +271,20 @@ export default function StaffOpsDesk({ desk }) {
               {isGm && (
                 <TabsContent value="suggestion-bar">
                   <SuggestionBar jobs={parkedJobs} pdfEmail={staffEmail} onRefresh={load} />
+                  {pendingClientJobs.length > 0 && (
+                    <div className="mt-6">
+                      <h3 className="text-sm font-black text-[#0A2647] uppercase tracking-wide mb-3">Pending client approval</h3>
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {pendingClientJobs.map((j) => (
+                          <CompactTenderCard
+                            key={j._id}
+                            job={{ ...j, display_status: 'Pending Approval' }}
+                            actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </TabsContent>
               )}
               {isTl && (
@@ -360,7 +377,15 @@ export default function StaffOpsDesk({ desk }) {
               <TabsContent value="submitted">
                 <SubmittedTrackingBoard jobs={submitted} canEdit={isGm || isTl} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
               </TabsContent>
-              <TabsContent value="matchmaker"><AiMatchmakerPanel /></TabsContent>
+              <TabsContent value="matchmaker">
+                <AiMatchmakerPanel />
+                {isGm && (
+                  <>
+                    <div className="mt-6"><L1BenchmarkDropzone /></div>
+                    <div className="mt-6"><MatchedOpportunitiesPanel /></div>
+                  </>
+                )}
+              </TabsContent>
               <TabsContent value="scraped"><LiveScrapedTendersPanel /></TabsContent>
               <TabsContent value="copilot">
                 <GemCoPilot embedded />

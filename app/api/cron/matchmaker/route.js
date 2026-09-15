@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { isTelanganaOrAndhra } from '@/lib/regions';
 import { buildMatches, clientCapacity, explainEmptyRun, formatMatchDigest } from '@/lib/matchmaking';
 import { sendWhatsAppAlert } from '@/lib/whatsapp';
+import { DESIGNATIONS, resolveActorRole } from '@/lib/staff-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -17,16 +18,15 @@ const MAX_ALERT_MATCHES = 5;
 // entire historical backlog.
 const LOOKBACK_DAYS = 3;
 
-function isAuthorised(request) {
+async function isAuthorised(request) {
   const bearer = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
   const cronSecret = String(process.env.CRON_SECRET || '').trim();
   const adminToken = String(process.env.ADMIN_TOKEN || '').trim();
 
-  // Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; the admin token lets the MD
-  // trigger a run on demand from the dashboard.
   if (cronSecret && bearer === cronSecret) return true;
   if (adminToken && bearer === adminToken) return true;
-  return false;
+  const actor = await resolveActorRole(request);
+  return actor.role === 'MD' || actor.designation === DESIGNATIONS.GM;
 }
 
 function todayISO() {
@@ -183,7 +183,7 @@ async function runMatchmaker({ dryRun = false, fullScan = false } = {}) {
 }
 
 export async function GET(request) {
-  if (!isAuthorised(request)) {
+  if (!(await isAuthorised(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

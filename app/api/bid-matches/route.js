@@ -1,16 +1,20 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db';
+import { DESIGNATIONS, resolveActorRole } from '@/lib/staff-auth';
 
 export const dynamic = 'force-dynamic';
 
 const MAX_RESULTS = 200;
 
-function isAuthorised(request) {
+async function isAuthorised(request) {
   const adminToken = String(process.env.ADMIN_TOKEN || '').trim();
-  if (!adminToken) return true; // Nothing configured to check against (local dev).
   const bearer = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-  return bearer === adminToken;
+  if (adminToken && bearer === adminToken) return true;
+  const actor = await resolveActorRole(request);
+  if (actor.role === 'MD' || actor.designation === DESIGNATIONS.GM) return true;
+  if (!adminToken) return true;
+  return false;
 }
 
 function matchFilter(id) {
@@ -21,7 +25,7 @@ function matchFilter(id) {
 // joins are needed here.
 export async function GET(request) {
   try {
-    if (!isAuthorised(request)) {
+    if (!(await isAuthorised(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -59,7 +63,7 @@ export async function GET(request) {
 // PATCH: acknowledge or dismiss a match so the feed reflects what the MD has acted on.
 export async function PATCH(request) {
   try {
-    if (!isAuthorised(request)) {
+    if (!(await isAuthorised(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

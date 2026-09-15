@@ -6,14 +6,7 @@ import { toast } from 'sonner';
 import { BarChart3, Loader2, UploadCloud } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 
-function staffHeaders() {
-  const headers = {};
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { staffHeaders } from '@/components/workflow/api';
 
 /**
  * L1 Benchmark Repository — upload past award PDFs/CSVs and review the stored baseline.

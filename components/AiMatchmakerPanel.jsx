@@ -9,19 +9,8 @@ import { launchGemHunter } from '@/lib/gem-hunter-client';
 import {
   Clock, FileText, Loader2, MapPin, MessageCircle, Radar, RefreshCw, Rocket, Sparkles, Target, Zap,
 } from 'lucide-react';
-import { staffPdfHref, viewTenderOnHome } from '@/components/workflow/api';
+import { staffPdfHref, viewTenderOnHome, staffHeaders } from '@/components/workflow/api';
 import { formatINR } from '@/lib/format';
-
-function staffHeaders(extra = {}) {
-  const headers = { ...extra };
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const email = localStorage.getItem('tt_emp_email');
-    if (email) headers['x-employee-email'] = email;
-  }
-  return headers;
-}
 
 function countdownLabel(lastDate) {
   if (!lastDate) return { text: 'No closing date', tone: 'slate' };

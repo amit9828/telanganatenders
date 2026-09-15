@@ -1,8 +1,11 @@
 export function staffHeaders(extra = {}) {
   const headers = { ...extra };
   if (typeof window !== 'undefined') {
+    const path = window.location.pathname || '';
+    const onAdminDesk = path === '/admin' || path.startsWith('/admin/');
     const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
+    // Never send leftover MD bearer from GM / TL / employee desks.
+    if (onAdminDesk && token) headers.Authorization = `Bearer ${token}`;
     const email = localStorage.getItem('tt_emp_email');
     if (email) headers['x-employee-email'] = email;
   }
