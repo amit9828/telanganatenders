@@ -12,16 +12,19 @@ export default function SuggestClientControls({ tender, clients = [], onDone, co
 
   const suggest = async () => {
     if (!email) return toast.error('Select an active client.');
+    const client = clients.find((c) => c.email === email) || {};
+    const tenderId = tender?._id?.$oid || tender?._id || tender?.id || '';
     setBusy(true);
     try {
       await workflowFetch('/api/workflow/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tender_id: tender._id || tender.id,
-          bid_no: tender.bid_no,
-          title: tender.title,
+          tender_id: tenderId ? String(tenderId) : undefined,
+          bid_no: tender?.bid_no || undefined,
+          title: tender?.title || undefined,
           client_email: email,
+          client_id: client.client_id || undefined,
         }),
       });
       toast.success('Moved to Suggestion Bar. Attach SOW there to send to the client.');

@@ -14,6 +14,7 @@ import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import SuggestionBar from '@/components/workflow/SuggestionBar';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
+import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
@@ -2498,6 +2499,20 @@ const handleViewDocument = (req) => {
               pdfEmail={process.env.NEXT_PUBLIC_ADMIN_EMAIL}
               onRefresh={refresh}
             />
+            {wfJobs.filter((j) => j.status === 'AWAITING_CLIENT').length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-black text-[#0A2647] uppercase tracking-wide mb-3">Pending client approval</h3>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {wfJobs.filter((j) => j.status === 'AWAITING_CLIENT').map((j) => (
+                    <CompactTenderCard
+                      key={j._id}
+                      job={{ ...j, display_status: 'Pending Approval' }}
+                      actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           {/* ==================== 7. HELPDESK (WITH GUEST QUERIES) ==================== */}

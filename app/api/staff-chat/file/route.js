@@ -12,6 +12,17 @@ function senderId(actor) {
   return String(actor?.empId || '').trim();
 }
 
+function mimeFromName(name, stored) {
+  if (stored && stored !== 'application/octet-stream') return stored;
+  const n = String(name || '').toLowerCase();
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  if (n.endsWith('.png')) return 'image/png';
+  if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
+  if (n.endsWith('.gif')) return 'image/gif';
+  if (n.endsWith('.webp')) return 'image/webp';
+  return stored || 'application/octet-stream';
+}
+
 export async function GET(request) {
   const actor = await resolveActorRole(request);
   if (!actor.role) return NextResponse.json({ error: 'Please sign in.' }, { status: 401 });
@@ -30,10 +41,11 @@ export async function GET(request) {
   const buf = await fetchR2Buffer(doc.file_r2_key);
   if (!buf) return NextResponse.json({ error: 'Could not read file.' }, { status: 500 });
   const name = encodeURIComponent(doc.file_name || 'attachment');
+  const contentType = mimeFromName(doc.file_name, doc.file_content_type);
   return new NextResponse(new Uint8Array(buf), {
     status: 200,
     headers: {
-      'Content-Type': 'application/octet-stream',
+      'Content-Type': contentType,
       'Content-Disposition': `inline; filename="${name}"`,
       'Cache-Control': 'private, no-store',
     },

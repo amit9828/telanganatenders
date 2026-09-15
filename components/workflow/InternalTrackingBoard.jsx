@@ -115,10 +115,14 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
             actions.push({
               label: 'Send to TL',
               variant: 'default',
-              onClick: () => run(() => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'send_tl' }),
-              })),
+              disabled: (job.prep_files || []).length < 2,
+              onClick: () => {
+                if ((job.prep_files || []).length < 2) return toast.error('Upload at least 2 files before sending to TL.');
+                return run(() => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'send_tl' }),
+                }));
+              },
             });
           }
           if (desk === 'tl' && job.status === 'TL_QC') {

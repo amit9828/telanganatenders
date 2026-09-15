@@ -9,7 +9,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function json(data, status = 200) {
-  return NextResponse.json(data, { status });
+  return NextResponse.json(data, {
+    status,
+    headers: { 'Cache-Control': 'private, no-store' },
+  });
 }
 
 function threadKey(a, b) {
@@ -19,6 +22,37 @@ function threadKey(a, b) {
 function senderId(actor) {
   if (actor?.role === 'MD') return 'MD';
   return String(actor?.empId || '').trim();
+}
+
+function pairFilter(from, peer) {
+  return {
+    $or: [
+      { from_emp_id: from, to_emp_id: peer },
+      { from_emp_id: peer, to_emp_id: from },
+    ],
+  };
+}
+
+async function assertLivePeer(db, toEmpId) {
+  if (toEmpId === 'MD') return true;
+  const emp = await db.collection('employees').findOne({
+    emp_id: toEmpId,
+    deleted: { $ne: true },
+    active: { $ne: false },
+  });
+  return Boolean(emp);
+}
+
+function mimeFromName(name, fallback = 'application/octet-stream') {
+  const n = String(name || '').toLowerCase();
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  if (n.endsWith('.png')) return 'image/png';
+  if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
+  if (n.endsWith('.gif')) return 'image/gif';
+  if (n.endsWith('.webp')) return 'image/webp';
+  if (n.endsWith('.doc')) return 'application/msword';
+  if (n.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return fallback;
 }
 
 async function actorOr401(request) {
@@ -48,7 +82,7 @@ export async function GET(request) {
   const key = threadKey(from, peer);
   const filter = {
     thread_key: key,
-    $or: [{ from_emp_id: from }, { to_emp_id: from }],
+    ...pairFilter(from, peer),
   };
   if (jobId) filter.job_id = jobId;
   const messages = await db.collection('staff_chats').find(filter).sort({ created_at: 1 }).toArray();
@@ -77,16 +111,22 @@ export async function POST(request) {
     jobId = String(form.get('job_id') || '').trim();
     forwardedFromId = String(form.get('forwarded_from_id') || '').trim();
     const file = form.get('file');
-    if (file && typeof file !== 'string' && file.arrayBuffer) {
+    if (file && typeof file !== 'string' && typeof file.arrayBuffer === 'function') {
       hadFile = true;
       const buf = Buffer.from(await file.arrayBuffer());
       if (buf.length) {
+        const contentType = file.type || mimeFromName(file.name);
         const uploaded = await uploadWorkflowDocument(buf, file.name || 'chat.bin', {
           jobId: `chat_${threadKey(from, toEmpId)}`,
-          contentType: file.type || 'application/octet-stream',
+          contentType,
         });
-        if (!uploaded) return json({ error: 'File upload failed. Try again.' }, 400);
-        fileMeta = { r2_key: uploaded.key, url: uploaded.url, name: file.name };
+        if (!uploaded) return json({ error: 'File upload failed. Try again.' }, 503);
+        fileMeta = {
+          r2_key: uploaded.key,
+          url: uploaded.url,
+          name: file.name,
+          content_type: contentType,
+        };
       }
     }
   } else {
@@ -99,10 +139,13 @@ export async function POST(request) {
 
   if (!toEmpId) return json({ error: 'to_emp_id is required' }, 400);
   if (toEmpId === from) return json({ error: 'Cannot message yourself.' }, 400);
+  if (!(await assertLivePeer(db, toEmpId))) {
+    return json({ error: 'Recipient is not an active employee.' }, 404);
+  }
 
   let forwardedFrom = null;
-  if (forwardedFromId && ObjectId.isValid(forwardedFromId)) {
-    const original = await db.collection('staff_chats').findOne({ _id: new ObjectId(forwardedFromId) });
+  if (forwardedFromId && ObjectId.isValid(String(forwardedFromId))) {
+    const original = await db.collection('staff_chats').findOne({ _id: new ObjectId(String(forwardedFromId)) });
     if (!original) return json({ error: 'Original message not found.' }, 404);
     const involved = original.from_emp_id === from || original.to_emp_id === from;
     if (!involved) return json({ error: 'You can only forward messages from your own threads.' }, 403);
@@ -115,7 +158,12 @@ export async function POST(request) {
     };
     if (!text) text = original.text || '';
     if (!fileMeta && original.file_r2_key) {
-      fileMeta = { r2_key: original.file_r2_key, url: original.file_url, name: original.file_name };
+      fileMeta = {
+        r2_key: original.file_r2_key,
+        url: original.file_url,
+        name: original.file_name,
+        content_type: original.file_content_type || mimeFromName(original.file_name),
+      };
     }
   }
 
@@ -132,6 +180,7 @@ export async function POST(request) {
     file_r2_key: fileMeta?.r2_key || null,
     file_url: fileMeta?.url || null,
     file_name: fileMeta?.name || null,
+    file_content_type: fileMeta?.content_type || null,
     forwarded_from: forwardedFrom,
     created_at: new Date(),
   };

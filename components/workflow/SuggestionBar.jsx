@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Clock, FileText, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { staffHeaders, staffPdfHref, workflowFetch } from '@/components/workflow/api';
+import { staffHeaders, staffPdfHref } from '@/components/workflow/api';
 
 function fmtDate(value) {
   if (!value) return '—';
@@ -20,7 +20,6 @@ function clientLabel(job) {
 
 export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
   const [busyId, setBusyId] = useState('');
-  const inputRefs = useRef({});
 
   const groups = useMemo(() => {
     const map = new Map();
@@ -40,7 +39,14 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
   };
 
   const attachSow = async (job, file) => {
-    if (!file) return;
+    if (!file) {
+      toast.error('Choose a SOW PDF.');
+      return;
+    }
+    if (file.type && file.type !== 'application/pdf' && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
+      toast.error('SOW must be a PDF.');
+      return;
+    }
     setBusyId(job._id);
     try {
       const form = new FormData();
@@ -82,51 +88,56 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
               <Badge variant="outline" className="text-[10px]">{group.jobs.length}</Badge>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-              {group.jobs.map((job) => (
-                <div
-                  key={job._id}
-                  className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between min-h-[148px] max-w-[220px]"
-                >
-                  <div>
-                    <p className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 inline-block">
-                      {job.bid_no || 'No tender no'}
-                    </p>
-                    <p className="mt-2 text-[10px] text-red-600 font-bold flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> {fmtDate(job.last_date)}
-                    </p>
+              {group.jobs.map((job) => {
+                const inputId = `sow-${job._id}`;
+                return (
+                  <div
+                    key={job._id}
+                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between min-h-[148px] max-w-[220px]"
+                  >
+                    <div>
+                      <p className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 inline-block">
+                        {job.bid_no || 'No tender no'}
+                      </p>
+                      <p className="mt-2 text-xs font-bold text-[#0A2647] line-clamp-2 leading-snug">
+                        {job.title || 'Untitled tender'}
+                      </p>
+                      <p className="mt-2 text-[10px] text-red-600 font-bold flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> {fmtDate(job.last_date)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 mt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] flex-1"
+                        onClick={() => openPdf(job)}
+                      >
+                        <FileText className="w-3 h-3 mr-1" /> PDF
+                      </Button>
+                      <input
+                        id={inputId}
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        className="sr-only"
+                        disabled={busyId === job._id}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          attachSow(job, file);
+                        }}
+                      />
+                      <label
+                        htmlFor={inputId}
+                        title="Attach SOW"
+                        className={`h-7 w-7 inline-flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 cursor-pointer ${busyId === job._id ? 'opacity-50 pointer-events-none' : ''}`}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </label>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 mt-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-[10px] flex-1"
-                      onClick={() => openPdf(job)}
-                    >
-                      <FileText className="w-3 h-3 mr-1" /> PDF
-                    </Button>
-                    <input
-                      ref={(el) => { inputRefs.current[job._id] = el; }}
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        attachSow(job, file);
-                      }}
-                    />
-                    <Button
-                      size="icon"
-                      className="h-7 w-7 bg-emerald-600 hover:bg-emerald-700"
-                      title="Attach SOW"
-                      disabled={busyId === job._id}
-                      onClick={() => inputRefs.current[job._id]?.click()}
-                    >
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
