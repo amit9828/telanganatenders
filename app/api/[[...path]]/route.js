@@ -940,7 +940,7 @@ async function handleGET(request, { params }, attempt = 1) {
        const total_revenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + won_contracts_value;
 
        const calculatedStats = {
-          recommended: action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed').length,
+          recommended: action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed').length,
           participated: active_bids.length,
           ongoing: active_bids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length,
           won: won_bids.length,
