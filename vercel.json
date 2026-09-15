@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install",
   "crons": [
     {
       "path": "/api/cron/gem-sync",
@@ -12,10 +13,6 @@
     {
       "path": "/api/cron/gem-copilot-knowledge",
       "schedule": "0 3 * * 0"
-    },
-    {
-      "path": "/api/cron/chat-purge",
-      "schedule": "15 3 * * *"
     }
   ]
 }

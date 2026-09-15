@@ -3,7 +3,10 @@ import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials'; 
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
-import { normalizeDesignation } from '@/lib/staff-auth';
+import { normalizeDesignation } from '@/lib/designations';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const handler = NextAuth({
   providers: [

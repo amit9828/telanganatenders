@@ -1,5 +1,8 @@
 import { getDb } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function sitemap() {
   const baseUrl = 'https://www.tgtenders.in';
 
@@ -26,8 +29,8 @@ export default async function sitemap() {
   ];
 
   try {
-    if (!process.env.MONGO_URL) {
-       console.warn("MONGO_URL is missing. Returning only static routes.");
+    if (!process.env.MONGO_URL || process.env.NEXT_PHASE === 'phase-production-build') {
+       console.warn("Skipping dynamic sitemap during build or when MONGO_URL is missing.");
        return staticRoutes;
     }
 

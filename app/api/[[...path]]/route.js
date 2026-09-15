@@ -24,6 +24,7 @@ import { resolveActorRole, DESIGNATIONS, normalizeDesignation } from '@/lib/staf
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;

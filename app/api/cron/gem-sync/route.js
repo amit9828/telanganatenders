@@ -9,6 +9,7 @@ import {
 import { ingestDocumentVectors } from '@/lib/rag-ingest';
 import { generateContent } from '@/lib/gemini';
 import { getGeminiApiKey } from '@/lib/env';
+import { purgeExpiredChatObjects } from '@/lib/chat-purge';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -131,6 +132,10 @@ async function runSync() {
       total_chunks_in_kb: totalChunks,
     },
     results,
+    chat_purge: await purgeExpiredChatObjects().catch((err) => {
+      console.warn('[gem-sync] chat purge skipped:', err?.message || err);
+      return { error: err?.message || 'chat purge failed' };
+    }),
   };
 }
 
