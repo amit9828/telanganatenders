@@ -20,7 +20,8 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
-import { resolveActorRole } from '@/lib/staff-auth';
+import { resolveActorRole, DESIGNATIONS, normalizeDesignation } from '@/lib/staff-auth';
+import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const dynamic = 'force-dynamic';
@@ -801,7 +802,20 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (path === 'employees' || path === 'api/employees') {
-      const team = await db.collection('employees').find({}).sort({ created_at: -1 }).toArray();
+      const actor = await resolveActorRole(request);
+      let query = {};
+      if (actor.role === 'MD') {
+        query = {};
+      } else if (actor.designation === DESIGNATIONS.GM) {
+        query = { designation: { $in: [DESIGNATIONS.DOC_TEAM_TL, DESIGNATIONS.DOC_TEAM_MEMBER] } };
+      } else if (actor.designation === DESIGNATIONS.DOC_TEAM_TL) {
+        query = { team_id: actor.empId };
+      } else if (actor.role === 'EMPLOYEE') {
+        query = { emp_id: actor.empId };
+      } else {
+        query = { _id: { $exists: false } };
+      }
+      const team = await db.collection('employees').find(query).sort({ created_at: -1 }).toArray();
       return json({ team });
     }
 
@@ -1710,7 +1724,25 @@ export async function POST(request, { params }) {
         { email: userEmail },
         { $set: { is_approved: true, status: 'approved', client_id: finalClientId } }
       );
-      return json({ success: true, client_id: finalClientId });
+      try {
+        const display = existingUser?.company_name || existingUser?.client_name || existingUser?.name || userEmail;
+        await ensureEntityDriveFolder({
+          db,
+          collection: 'users',
+          query: { email: userEmail },
+          folderName: `Client - ${finalClientId} - ${display}`,
+          email: userEmail,
+        });
+      } catch (err) {
+        console.error('[users/approve] Drive folder failed:', err?.message || err);
+      }
+      const refreshed = await db.collection('users').findOne({ email: userEmail }, { projection: { drive_folder_id: 1, drive_folder_link: 1 } });
+      return json({
+        success: true,
+        client_id: finalClientId,
+        drive_folder_id: refreshed?.drive_folder_id || null,
+        drive_folder_link: refreshed?.drive_folder_link || null,
+      });
     }
 
     if (path === 'users/request-payment' || path === 'api/users/request-payment') {
@@ -1887,65 +1919,75 @@ export async function POST(request, { params }) {
        return json({ success: true });
     }
     if (path === 'employees' || path === 'api/employees') {
+        const actor = await resolveActorRole(request);
+        if (!actor.role) return json({ error: 'Please sign in.' }, 401);
+        const designation = normalizeDesignation(body.designation || body.role);
+        if (actor.role === 'EMPLOYEE' && actor.designation === DESIGNATIONS.DOC_TEAM_MEMBER) {
+          return json({ error: 'Employees cannot create staff logins.' }, 403);
+        }
+        if (actor.designation === DESIGNATIONS.DOC_TEAM_TL) {
+          return json({ error: 'Team Leads cannot create staff logins.' }, 403);
+        }
+        if (actor.designation === DESIGNATIONS.GM && designation === DESIGNATIONS.GM) {
+          return json({ error: 'GM can create TL and Member only.' }, 403);
+        }
+
+        let teamId = null;
+        if (designation === DESIGNATIONS.DOC_TEAM_MEMBER) {
+          teamId = String(body.team_id || '').trim();
+          if (!teamId) return json({ error: 'Members must belong to a Team Lead (team_id).' }, 400);
+          const tl = await db.collection('employees').findOne({ emp_id: teamId });
+          if (!tl || normalizeDesignation(tl.designation) !== DESIGNATIONS.DOC_TEAM_TL) {
+            return json({ error: 'team_id must be a Doc Team TL emp_id.' }, 400);
+          }
+        }
+
         const count = await db.collection('employees').countDocuments();
-        const newEmpId = `EMP-${1000 + count + 1}`; 
+        const newEmpId = `EMP-${1000 + count + 1}`;
+        if (designation === DESIGNATIONS.DOC_TEAM_TL) teamId = newEmpId;
+
         const newEmployee = { 
             emp_id: newEmpId, 
             name: body.name, 
             email: body.email.toLowerCase(), 
             password: body.password, 
-            role: body.role || 'Employee',
+            role: body.role || designation,
+            designation,
+            team_id: teamId,
             created_at: new Date() 
         };
         const result = await db.collection('employees').insertOne(newEmployee);
-        return json({ success: true, emp_id: newEmpId, id: result.insertedId });
+        try {
+          const folder = await createDriveFolder({ folderName: `${newEmpId} - ${body.name || designation}` });
+          await db.collection('employees').updateOne(
+            { _id: result.insertedId },
+            { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
+          );
+        } catch (err) {
+          console.error('[employees] Drive folder failed:', err?.message || err);
+        }
+        return json({ success: true, emp_id: newEmpId, id: result.insertedId, designation, team_id: teamId });
     }
 
     if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
-       const { folderName, email } = body;
-       
-       if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
-          return json({ error: 'Google Drive Keys missing in Vercel Environment Variables' }, 500);
-       }
-
+       const { folderName, email, collection, emp_id } = body;
        try {
-          const auth = new google.auth.JWT(
-             process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-             null,
-             process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-             ['https://www.googleapis.com/auth/drive.file']
-          );
-          const drive = google.drive({ version: 'v3', auth });
-          
-          const fileMetadata = {
-             name: folderName || `Client - ${email}`,
-             mimeType: 'application/vnd.google-apps.folder',
-          };
-          
-          const folder = await drive.files.create({
-             resource: fileMetadata,
-             fields: 'id, webViewLink'
-          });
-
-          await drive.permissions.create({
-             fileId: folder.data.id,
-             requestBody: {
-                role: 'writer',
-                type: 'anyone'
-             }
-          });
-          
-          if (email) {
+          const folder = await createDriveFolder({ folderName: folderName || `Client - ${email || emp_id || 'Folder'}` });
+          if (collection === 'employees' && emp_id) {
+             await db.collection('employees').updateOne(
+                { emp_id },
+                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
+             );
+          } else if (email) {
              await db.collection('users').updateOne(
-                { email: email.toLowerCase() },
-                { $set: { drive_folder_id: folder.data.id, drive_folder_link: folder.data.webViewLink } }
+                { email: String(email).toLowerCase() },
+                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
              );
           }
-
-          return json({ success: true, folderId: folder.data.id, folderLink: folder.data.webViewLink });
+          return json({ success: true, folderId: folder.folderId, folderLink: folder.folderLink });
        } catch (error) {
           console.error('Drive API Error:', error);
-          return json({ error: 'Failed to create Google Drive folder' }, 500);
+          return json({ error: error.message || 'Failed to create Google Drive folder' }, 500);
        }
     }
 

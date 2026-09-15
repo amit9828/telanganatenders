@@ -6,12 +6,16 @@ import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
-import DocStudio from '@/components/doc-studio/DocStudio';
-import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
+import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
+import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import StaffChat from '@/components/StaffChat';
+import OpsAlerts from '@/components/OpsAlerts';
+import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
+import { deskPathForDesignation } from '@/lib/designations';
 import { formatINR } from '@/lib/format';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
@@ -36,7 +40,7 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot
+  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot, BellRing
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -154,7 +158,7 @@ export default function AdminPage() {
   const [tenderSearch, setTenderSearch] = useState('');
   // 🚀 Pagination for the Published Tenders list (20 per page)
   const [tenderPage, setTenderPage] = useState(1);
-  const tendersPerPage = 20;
+  const tendersPerPage = 10;
   const tendersListRef = useRef(null);
 
   // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
@@ -166,6 +170,7 @@ export default function AdminPage() {
   const [analyzingTender, setAnalyzingTender] = useState(false);
   const [bulkDragActive, setBulkDragActive] = useState(false);
   const [bulkFileCount, setBulkFileCount] = useState(0);
+  const [wfJobs, setWfJobs] = useState([]);
 
   // 🚀 AI Matchmaker & Competitor Intel
   const [bidMatches, setBidMatches] = useState([]);
@@ -244,7 +249,7 @@ export default function AdminPage() {
     try {
       // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
       // tenders" filter that's meant only for the public site.
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes, wfRes] = await Promise.all([
         safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
         safeFetch(`/api/admin/stats?t=${Date.now()}`),
         safeFetch(`/api/tickets?role=admin&t=${Date.now()}`),
@@ -256,7 +261,8 @@ export default function AdminPage() {
         safeFetch(`/api/finance/ledger?t=${Date.now()}`),
         safeFetch(`/api/guest-queries?t=${Date.now()}`),
         safeFetch(`/api/payments/requests?t=${Date.now()}`),
-        safeFetch(`/api/bid-matches?t=${Date.now()}`)
+        safeFetch(`/api/bid-matches?t=${Date.now()}`),
+        safeFetch(`/api/workflow/queue?t=${Date.now()}`)
       ]);
 
       if (tRes.status === 401) return logout();
@@ -278,6 +284,7 @@ export default function AdminPage() {
         setBidMatches(matchRes.data.matches || []);
         setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
       }
+      if (wfRes.ok) setWfJobs(wfRes.data.jobs || []);
 
       // Soft-refresh the live scraped feed without blocking the rest of the dashboard.
       refreshLiveFeed(token, { silent: true });
@@ -661,19 +668,22 @@ export default function AdminPage() {
   };
 
 // 🚀 FIX: LocalStorage Injection for Instant MD Bypass
-  const impersonateUser = (type, email_or_id) => {
+  const impersonateUser = async (type, email_or_id, designation) => {
     const toastId = toast.loading(`Bypassing secure access to ${type} dashboard...`);
     try {
         if (type === 'client') {
             localStorage.setItem('tt_email', email_or_id);
+            toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
+            setTimeout(() => { window.open('/client', '_blank'); }, 800);
         } else if (type === 'employee') {
             localStorage.setItem('tt_emp_email', email_or_id);
+            try {
+              await signIn('impersonate', { redirect: false, email: email_or_id, adminToken: token });
+            } catch (_) { /* localStorage fallback still opens the desk */ }
+            const path = deskPathForDesignation(designation);
+            toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
+            setTimeout(() => { window.open(path, '_blank'); }, 800);
         }
-        
-        toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-        setTimeout(() => {
-            window.open(`/${type}`, '_blank');
-        }, 800);
     } catch (e) {
         toast.error("Error during authentication bypass.", { id: toastId });
     }
@@ -1070,7 +1080,6 @@ const handleViewDocument = (req) => {
     { id: 'ai-operations', label: 'AI & Operations', items: [
       { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo', badge: matchSummary.new },
       { value: 'live-scraped', label: 'Live Scraped', icon: Activity, color: 'teal', badge: liveScrapedTenders.length },
-      { value: 'operations', label: 'Operations', icon: ClipboardList, color: 'purple' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
     ] },
     // 🚀 RBAC: MD-only oversight into per-employee work — Global Suggestions +
@@ -1079,11 +1088,17 @@ const handleViewDocument = (req) => {
     { id: 'team-activity', label: 'Team Activity', items: [
       { value: 'team-activity', label: 'Team Activity', icon: Users, color: 'blue' },
     ] },
-    { id: 'publishing', label: 'Publishing', items: [
-      { value: 'publisher', label: 'Published Tenders', icon: FileText, color: 'navy' },
+    { id: 'workflow', label: 'Tender Workflow', items: [
+      { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
+      { value: 'submitted', label: 'Submitted Board', icon: FileText, color: 'emerald' },
+    ] },
+    { id: 'publishing', label: 'Live Tenders', items: [
+      { value: 'publisher', label: 'Live Tenders', icon: FileText, color: 'navy' },
     ] },
     { id: 'team-support', label: 'Team & Support', items: [
       { value: 'team', label: 'Team Directory', icon: UserCog, color: 'blue' },
+      { value: 'alerts', label: 'Alerts', icon: BellRing, color: 'navy' },
+      { value: 'chat', label: 'Staff Chat', icon: MessageSquare, color: 'navy' },
       { value: 'tickets', label: 'Helpdesk', icon: MessageSquare, color: 'navy', badge: activeTickets.length },
     ] },
     { id: 'setup', label: 'Setup', items: [
@@ -1636,8 +1651,26 @@ const handleViewDocument = (req) => {
     </div>
   </div>
 </TabsContent>
-          {/* ==================== 4. TEAM DIRECTORY ==================== */}
           <TabsContent value="team" className="mt-4">
+            <TeamDirectoryPanel actorDesk="md" team={teamMembers} onRefresh={refresh} impersonate={openStaffDesk} />
+          </TabsContent>
+
+          <TabsContent value="internal" className="mt-4">
+            <InternalTrackingBoard
+              desk="md"
+              jobs={wfJobs.filter((j) => ['MD_CHECKLIST','TL_ASSIGN','MAKER_PREP','TL_QC','GM_QC','MD_SUBMIT','AWAITING_RECEIPT'].includes(j.status))}
+              tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
+              members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
+              onRefresh={refresh}
+            />
+          </TabsContent>
+          <TabsContent value="submitted" className="mt-4">
+            <SubmittedTrackingBoard jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')} canEdit={false} onRefresh={refresh} />
+          </TabsContent>
+          <TabsContent value="alerts" className="mt-4"><OpsAlerts /></TabsContent>
+          <TabsContent value="chat" className="mt-4"><StaffChat selfId="MD" roster={teamMembers} /></TabsContent>
+
+          {/* ==================== 4b. TEAM ACTIVITY (MD-ONLY GLOBAL ATTRIBUTION) ====================
             <div className="grid lg:grid-cols-2 gap-6">
                <Card className="tender-shadow border-t-4 border-t-blue-600 h-fit">
                   <CardHeader className="bg-blue-50/50 border-b pb-4">
@@ -1708,7 +1741,7 @@ const handleViewDocument = (req) => {
                                     </Button>
                                  </div>
                                  <div className="flex gap-2">
-                                    <Button onClick={() => impersonateUser('employee', off.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs"><LogIn className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}</Button>
+                                    <Button onClick={() => impersonateUser('employee', off.email, off.designation)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs"><LogIn className="w-3.5 h-3.5 mr-1.5" /> Login as {off.designation || off.role}</Button>
                                     <Button onClick={() => handleRevokeEmployee(off._id)} variant="outline" className="text-red-500 hover:bg-red-50 border-red-200 h-9 px-4">Delete</Button>
                                  </div>
                               </div>
@@ -2262,105 +2295,14 @@ const handleViewDocument = (req) => {
           </TabsContent>
 
           <TabsContent value="publisher" className="mt-4">
-            <div className="mb-6">
-              <LetterheadManager />
-            </div>
-            <div className="mb-6">
-              <DocStudio defaultTenderId={isEditingTender || ''} />
-            </div>
-            
-            {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) - MD Bulk AI Dropzone 🚀 */}
-            <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mb-6">
-               <CardHeader className="bg-purple-50/50 border-b pb-4">
-                  <CardTitle className="text-purple-900 flex items-center gap-2"><UploadCloud className="w-5 h-5 text-purple-600"/> Bulk AI Tender Dropzone</CardTitle>
-                  <CardDescription>Drag &amp; drop multiple tender PDFs. Each document is stored securely in Cloudflare R2, read by AI, and queued for employee review before going live.</CardDescription>
-               </CardHeader>
-               <CardContent className="pt-6">
-                  <label
-                     onDragOver={(e) => { e.preventDefault(); if (!analyzingFiles) setBulkDragActive(true); }}
-                     onDragLeave={(e) => { e.preventDefault(); setBulkDragActive(false); }}
-                     onDrop={handleBulkDrop}
-                     className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center transition-colors ${
-                        analyzingFiles
-                           ? 'border-purple-300 bg-purple-100 cursor-wait'
-                           : bulkDragActive
-                              ? 'border-purple-600 bg-purple-100 cursor-copy ring-2 ring-purple-300'
-                              : 'border-purple-300 bg-purple-50 hover:bg-purple-100 cursor-pointer'
-                     }`}
-                  >
-                     <input type="file" accept="application/pdf" multiple onChange={handleBulkAIUpload} disabled={analyzingFiles} className="hidden"/>
-                     {analyzingFiles ? (
-                        <>
-                           <Loader2 className="w-9 h-9 text-purple-600 animate-spin mb-3" />
-                           <span className="text-sm font-bold text-purple-900">
-                              Uploading &amp; extracting {bulkFileCount > 0 ? `${bulkFileCount} document${bulkFileCount > 1 ? 's' : ''}` : 'documents'}...
-                           </span>
-                           <span className="text-xs text-purple-600 mt-1">This can take up to a minute. Please keep this tab open.</span>
-                        </>
-                     ) : (
-                        <>
-                           <UploadCloud className={`w-11 h-11 mb-3 transition-colors ${bulkDragActive ? 'text-purple-700' : 'text-purple-500'}`} />
-                           <span className="text-base font-bold text-purple-900">
-                              {bulkDragActive ? 'Release to upload' : 'Drag & drop PDFs here'}
-                           </span>
-                           <span className="text-xs text-purple-600 mt-1">or click to browse — up to 25 files, 15MB each</span>
-                        </>
-                     )}
-                  </label>
-               </CardContent>
+            <Card className="mb-6 border-amber-200 bg-amber-50">
+              <CardContent className="pt-4 text-sm text-amber-900">
+                Publishing and bulk AI dropzone live on the TL and Employee desks. MD uses this list for live tenders only (10 per page).
+              </CardContent>
             </Card>
-
             <L1BenchmarkDropzone />
 
-            {/* === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) === */}
-            <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
-              <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
-                <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
-                   <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
-                      {isEditingTender ? <><Pencil className="w-5 h-5 text-blue-600"/> Edit Tender</> : <><PlusCircle className="w-5 h-5"/> Publish New Tender</>}
-                   </CardTitle>
-                   {isEditingTender && (
-                      <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
-                   )}
-                </CardHeader>
-                <CardContent className="pt-5">
-                  <form onSubmit={publish} className="space-y-4">
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={form.bid_no} onChange={e=>setForm({...form, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={form.title} onChange={e=>setForm({...form, title: e.target.value})} className="bg-white h-10"/></div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label><Input required value={form.department} onChange={e=>setForm({...form, department: e.target.value})} className="bg-white h-10"/></div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label><Input required type="date" value={form.last_date} onChange={e=>setForm({...form, last_date: e.target.value})} className="bg-white h-10 text-sm"/></div>
-                      <div>
-                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
-                        <Select value={form.category} onValueChange={v=>setForm({...form, category: v})}>
-                           <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
-                           <SelectContent><SelectItem value="Product">Product</SelectItem><SelectItem value="Service">Service</SelectItem></SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
-                      <Select value={form.district} onValueChange={v=>setForm({...form, district: v})}>
-                         <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
-                         <SelectContent>{DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={form.supply_details} onChange={e=>setForm({...form, supply_details: e.target.value})}></textarea></div>
-                    <div>
-                      <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
-                      <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
-                         <input type="file" accept="application/pdf" onChange={onPdfChange} disabled={analyzingTender} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
-                         <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                         <span className="text-sm font-bold text-[#0A2647]">{analyzingTender ? 'AI is reading the PDF…' : (pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF'))}</span>
-                      </div>
-                    </div>
-                    <Button type="submit" disabled={loading} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
-                       {loading ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-
+            <div className="grid gap-4 sm:gap-6 mt-6">
               <Card className="lg:col-span-3 tender-shadow">
                 <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                    <div>

@@ -3,6 +3,7 @@ import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials'; 
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
+import { normalizeDesignation } from '@/lib/staff-auth';
 
 const handler = NextAuth({
   providers: [
@@ -52,6 +53,8 @@ const handler = NextAuth({
              name: employee.name, 
              emp_id: employee.emp_id, 
              role: isMD ? 'MD' : 'EMPLOYEE',
+             designation: isMD ? null : normalizeDesignation(employee.designation),
+             team_id: isMD ? null : (employee.team_id || null),
           };
         }
         return null; // Invalid credentials
@@ -111,6 +114,8 @@ const handler = NextAuth({
                  name: emp.name, 
                  emp_id: emp.emp_id, 
                  role: isMD ? 'MD' : 'EMPLOYEE',
+                 designation: isMD ? null : normalizeDesignation(emp.designation),
+                 team_id: isMD ? null : (emp.team_id || null),
                  is_bypass: true
               };
            }
@@ -175,6 +180,8 @@ const handler = NextAuth({
          if (user.client_id) token.client_id = user.client_id;
          if (user.emp_id) token.emp_id = user.emp_id; 
          if (user.role) token.role = user.role;
+         if (user.designation !== undefined) token.designation = user.designation;
+         if (user.team_id !== undefined) token.team_id = user.team_id;
          
          // Secure Bypass Flags
          if (user.is_approved !== undefined) token.is_approved = user.is_approved;
@@ -191,7 +198,9 @@ const handler = NextAuth({
          if (token.name) session.user.name = token.name;
          if (token.client_id) session.user.client_id = token.client_id;
          if (token.emp_id) session.user.emp_id = token.emp_id; 
-         if (token.role) session.user.role = token.role; 
+         if (token.role) session.user.role = token.role;
+         if (token.designation) session.user.designation = token.designation;
+         if (token.team_id) session.user.team_id = token.team_id; 
          
          // Make Bypass Flags visible to the UI Components
          if (token.is_approved !== undefined) session.user.is_approved = token.is_approved;

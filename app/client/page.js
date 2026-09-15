@@ -23,6 +23,8 @@ import {
   Handshake, Landmark, Gavel, ScrollText
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
+import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -113,6 +115,7 @@ export default function ClientDashboard() {
   const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
   const [recommendedTenders, setRecommendedTenders] = useState([]);
+  const [workflowJobs, setWorkflowJobs] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
 
   // 🚀 STAFF-ONLY: AI Win Probability + JV Partner data for the "AI Tender Match & JV
@@ -245,6 +248,13 @@ export default function ClientDashboard() {
         if(d.action_alerts) {
             setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
         }
+        try {
+          const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(userEmail)}`, { credentials: 'include' });
+          if (wf.ok) {
+            const wfd = await wf.json();
+            setWorkflowJobs(wfd.jobs || []);
+          }
+        } catch (_) { /* workflow queue is additive */ }
         
         if (d.vault_docs && d.vault_docs.length > 0) {
             const mergedDocs = DEFAULT_VAULT_DOCS.map(defaultDoc => {
@@ -751,6 +761,23 @@ export default function ClientDashboard() {
           fetchClientData(email);
        }
      } catch (e) { toast.error("Network error"); }
+  };
+
+  const handleAcceptWorkflowJob = async (job) => {
+    try {
+      const res = await fetch(`/api/workflow/jobs/${job._id}/client-approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ client_email: email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Approve failed');
+      toast.success('Approved. Status is now In Progress.');
+      fetchClientData(email);
+    } catch (e) {
+      toast.error(e.message);
+    }
   };
 
   const handleAcceptRecommendation = async (tenderAlert) => {
@@ -1491,6 +1518,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
           {/* TAB 3: WINNING BIDS LEDGER */}
           {/* ============================================================================== */}
           <TabsContent value="wins" className="space-y-6">
+            <ClientWinningBoard jobs={workflowJobs} />
             <Card className="tender-shadow border-t-4 border-t-emerald-500">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Trophy className="w-5 h-5 text-emerald-600"/> Successful Bid Allocations</CardTitle>
@@ -1581,6 +1609,20 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        </div>
                     </div>
                  )}
+                 {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length > 0 && (
+                    <div className="grid md:grid-cols-2 gap-4 mb-4">
+                      {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').map((job) => (
+                        <CompactTenderCard
+                          key={job._id}
+                          job={job}
+                          actions={[
+                            { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
+                            { label: 'Approve', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
+                          ]}
+                        />
+                      ))}
+                    </div>
+                 )}
                  {recommendedTenders.length === 0 ? (
                     <div className="text-center py-6 text-slate-400 border-2 border-dashed rounded-xl border-blue-200 bg-white">
                       <Target className="w-8 h-8 mx-auto text-blue-200 mb-2" />
@@ -1639,6 +1681,25 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
               </CardHeader>
               <CardContent className="p-5">
+                 <div className="grid sm:grid-cols-2 gap-3 mb-6">
+                   {workflowJobs.filter(j => j.display_status === 'In Progress' || ['MD_CHECKLIST','TL_ASSIGN','MAKER_PREP','TL_QC','GM_QC','MD_SUBMIT','AWAITING_RECEIPT'].includes(j.status)).map((job) => (
+                     <CompactTenderCard
+                       key={job._id}
+                       job={{ ...job, display_status: 'In Progress' }}
+                       actions={[{ label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') }]}
+                     />
+                   ))}
+                   {workflowJobs.filter(j => j.status === 'SUBMITTED' || j.display_status === 'Submitted' || j.display_status === 'Technical Evaluation' || j.display_status === 'Financial Evaluation').map((job) => (
+                     <CompactTenderCard
+                       key={job._id}
+                       job={job}
+                       actions={[
+                         { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
+                         job.receipt && { label: 'Receipt', icon: 'download', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=receipt`, '_blank') },
+                       ].filter(Boolean)}
+                     />
+                   ))}
+                 </div>
                  {activeBids.length === 0 ? (
                     <div className="text-center py-6 text-slate-400">
                       <p className="text-sm font-semibold">No active bids in progress.</p>

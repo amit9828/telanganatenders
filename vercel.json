@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/gem-copilot-knowledge",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/chat-purge",
+      "schedule": "15 3 * * *"
     }
   ]
 }
