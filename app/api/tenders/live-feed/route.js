@@ -136,11 +136,20 @@ export async function GET(request) {
           ],
         };
 
-    const tenders = await col
+    const tenders = (await col
       .find(query)
-      .sort({ updated_at: -1, created_at: -1 })
       .limit(MAX_RESULTS)
-      .toArray();
+      .toArray())
+      .filter((t) => {
+        const ms = t.last_date ? new Date(t.last_date).getTime() : NaN;
+        if (Number.isNaN(ms)) return false;
+        return ms >= new Date(`${today}T00:00:00`).getTime();
+      })
+      .sort((a, b) => {
+        const aMs = a.last_date ? new Date(a.last_date).getTime() : Number.POSITIVE_INFINITY;
+        const bMs = b.last_date ? new Date(b.last_date).getTime() : Number.POSITIVE_INFINITY;
+        return aMs - bMs;
+      });
 
     return NextResponse.json({
       tenders,

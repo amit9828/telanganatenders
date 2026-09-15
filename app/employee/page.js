@@ -17,6 +17,7 @@ import OpsAlerts from '@/components/OpsAlerts';
 import { workflowFetch } from '@/components/workflow/api';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
+import { liveTendersOnly } from '@/lib/tender-sort';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -1048,7 +1049,7 @@ export default function EmployeeDashboard() {
      o.district?.toLowerCase().includes(officerSearch.toLowerCase())
   );
 
-  const filteredTenders = publicTenders.filter(t => 
+  const filteredTenders = liveTendersOnly(publicTenders).filter(t => 
      t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
      t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
   );
@@ -2020,7 +2021,7 @@ return (
           </TabsContent>
 
           {/* 🚀 RESTORED: GUEST QUERIES AND SLA TRACKER */}
-          <TabsContent value="ops-alerts" className="w-full"><OpsAlerts /></TabsContent>
+          <TabsContent value="ops-alerts" className="w-full"><OpsAlerts roster={teamMembers} /></TabsContent>
           <TabsContent value="chat" className="w-full min-h-[560px]"><StaffChat selfId={empData.id} roster={teamMembers} /></TabsContent>
           <TabsContent value="sla" className="w-full space-y-6">
             

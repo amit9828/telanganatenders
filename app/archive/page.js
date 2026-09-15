@@ -30,7 +30,7 @@ function ArchivePage() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ scope: 'all' });
+      const params = new URLSearchParams({ scope: 'archive' });
       if (q.trim()) params.set('q', q.trim());
       if (district !== 'all') params.set('district', district);
       const r = await fetch(`/api/tenders?${params.toString()}`);

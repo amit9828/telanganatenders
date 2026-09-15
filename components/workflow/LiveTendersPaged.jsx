@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ChevronLeft, ChevronRight, Clock, Search, FileText } from 'lucide-react';
 import { numberedPageList, staffPdfHref, viewTenderOnHome } from '@/components/workflow/api';
+import { liveTendersOnly } from '@/lib/tender-sort';
 
 function fmtDate(value) {
   if (!value) return null;
@@ -25,9 +26,10 @@ export default function LiveTendersPaged({
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const filtered = useMemo(() => {
+    const live = liveTendersOnly(tenders);
     const needle = q.trim().toLowerCase();
-    if (!needle) return tenders;
-    return tenders.filter((t) =>
+    if (!needle) return live;
+    return live.filter((t) =>
       [t.bid_no, t.title, t.department, t.district].some((v) => String(v || '').toLowerCase().includes(needle))
     );
   }, [tenders, q]);

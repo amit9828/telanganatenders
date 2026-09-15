@@ -299,7 +299,6 @@ async function handleGET(request, { params }, attempt = 1) {
       const year = searchParams.get('year');
       const scope = searchParams.get('scope');
       const q = searchParams.get('q');
-      const role = searchParams.get('role');
 
       let query = {};
       if (district && district !== 'all') query.district = district;
@@ -318,17 +317,22 @@ async function handleGET(request, { params }, attempt = 1) {
       let allTenders = await db.collection('tenders')
         .find(query)
         .project({ pdf_base64: 0 }) 
-        .sort({ last_date: -1 })
-        .limit(300) // 🚀 PERF: Cap payload size so the browser never chokes on thousands of tenders
+        .sort({ last_date: 1 })
+        .limit(300)
         .toArray();
       console.log(`🔍 [tenders] DB find().toArray() took ${Date.now() - __tendersQueryStart}ms | returned ${allTenders.length} docs`);
 
-      // 🚀 FIX: Admin dashboard should see every tender (including expired ones) —
-      // only the public-facing site should hide expired tenders.
+      const isArchive = scope === 'archive';
       let tenders = allTenders.filter(t => {
-          if (role === 'admin') return true;
-          if (!t.last_date) return true;
-          return new Date(t.last_date).getTime() >= today.getTime();
+          const ms = t.last_date ? new Date(t.last_date).getTime() : NaN;
+          if (Number.isNaN(ms)) return false;
+          if (isArchive) return ms < today.getTime();
+          return ms >= today.getTime();
+      });
+      tenders.sort((a, b) => {
+        const aMs = a.last_date ? new Date(a.last_date).getTime() : Number.POSITIVE_INFINITY;
+        const bMs = b.last_date ? new Date(b.last_date).getTime() : Number.POSITIVE_INFINITY;
+        return aMs - bMs;
       });
 
       if (month && year && scope !== 'all') {
@@ -816,7 +820,11 @@ async function handleGET(request, { params }, attempt = 1) {
       } else {
         query = { _id: { $exists: false } };
       }
-      const team = await db.collection('employees').find(query).sort({ created_at: -1 }).toArray();
+      const team = await db.collection('employees').find({
+        ...query,
+        deleted: { $ne: true },
+        active: { $ne: false },
+      }).sort({ created_at: -1 }).toArray();
       return json({ team });
     }
 

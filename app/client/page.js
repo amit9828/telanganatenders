@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
+import { liveTendersOnly } from '@/lib/tender-sort';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -302,7 +303,7 @@ export default function ClientDashboard() {
     try {
       const r = await fetch('/api/tenders');
       const d = await r.json();
-      setPublicTenders(d.tenders || []);
+      setPublicTenders(liveTendersOnly(d.tenders || []));
     } catch (err) { console.error(err); }
   };
 
