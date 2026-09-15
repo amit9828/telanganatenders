@@ -9,6 +9,7 @@ import { launchGemHunter } from '@/lib/gem-hunter-client';
 import {
   Clock, FileText, Loader2, MapPin, MessageCircle, Radar, RefreshCw, Rocket, Sparkles, Target, Zap,
 } from 'lucide-react';
+import { staffPdfHref, viewTenderOnHome } from '@/components/workflow/api';
 import { formatINR } from '@/lib/format';
 
 function staffHeaders(extra = {}) {
@@ -16,6 +17,8 @@ function staffHeaders(extra = {}) {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('tt_admin');
     if (token) headers.Authorization = `Bearer ${token}`;
+    const email = localStorage.getItem('tt_emp_email');
+    if (email) headers['x-employee-email'] = email;
   }
   return headers;
 }
@@ -350,10 +353,19 @@ export default function AiMatchmakerPanel({ compact = false } = {}) {
                       disabled={!m.tender.id}
                       onClick={() => {
                         if (!m.tender.id) return;
-                        window.open(`/api/tenders/${m.tender.id}/pdf?role=admin`, '_blank');
+                        window.location.assign(staffPdfHref(m.tender.id, { role: 'admin' }));
                       }}
                     >
-                      <FileText className="w-4 h-4 mr-2" /> View Tender PDF
+                      <FileText className="w-4 h-4 mr-2" /> View PDF
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      disabled={!m.tender?.bid_no}
+                      onClick={() => viewTenderOnHome(m.tender?.bid_no)}
+                    >
+                      View Tender
                     </Button>
                     <Button
                       size="sm"

@@ -1616,7 +1616,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           key={job._id}
                           job={job}
                           actions={[
-                            { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
+                            { label: 'View SOW', icon: 'eye', onClick: () => window.location.assign(`/api/workflow/jobs/${job._id}/file?slot=sow`) },
                             { label: 'Approve', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
                           ]}
                         />
@@ -1686,7 +1686,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                      <CompactTenderCard
                        key={job._id}
                        job={{ ...job, display_status: 'In Progress' }}
-                       actions={[{ label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') }]}
+                       actions={[{ label: 'View SOW', icon: 'eye', onClick: () => window.location.assign(`/api/workflow/jobs/${job._id}/file?slot=sow`) }]}
                      />
                    ))}
                    {workflowJobs.filter(j => j.status === 'SUBMITTED' || j.display_status === 'Submitted' || j.display_status === 'Technical Evaluation' || j.display_status === 'Financial Evaluation').map((job) => (
@@ -1694,7 +1694,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        key={job._id}
                        job={job}
                        actions={[
-                         { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
+                         { label: 'View SOW', icon: 'eye', onClick: () => window.location.assign(`/api/workflow/jobs/${job._id}/file?slot=sow`) },
                          job.receipt && { label: 'Receipt', icon: 'download', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=receipt`, '_blank') },
                        ].filter(Boolean)}
                      />

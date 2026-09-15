@@ -17,6 +17,7 @@ import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
 import { deskPathForDesignation } from '@/lib/designations';
 import { formatINR } from '@/lib/format';
+import { workflowFetch, openWorkflowFile, viewTenderOnHome } from '@/components/workflow/api';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
@@ -143,6 +144,7 @@ export default function AdminPage() {
 
   // --- PERMANENT BACKEND STATES ---
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
+  const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
   const [bidRequests, setBidRequests] = useState([]);
   const [bidReply, setBidReply] = useState({});
@@ -450,6 +452,20 @@ export default function AdminPage() {
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`, '_blank');
     toast.success('Opening PDF Document...');
+  };
+
+  const forwardToGm = async (t) => {
+    try {
+      await workflowFetch('/api/workflow/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tender_id: t._id || t.id, bid_no: t.bid_no, title: t.title }),
+      });
+      toast.success('Forwarded to GM Suggestion Module.');
+      refresh();
+    } catch (err) {
+      toast.error(err.message);
+    }
   };
 
   const publish = async (e) => {
@@ -887,6 +903,21 @@ export default function AdminPage() {
       }
     } catch (err) { toast.error('Network Error.'); }
   };
+  const handleRaiseQuery = async (e) => {
+    e.preventDefault();
+    if(!queryForm.client_email || !queryForm.subject || !queryForm.message) return toast.error('Please select client and fill query');
+    try {
+      const res = await fetch('/api/queries/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(queryForm)
+      });
+      if (res.ok) {
+        toast.success(`Query Raised! Client's dashboard is now locked until they reply.`);
+        setQueryForm({ client_email: '', subject: '', message: '' });
+        refresh();
+      } else { toast.error('Failed to raise query.'); }
+    } catch (err) { toast.error('Network Error while raising query.'); }
+  };
   const handleGiveWarning = async (id) => {
     try {
       await fetch('/api/dispatches/update', {
@@ -1098,6 +1129,7 @@ const handleViewDocument = (req) => {
     { id: 'team-support', label: 'Team & Support', items: [
       { value: 'team', label: 'Team Directory', icon: UserCog, color: 'blue' },
       { value: 'alerts', label: 'Alerts', icon: BellRing, color: 'navy' },
+      { value: 'client-queries', label: 'Client Queries', icon: BellRing, color: 'navy' },
       { value: 'chat', label: 'Staff Chat', icon: MessageSquare, color: 'navy' },
       { value: 'tickets', label: 'Helpdesk', icon: MessageSquare, color: 'navy', badge: activeTickets.length },
     ] },
@@ -1661,13 +1693,124 @@ const handleViewDocument = (req) => {
               jobs={wfJobs.filter((j) => ['MD_CHECKLIST','TL_ASSIGN','MAKER_PREP','TL_QC','GM_QC','MD_SUBMIT','AWAITING_RECEIPT'].includes(j.status))}
               tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
               members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
+              team={teamMembers}
               onRefresh={refresh}
+              chatSelfId="MD"
+              chatRoster={teamMembers}
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
-            <SubmittedTrackingBoard jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')} canEdit={false} onRefresh={refresh} />
+            <SubmittedTrackingBoard jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')} canEdit={false} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
           </TabsContent>
           <TabsContent value="alerts" className="mt-4"><OpsAlerts /></TabsContent>
+          <TabsContent value="client-queries" className="mt-4">
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card className="shadow-sm border-t-4 border-t-red-500">
+                <CardHeader className="bg-red-50/50 pb-4 border-b">
+                  <CardTitle className="text-red-900 flex items-center gap-2"><BellRing className="w-5 h-5 text-red-600"/> Push Action Request</CardTitle>
+                  <CardDescription>Send a direct red-alert banner to the client's portal screen.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
+                    try {
+                      const res = await fetch('/api/dispatches', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...taskForm, target_type: 'client_alert' }) });
+                      if (res.ok) { toast.success('Dispatch Sent!'); setTaskForm({ target_type: 'client_alert', target_id: '', subject: '', message: '' }); refresh(); }
+                      else toast.error('Failed to dispatch');
+                    } catch (err) { toast.error('Network Error.'); }
+                  }} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client ID *</Label>
+                      <Select required value={taskForm.target_id} onValueChange={(v) => setTaskForm({ ...taskForm, target_type: 'client_alert', target_id: v })}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Subject *</Label>
+                      <Input required value={taskForm.subject} onChange={(e) => setTaskForm({ ...taskForm, subject: e.target.value })} className="mt-1 bg-white h-9" />
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Requirement / Message *</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-24 text-sm bg-white" value={taskForm.message} onChange={(e) => setTaskForm({ ...taskForm, message: e.target.value })} />
+                    </div>
+                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 h-10 shadow-md">
+                      <Send className="w-4 h-4 mr-2"/> Push Alert
+                    </Button>
+                  </form>
+                  <div className="mt-8">
+                     <h4 className="font-bold text-slate-700 text-sm mb-3">Pending Action Alerts</h4>
+                     {dispatches.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No active alerts pushed to clients.</p>
+                     ) : (
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                           {dispatches.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').map(alert => (
+                              <div key={alert._id} className="bg-red-50 border border-red-100 p-3 rounded-lg">
+                                 <span className="text-[9px] text-red-400 font-bold mb-1">To: {alert.target_id}</span>
+                                 <p className="text-xs text-red-900 mb-2">"{alert.message}"</p>
+                              </div>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="shadow-sm border-t-4 border-t-orange-500">
+                <CardHeader className="bg-orange-50/50 pb-4 border-b">
+                  <CardTitle className="text-orange-900 flex items-center gap-2"><Lock className="w-5 h-5 text-orange-600"/> Raise Document Query</CardTitle>
+                  <CardDescription>Missing documents? This will lock the client's screen until they reply.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleRaiseQuery} className="space-y-4">
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Select Client *</Label>
+                      <Select required value={queryForm.client_email} onValueChange={(v) => setQueryForm({ ...queryForm, client_email: v })}>
+                         <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
+                         <SelectContent>
+                            {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
+                         </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Query Subject *</Label>
+                      <Input required placeholder="e.g., PAN Card Missing" value={queryForm.subject} onChange={(e) => setQueryForm({ ...queryForm, subject: e.target.value })} className="mt-1 bg-white h-9 text-sm"/>
+                    </div>
+                    <div>
+                      <Label className="text-slate-600 text-xs font-bold">Detailed Description *</Label>
+                      <textarea required className="w-full border rounded-md p-2 mt-1 h-[68px] text-sm bg-white" value={queryForm.message} onChange={(e) => setQueryForm({ ...queryForm, message: e.target.value })} />
+                    </div>
+                    <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 h-10 shadow-md">
+                      <Lock className="w-4 h-4 mr-2"/> Lock Client & Send Query
+                    </Button>
+                  </form>
+                  <div className="mt-8">
+                     <h4 className="font-bold text-slate-700 text-sm mb-3">Active Client Queries</h4>
+                     <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                        {approvedClients.filter(c => c.officer_queries && c.officer_queries.some(q => !q.is_closed)).length === 0 ? (
+                           <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded border border-dashed">No active queries pending.</p>
+                        ) : (
+                           approvedClients.filter(c => c.officer_queries && c.officer_queries.some(q => !q.is_closed)).map(client => (
+                              client.officer_queries.filter(q => !q.is_closed).map((q, idx) => (
+                                 <div key={`${client.email}-${idx}`} className="bg-orange-50 border border-orange-200 p-3 rounded-lg">
+                                    <span className="text-[9px] text-orange-500 font-bold">To: {client.company_name || client.email}</span>
+                                    <p className="text-xs font-bold text-orange-900 mb-1">{q.subject}</p>
+                                    <p className="text-xs text-orange-800 mb-2">"{q.message}"</p>
+                                    <Button size="sm" onClick={() => handleCloseQuery(q.id, client.email)} className="h-7 text-[10px] bg-[#16a34a] hover:bg-[#15803d]">
+                                      <CheckCircle2 className="w-3 h-3 mr-1"/> {q.reply_submitted ? 'Verify & Close' : 'Force Close Query'}
+                                    </Button>
+                                 </div>
+                              ))
+                           ))
+                        )}
+                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
           <TabsContent value="chat" className="mt-4"><StaffChat selfId="MD" roster={teamMembers} /></TabsContent>
 
           {/* ==================== 4b. TEAM ACTIVITY (MD-ONLY GLOBAL ATTRIBUTION) ====================
@@ -1726,9 +1869,11 @@ const handleViewDocument = (req) => {
                 <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
                   {teamActivityLoading ? (
                     <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading live tracking...</p></div>
-                  ) : teamTracking.length === 0 ? (
+                  ) : teamTracking.length === 0 && wfJobs.length === 0 ? (
                     <div className="text-center py-12 text-slate-400"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No bids are currently being tracked.</p></div>
                   ) : (
+                    <>
+                    {teamTracking.length > 0 && (
                     <table className="premium-table text-sm text-left">
                       <thead>
                         <tr><th>Client</th><th>Bid Detail</th><th>Status</th><th>Employee</th><th className="text-right">Value</th></tr>
@@ -1751,6 +1896,33 @@ const handleViewDocument = (req) => {
                         ))}
                       </tbody>
                     </table>
+                    )}
+                    {wfJobs.filter((j) => j.status !== 'AWAITING_PUBLISH').length > 0 && (
+                      <table className="premium-table text-sm text-left mt-4">
+                        <thead>
+                          <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th></tr>
+                        </thead>
+                        <tbody>
+                          {wfJobs.filter((j) => j.status !== 'AWAITING_PUBLISH').map((job) => (
+                            <tr key={job._id}>
+                              <td className="align-top text-xs font-semibold">{job.client_name || job.client_email || '—'}</td>
+                              <td className="align-top">
+                                <p className="font-semibold text-xs">{job.bid_no || 'PENDING'}</p>
+                                <p className="text-[10px] text-slate-500 line-clamp-1">{job.title}</p>
+                              </td>
+                              <td className="align-top"><Badge variant="outline" className="text-[10px]">{job.status}</Badge></td>
+                              <td className="align-top text-xs">{job.suggested_by?.name || job.assigned_emp_name || job.created_by_tl || 'MD'}</td>
+                              <td className="align-top">
+                                {job.sow ? (
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => openWorkflowFile(job._id, 'sow')}>View SOW</Button>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -2254,6 +2426,14 @@ const handleViewDocument = (req) => {
                       <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
                          <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
+                         </Button>
+                         {t.bid_no && (
+                           <Button size="sm" variant="outline" className="h-8 text-xs shrink-0" onClick={() => viewTenderOnHome(t.bid_no)}>
+                             View Tender
+                           </Button>
+                         )}
+                         <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={() => forwardToGm(t)}>
+                           Forward to GM
                          </Button>
                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
                             <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>

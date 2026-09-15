@@ -195,7 +195,15 @@ export default function EmployeeDashboard() {
       if (pendRes.ok) { const pendData = await pendRes.json(); setPendingUsers(pendData.users || []); }
       if (reqRes.ok) { const reqData = await reqRes.json(); setBidRequests(reqData.requests || []); }
       if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } 
-      if (empRes.ok) { const eData = await empRes.json(); setTeamMembers(eData.team || []); }
+      if (empRes.ok) {
+        const eData = await empRes.json();
+        const team = eData.team || [];
+        setTeamMembers(team);
+        const mine = team.find((t) => String(t.email || '').toLowerCase() === String(userEmail || '').toLowerCase()) || team[0];
+        if (mine?.emp_id) {
+          setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer' });
+        }
+      }
       if (wfRes.ok) { const wData = await wfRes.json(); setWfJobs(wData.jobs || []); }
     } catch (err) { console.error("Employee Sync Error", err); } finally { setLoading(false); }
   };
@@ -1225,11 +1233,15 @@ return (
               desk="employee"
               jobs={wfJobs.filter((j) => ['MAKER_PREP','TL_QC','TL_ASSIGN'].includes(j.status))}
               onRefresh={() => fetchLiveOperationsData(email)}
+              chatSelfId={empData.id}
+              chatRoster={teamMembers}
             />
             <SubmittedTrackingBoard
               jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')}
               canEdit
               onRefresh={() => fetchLiveOperationsData(email)}
+              chatSelfId={empData.id}
+              chatRoster={teamMembers}
             />
             <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -1459,6 +1471,7 @@ return (
             </Card>
           </TabsContent>
 
+          {false ? (
           <TabsContent value="officers" className="w-full space-y-6">
             <div className="grid lg:grid-cols-3 gap-6">
               <Card className="shadow-sm border-t-4 border-t-purple-600 lg:col-span-1 h-fit">
@@ -1566,6 +1579,7 @@ return (
               </Card>
             </div>
           </TabsContent>
+          ) : null}
 
           <TabsContent value="clients" className="w-full space-y-6">
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6 w-full">

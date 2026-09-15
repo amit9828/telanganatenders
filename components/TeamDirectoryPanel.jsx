@@ -9,18 +9,119 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { signIn } from 'next-auth/react';
-import { Key, LogIn, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { DESIGNATION_LABELS, deskPathForDesignation } from '@/lib/designations';
 import { workflowFetch } from '@/components/workflow/api';
+
+function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
+  const [showPw, setShowPw] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    name: off.name || '',
+    email: off.email || '',
+    password: '',
+    designation: off.designation || '',
+    team_id: off.team_id || '',
+  });
+
+  const save = async () => {
+    try {
+      await workflowFetch(`/api/employees?id=${encodeURIComponent(off._id || off.emp_id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emp_id: off.emp_id,
+          name: form.name,
+          email: form.email,
+          designation: form.designation,
+          team_id: form.team_id,
+          ...(form.password ? { password: form.password } : {}),
+        }),
+      });
+      toast.success('Staff updated.');
+      setEditing(false);
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const remove = async () => {
+    if (!confirm(`Delete ${off.name} (${off.emp_id})?`)) return;
+    try {
+      await workflowFetch(`/api/employees?id=${encodeURIComponent(off._id || off.emp_id)}`, { method: 'DELETE' });
+      toast.success('Staff deleted.');
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  return (
+    <div className="border rounded-xl p-3">
+      <div className="flex justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-bold text-sm">{off.name}</p>
+          <p className="text-[10px] font-mono text-slate-500">{off.emp_id} · {off.email}</p>
+        </div>
+        <Badge variant="outline">{DESIGNATION_LABELS[off.designation] || off.designation || off.role}</Badge>
+      </div>
+      {canManage && showPw && (
+        <p className="mt-2 text-[11px] font-mono bg-slate-50 border rounded px-2 py-1 break-all">
+          Password: {off.password || '—'}
+        </p>
+      )}
+      {editing && (
+        <div className="mt-2 space-y-2">
+          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="h-8 text-xs" />
+          <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="h-8 text-xs" />
+          <Input placeholder="New password (optional)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="h-8 text-xs" />
+          {form.designation === 'DOC_TEAM_MEMBER' && (
+            <Select value={form.team_id} onValueChange={(v) => setForm({ ...form, team_id: v })}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Team Lead" /></SelectTrigger>
+              <SelectContent>
+                {tls.map((t) => <SelectItem key={t.emp_id} value={t.emp_id}>{t.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+          <Button size="sm" className="h-7 text-[10px] w-full" onClick={save}>Save changes</Button>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        {canBypass && impersonate && (
+          <Button size="sm" className="h-7 text-[10px]" onClick={() => impersonate(off)}>
+            <LogIn className="w-3 h-3 mr-1" /> Bypass
+          </Button>
+        )}
+        {canManage && (
+          <>
+            <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setEditing((v) => !v)}>
+              <Pencil className="w-3 h-3 mr-1" /> Edit
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setShowPw((v) => !v)}>
+              {showPw ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />} Password
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-[10px] text-red-600 border-red-200" onClick={remove}>
+              <Trash2 className="w-3 h-3 mr-1" /> Delete
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', designation: actorDesk === 'md' ? 'GM' : 'DOC_TEAM_TL', team_id: '' });
   const tls = team.filter((t) => t.designation === 'DOC_TEAM_TL');
+  const gms = team.filter((t) => t.designation === 'GM');
+  const members = team.filter((t) => t.designation === 'DOC_TEAM_MEMBER');
   const allowed = useMemo(() => {
     if (actorDesk === 'md') return ['GM', 'DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
     if (actorDesk === 'gm') return ['DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
     return [];
   }, [actorDesk]);
+  const canManage = actorDesk === 'md' || actorDesk === 'gm';
 
   const create = async (e) => {
     e.preventDefault();
@@ -45,6 +146,15 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
     if (actorDesk === 'tl') return member.designation === 'DOC_TEAM_MEMBER';
     return false;
   };
+
+  const cardProps = (off) => ({
+    off,
+    canManage,
+    canBypass: canBypass(off),
+    impersonate,
+    onRefresh,
+    tls,
+  });
 
   return (
     <div className="grid lg:grid-cols-2 gap-6">
@@ -95,23 +205,33 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
       )}
       <Card>
         <CardHeader><CardTitle className="text-lg">Team</CardTitle></CardHeader>
-        <CardContent className="space-y-3 max-h-[520px] overflow-y-auto">
-          {team.map((off) => (
-            <div key={off._id} className="border rounded-xl p-3">
-              <div className="flex justify-between gap-2">
-                <div>
-                  <p className="font-bold text-sm">{off.name}</p>
-                  <p className="text-[10px] font-mono text-slate-500">{off.emp_id} · {off.email}</p>
+        <CardContent className="space-y-4 max-h-[620px] overflow-y-auto">
+          {gms.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">General Managers</p>
+              {gms.map((off) => <StaffCard key={off._id || off.emp_id} {...cardProps(off)} />)}
+            </div>
+          )}
+          {tls.map((tl) => (
+            <div key={tl.emp_id} className="space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Team · {tl.name}</p>
+              <StaffCard {...cardProps(tl)} />
+              {members.filter((m) => m.team_id === tl.emp_id).map((off) => (
+                <div key={off._id || off.emp_id} className="pl-3 border-l-2 border-slate-200">
+                  <StaffCard {...cardProps(off)} />
                 </div>
-                <Badge variant="outline">{DESIGNATION_LABELS[off.designation] || off.designation || off.role}</Badge>
-              </div>
-              {canBypass(off) && impersonate && (
-                <Button size="sm" className="mt-2 h-8 text-xs w-full" onClick={() => impersonate(off)}>
-                  <LogIn className="w-3 h-3 mr-1" /> Login as {off.designation || off.role}
-                </Button>
-              )}
+              ))}
             </div>
           ))}
+          {members.filter((m) => !tls.some((tl) => tl.emp_id === m.team_id)).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Unassigned members</p>
+              {members.filter((m) => !tls.some((tl) => tl.emp_id === m.team_id)).map((off) => (
+                <StaffCard key={off._id || off.emp_id} {...cardProps(off)} />
+              ))}
+            </div>
+          )}
+          {team.length === 0 && <p className="text-sm text-slate-400 text-center py-8">No staff yet.</p>}
         </CardContent>
       </Card>
     </div>

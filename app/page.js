@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { TS_DISTRICTS, AP_DISTRICTS } from '@/lib/regions';
 import { deskPathForDesignation } from '@/lib/designations';
+import { numberedPageList } from '@/components/workflow/api';
 
 const PLANS = [
   { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
@@ -74,6 +75,12 @@ export default function App() {
   const [stateFilter, setStateFilter] = useState('all'); 
   const [district, setDistrict] = useState('all');       
   const [searchQ, setSearchQ] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q) setSearchQ(q);
+  }, []);
 
   const [tenders, setTenders] = useState([]);
   const [calDays, setCalDays] = useState({});
@@ -797,6 +804,7 @@ export default function App() {
                      <CardContent className="p-5 flex flex-col sm:flex-row items-start gap-4">
                        <div className="flex-1 min-w-0 w-full">
                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                           {t.bid_no && <Badge variant="outline" className="text-xs font-mono bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
                            <Badge className="bg-[#0A2647] font-semibold"><MapPin className="w-3 h-3 mr-1" />{t.district}</Badge>
                            {t.category && <Badge variant="outline" className="text-xs bg-slate-50 font-semibold">{t.category}</Badge>}
                            <span className="text-[11px] font-black text-red-600 bg-red-50 px-2 py-1 rounded flex items-center border border-red-100 uppercase">
@@ -816,25 +824,35 @@ export default function App() {
 
                {/* 🚀 Pagination Controls (10 per page) */}
                {totalPages > 1 && (
-                 <div className="flex items-center justify-center gap-4 pt-4">
+                 <div className="flex items-center justify-center flex-wrap gap-1.5 pt-4">
                    <Button
                      variant="outline"
                      onClick={() => goToPage(currentPage - 1)}
                      disabled={currentPage === 1}
                      className="border-2 font-bold text-slate-600 disabled:opacity-40"
                    >
-                     <ChevronLeft className="w-4 h-4 mr-1" /> Previous
+                     <ChevronLeft className="w-4 h-4" />
                    </Button>
-                   <span className="text-sm font-black text-[#0A2647] whitespace-nowrap">
-                     Page {currentPage} of {totalPages}
-                   </span>
+                   {numberedPageList(currentPage, totalPages).map((p, i, arr) => (
+                     <span key={p} className="inline-flex items-center gap-1.5">
+                       {i > 0 && p - arr[i - 1] > 1 && <span className="text-xs text-slate-400 px-0.5">…</span>}
+                       <Button
+                         size="sm"
+                         variant={p === currentPage ? 'default' : 'outline'}
+                         className={`h-9 w-9 p-0 text-xs font-bold ${p === currentPage ? 'bg-[#0A2647]' : ''}`}
+                         onClick={() => goToPage(p)}
+                       >
+                         {p}
+                       </Button>
+                     </span>
+                   ))}
                    <Button
                      variant="outline"
                      onClick={() => goToPage(currentPage + 1)}
                      disabled={currentPage === totalPages}
                      className="border-2 font-bold text-slate-600 disabled:opacity-40"
                    >
-                     Next <ChevronRight className="w-4 h-4 ml-1" />
+                     <ChevronRight className="w-4 h-4" />
                    </Button>
                  </div>
                )}
