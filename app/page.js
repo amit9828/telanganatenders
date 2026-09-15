@@ -21,6 +21,7 @@ import {
 import { TS_DISTRICTS, AP_DISTRICTS } from '@/lib/regions';
 import { deskPathForDesignation } from '@/lib/designations';
 import { numberedPageList } from '@/components/workflow/api';
+import { liveTendersOnly } from '@/lib/tender-sort';
 
 const PLANS = [
   { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
@@ -104,7 +105,7 @@ export default function App() {
   
   // LIVE API Settings
   const [brandSettings, setBrandSettings] = useState({ 
-    name: 'Telangana Tenders', logo: null, gem_logo: null, banners: [], leaders: [], clients: [], vision_text: null 
+    name: 'TG Tenders', logo: null, gem_logo: null, banners: [], leaders: [], clients: [], vision_text: null 
   });
   const [activeBanner, setActiveBanner] = useState(0);
   const [logoFlip, setLogoFlip] = useState(false); // 🚀 3D Rotating Logo State for Loading Screen
@@ -284,7 +285,7 @@ export default function App() {
   // never lands on a stale, out-of-range page.
   useEffect(() => { setCurrentPage(1); }, [appliedMonth, appliedYear, appliedDay, district, category, searchQ]);
 
-  const activeTenders = useMemo(() => tenders.filter(t => new Date(t.last_date).getTime() >= today.getTime()), [tenders, today]);
+  const activeTenders = useMemo(() => liveTendersOnly(tenders), [tenders]);
   
   const filteredTenders = useMemo(() => {
     if (!appliedDay) return activeTenders; 
@@ -517,7 +518,7 @@ export default function App() {
   };
 
   // 🚀 FIXED: 3D ANIMATED SPINNER LOADER
-  if (status === 'loading' || loadingUser) {
+  if (status === 'authenticated' && loadingUser) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
          <div className="relative w-24 h-24 shrink-0 [perspective:1000px] mb-6">
@@ -621,21 +622,23 @@ export default function App() {
           
           {/* Left Side: Telangana Tenders */}
           <div className="flex items-center gap-3">
-             {brandSettings?.logo ? (
-                <Image
-                  src={brandSettings.logo}
-                  alt="Telangana Tenders company logo — GeM & government tender consultancy"
-                  width={64}
-                  height={64}
-                  priority
-                  className="w-14 h-14 md:w-16 md:h-16 rounded object-contain"
-                />
-             ) : (
-                <div className="w-14 h-14 bg-[#16a34a] rounded flex items-center justify-center text-white font-bold text-2xl">TT</div>
-             )}
+             <div className="w-14 h-14 md:w-16 md:h-16 rounded bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+               {brandSettings?.logo ? (
+                  <Image
+                    src={brandSettings.logo}
+                    alt="TG Tenders company logo"
+                    width={64}
+                    height={64}
+                    priority
+                    className="w-full h-full object-contain"
+                  />
+               ) : (
+                  <div className="w-full h-full bg-[#16a34a] flex items-center justify-center text-white font-bold text-2xl">TT</div>
+               )}
+             </div>
              <div className="hidden sm:block">
-                <h1 className="text-2xl md:text-3xl font-extrabold text-[#0A2647] leading-tight">
-                  Telangana Tenders
+                <h1 className="text-2xl md:text-3xl font-extrabold leading-tight">
+                  <span className="text-[#0A2647]">TG</span> <span className="text-[#16a34a]">Tenders</span>
                 </h1>
                 <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">Consultancy Services & Corporate Approvals</p>
              </div>
@@ -705,7 +708,7 @@ export default function App() {
             onClick={handleInstallApp} 
             className="bg-[#16a34a] hover:bg-[#15803d] text-white font-bold w-full max-w-[350px] shadow-md animate-pulse"
           >
-            ⬇️ Install Telangana Tenders App
+            ⬇️ Install TG Tenders App
           </Button>
         </div>
       )}
@@ -722,7 +725,7 @@ export default function App() {
                 fill
                 priority={idx === activeBanner}
                 sizes="100vw"
-                className={`object-cover transition-opacity duration-1000 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`}
+                className={`object-cover transition-opacity duration-200 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`}
               />
             ))}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end justify-center pb-8">
@@ -804,7 +807,6 @@ export default function App() {
                      <CardContent className="p-5 flex flex-col sm:flex-row items-start gap-4">
                        <div className="flex-1 min-w-0 w-full">
                          <div className="flex flex-wrap items-center gap-2 mb-2">
-                           {t.bid_no && <Badge variant="outline" className="text-xs font-mono bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
                            <Badge className="bg-[#0A2647] font-semibold"><MapPin className="w-3 h-3 mr-1" />{t.district}</Badge>
                            {t.category && <Badge variant="outline" className="text-xs bg-slate-50 font-semibold">{t.category}</Badge>}
                            <span className="text-[11px] font-black text-red-600 bg-red-50 px-2 py-1 rounded flex items-center border border-red-100 uppercase">

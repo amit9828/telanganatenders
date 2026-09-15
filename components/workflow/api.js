@@ -48,6 +48,21 @@ export function openWorkflowFile(jobId, slot = 'sow') {
   window.location.assign(`/api/workflow/jobs/${jobId}/file?slot=${slot}`);
 }
 
+export function openStaffChatFile(id) {
+  if (typeof window === 'undefined' || !id) return;
+  fetch(`/api/staff-chat/file?id=${encodeURIComponent(id)}`, {
+    credentials: 'include',
+    headers: staffHeaders(),
+  }).then(async (res) => {
+    if (!res.ok) throw new Error('Could not open file');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.location.assign(url);
+  }).catch((err) => {
+    console.error(err);
+  });
+}
+
 export function numberedPageList(current, total) {
   const t = Math.max(1, Number(total) || 1);
   const c = Math.min(Math.max(1, Number(current) || 1), t);

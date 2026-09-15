@@ -3,15 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
-import GeminiWorkspace from '@/components/GeminiWorkspace';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import GemCoPilot from '@/components/GemCoPilot';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
-import SuggestSowModal from '@/components/workflow/SuggestSowModal';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import SuggestionBar from '@/components/workflow/SuggestionBar';
+import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
@@ -34,6 +34,8 @@ export default function StaffOpsDesk({ desk }) {
   const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'tasks' : 'live');
   const [jobs, setJobs] = useState([]);
+  const [internalJobs, setInternalJobs] = useState([]);
+  const [submittedJobs, setSubmittedJobs] = useState([]);
   const [tenders, setTenders] = useState([]);
   const [clients, setClients] = useState([]);
   const [team, setTeam] = useState([]);
@@ -43,7 +45,6 @@ export default function StaffOpsDesk({ desk }) {
   const [officerForm, setOfficerForm] = useState({
     name: '', department: '', designation: '', phone: '', state: '', district: '', address: '', pincode: '', notes: '',
   });
-  const [suggestJob, setSuggestJob] = useState(null);
   const [memberId, setMemberId] = useState('');
   const [taskTitle, setTaskTitle] = useState('Check Drive / Publish tender');
   const [tenderForm, setTenderForm] = useState({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
@@ -59,9 +60,11 @@ export default function StaffOpsDesk({ desk }) {
 
   const load = async () => {
     try {
-      const [q, t, c, e, o] = await Promise.all([
+      const [q, internalQ, submittedQ, t, c, e, o] = await Promise.all([
         workflowFetch('/api/workflow/queue'),
-        fetch('/api/tenders?role=admin', { credentials: 'include' }).then((r) => r.json()),
+        workflowFetch('/api/workflow/queue?board=internal'),
+        workflowFetch('/api/workflow/queue?board=submitted'),
+        fetch('/api/tenders', { credentials: 'include' }).then((r) => r.json()),
         fetch('/api/users/approved', { credentials: 'include' }).then((r) => r.json()),
         workflowFetch('/api/employees'),
         isGm
@@ -69,6 +72,8 @@ export default function StaffOpsDesk({ desk }) {
           : Promise.resolve({ officers: [] }),
       ]);
       setJobs(q.jobs || []);
+      setInternalJobs(internalQ.jobs || []);
+      setSubmittedJobs(submittedQ.jobs || []);
       setTenders(t.tenders || []);
       setClients(c.users || []);
       setTeam(e.team || []);
@@ -87,9 +92,10 @@ export default function StaffOpsDesk({ desk }) {
     return () => clearInterval(interval);
   }, [status]);
 
-  const liveJobs = jobs.filter((j) => j.status === 'LIVE' || j.status === 'AWAITING_CLIENT');
-  const internal = jobs.filter((j) => ['MD_CHECKLIST', 'TL_ASSIGN', 'MAKER_PREP', 'TL_QC', 'GM_QC', 'MD_SUBMIT', 'AWAITING_RECEIPT'].includes(j.status));
-  const submitted = jobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON');
+  const liveJobs = jobs.filter((j) => j.status === 'LIVE' && !j.parked_client_email);
+  const parkedJobs = jobs.filter((j) => j.status === 'LIVE' && j.parked_client_email);
+  const internal = internalJobs;
+  const submitted = submittedJobs;
   const awaitingPublish = jobs.filter((j) => j.status === 'AWAITING_PUBLISH');
   const tls = team.filter((t) => t.designation === 'DOC_TEAM_TL');
   const members = team.filter((t) => t.designation === 'DOC_TEAM_MEMBER');
@@ -103,6 +109,7 @@ export default function StaffOpsDesk({ desk }) {
     ? [
         { id: 'work', label: 'Work', items: [
           { value: 'live', label: 'Live Tenders', icon: FileText, color: 'navy' },
+          { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
           { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
         ] },
@@ -243,14 +250,8 @@ export default function StaffOpsDesk({ desk }) {
                     {liveJobs.map((j) => (
                       <CompactTenderCard
                         key={j._id}
-                        job={{ ...j, display_status: j.status === 'AWAITING_CLIENT' ? 'Pending Approval' : 'LIVE' }}
-                        actions={[
-                          (!j.client_email) && {
-                            label: 'Suggest + SOW',
-                            onClick: () => setSuggestJob(j),
-                          },
-                          j.sow && { label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') },
-                        ].filter(Boolean)}
+                        job={{ ...j, display_status: 'LIVE' }}
+                        actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
                       />
                     ))}
                   </div>
@@ -258,16 +259,15 @@ export default function StaffOpsDesk({ desk }) {
                     tenders={tenders}
                     pdfEmail={staffEmail}
                     pdfRole="employee"
-                    renderActions={(t) => {
-                      const job = liveJobs.find((j) => String(j.tender_id) === String(t._id) || j.bid_no === t.bid_no);
-                      if (!job || job.client_email) return null;
-                      return (
-                        <Button size="sm" className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700" onClick={() => setSuggestJob(job)}>
-                          Suggest + SOW
-                        </Button>
-                      );
-                    }}
+                    renderActions={(t) => (
+                      <SuggestClientControls tender={t} clients={clients} onDone={load} compact />
+                    )}
                   />
+                </TabsContent>
+              )}
+              {isGm && (
+                <TabsContent value="suggestion-bar">
+                  <SuggestionBar jobs={parkedJobs} pdfEmail={staffEmail} onRefresh={load} />
                 </TabsContent>
               )}
               {isTl && (
@@ -363,8 +363,7 @@ export default function StaffOpsDesk({ desk }) {
               <TabsContent value="matchmaker"><AiMatchmakerPanel /></TabsContent>
               <TabsContent value="scraped"><LiveScrapedTendersPanel /></TabsContent>
               <TabsContent value="copilot">
-                <GemCoPilot />
-                {isGm && <div className="mt-6"><GeminiWorkspace /></div>}
+                <GemCoPilot embedded />
               </TabsContent>
               {isGm && (
                 <TabsContent value="clients">
@@ -513,13 +512,12 @@ export default function StaffOpsDesk({ desk }) {
               <TabsContent value="team">
                 <TeamDirectoryPanel actorDesk={desk} team={team} onRefresh={load} impersonate={openStaffDesk} />
               </TabsContent>
-              <TabsContent value="alerts"><OpsAlerts /></TabsContent>
+              <TabsContent value="alerts"><OpsAlerts roster={team} /></TabsContent>
               <TabsContent value="chat" className="w-full min-h-[560px]"><StaffChat selfId={selfId} roster={team} /></TabsContent>
             </Tabs>
           </div>
         </div>
       </main>
-      <SuggestSowModal open={!!suggestJob} onOpenChange={() => setSuggestJob(null)} job={suggestJob} clients={clients} onDone={load} />
     </div>
   );
 }

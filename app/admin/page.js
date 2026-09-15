@@ -12,11 +12,14 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import SuggestionBar from '@/components/workflow/SuggestionBar';
+import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
 import { deskPathForDesignation } from '@/lib/designations';
 import { formatINR } from '@/lib/format';
+import { liveTendersOnly } from '@/lib/tender-sort';
 import { workflowFetch, openWorkflowFile, viewTenderOnHome } from '@/components/workflow/api';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
@@ -173,6 +176,8 @@ export default function AdminPage() {
   const [bulkDragActive, setBulkDragActive] = useState(false);
   const [bulkFileCount, setBulkFileCount] = useState(0);
   const [wfJobs, setWfJobs] = useState([]);
+  const [wfInternal, setWfInternal] = useState([]);
+  const [wfSubmitted, setWfSubmitted] = useState([]);
 
   // 🚀 AI Matchmaker & Competitor Intel
   const [bidMatches, setBidMatches] = useState([]);
@@ -251,7 +256,7 @@ export default function AdminPage() {
     try {
       // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
       // tenders" filter that's meant only for the public site.
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes, wfRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
         safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
         safeFetch(`/api/admin/stats?t=${Date.now()}`),
         safeFetch(`/api/tickets?role=admin&t=${Date.now()}`),
@@ -264,7 +269,6 @@ export default function AdminPage() {
         safeFetch(`/api/guest-queries?t=${Date.now()}`),
         safeFetch(`/api/payments/requests?t=${Date.now()}`),
         safeFetch(`/api/bid-matches?t=${Date.now()}`),
-        safeFetch(`/api/workflow/queue?t=${Date.now()}`)
       ]);
 
       if (tRes.status === 401) return logout();
@@ -286,7 +290,18 @@ export default function AdminPage() {
         setBidMatches(matchRes.data.matches || []);
         setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
       }
-      if (wfRes.ok) setWfJobs(wfRes.data.jobs || []);
+      try {
+        const [internalQ, submittedQ, allQ] = await Promise.all([
+          workflowFetch(`/api/workflow/queue?board=internal&t=${Date.now()}`),
+          workflowFetch(`/api/workflow/queue?board=submitted&t=${Date.now()}`),
+          workflowFetch(`/api/workflow/queue?t=${Date.now()}`),
+        ]);
+        setWfInternal(internalQ.jobs || []);
+        setWfSubmitted(submittedQ.jobs || []);
+        setWfJobs(allQ.jobs || []);
+      } catch (err) {
+        console.error('Workflow queue sync failed', err);
+      }
 
       // Soft-refresh the live scraped feed without blocking the rest of the dashboard.
       refreshLiveFeed(token, { silent: true });
@@ -1081,7 +1096,7 @@ const handleViewDocument = (req) => {
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
-  const filteredTenders = (tenders || []).filter(t => 
+  const filteredTenders = liveTendersOnly(tenders || []).filter(t => 
      t.bid_no?.toLowerCase().includes((tenderSearch || '').toLowerCase()) || 
      t.title?.toLowerCase().includes((tenderSearch || '').toLowerCase()) ||
      t.department?.toLowerCase().includes((tenderSearch || '').toLowerCase())
@@ -1125,6 +1140,7 @@ const handleViewDocument = (req) => {
     ] },
     { id: 'publishing', label: 'Live Tenders', items: [
       { value: 'publisher', label: 'Live Tenders', icon: FileText, color: 'navy' },
+      { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
     ] },
     { id: 'team-support', label: 'Team & Support', items: [
       { value: 'team', label: 'Team Directory', icon: UserCog, color: 'blue' },
@@ -1690,7 +1706,7 @@ const handleViewDocument = (req) => {
           <TabsContent value="internal" className="mt-4">
             <InternalTrackingBoard
               desk="md"
-              jobs={wfJobs.filter((j) => ['MD_CHECKLIST','TL_ASSIGN','MAKER_PREP','TL_QC','GM_QC','MD_SUBMIT','AWAITING_RECEIPT'].includes(j.status))}
+              jobs={wfInternal}
               tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
               members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
               team={teamMembers}
@@ -1700,9 +1716,9 @@ const handleViewDocument = (req) => {
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
-            <SubmittedTrackingBoard jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')} canEdit={false} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
+            <SubmittedTrackingBoard jobs={wfSubmitted} canEdit={false} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
           </TabsContent>
-          <TabsContent value="alerts" className="mt-4"><OpsAlerts /></TabsContent>
+          <TabsContent value="alerts" className="mt-4"><OpsAlerts roster={teamMembers} /></TabsContent>
           <TabsContent value="client-queries" className="mt-4">
             <div className="grid lg:grid-cols-2 gap-6">
               <Card className="shadow-sm border-t-4 border-t-red-500">
@@ -2432,6 +2448,7 @@ const handleViewDocument = (req) => {
                              View Tender
                            </Button>
                          )}
+                         <SuggestClientControls tender={t} clients={approvedClients} onDone={refresh} />
                          <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={() => forwardToGm(t)}>
                            Forward to GM
                          </Button>
@@ -2474,6 +2491,13 @@ const handleViewDocument = (req) => {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+          <TabsContent value="suggestion-bar" className="mt-4">
+            <SuggestionBar
+              jobs={wfJobs.filter((j) => j.status === 'LIVE' && j.parked_client_email)}
+              pdfEmail={process.env.NEXT_PUBLIC_ADMIN_EMAIL}
+              onRefresh={refresh}
+            />
           </TabsContent>
 
           {/* ==================== 7. HELPDESK (WITH GUEST QUERIES) ==================== */}

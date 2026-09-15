@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { LANGUAGE_OPTIONS, LANGUAGES } from '@/lib/language';
+import { staffHeaders } from '@/components/workflow/api';
 import {
   Bot, Send, X, Minus, Loader2, Sparkles, FileText, AlertCircle, BookOpen,
 } from 'lucide-react';
@@ -34,8 +35,8 @@ const TENDER_PROMPTS = [
  *                                  tender instead of the general GeM knowledge base.
  * @param {string|null} tenderLabel Human-readable name shown on the context chip.
  */
-export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
-  const [open, setOpen] = useState(false);
+export default function GemCoPilot({ tenderId = null, tenderLabel = null, embedded = false }) {
+  const [open, setOpen] = useState(embedded);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -85,7 +86,8 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...staffHeaders() },
         body: JSON.stringify({
           query: question,
           tender_id: askedWithTender || undefined,
@@ -130,7 +132,7 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
 
   const prompts = contextActive ? TENDER_PROMPTS : SUGGESTED_PROMPTS;
 
-  if (!open) {
+  if (!open && !embedded) {
     return (
       <button
         type="button"
@@ -148,7 +150,10 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
   }
 
   return (
-    <div className="fixed bottom-0 right-0 sm:bottom-6 sm:right-6 z-40 w-full sm:w-[420px] h-[100dvh] sm:h-[640px] sm:max-h-[calc(100vh-3rem)] flex flex-col overflow-hidden bg-white sm:rounded-2xl shadow-2xl shadow-slate-900/25 ring-1 ring-slate-900/10 animate-in slide-in-from-bottom-4 fade-in duration-200">
+    <div className={embedded
+      ? 'relative w-full h-[min(78vh,720px)] flex flex-col overflow-hidden bg-white rounded-2xl shadow-sm ring-1 ring-slate-200'
+      : 'fixed bottom-0 right-0 sm:bottom-6 sm:right-6 z-40 w-full sm:w-[420px] h-[100dvh] sm:h-[640px] sm:max-h-[calc(100vh-3rem)] flex flex-col overflow-hidden bg-white sm:rounded-2xl shadow-2xl shadow-slate-900/25 ring-1 ring-slate-900/10 animate-in slide-in-from-bottom-4 fade-in duration-200'
+    }>
 
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-[#0A2647] text-white shrink-0">
@@ -178,22 +183,26 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          aria-label="Minimise Co-Pilot"
-          className="p-1.5 rounded-md hover:bg-white/10 transition"
-        >
-          <Minus className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => { setOpen(false); setMessages([]); setConversationId(null); }}
-          aria-label="Close and clear conversation"
-          className="p-1.5 rounded-md hover:bg-white/10 transition"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {!embedded && (
+          <>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Minimise Co-Pilot"
+              className="p-1.5 rounded-md hover:bg-white/10 transition"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setMessages([]); setConversationId(null); }}
+              aria-label="Close and clear conversation"
+              className="p-1.5 rounded-md hover:bg-white/10 transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Context chip */}

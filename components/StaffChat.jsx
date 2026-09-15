@@ -8,14 +8,20 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { toast } from 'sonner';
-import { workflowFetch, staffHeaders } from '@/components/workflow/api';
+import { workflowFetch, staffHeaders, openStaffChatFile } from '@/components/workflow/api';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { Menu, MessageSquare, Paperclip, Search, Send } from 'lucide-react';
+import { Menu, MessageSquare, Paperclip, Pencil, Search, Send, Trash2, Forward } from 'lucide-react';
 
 const MD_PEER = { emp_id: 'MD', name: 'Managing Director', designation: 'MD' };
 
 function contactId(row) {
-  return String(row?.emp_id || row?.email || '').trim();
+  return String(row?.emp_id || '').trim();
+}
+
+function isActiveEmployee(row) {
+  if (!row) return false;
+  if (row.deleted === true || row.active === false) return false;
+  return Boolean(String(row.emp_id || '').trim());
 }
 
 function initials(name) {
@@ -137,6 +143,8 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
   const [query, setQuery] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [lastRead, setLastRead] = useState({});
+  const [editingId, setEditingId] = useState('');
+  const [forwardMsg, setForwardMsg] = useState(null);
   const cacheRef = useRef(new Map());
   const endRef = useRef(null);
 
@@ -154,7 +162,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       out.push(row);
     };
     add(MD_PEER);
-    (people || []).forEach(add);
+    (people || []).filter(isActiveEmployee).forEach(add);
     return out;
   }, [people, selfId]);
 
@@ -261,6 +269,25 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
 
   const send = async () => {
     if (!peer) return toast.error('Pick a teammate.');
+    if (editingId) {
+      if (!text.trim()) return;
+      setBusy(true);
+      try {
+        await workflowFetch('/api/staff-chat', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingId, text: text.trim() }),
+        });
+        setText('');
+        setEditingId('');
+        await loadThread(peer, { silent: true });
+      } catch (e) {
+        toast.error(e.message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (!text && !file) return;
     setBusy(true);
     try {
@@ -293,6 +320,31 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       toast.error(e.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const removeMessage = async (id) => {
+    try {
+      await workflowFetch(`/api/staff-chat?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await loadThread(peer, { silent: true });
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  const forwardTo = async (toId) => {
+    if (!forwardMsg || !toId) return;
+    try {
+      await workflowFetch('/api/staff-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_emp_id: toId, forwarded_from_id: forwardMsg._id }),
+      });
+      toast.success('Forwarded.');
+      setForwardMsg(null);
+      selectPeer(toId);
+    } catch (e) {
+      toast.error(e.message);
     }
   };
 
@@ -364,22 +416,48 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
               {messages.map((m) => {
                 const mine = m.from_emp_id === selfId;
                 return (
-                  <div key={m._id} className={`mb-2 flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div key={m._id} className={`mb-2 flex ${mine ? 'justify-end' : 'justify-start'} group`}>
                     <div className={`max-w-[78%] rounded-2xl px-3 py-1.5 shadow-sm text-sm ${
                       mine ? 'bg-[#0A2647] text-white rounded-br-sm' : 'bg-white text-slate-800 rounded-bl-sm'
                     }`}>
                       {!mine && (
-                        <span className={`block text-[9px] font-bold mb-0.5 ${mine ? 'text-white/70' : 'text-sky-700'}`}>
+                        <span className="block text-[9px] font-bold mb-0.5 text-sky-700">
                           {m.from_name || m.from_emp_id}
                         </span>
                       )}
-                      <p className="whitespace-pre-wrap break-words">{m.text || m.file_name}</p>
-                      {m.file_url && (
-                        <a href={m.file_url} className={`block text-[10px] underline mt-0.5 ${mine ? 'text-sky-200' : 'text-blue-600'}`} target="_self" rel="noreferrer">
-                          Attachment
-                        </a>
+                      {m.forwarded_from && (
+                        <p className={`text-[10px] italic mb-1 ${mine ? 'text-white/70' : 'text-slate-500'}`}>
+                          Forwarded from {m.forwarded_from.from_name || m.forwarded_from.from_emp_id}
+                        </p>
                       )}
-                      <span className={`block text-[9px] mt-1 ${mine ? 'text-white/60' : 'text-slate-400'}`}>{formatWhen(m.created_at)}</span>
+                      <p className="whitespace-pre-wrap break-words">{m.text || m.file_name}</p>
+                      {(m.file_r2_key || m.file_name) && (
+                        <button
+                          type="button"
+                          onClick={() => openStaffChatFile(m._id)}
+                          className={`block text-[10px] underline mt-0.5 ${mine ? 'text-sky-200' : 'text-blue-600'}`}
+                        >
+                          {m.file_name || 'Attachment'}
+                        </button>
+                      )}
+                      <span className={`block text-[9px] mt-1 ${mine ? 'text-white/60' : 'text-slate-400'}`}>
+                        {formatWhen(m.created_at)}{m.edited_at ? ' · edited' : ''}
+                      </span>
+                      <div className={`flex gap-1 mt-1 ${mine ? 'justify-end' : 'justify-start'} opacity-0 group-hover:opacity-100`}>
+                        {mine && (
+                          <button type="button" className="text-[9px] underline" onClick={() => { setEditingId(m._id); setText(m.text || ''); }}>
+                            <Pencil className="w-3 h-3 inline mr-0.5" />Edit
+                          </button>
+                        )}
+                        <button type="button" className="text-[9px] underline" onClick={() => setForwardMsg(m)}>
+                          <Forward className="w-3 h-3 inline mr-0.5" />Forward
+                        </button>
+                        {mine && (
+                          <button type="button" className="text-[9px] underline" onClick={() => removeMessage(m._id)}>
+                            <Trash2 className="w-3 h-3 inline mr-0.5" />Delete
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -390,6 +468,24 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
         </div>
 
         <footer className="p-2 bg-[#f0f2f5] border-t border-slate-200 shrink-0">
+          {forwardMsg && (
+            <div className="mb-2 bg-white border rounded-lg p-2">
+              <p className="text-[10px] font-bold text-[#0A2647] mb-1">Forward to</p>
+              <div className="flex flex-wrap gap-1">
+                {list.filter((row) => contactId(row) !== selfId).map((row) => (
+                  <Button key={contactId(row)} size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => forwardTo(contactId(row))}>
+                    {row.name || contactId(row)}
+                  </Button>
+                ))}
+                <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setForwardMsg(null)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+          {editingId && (
+            <p className="text-[10px] text-[#0A2647] font-semibold mb-1 px-1">
+              Editing message <button type="button" className="underline ml-2" onClick={() => { setEditingId(''); setText(''); }}>cancel</button>
+            </p>
+          )}
           <div className="flex items-center gap-2">
             <label className="h-9 w-9 shrink-0 rounded-full bg-white border flex items-center justify-center cursor-pointer text-slate-500 hover:text-[#0A2647]">
               <Paperclip className="w-4 h-4" />

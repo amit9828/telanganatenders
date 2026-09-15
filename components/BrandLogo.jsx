@@ -39,7 +39,7 @@ export default function BrandLogo({ subtitle, size = 'md' }) {
   const dim = size === 'sm' ? 'w-9 h-9' : size === 'lg' ? 'w-12 h-12' : 'w-10 h-10';
 
   // Setting defaults to prevent undefined errors
-  const brandName = s?.name || 'Telangana Tenders';
+  const brandName = s?.name || 'TG Tenders';
   const tagline = s?.tagline || 'Official Government Tender Portal';
   
   // Splitting the name to apply different colors to each word
