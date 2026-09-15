@@ -15,6 +15,10 @@ function threadKey(a, b) {
   return [String(a || ''), String(b || '')].sort().join('::');
 }
 
+function senderId(actor) {
+  return actor?.role === 'MD' ? 'MD' : (actor?.empId || actor?.email || 'MD');
+}
+
 async function actorOr401(request) {
   const actor = await resolveActorRole(request);
   if (!actor.role) return { error: json({ error: 'Please sign in.' }, 401) };
@@ -26,18 +30,24 @@ export async function GET(request) {
   if (gate.error) return gate.error;
   const { actor } = gate;
   const peer = request.nextUrl.searchParams.get('peer');
+  const jobId = String(request.nextUrl.searchParams.get('job_id') || '').trim();
   const db = await getDb();
   await ensureWorkflowIndexes(db);
+  const from = senderId(actor);
+
+  if (jobId) {
+    const messages = await db.collection('staff_chats').find({ job_id: jobId }).sort({ created_at: 1 }).toArray();
+    return json({ messages, thread_key: `job::${jobId}` });
+  }
 
   if (!peer) {
-    const mine = actor.empId || actor.email || 'MD';
     const recent = await db.collection('staff_chats').find({
-      $or: [{ from_emp_id: mine }, { to_emp_id: mine }],
+      $or: [{ from_emp_id: from }, { to_emp_id: from }],
     }).sort({ created_at: -1 }).limit(200).toArray();
     return json({ messages: recent });
   }
 
-  const key = threadKey(actor.empId || actor.email || 'MD', peer);
+  const key = threadKey(from, peer);
   const messages = await db.collection('staff_chats').find({ thread_key: key }).sort({ created_at: 1 }).toArray();
   return json({ messages, thread_key: key });
 }
@@ -52,18 +62,20 @@ export async function POST(request) {
   const contentType = request.headers.get('content-type') || '';
   let toEmpId;
   let text = '';
+  let jobId = '';
   let fileMeta = null;
 
   if (contentType.includes('multipart/form-data')) {
     const form = await request.formData();
     toEmpId = String(form.get('to_emp_id') || '').trim();
-    text = String(form.get('text') || '').trim();
+    text = String(form.get('text') || form.get('body') || '').trim();
+    jobId = String(form.get('job_id') || '').trim();
     const file = form.get('file');
     if (file && typeof file !== 'string' && file.arrayBuffer) {
       const buf = Buffer.from(await file.arrayBuffer());
       if (buf.length) {
         const uploaded = await uploadWorkflowDocument(buf, file.name || 'chat.bin', {
-          jobId: `chat/${threadKey(actor.empId || 'MD', toEmpId)}`,
+          jobId: jobId ? `chat_${jobId}` : `chat_${threadKey(senderId(actor), toEmpId)}`,
           contentType: file.type || 'application/octet-stream',
         });
         if (uploaded) fileMeta = { r2_key: uploaded.key, url: uploaded.url, name: file.name };
@@ -72,17 +84,19 @@ export async function POST(request) {
   } else {
     const body = await request.json().catch(() => ({}));
     toEmpId = String(body.to_emp_id || '').trim();
-    text = String(body.text || '').trim();
+    text = String(body.text || body.body || '').trim();
+    jobId = String(body.job_id || '').trim();
   }
 
   if (!toEmpId) return json({ error: 'to_emp_id is required' }, 400);
   if (!text && !fileMeta) return json({ error: 'Message or file required' }, 400);
 
-  const from = actor.empId || actor.email || 'MD';
+  const from = senderId(actor);
   const doc = {
-    thread_key: threadKey(from, toEmpId),
+    thread_key: jobId ? `job::${jobId}` : threadKey(from, toEmpId),
+    job_id: jobId || null,
     from_emp_id: from,
-    from_name: actor.name || from,
+    from_name: actor.role === 'MD' ? (actor.name || 'Managing Director') : (actor.name || from),
     to_emp_id: toEmpId,
     text,
     file_r2_key: fileMeta?.r2_key || null,

@@ -3,6 +3,8 @@ export function staffHeaders(extra = {}) {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('tt_admin');
     if (token) headers.Authorization = `Bearer ${token}`;
+    const email = localStorage.getItem('tt_emp_email');
+    if (email) headers['x-employee-email'] = email;
   }
   return headers;
 }
@@ -21,4 +23,35 @@ export async function workflowFetch(url, options = {}) {
     throw err;
   }
   return data;
+}
+
+export function staffPdfHref(tenderId, { email, role = 'employee' } = {}) {
+  let resolved = email;
+  if (!resolved && typeof window !== 'undefined') {
+    resolved = localStorage.getItem('tt_emp_email')
+      || localStorage.getItem('tt_email')
+      || process.env.NEXT_PUBLIC_ADMIN_EMAIL
+      || 'admin';
+  }
+  resolved = resolved || process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin';
+  return `/api/tenders/${tenderId}/pdf?email=${encodeURIComponent(resolved)}&role=${role}`;
+}
+
+export function viewTenderOnHome(bidNo) {
+  if (typeof window === 'undefined') return;
+  const q = String(bidNo || '').trim();
+  window.location.assign(q ? `/?q=${encodeURIComponent(q)}` : '/');
+}
+
+export function openWorkflowFile(jobId, slot = 'sow') {
+  if (typeof window === 'undefined' || !jobId) return;
+  window.location.assign(`/api/workflow/jobs/${jobId}/file?slot=${slot}`);
+}
+
+export function numberedPageList(current, total) {
+  const t = Math.max(1, Number(total) || 1);
+  const c = Math.min(Math.max(1, Number(current) || 1), t);
+  if (t <= 10) return Array.from({ length: t }, (_, i) => i + 1);
+  const pages = new Set([1, 2, t - 1, t, c - 1, c, c + 1]);
+  return [...pages].filter((p) => p >= 1 && p <= t).sort((a, b) => a - b);
 }

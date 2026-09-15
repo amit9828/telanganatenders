@@ -1,6 +1,7 @@
 'use client';
 
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import { openWorkflowFile } from '@/components/workflow/api';
 
 export default function ClientWinningBoard({ jobs = [] }) {
   const won = jobs.filter((j) => j.status === 'WON' || j.display_status === 'Won');
@@ -14,8 +15,8 @@ export default function ClientWinningBoard({ jobs = [] }) {
             key={job._id}
             job={job}
             actions={[
-              { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
-              job.receipt && { label: 'Receipt', icon: 'download', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=receipt`, '_blank') },
+              { label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(job._id, 'sow') },
+              job.receipt && { label: 'Receipt', icon: 'download', onClick: () => openWorkflowFile(job._id, 'receipt') },
             ].filter(Boolean)}
           />
         ))}

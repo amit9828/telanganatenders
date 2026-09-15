@@ -17,6 +17,8 @@ function staffHeaders() {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('tt_admin');
     if (token) headers.Authorization = `Bearer ${token}`;
+    const email = localStorage.getItem('tt_emp_email');
+    if (email) headers['x-employee-email'] = email;
   }
   return headers;
 }

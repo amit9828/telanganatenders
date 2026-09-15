@@ -1060,6 +1060,45 @@ export async function PUT(request, { params }) {
      const body = await request.json().catch(() => null);
      if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
+     if (path === 'employees' || path === 'api/employees') {
+        const actor = await resolveActorRole(request);
+        if (actor.role !== 'MD' && actor.designation !== DESIGNATIONS.GM) {
+          return json({ error: 'Only MD or GM can update employees.' }, 403);
+        }
+        const url = new URL(request.url);
+        const empId = String(url.searchParams.get('id') || body.emp_id || '').trim();
+        if (!empId) return json({ error: 'Missing Employee ID' }, 400);
+        const existing = ObjectId.isValid(empId)
+          ? await db.collection('employees').findOne({ _id: new ObjectId(empId) })
+          : await db.collection('employees').findOne({ emp_id: empId });
+        if (!existing) return json({ error: 'Employee not found' }, 404);
+
+        const nextDesignation = body.designation
+          ? normalizeDesignation(body.designation)
+          : existing.designation;
+        if (actor.designation === DESIGNATIONS.GM && nextDesignation === DESIGNATIONS.GM) {
+          return json({ error: 'GM can update TL and Member only.' }, 403);
+        }
+
+        const $set = { updated_at: new Date() };
+        if (body.name != null) $set.name = String(body.name).trim();
+        if (body.email != null) $set.email = String(body.email).trim().toLowerCase();
+        if (body.password != null && String(body.password).trim()) $set.password = String(body.password);
+        if (body.designation != null) {
+          $set.designation = nextDesignation;
+          $set.role = body.role || nextDesignation;
+        }
+        if (nextDesignation === DESIGNATIONS.DOC_TEAM_TL) {
+          $set.team_id = existing.emp_id;
+        } else if (body.team_id != null) {
+          $set.team_id = String(body.team_id).trim() || null;
+        }
+
+        await db.collection('employees').updateOne({ _id: existing._id }, { $set });
+        const updated = await db.collection('employees').findOne({ _id: existing._id });
+        return json({ success: true, employee: updated });
+     }
+
      if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
         const tenderId = pathArray[1];
         if (!ObjectId.isValid(tenderId)) return json({ error: 'Invalid Tender ID' }, 400);
@@ -1413,10 +1452,15 @@ export async function DELETE(request, { params }) {
     }
 
     if (path === 'employees' || path === 'api/employees') {
+      const actor = await resolveActorRole(request);
+      if (actor.role !== 'MD' && actor.designation !== DESIGNATIONS.GM) {
+        return json({ error: 'Only MD or GM can delete employees.' }, 403);
+      }
       const id = searchParams.get('id');
       if (!id) return json({ error: 'Missing Employee ID' }, 400);
       let result = null;
       if (ObjectId.isValid(id)) result = await db.collection('employees').deleteOne({ _id: new ObjectId(id) });
+      if (!result || result.deletedCount === 0) result = await db.collection('employees').deleteOne({ emp_id: id });
       if (!result || result.deletedCount === 0) result = await db.collection('employees').deleteOne({ _id: id });
       return json({ success: true, message: 'Employee Deleted' });
     }

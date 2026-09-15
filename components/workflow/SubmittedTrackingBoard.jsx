@@ -1,13 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import StaffChat from '@/components/StaffChat';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { workflowFetch } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 
 const STAGES = ['Submitted', 'Technical Evaluation', 'Financial Evaluation', 'Won', 'Lost'];
 
-export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh }) {
+export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh, chatSelfId, chatRoster = [] }) {
+  const [chatJobId, setChatJobId] = useState(null);
   const update = async (job, tracking_status) => {
     try {
       await workflowFetch(`/api/workflow/jobs/${job._id}/tracking`, {
@@ -32,10 +35,14 @@ export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh }
             <CompactTenderCard
               job={{ ...job, display_status: job.tracking_status || job.display_status || 'Submitted' }}
               actions={[
-                { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
-                job.receipt && { label: 'Receipt', icon: 'download', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=receipt`, '_blank') },
+                { label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(job._id, 'sow') },
+                job.receipt && { label: 'Receipt', icon: 'download', onClick: () => openWorkflowFile(job._id, 'receipt') },
+                chatSelfId && { label: 'Chat', onClick: () => setChatJobId((id) => id === job._id ? null : job._id) },
               ].filter(Boolean)}
             />
+            {chatJobId === job._id && chatSelfId && (
+              <div className="h-[420px]"><StaffChat selfId={chatSelfId} roster={chatRoster} jobId={job._id} /></div>
+            )}
             {canEdit ? (
               <Select value={job.tracking_status || 'Submitted'} onValueChange={(v) => update(job, v)}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>

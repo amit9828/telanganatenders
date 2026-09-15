@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import StaffChat from '@/components/StaffChat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { workflowFetch } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 
 const STATUS_LABEL = {
   MD_CHECKLIST: 'MD Checklist',
@@ -20,8 +21,9 @@ const STATUS_LABEL = {
   AWAITING_RECEIPT: 'Awaiting Receipt',
 };
 
-export default function InternalTrackingBoard({ desk, tls = [], members = [], onRefresh, jobs = [] }) {
+export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], chatSelfId, chatRoster }) {
   const [checklistJob, setChecklistJob] = useState(null);
+  const [chatJobId, setChatJobId] = useState(null);
   const [checklistFile, setChecklistFile] = useState(null);
   const [tlId, setTlId] = useState('');
   const [makerJob, setMakerJob] = useState(null);
@@ -30,7 +32,8 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], on
   const [receiptFile, setReceiptFile] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const openFile = (job, slot) => window.open(`/api/workflow/jobs/${job._id}/file?slot=${slot}`, '_blank');
+  const openFile = (job, slot) => openWorkflowFile(job._id, slot);
+  const roster = chatRoster || [...tls, ...members, ...team];
 
   const run = async (fn) => {
     setBusy(true);
@@ -92,7 +95,10 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], on
       {jobs.length === 0 && <p className="text-sm text-slate-400">No jobs in the internal pipeline.</p>}
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {jobs.map((job) => {
-          const actions = [{ label: 'View SOW', icon: 'eye', onClick: () => openFile(job, 'sow') }];
+          const actions = [
+            { label: 'View SOW', icon: 'eye', onClick: () => openFile(job, 'sow') },
+            chatSelfId && { label: 'Chat', onClick: () => setChatJobId((id) => id === job._id ? null : job._id) },
+          ].filter(Boolean);
           if (job.checklist_file) actions.push({ label: 'Checklist', onClick: () => openFile(job, 'checklist') });
           if (desk === 'md' && job.status === 'MD_CHECKLIST') {
             actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', onClick: () => setChecklistJob(job) });
@@ -164,6 +170,9 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], on
                 job={{ ...job, display_status: STATUS_LABEL[job.status] || job.status }}
                 actions={actions}
               />
+              {chatJobId === job._id && chatSelfId && (
+                <div className="mt-2 h-[420px]"><StaffChat selfId={chatSelfId} roster={roster} jobId={job._id} /></div>
+              )}
               {desk === 'employee' && job.status === 'MAKER_PREP' && (
                 <input
                   id={`prep-${job._id}`}

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
-import { requireStaff } from '@/lib/staff-auth';
+import { requireStaff, resolveActorRole } from '@/lib/staff-auth';
 import { uploadCopilotKnowledge, isR2Configured, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import {
   COPILOT_KNOWLEDGE_COLLECTION,
@@ -169,8 +169,10 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const auth = await requireStaff(request);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const actor = await resolveActorRole(request);
+  if (actor.role !== 'MD') {
+    return NextResponse.json({ error: 'Only MD can train Co-Pilot.' }, { status: 403 });
+  }
 
   const geminiApiKey = getGeminiApiKey();
   if (!geminiApiKey) {
@@ -202,7 +204,7 @@ export async function POST(request) {
   }
 
   const categoryOverride = String(formData.get('category') || '').trim() || null;
-  const uploadedBy = auth.email || String(formData.get('uploadedBy') || 'MD Admin');
+  const uploadedBy = actor.email || String(formData.get('uploadedBy') || 'MD Admin');
 
   const db = await getDb();
   const genAI = new GoogleGenerativeAI(geminiApiKey);

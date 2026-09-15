@@ -105,7 +105,14 @@ export async function GET(request) {
           { email },
           { projection: { role: 1, employee_id: 1 } },
         );
-        allowed = Boolean(user && (isStaffRole(user.role) || user.employee_id));
+        const employee = await db.collection('employees').findOne(
+          { email },
+          { projection: { emp_id: 1, designation: 1 } },
+        );
+        allowed = Boolean(
+          (user && (isStaffRole(user.role) || user.employee_id))
+          || employee
+        );
       }
     }
     if (!allowed) {
