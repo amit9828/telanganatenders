@@ -11,7 +11,6 @@
 
 import { NextResponse } from 'next/server';
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import { requireDashboardStaff } from '@/lib/staff-auth';
 
@@ -36,13 +35,6 @@ export async function GET() {
 
 export async function POST(request) {
   const auth = await requireDashboardStaff(request);
-  // #region agent log
-  {
-    const payload = {sessionId:'900d71',runId:'pre-fix',hypothesisId:'E',location:'app/api/gem-hunter/launch/route.js:POST',message:'launch auth gate',data:{ok:auth.ok,status:auth.status||null,error:auth.error||null,actor:auth.ok?auth.actor:null,hasEmpHeader:Boolean(request.headers.get('x-employee-email')),vercel:Boolean(process.env.VERCEL)},timestamp:Date.now()};
-    fetch('http://127.0.0.1:7477/ingest/dcce912b-9df5-4338-98f3-06c1a78e9bb9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'900d71'},body:JSON.stringify(payload)}).catch(()=>{});
-    try { fs.appendFileSync(path.join(process.cwd(), 'debug-900d71.log'), JSON.stringify(payload) + '\n'); } catch { /* debug sink */ }
-  }
-  // #endregion
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   if (process.env.VERCEL) {
