@@ -18,8 +18,7 @@ import {
   Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, Award, TrendingUp, Loader2, Star,
   FileBadge, Activity, Eye, User, Sparkles, X, Phone
 } from 'lucide-react';
-// 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
-// drifted from the AP district list used elsewhere.
+import { TS_DISTRICTS, AP_DISTRICTS } from '@/lib/regions';
 import { deskPathForDesignation } from '@/lib/designations';
 
 const PLANS = [

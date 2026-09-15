@@ -193,11 +193,11 @@ export default function ClientDashboard() {
            setUserData(d);
            setClientId(d.client_id || `CLI-${email.substring(0,4).toUpperCase()}X`);
 
-           if(d.stats) setClientStats(d.stats);
+           if(d.stats) setClientStats((prev) => ({ ...prev, ...d.stats, revenue: Number(d.stats.revenue) || 0 }));
            if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
            
            if(d.action_alerts) {
-               setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
+               setRecommendedTenders(d.action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed'));
            }
            
            // డాక్యుమెంట్స్ అప్‌డేట్
@@ -242,11 +242,11 @@ export default function ClientDashboard() {
         setUserData(d);
         setClientId(d.client_id || `CLI-${userEmail.substring(0,4).toUpperCase()}X`);
 
-        if(d.stats) setClientStats(d.stats);
+        if(d.stats) setClientStats((prev) => ({ ...prev, ...d.stats, revenue: Number(d.stats.revenue) || 0 }));
         if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
         
         if(d.action_alerts) {
-            setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
+            setRecommendedTenders(d.action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed'));
         }
         try {
           const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(userEmail)}`, { credentials: 'include' });
@@ -1062,7 +1062,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
 
   const activeBids = userData?.active_bids || [];
   const customRequests = userData?.custom_requests || [];
-  const criticalAlerts = userData?.action_alerts?.filter(a => !a.subject.includes('Suggestion') && a.status !== 'Completed') || [];
+  const criticalAlerts = userData?.action_alerts?.filter(a => a?.subject && !a.subject.includes('Suggestion') && a.status !== 'Completed') || [];
   
   // 🚀 FIX: Automatically filter out payments that match a SUCCESS status in the main payments array
   const pendingPayments = userData?.pending_payments?.filter(p => {
@@ -1212,7 +1212,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Banknote className="w-5 h-5 text-emerald-200 mb-2"/>
                  <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Project Revenue</p>
-                 <p className="text-xl sm:text-2xl font-black">₹{clientStats.revenue.toLocaleString()}</p>
+                 <p className="text-xl sm:text-2xl font-black">₹{(Number(clientStats.revenue) || 0).toLocaleString()}</p>
               </CardContent>
            </Card>
         </div>
@@ -1518,7 +1518,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
           {/* TAB 3: WINNING BIDS LEDGER */}
           {/* ============================================================================== */}
           <TabsContent value="wins" className="space-y-6">
-            <ClientWinningBoard jobs={workflowJobs} />
+            <ClientWinningBoard jobs={Array.isArray(workflowJobs) ? workflowJobs : []} />
             <Card className="tender-shadow border-t-4 border-t-emerald-500">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Trophy className="w-5 h-5 text-emerald-600"/> Successful Bid Allocations</CardTitle>
@@ -1631,7 +1631,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                  ) : (
                     <div className="grid md:grid-cols-2 gap-4">
                        {recommendedTenders.map((alert, i) => {
-                          const match = alert.message.match(/\[BID: (.*?)\] (.*)/);
+                          const match = typeof alert?.message === 'string' ? alert.message.match(/\[BID: (.*?)\] (.*)/) : null;
                           const bid_no = match ? match[1] : 'N/A';
                           
                           // Cross reference with live tenders database
