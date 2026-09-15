@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { LANGUAGE_OPTIONS, LANGUAGES } from '@/lib/language';
 import {
   Bot, Send, X, Minus, Loader2, Sparkles, FileText, AlertCircle, BookOpen,
 } from 'lucide-react';
@@ -38,6 +39,9 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  // Server-side transcript id, so a follow-up question keeps the earlier context.
+  const [conversationId, setConversationId] = useState(null);
+  const [language, setLanguage] = useState(LANGUAGES.AUTO);
 
   const threadRef = useRef(null);
   const inputRef = useRef(null);
@@ -61,6 +65,13 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open]);
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('tt_copilot_language');
+      if (stored && Object.values(LANGUAGES).includes(stored)) setLanguage(stored);
+    } catch { /* private mode */ }
+  }, []);
+
   const sendMessage = async (rawText) => {
     const question = String(rawText ?? input).trim();
     if (!question || sending) return;
@@ -75,7 +86,12 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: question, tender_id: askedWithTender || undefined }),
+        body: JSON.stringify({
+          query: question,
+          tender_id: askedWithTender || undefined,
+          conversation_id: conversationId || undefined,
+          language,
+        }),
       });
       const data = await res.json().catch(() => null);
 
@@ -87,6 +103,7 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
         return;
       }
 
+      if (data?.conversation_id) setConversationId(data.conversation_id);
       setMessages(prev => [...prev, {
         role: 'assistant',
         text: data?.answer || 'No answer was returned.',
@@ -142,6 +159,25 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
           <p className="text-sm font-bold leading-tight">GeM AI Co-Pilot</p>
           <p className="text-[11px] text-blue-200/80 leading-tight">Senior GeM bidding expert</p>
         </div>
+        <div className="flex rounded-md bg-white/10 p-0.5 shrink-0" role="group" aria-label="Answer language">
+          {LANGUAGE_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              title={option.hint}
+              onClick={() => {
+                setLanguage(option.id);
+                try { localStorage.setItem('tt_copilot_language', option.id); } catch { /* private mode */ }
+              }}
+              className={cn(
+                'px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide transition-colors',
+                language === option.id ? 'bg-white text-[#0A2647]' : 'text-white/70 hover:text-white',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           onClick={() => setOpen(false)}
@@ -152,7 +188,7 @@ export default function GemCoPilot({ tenderId = null, tenderLabel = null }) {
         </button>
         <button
           type="button"
-          onClick={() => { setOpen(false); setMessages([]); }}
+          onClick={() => { setOpen(false); setMessages([]); setConversationId(null); }}
           aria-label="Close and clear conversation"
           className="p-1.5 rounded-md hover:bg-white/10 transition"
         >

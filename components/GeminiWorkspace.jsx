@@ -8,8 +8,9 @@ import { cn } from '@/lib/utils';
 import { classifyWorkspacePrompt, INTENT, resolveClient } from '@/lib/workspace-intent';
 import { markdownToPlainText, markdownToSafeHtml } from '@/lib/markdown-lite';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
+import { LANGUAGE_OPTIONS, LANGUAGES } from '@/lib/language';
 import {
-  Bot, Copy, FileText, Loader2, Mic, MicOff, Printer, Send, Sparkles, Volume2, VolumeX, X,
+  Bot, Copy, FileText, Library, Loader2, Mic, MicOff, Printer, Send, Sparkles, Volume2, VolumeX, X,
 } from 'lucide-react';
 
 function staffHeaders(extra = {}) {
@@ -77,6 +78,98 @@ function SpeakButton({ text, speakingId, id, onToggle }) {
 }
 
 /**
+ * State of the open bid's document dossier, plus the control that builds it.
+ *
+ * This is the honest answer to "does the Co-Pilot actually know this bid?" — until the
+ * SOW and buyer ATC are ingested it is answering from the cover page, and the officer
+ * needs to see that rather than infer it from a vague reply.
+ */
+function DossierStrip({ dossier, ingest, onBuild }) {
+  const ingested = dossier?.ingested || 0;
+  const chunks = dossier?.chunks || 0;
+  const needsAgent = dossier?.needs_local_agent || 0;
+  const referenceOnly = dossier?.reference_only || 0;
+  const built = ingested > 0;
+
+  return (
+    <div className="px-4 py-2 border-b bg-white flex items-center gap-3 flex-wrap">
+      <Library className={cn('w-4 h-4 shrink-0', built ? 'text-emerald-600' : 'text-slate-400')} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-[#0A2647]">
+          {built
+            ? `Bid dossier ready — ${ingested} document(s), ${chunks} passage(s) indexed`
+            : 'Bid dossier not built — answers come from the bid PDF only'}
+        </p>
+        {ingest.message ? (
+          <p className="text-[10px] text-slate-500 truncate">
+            {ingest.running && ingest.total > 0 ? `${ingest.done}/${ingest.total} · ` : ''}{ingest.message}
+          </p>
+        ) : (
+          <p className="text-[10px] text-slate-500">
+            {needsAgent > 0
+              ? `${needsAgent} document(s) sit behind a GeM login — run this from the office computer with the local agent started.`
+              : referenceOnly > 0
+                ? `${referenceOnly} document(s) are named in the bid but published without a download link.`
+                : 'Reads the linked Scope of Work and buyer ATC so clause questions can be answered.'}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {needsAgent > 0 && !ingest.running && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px]"
+            onClick={() => onBuild({ retry: true })}
+          >
+            Retry blocked
+          </Button>
+        )}
+        <Button
+          size="sm"
+          className="h-7 text-[10px] bg-emerald-700 hover:bg-emerald-800"
+          disabled={ingest.running}
+          onClick={() => onBuild({ refresh: built })}
+        >
+          {ingest.running
+            ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Reading…</>
+            : built ? 'Re-read documents' : 'Read bid documents'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Citation footer: which extract each bracketed reference in the answer came from. */
+function SourceList({ sources }) {
+  const cited = (sources || []).filter((s) => s.label && s.label !== 'S0');
+  if (!cited.length) return null;
+
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
+      {cited.map((source) => {
+        const body = (
+          <>
+            <span className="font-bold">{source.label}</span>
+            <span className="truncate max-w-[190px]">{source.title}</span>
+            {source.doc_type && <span className="text-slate-400">{source.doc_type}</span>}
+          </>
+        );
+        const className = 'inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 '
+          + 'px-2 py-0.5 text-[10px] text-slate-600';
+        return source.url
+          ? (
+            <a key={source.label} href={source.url} target="_blank" rel="noreferrer" className={cn(className, 'hover:border-indigo-300 hover:text-indigo-700')}>
+              {body}
+            </a>
+          )
+          : <span key={source.label} className={className}>{body}</span>;
+      })}
+    </div>
+  );
+}
+
+/**
  * Wide Gemini-style workspace for staff dashboards only.
  *
  * @param {string|null} tenderId
@@ -98,6 +191,12 @@ export default function GeminiWorkspace({
   const [listening, setListening] = useState(false);
   const [speakingId, setSpeakingId] = useState(null);
   const [micSupported, setMicSupported] = useState(false);
+  // Server-side transcript id. Kept in localStorage so closing the panel, switching
+  // tabs or reloading the dashboard resumes the same conversation instead of wiping it.
+  const [conversationId, setConversationId] = useState(null);
+  const [language, setLanguage] = useState(LANGUAGES.AUTO);
+  const [dossier, setDossier] = useState(null);
+  const [ingest, setIngest] = useState({ running: false, message: '', done: 0, total: 0 });
 
   const threadRef = useRef(null);
   const inputRef = useRef(null);
@@ -111,6 +210,131 @@ export default function GeminiWorkspace({
   useEffect(() => {
     setMicSupported(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
   }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('tt_copilot_conversation');
+    if (!stored) return;
+    setConversationId(stored);
+
+    let cancelled = false;
+    fetch(`/api/ai/chat?conversation_id=${encodeURIComponent(stored)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.messages?.length) return;
+        setMessages(data.messages.map((m) => ({
+          role: m.role === 'user' ? 'user' : 'assistant',
+          kind: m.role === 'user' ? undefined : 'markdown',
+          text: m.text,
+          sources: m.sources || [],
+        })));
+      })
+      .catch(() => {
+        // A missing or purged transcript just means starting fresh.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const rememberConversation = useCallback((id) => {
+    if (!id) return;
+    setConversationId(id);
+    try { localStorage.setItem('tt_copilot_conversation', id); } catch { /* private mode */ }
+  }, []);
+
+  const startNewConversation = useCallback(() => {
+    setConversationId(null);
+    setMessages([]);
+    try { localStorage.removeItem('tt_copilot_conversation'); } catch { /* private mode */ }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('tt_copilot_language');
+      if (stored && Object.values(LANGUAGES).includes(stored)) setLanguage(stored);
+    } catch { /* private mode */ }
+  }, []);
+
+  const chooseLanguage = useCallback((next) => {
+    setLanguage(next);
+    try { localStorage.setItem('tt_copilot_language', next); } catch { /* private mode */ }
+  }, []);
+
+  // What the Co-Pilot already knows about the open bid's own documents.
+  useEffect(() => {
+    if (!tenderId) {
+      setDossier(null);
+      return undefined;
+    }
+    let cancelled = false;
+    fetch(`/api/tenders/dossier?tender_id=${encodeURIComponent(tenderId)}`, {
+      credentials: 'include',
+      headers: staffHeaders(),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (!cancelled && data) setDossier(data); })
+      .catch(() => { /* a missing dossier just means it has not been built */ });
+    return () => { cancelled = true; };
+  }, [tenderId]);
+
+  /**
+   * Reads the bid's linked SOW/ATC documents into per-bid vector context.
+   *
+   * The server ingests exactly one document per call — a full PDF through Gemini takes
+   * 15-40s and several of them in one request would exceed the function timeout — so the
+   * loop lives here, driving a progress line.
+   */
+  const buildDossier = useCallback(async ({ refresh = false, retry = false } = {}) => {
+    if (!tenderId || ingest.running) return;
+    setIngest({ running: true, message: 'Finding the documents this bid links to…', done: 0, total: 0 });
+
+    let processed = 0;
+    try {
+      // Hard stop so a server that never reports `done` cannot spin forever.
+      for (let step = 0; step < 12; step += 1) {
+        const res = await fetch('/api/tenders/dossier', {
+          method: 'POST',
+          credentials: 'include',
+          headers: staffHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            tender_id: tenderId,
+            refresh: refresh && step === 0,
+            retry: retry && step === 0,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          setIngest({ running: false, message: data?.error || `Ingestion failed (${res.status}).`, done: processed, total: 0 });
+          return;
+        }
+
+        setDossier(data);
+        if (data.current) processed += 1;
+        const total = processed + (data.remaining || 0);
+        setIngest({
+          running: !data.done,
+          message: data.current
+            ? `Read ${data.current.name || data.current.type} (${data.current.status})`
+            : 'Preparing…',
+          done: processed,
+          total,
+        });
+
+        if (data.done) {
+          setIngest({
+            running: false,
+            message: `${data.ingested} document(s) ingested · ${data.chunks} passage(s) indexed`
+              + (data.needs_local_agent ? ` · ${data.needs_local_agent} need the local browser agent` : ''),
+            done: processed,
+            total,
+          });
+          return;
+        }
+      }
+      setIngest((prev) => ({ ...prev, running: false, message: 'Paused — run it again to continue.' }));
+    } catch {
+      setIngest({ running: false, message: 'Network error while ingesting. Try again.', done: processed, total: 0 });
+    }
+  }, [tenderId, ingest.running]);
 
   useEffect(() => {
     if (!threadRef.current) return;
@@ -202,7 +426,8 @@ export default function GeminiWorkspace({
           setMessages((prev) => [...prev, {
             role: 'assistant',
             kind: 'text',
-            text: "Local GeM agent is offline. On this computer run `npm run gem:agent` in a terminal, then ask me again to launch the hunter.",
+            text: result.error
+              || 'I could not start the hunter from here. It opens a real Chrome window, so it only works from the app running on your own computer.',
           }]);
           return;
         }
@@ -217,8 +442,8 @@ export default function GeminiWorkspace({
           role: 'assistant',
           kind: 'text',
           text: result.already_running
-            ? 'Chrome is already open on your screen. Solve any CAPTCHA there — the hunter will resume automatically.'
-            : 'Chrome opened on your screen for GeM BidPlus. Solve CAPTCHA if prompted; the hunter will scrape Telangana & Andhra Pradesh bids and upsert them into MongoDB.',
+            ? 'The hunter is already running in the Chrome window on your screen.'
+            : 'Chrome is opening on GeM BidPlus and the search starts on its own. It will work through Telangana and Andhra Pradesh district by district and save every bid it finds. If GeM ever shows a real challenge on screen, solve it and the hunter resumes by itself.',
           meta: result.pid ? `pid ${result.pid}` : undefined,
         }]);
         return;
@@ -291,22 +516,31 @@ export default function GeminiWorkspace({
         method: 'POST',
         credentials: 'include',
         headers: staffHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ query: question, tender_id: askedTender || undefined }),
+        body: JSON.stringify({
+          query: question,
+          tender_id: askedTender || undefined,
+          conversation_id: conversationId || undefined,
+          language,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setMessages((prev) => [...prev, { role: 'error', text: data?.error || `The Co-Pilot failed (${res.status}).` }]);
         return;
       }
+      rememberConversation(data.conversation_id);
+      if (data.dossier) setDossier((prev) => ({ ...(prev || {}), ...data.dossier }));
       setMessages((prev) => [...prev, {
         role: 'assistant',
         kind: 'markdown',
         text: data.answer || data.text || 'No answer was returned.',
-        meta: data.retrieval === 'gem_copilot_knowledge'
-          ? 'Answered from Co-Pilot knowledge memory'
-          : data.retrieval
-            ? `Retrieval: ${data.retrieval}`
-            : undefined,
+        meta: data.dossier?.chunks_matched
+          ? `${data.dossier.chunks_matched} passage(s) from this bid's own documents`
+          : data.retrieval === 'gem_copilot_knowledge'
+            ? 'Answered from Co-Pilot knowledge memory'
+            : data.retrieval
+              ? `Retrieval: ${data.retrieval}`
+              : undefined,
         sources: data.sources || [],
       }]);
     } catch (err) {
@@ -332,14 +566,47 @@ export default function GeminiWorkspace({
                   <Badge className="bg-emerald-400/25 text-emerald-50 border-0 text-[10px] font-medium">
                     Memory: gem_copilot_knowledge first
                   </Badge>
+                  {conversationId && (
+                    <Badge className="bg-amber-400/25 text-amber-50 border-0 text-[10px] font-medium">
+                      Chat history saved
+                    </Badge>
+                  )}
                 </div>
               </div>
-              {!embedded && (
-                <button type="button" onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-white/10">
-                  <X className="w-4 h-4" />
+              <div className="flex items-center gap-1 shrink-0">
+                <div className="flex rounded-md bg-white/10 p-0.5" role="group" aria-label="Answer language">
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      title={option.hint}
+                      onClick={() => chooseLanguage(option.id)}
+                      className={cn(
+                        'px-2 py-1 rounded text-[10px] font-bold tracking-wide transition-colors',
+                        language === option.id ? 'bg-white text-[#0A2647]' : 'text-white/70 hover:text-white',
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={startNewConversation}
+                  title="Start a new conversation"
+                  className="px-2 py-1 rounded-md hover:bg-white/10 text-[10px] font-bold uppercase tracking-wider"
+                >
+                  New chat
                 </button>
-              )}
+                {!embedded && (
+                  <button type="button" onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-white/10">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </header>
+
+            {contextActive && <DossierStrip dossier={dossier} ingest={ingest} onBuild={buildDossier} />}
 
             <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50">
               {messages.length === 0 && (
@@ -347,6 +614,7 @@ export default function GeminiWorkspace({
                   <p className="font-semibold text-[#0A2647] mb-2">Ask anything about GeM bidding.</p>
                   <ul className="space-y-1 text-[13px]">
                     <li>• “What is the scope of work for GEM/2026/B/123?” — reads SOW/ATC PDFs.</li>
+                    <li>• “ఈ బిడ్‌కి EMD ఎంత?” — ask in Telugu and the answer comes back in Telugu.</li>
                     <li>• “Generate an OEM Authorization for CLI-XXXX on that tender.” — prints on their letterhead.</li>
                     <li>• “Search tenders on GeM” / “run live hunter” — opens Chrome via the local agent.</li>
                     <li>• Anything else hits Co-Pilot memory (`gem_copilot_knowledge`) first, then the vector KB.</li>
@@ -402,6 +670,7 @@ export default function GeminiWorkspace({
                     {html
                       ? <div className="prose prose-sm max-w-none text-slate-700 workspace-md" dangerouslySetInnerHTML={{ __html: html }} />
                       : <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{msg.text}</p>}
+                    <SourceList sources={msg.sources} />
                     <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-100">
                       <CopyButton text={markdownToPlainText(msg.text)} />
                       <SpeakButton id={id} text={msg.text} speakingId={speakingId} onToggle={toggleSpeak} />

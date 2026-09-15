@@ -18,9 +18,9 @@ import {
   Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, Award, TrendingUp, Loader2, Star,
   FileBadge, Activity, Eye, User, Sparkles, X, Phone
 } from 'lucide-react';
-
-const TS_DISTRICTS = ['Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy', 'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy', 'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad'];
-const AP_DISTRICTS = ['Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore', 'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru', 'Srikakulam', 'Vizianagaram', 'Prakasam'];
+// 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
+// drifted from the AP district list used elsewhere.
+import { deskPathForDesignation } from '@/lib/designations';
 
 const PLANS = [
   { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
@@ -345,8 +345,14 @@ export default function App() {
          toast.error("Invalid Credentials. Please check your ID and Password.");
       } else {
          localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); 
-         localStorage.setItem('tt_role', 'employee'); 
-         window.open('/employee', '_blank');
+         localStorage.setItem('tt_role', 'employee');
+         let desk = '/employee';
+         try {
+           const sessRes = await fetch('/api/auth/session');
+           const sess = await sessRes.json();
+           if (sess?.user?.designation) desk = deskPathForDesignation(sess.user.designation);
+         } catch (_) { /* fall back to employee desk */ }
+         window.open(desk, '_blank');
          setEmpModalOpen(false);
       }
     } catch (err) { 
@@ -431,7 +437,13 @@ export default function App() {
       const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
       const r1 = await fetch(endpoint, { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ email: userEmail, phone: userPhone, plan: planId, tenderId: pendingTender?._id || pendingTender?.id }) 
+        body: JSON.stringify({
+          email: userEmail,
+          phone: userPhone,
+          plan: planId,
+          tenderId: pendingTender?._id || pendingTender?.id,
+          return_to: '/',
+        })
       });
       const d1 = await r1.json();
       

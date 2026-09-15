@@ -7,10 +7,16 @@ import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
-import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
-import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import DashboardNav from '@/components/DashboardNav';
+import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
+import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import StaffChat from '@/components/StaffChat';
+import OpsAlerts from '@/components/OpsAlerts';
+import { workflowFetch } from '@/components/workflow/api';
+import { launchGemHunter } from '@/lib/gem-hunter-client';
+import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -28,14 +34,9 @@ import {
   Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle, PenTool, Activity, Bot
 } from 'lucide-react';
 
-const DISTRICTS = [
-  'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
-  'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
-  'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad',
-  'Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore',
-  'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru',
-  'Srikakulam', 'Vizianagaram', 'Prakasam'
-];
+// 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
+// drifted from the AP district list used elsewhere.
+const DISTRICTS = TS_AP_DISTRICTS;
 
 const BORDER_COLORS = [
   'border-blue-500', 'border-purple-500', 'border-emerald-500', 
@@ -68,6 +69,7 @@ export default function EmployeeDashboard() {
   const [pdfName, setPdfName] = useState('');
   const [pdfBase64, setPdfBase64] = useState('');
   const [tenderSearch, setTenderSearch] = useState(''); 
+  const [tenderPage, setTenderPage] = useState(1); 
   
   const [alertForm, setAlertForm] = useState({ client_id: '', message: '' });
   const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
@@ -111,6 +113,7 @@ export default function EmployeeDashboard() {
   const [targetClientEmail, setTargetClientEmail] = useState('');
   const [uploadingOpPdf, setUploadingOpPdf] = useState(false);
   const [aiDrafts, setAiDrafts] = useState([]);
+  const [wfJobs, setWfJobs] = useState([]);
   // 🚀 AI Bulk Publisher — review queue state
   const [reviewDraft, setReviewDraft] = useState(null);
   const [draftForm, setDraftForm] = useState({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', emd_amount: '', supply_details: '' });
@@ -152,7 +155,7 @@ export default function EmployeeDashboard() {
       // 10 in parallel + 2 more awaited sequentially afterward — eliminates the
       // extra round-trip latency the sequential `operator/docs`/`ai/drafts`
       // calls were adding on top of the already-parallel batch.
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, opDocsRes, draftsRes] = await Promise.all([
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, opDocsRes, draftsRes, wfRes] = await Promise.all([
         fetch(`/api/dispatches?t=${Date.now()}`), 
         fetch(`/api/bids?t=${Date.now()}`), 
         fetch(`/api/gov-officers?t=${Date.now()}`),
@@ -164,7 +167,8 @@ export default function EmployeeDashboard() {
         fetch(`/api/guest-queries?t=${Date.now()}`),
         fetch(`/api/employees?t=${Date.now()}`),
         fetch(`/api/operator/docs?t=${Date.now()}`),
-        fetch(`/api/ai/drafts?t=${Date.now()}`)
+        fetch(`/api/ai/drafts?t=${Date.now()}`),
+        fetch(`/api/workflow/queue?t=${Date.now()}`, { credentials: 'include' })
       ]);
 
       if (opDocsRes.ok) {
@@ -192,6 +196,7 @@ export default function EmployeeDashboard() {
       if (reqRes.ok) { const reqData = await reqRes.json(); setBidRequests(reqData.requests || []); }
       if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } 
       if (empRes.ok) { const eData = await empRes.json(); setTeamMembers(eData.team || []); }
+      if (wfRes.ok) { const wData = await wfRes.json(); setWfJobs(wData.jobs || []); }
     } catch (err) { console.error("Employee Sync Error", err); } finally { setLoading(false); }
   };
 
@@ -225,11 +230,22 @@ export default function EmployeeDashboard() {
   const launchGemLiveHunter = async () => {
     setLaunchingGem(true);
     try {
-      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
-      if (!res.ok) throw new Error('launch failed');
-      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
-    } catch {
-      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+      const result = await launchGemHunter();
+      if (result.offline) {
+        toast.error(result.error || 'Could not start the hunter on this computer.');
+        return;
+      }
+      if (!result.ok) {
+        toast.error(result.error || 'Could not launch the hunter.');
+        return;
+      }
+      toast.success(
+        result.already_running
+          ? 'The hunter is already running in the Chrome window on your screen.'
+          : result.via_popup
+            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
+            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
+      );
     } finally {
       setLaunchingGem(false);
     }
@@ -379,6 +395,19 @@ export default function EmployeeDashboard() {
       });
       if(r.ok) {
         toast.success(isEditingTender ? 'Tender updated successfully!' : 'Tender published successfully!');
+        const published = await r.json().catch(() => ({}));
+        const awaiting = wfJobs.find(j => j.status === 'AWAITING_PUBLISH');
+        if (!isEditingTender && published.id && awaiting) {
+          try {
+            await workflowFetch(`/api/workflow/jobs/${awaiting._id}/publish-attach`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tender_id: published.id, bid_no: tenderForm.bid_no }),
+            });
+          } catch (attachErr) {
+            toast.error(attachErr.message || 'Published, but job attach failed.');
+          }
+        }
         
         // 🚀 Auto Delete Draft after publish
         const drafted = aiDrafts.find(d => d.bid_no === tenderForm.bid_no);
@@ -811,8 +840,17 @@ export default function EmployeeDashboard() {
         body: JSON.stringify(queryForm)
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         toast.success(`Query Raised! Client's dashboard is now locked until they reply.`);
         logActivity('RAISED_QUERY', `Locked client ${queryForm.client_email} for document request.`);
+        if (data?.id) {
+          const raised = { id: data.id, subject: queryForm.subject, message: queryForm.message, created_at: new Date().toISOString() };
+          setApprovedClients(prev => prev.map(c =>
+            c.email === queryForm.client_email
+              ? { ...c, officer_queries: [...(c.officer_queries || []), raised] }
+              : c
+          ));
+        }
         setQueryForm({ client_email: '', subject: '', message: '' });
         fetchLiveOperationsData(email);
       } else { toast.error('Failed to raise query.'); }
@@ -822,12 +860,17 @@ export default function EmployeeDashboard() {
   const handleCloseQuery = async (queryId, clientEmail) => {
     if(!confirm("Are you sure you want to close this query?")) return;
     try {
-      const res = await fetch('/api/queries/reply', {
+      const res = await fetch('/api/queries/close', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queryId, email: clientEmail })
       });
       if (res.ok) {
         toast.success(`Query Closed successfully.`);
+        setApprovedClients(prev => prev.map(c =>
+          c.email === clientEmail
+            ? { ...c, officer_queries: (c.officer_queries || []).map(q => q.id === queryId ? { ...q, is_closed: true } : q) }
+            : c
+        ));
         fetchLiveOperationsData(email);
       }
     } catch (err) { toast.error('Network Error.'); }
@@ -1001,6 +1044,8 @@ export default function EmployeeDashboard() {
      t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
      t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
   );
+  const empTenderPages = Math.max(1, Math.ceil(filteredTenders.length / 10));
+  const pagedTenders = filteredTenders.slice((tenderPage - 1) * 10, tenderPage * 10);
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
@@ -1012,13 +1057,11 @@ export default function EmployeeDashboard() {
   // is untouched.
   const EMPLOYEE_NAV_GROUPS = [
     { id: 'my-work', label: 'My Work', items: [
-      { value: 'kanban', label: 'Active Bids', icon: Kanban, color: 'navy' },
+      { value: 'kanban', label: 'Assigned Jobs', icon: Kanban, color: 'navy' },
       { value: 'drafts', label: 'Ready to Publish', icon: Sparkles, color: 'navy', badge: aiDrafts.length },
-      { value: 'suggestions', label: 'Suggestions', icon: Lightbulb, color: 'navy' },
     ] },
-    { id: 'clients-officers', label: 'Clients & Officers', items: [
+    { id: 'clients-officers', label: 'Clients', items: [
       { value: 'clients', label: 'Clients DB', icon: Users, color: 'navy' },
-      { value: 'officers', label: 'Govt Officers', icon: Contact, color: 'navy' },
     ] },
     { id: 'ai-tools', label: 'AI Tools', items: [
       { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo' },
@@ -1029,7 +1072,9 @@ export default function EmployeeDashboard() {
       { value: 'publisher', label: 'Published Tenders', icon: PlusCircle, color: 'navy' },
     ] },
     { id: 'alerts-support', label: 'Alerts & Support', items: [
-      { value: 'alerts', label: 'Alerts & Queries', icon: BellRing, color: 'navy', badge: pendingClientAlerts },
+      { value: 'ops-alerts', label: 'Work Alerts', icon: BellRing, color: 'navy' },
+      { value: 'chat', label: 'Staff Chat', icon: MessageSquare, color: 'navy' },
+      { value: 'alerts', label: 'Client Queries', icon: BellRing, color: 'navy', badge: pendingClientAlerts },
       { value: 'sla', label: 'Helpdesk', icon: MessageSquare, color: 'navy', badge: activeTickets.length + guestQueries.length },
     ] },
   ];
@@ -1055,8 +1100,21 @@ return (
       <main className="w-full px-4 sm:px-8 py-6 space-y-6">
         <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-           <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Tasks Assigned by MD / Admin</h3>
+           <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Assigned workflow jobs</h3>
            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').length === 0 ? (
+                 <p className="text-sm text-slate-500 py-2">No assigned publish or maker-prep jobs.</p>
+              ) : (
+                 wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').map(job => (
+                    <CompactTenderCard
+                      key={job._id}
+                      job={{ ...job, display_status: job.status === 'AWAITING_PUBLISH' ? 'Publish required' : 'Maker prep' }}
+                      actions={job.status === 'AWAITING_PUBLISH' ? [{ label: 'Go publish', onClick: () => setActiveTab('publisher') }] : []}
+                    />
+                 ))
+              )}
+           </div>
+           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
               {mdTasks.length === 0 ? (
                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
               ) : (
@@ -1163,6 +1221,16 @@ return (
           </TabsContent>
 
           <TabsContent value="kanban" className="w-full space-y-6">
+            <InternalTrackingBoard
+              desk="employee"
+              jobs={wfJobs.filter((j) => ['MAKER_PREP','TL_QC','TL_ASSIGN'].includes(j.status))}
+              onRefresh={() => fetchLiveOperationsData(email)}
+            />
+            <SubmittedTrackingBoard
+              jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')}
+              canEdit
+              onRefresh={() => fetchLiveOperationsData(email)}
+            />
             <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>
@@ -1744,12 +1812,6 @@ return (
           </TabsContent>
 
           <TabsContent value="publisher" className="w-full space-y-6">
-            <LetterheadManager />
-            <DocumentLetterheadGenerator
-              tenders={publicTenders}
-              clients={approvedClients}
-              defaultTenderId={isEditingTender || ''}
-            />
             <L1BenchmarkDropzone />
             <div className="grid lg:grid-cols-5 gap-6">
                
@@ -1850,7 +1912,7 @@ return (
                  </CardHeader>
                  <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
                     {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
-                    {filteredTenders.map((t) => (
+                    {pagedTenders.map((t) => (
                       <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
@@ -1873,25 +1935,16 @@ return (
                            <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                               <FileText className="w-3 h-3 mr-1.5"/> View PDF
                            </Button>
-                           <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
-                              <Select value={suggestForm[t._id] || ''} onValueChange={v => setSuggestForm({...suggestForm, [t._id]: v})}>
-                                 <SelectTrigger className="h-8 bg-slate-50 border-emerald-200 text-xs font-semibold focus:ring-emerald-500 w-full">
-                                    <SelectValue placeholder="Select Client to Suggest" />
-                                 </SelectTrigger>
-                                 <SelectContent>
-                                    {approvedClients.map(c => {
-                                       const safeId = c.client_id || (c.email ? `CLI-${c.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX');
-                                       return <SelectItem key={c.email} value={c.email}>{safeId} ({c.company_name || c.name})</SelectItem>
-                                    })}
-                                 </SelectContent>
-                              </Select>
-                              <Button size="sm" onClick={() => handleSuggestTender(t._id, t.title, t.bid_no)} className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs w-full sm:w-auto shadow-sm shrink-0">
-                                 <Send className="w-3 h-3 mr-1.5"/> Suggest to Client
-                              </Button>
-                           </div>
                         </div>
                       </div>
                     ))}
+                    {empTenderPages > 1 && (
+                      <div className="flex items-center justify-center gap-3 pt-2">
+                        <Button variant="outline" size="sm" disabled={tenderPage === 1} onClick={() => setTenderPage(tenderPage - 1)}>Previous</Button>
+                        <span className="text-xs font-bold">Page {tenderPage} of {empTenderPages}</span>
+                        <Button variant="outline" size="sm" disabled={tenderPage === empTenderPages} onClick={() => setTenderPage(tenderPage + 1)}>Next</Button>
+                      </div>
+                    )}
                  </CardContent>
                </Card>
             </div>
@@ -1953,6 +2006,8 @@ return (
           </TabsContent>
 
           {/* 🚀 RESTORED: GUEST QUERIES AND SLA TRACKER */}
+          <TabsContent value="ops-alerts" className="w-full"><OpsAlerts /></TabsContent>
+          <TabsContent value="chat" className="w-full"><StaffChat selfId={empData.id} roster={teamMembers} /></TabsContent>
           <TabsContent value="sla" className="w-full space-y-6">
             
             {/* GUEST QUERIES */}

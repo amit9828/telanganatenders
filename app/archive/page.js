@@ -13,19 +13,13 @@ import {
   ArrowLeft,
   Eye,
 } from 'lucide-react';
+import { TS_AP_DISTRICTS } from '@/lib/regions';
 
-const DISTRICTS = [
-  'Hyderabad',
-  'Adilabad',
-  'Nizamabad',
-  'Karimnagar',
-  'Medak',
-  'Ranga Reddy',
-  'Mahabubnagar',
-  'Nalgonda',
-  'Warangal',
-  'Khammam',
-];
+// 🚀 FIX: this local copy was missing Andhra Pradesh entirely and half of
+// Telangana's districts. Now sourced from lib/regions.js, the single source of
+// truth already used by the matchmaker and (via this same change) every other
+// district dropdown in the app.
+const DISTRICTS = TS_AP_DISTRICTS;
 
 function ArchivePage() {
   const [tenders, setTenders] = useState([]);

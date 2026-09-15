@@ -17,8 +17,14 @@ import {
 // both this catch-all route AND app/api/payments/route.js without violating
 // Next.js's route.js export contract. Only thin delegating calls remain below.
 import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '@/lib/payments';
+// 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
+// bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
+// bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
+import { resolveActorRole, DESIGNATIONS, normalizeDesignation } from '@/lib/staff-auth';
+import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
@@ -677,12 +683,56 @@ async function handleGET(request, { params }, attempt = 1) {
       const targetId = searchParams.get('target_id');
       let query = {};
       if (targetId) query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') }; 
+      else {
+        // 🚀 RBAC: Employee dashboard call (no target_id — it loads everything and
+        // splits client_alert vs employee_task client-side, see mdTasks in
+        // app/employee/page.js). Isolate only the 'client_alert' suggestions this
+        // employee authored to their own employee_id; 'employee_task' (MD -> employee
+        // assignments) and every other target_type stay fully visible so the
+        // employee still sees work the MD assigned to them. MD/unresolved: unfiltered.
+        const actor = await resolveActorRole(request);
+        if (actor.role === 'EMPLOYEE') {
+          query.$or = [
+            { target_type: { $ne: 'client_alert' } },
+            { target_type: 'client_alert', employee_id: actor.empId },
+          ];
+        }
+      }
       const dispatches = await db.collection('dispatches')
          .find(query)
          .project({ file_base64: 0 }) // 🚀 FIX: Block heavy task attachment loads
          .sort({ created_at: -1 })
          .toArray();
       return json({ dispatches });
+    }
+
+    // 🚀 RBAC: MD-only global module — every officer's client_alert tender
+    // suggestions across the whole team, with employee attribution, so the MD can
+    // see who suggested what without any employee seeing a teammate's suggestions
+    // (that isolation lives in the plain 'dispatches' branch above).
+    if (path === 'dispatches/suggestions' || path === 'api/dispatches/suggestions') {
+      const actor = await resolveActorRole(request);
+      if (actor.role !== 'MD') return json({ error: 'This view is restricted to the MD.' }, 403);
+
+      const [suggestions, clientDirectory] = await Promise.all([
+        db.collection('dispatches').find({ target_type: 'client_alert' }).sort({ created_at: -1 }).toArray(),
+        db.collection('users').find({}, { projection: { email: 1, company_name: 1, client_name: 1, name: 1, client_id: 1 } }).toArray(),
+      ]);
+
+      // Same in-memory-map lookup pattern as `nameByEmail` in the finance/ledger
+      // handler below — target_id on a client_alert dispatch is always the
+      // client's email (proved by the client-dashboard read at target_id: user.email).
+      const nameByEmail = new Map(
+        clientDirectory.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
+      );
+
+      const enriched = suggestions.map(s => ({
+        ...s,
+        client_display_name: nameByEmail.get(String(s.target_id || '').toLowerCase()) || s.target_id || 'Unknown Client',
+        employee_name: s.employee_name || 'Legacy / Unassigned',
+      }));
+
+      return json({ suggestions: enriched });
     }
 
     if (path === 'gov-officers' || path === 'api/gov-officers') {
@@ -714,22 +764,129 @@ async function handleGET(request, { params }, attempt = 1) {
     if (path === 'bids' || path === 'api/bids') {
       const clientEmail = searchParams.get('client_email');
       let query = {};
-      if (clientEmail) query.client_email = clientEmail.toLowerCase();
+      if (clientEmail) {
+        // Client's own "My Bids" view — scoped by client, never by employee.
+        query.client_email = clientEmail.toLowerCase();
+      } else {
+        // 🚀 RBAC: Employee dashboard call (no client_email). Strictly isolate to
+        // bids this employee created/claimed; MD (and unresolved/legacy callers)
+        // keep the unfiltered global view.
+        const actor = await resolveActorRole(request);
+        if (actor.role === 'EMPLOYEE') query.employee_id = actor.empId;
+      }
       const bids = await db.collection('bids').find(query).sort({ created_at: -1 }).toArray();
       return json({ bids });
     }
 
+    // 🚀 RBAC: MD-only global module — every live (non-terminal) bid across the
+    // whole team, with employee attribution.
+    if (path === 'bids/tracking' || path === 'api/bids/tracking') {
+      const actor = await resolveActorRole(request);
+      if (actor.role !== 'MD') return json({ error: 'This view is restricted to the MD.' }, 403);
+
+      const [tracking, clientDirectory] = await Promise.all([
+        db.collection('bids').find({ status: { $nin: ['Won', 'Lost'] } }).sort({ created_at: -1 }).toArray(),
+        db.collection('users').find({}, { projection: { email: 1, company_name: 1, client_name: 1, name: 1, client_id: 1 } }).toArray(),
+      ]);
+
+      const nameByEmail = new Map(
+        clientDirectory.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
+      );
+
+      const enriched = tracking.map(b => ({
+        ...b,
+        client_display_name: nameByEmail.get(String(b.client_email || '').toLowerCase()) || b.client_email || 'Unknown Client',
+        employee_name: b.employee_name || 'Legacy / Unassigned',
+      }));
+
+      return json({ tracking: enriched });
+    }
+
     if (path === 'employees' || path === 'api/employees') {
-      const team = await db.collection('employees').find({}).sort({ created_at: -1 }).toArray();
+      const actor = await resolveActorRole(request);
+      let query = {};
+      if (actor.role === 'MD') {
+        query = {};
+      } else if (actor.designation === DESIGNATIONS.GM) {
+        query = { designation: { $in: [DESIGNATIONS.DOC_TEAM_TL, DESIGNATIONS.DOC_TEAM_MEMBER] } };
+      } else if (actor.designation === DESIGNATIONS.DOC_TEAM_TL) {
+        query = { team_id: actor.empId };
+      } else if (actor.role === 'EMPLOYEE') {
+        query = { emp_id: actor.empId };
+      } else {
+        query = { _id: { $exists: false } };
+      }
+      const team = await db.collection('employees').find(query).sort({ created_at: -1 }).toArray();
       return json({ team });
     }
 
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
-      // 🚀 FIX: Prevent ledger images from lagging the admin panel
-      const transactions = await db.collection('finance_ledger').find({}).project({ proof_base64: 0 }).sort({ created_at: -1 }).toArray();
-      const totalCredit = transactions.filter(t => t.type === 'CREDIT').reduce((sum, t) => sum + Number(t.amount), 0);
-      const totalDebit = transactions.filter(t => t.type === 'DEBIT').reduce((sum, t) => sum + Number(t.amount), 0);
-      return json({ transactions, balance: totalCredit - totalDebit });
+      // 🚀 FIX: Cashfree payments only ever landed in the `payments` collection, so the
+      // Balance Sheet Book (which reads `finance_ledger`) showed offline collections
+      // only, while the Net Balance figure added online revenue on top — the money was
+      // in the total but had no matching line item. Successful online payments are now
+      // projected into the same ledger view as read-only CREDIT rows. Doing it on read
+      // rather than writing duplicate ledger documents means every historical payment
+      // shows up immediately and there is no way for the two stores to drift apart.
+      const [manualTxns, onlinePayments, clientDirectory] = await Promise.all([
+        db.collection('finance_ledger').find({}).project({ proof_base64: 0 }).sort({ created_at: -1 }).toArray(),
+        db.collection('payments').find({ status: 'SUCCESS' }).sort({ paid_at: -1 }).toArray(),
+        db.collection('users').find({}, { projection: { email: 1, company_name: 1, client_name: 1, name: 1, client_id: 1 } }).toArray(),
+      ]);
+
+      const nameByEmail = new Map(
+        clientDirectory.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
+      );
+
+      const onlineTxns = onlinePayments.map(p => {
+        const email = String(p.email || '').toLowerCase();
+        return {
+          _id: `online-${p.order_id || p._id}`,
+          type: 'CREDIT',
+          amount: Number(p.amount) || 0,
+          reason: p.reason || `${p.plan === 'single' ? 'Tender/Service' : `${p.plan} subscription`} payment`,
+          client_id: email || 'N/A',
+          client_name: nameByEmail.get(email) || email,
+          email,
+          payment_mode: 'ONLINE',
+          source: 'cashfree',
+          order_id: p.order_id || null,
+          // Projected from `payments`, so there is no ledger document to edit or delete.
+          readonly: true,
+          created_at: p.paid_at || p.created_at || new Date(),
+        };
+      });
+
+      // Oldest → newest so each row can carry the balance as it stood after that entry,
+      // then flipped back to newest-first for display.
+      const chronological = [...manualTxns, ...onlineTxns]
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      let running = 0;
+      for (const txn of chronological) {
+        running += (txn.type === 'DEBIT' ? -1 : 1) * (Number(txn.amount) || 0);
+        txn.running_balance = running;
+      }
+      const transactions = chronological.reverse();
+
+      const sum = (rows, type) => rows
+        .filter(t => t.type === type)
+        .reduce((total, t) => total + (Number(t.amount) || 0), 0);
+
+      // The MD can also tag a hand-entered ledger row as ONLINE (a bank transfer, for
+      // example), so the split follows how the money arrived rather than which
+      // collection it lives in.
+      const manualOnline = manualTxns.filter(t => t.payment_mode === 'ONLINE');
+      const manualOffline = manualTxns.filter(t => t.payment_mode !== 'ONLINE');
+
+      const offlineBalance = sum(manualOffline, 'CREDIT') - sum(manualOffline, 'DEBIT');
+      const onlineBalance = sum(manualOnline, 'CREDIT') - sum(manualOnline, 'DEBIT') + sum(onlineTxns, 'CREDIT');
+
+      return json({
+        transactions,
+        balance: offlineBalance + onlineBalance,
+        breakdown: { offline: offlineBalance, online: onlineBalance },
+        online_payments: onlineTxns,
+      });
     }
 
     if (path === 'me' || path === 'api/me') {
@@ -838,7 +995,8 @@ async function handleGET(request, { params }, attempt = 1) {
        let allRequests = [];
        usersWithPayments.forEach(user => {
            user.pending_payments.forEach(req => {
-               if (req.status !== 'PAID') {
+               const st = String(req.status || '').toUpperCase();
+               if (st !== 'PAID' && st !== 'SUCCESS' && st !== 'CANCELLED' && st !== 'FAILED') {
                    allRequests.push({
                        id: req.id,
                        db_id: req.id, 
@@ -1007,6 +1165,19 @@ export async function PUT(request, { params }) {
            { _id: new ObjectId(bid_id) },
            { $set: updateData }
         );
+
+        // 🚀 RBAC: auto-claim on first touch. Bids created before this rollout (or by
+        // the MD) have no employee_id; the first employee to update one becomes its
+        // owner for isolation going forward. The $exists:false filter guarantees this
+        // never overwrites a bid another employee already claimed.
+        const actor = await resolveActorRole(request);
+        if (actor.role === 'EMPLOYEE') {
+           await db.collection('bids').updateOne(
+              { _id: new ObjectId(bid_id), employee_id: { $exists: false } },
+              { $set: { employee_id: actor.empId, employee_email: actor.email, employee_name: actor.name } }
+           );
+        }
+
         return json({ success: true });
      }
 
@@ -1165,12 +1336,16 @@ export async function PUT(request, { params }) {
 // DELETE REQUESTS 
 // =====================================================================
 export async function DELETE(request, { params }) {
-  const db = await getDb();
-  const pathArray = params?.path || [];
-  const path = pathArray.join('/');
-  const { searchParams } = new URL(request.url);
-  
+  // 🚀 FIX: getDb()/param parsing used to sit OUTSIDE the try block (like the old
+  // GET/PUT/POST bug already fixed elsewhere in this file) — a transient DB hiccup
+  // threw an unhandled error before any response body was ever written, so callers
+  // like "Cancel Request" just saw a bare failed fetch with no diagnosable JSON body.
   try {
+    const pathArray = params?.path || [];
+    const path = pathArray.join('/');
+    const { searchParams } = new URL(request.url);
+    const db = await getDb();
+
     if (path === 'users' || path === 'api/users') {
        const email = searchParams.get('email');
        if (!email) return json({ error: 'Missing Client Email' }, 400);
@@ -1269,7 +1444,17 @@ export async function DELETE(request, { params }) {
        await db.collection('dispatches').deleteOne({ _id: new ObjectId(id) });
        return json({ success: true, message: 'Dispatch Task Deleted' });
     }
-    
+
+    if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const id = searchParams.get('id');
+       if (!id) return json({ error: 'Missing Request ID' }, 400);
+       await db.collection('users').updateOne(
+           { "pending_payments.id": id },
+           { $pull: { pending_payments: { id: id } } }
+       );
+       return json({ success: true, message: 'Payment Request Cancelled' });
+    }
+
     return json({ error: 'DELETE endpoint not found' }, 404);
   } catch (error) {
     console.error('Delete API Error:', error);
@@ -1540,7 +1725,25 @@ export async function POST(request, { params }) {
         { email: userEmail },
         { $set: { is_approved: true, status: 'approved', client_id: finalClientId } }
       );
-      return json({ success: true, client_id: finalClientId });
+      try {
+        const display = existingUser?.company_name || existingUser?.client_name || existingUser?.name || userEmail;
+        await ensureEntityDriveFolder({
+          db,
+          collection: 'users',
+          query: { email: userEmail },
+          folderName: `Client - ${finalClientId} - ${display}`,
+          email: userEmail,
+        });
+      } catch (err) {
+        console.error('[users/approve] Drive folder failed:', err?.message || err);
+      }
+      const refreshed = await db.collection('users').findOne({ email: userEmail }, { projection: { drive_folder_id: 1, drive_folder_link: 1 } });
+      return json({
+        success: true,
+        client_id: finalClientId,
+        drive_folder_id: refreshed?.drive_folder_id || null,
+        drive_folder_link: refreshed?.drive_folder_link || null,
+      });
     }
 
     if (path === 'users/request-payment' || path === 'api/users/request-payment') {
@@ -1569,8 +1772,17 @@ export async function POST(request, { params }) {
 
     if (path === 'dispatches' || path === 'api/dispatches') {
        const { target_type, target_id, subject, message } = body;
+       // 🚀 RBAC: 'client_alert' is an officer suggesting a tender to a client
+       // (handleSuggestTender in app/employee/page.js) — stamp who made the
+       // suggestion so it isolates per-employee (GET /api/dispatches below).
+       // 'employee_task' (MD assigning work to an employee) and every other
+       // target_type already carries its own meaning via target_id and is untouched.
+       const actor = await resolveActorRole(request);
+       const ownerFields = (target_type === 'client_alert' && actor.role === 'EMPLOYEE')
+          ? { employee_id: actor.empId, employee_email: actor.email, employee_name: actor.name }
+          : {};
        const result = await db.collection('dispatches').insertOne({
-          target_type, target_id, subject, message, status: 'Sent', created_at: new Date()
+          target_type, target_id, subject, message, status: 'Sent', created_at: new Date(), ...ownerFields
        });
        return json({ success: true, id: result.insertedId });
     }
@@ -1584,8 +1796,15 @@ export async function POST(request, { params }) {
 
     if (path === 'bids' || path === 'api/bids') {
        const status = body.status || 'Doc Preparation';
+       // 🚀 RBAC: stamp task ownership at creation — the employee who added this bid
+       // tracking row is the only one who should see it later (GET /api/bids below).
+       // MD-created rows (admin_token) get no employee_id, same bucket as legacy data.
+       const actor = await resolveActorRole(request);
+       const ownerFields = actor.role === 'EMPLOYEE'
+          ? { employee_id: actor.empId, employee_email: actor.email, employee_name: actor.name }
+          : {};
        const result = await db.collection('bids').insertOne({
-          ...body, status: status, created_at: new Date()
+          ...body, status: status, created_at: new Date(), ...ownerFields
        });
        return json({ success: true, id: result.insertedId });
     }
@@ -1618,12 +1837,21 @@ export async function POST(request, { params }) {
         { email: client_email.toLowerCase() },
         { $push: { officer_queries: { id: queryId, subject, message, created_at: new Date() } } }
       );
-      return json({ success: true });
+      return json({ success: true, id: queryId });
     }
 
     // 🚀 FIX: Client submits reply (Updates query with data instead of deleting)
     if (path === 'queries/reply' || path === 'api/queries/reply') {
       const { queryId, email, description, fileName } = body;
+      // 🚀 FIX: the client form already marks this field required, but the API
+      // trusted that blindly — a stripped/empty request body silently saved a
+      // blank reply as if the officer's query had genuinely been answered.
+      if (!queryId || !email) {
+        return json({ error: 'Missing queryId or email' }, 400);
+      }
+      if (!String(description || '').trim()) {
+        return json({ error: 'Reply description cannot be empty' }, 400);
+      }
       await db.collection('users').updateOne(
         { email: email.toLowerCase(), "officer_queries.id": queryId },
         { $set: { 
@@ -1692,65 +1920,75 @@ export async function POST(request, { params }) {
        return json({ success: true });
     }
     if (path === 'employees' || path === 'api/employees') {
+        const actor = await resolveActorRole(request);
+        if (!actor.role) return json({ error: 'Please sign in.' }, 401);
+        const designation = normalizeDesignation(body.designation || body.role);
+        if (actor.role === 'EMPLOYEE' && actor.designation === DESIGNATIONS.DOC_TEAM_MEMBER) {
+          return json({ error: 'Employees cannot create staff logins.' }, 403);
+        }
+        if (actor.designation === DESIGNATIONS.DOC_TEAM_TL) {
+          return json({ error: 'Team Leads cannot create staff logins.' }, 403);
+        }
+        if (actor.designation === DESIGNATIONS.GM && designation === DESIGNATIONS.GM) {
+          return json({ error: 'GM can create TL and Member only.' }, 403);
+        }
+
+        let teamId = null;
+        if (designation === DESIGNATIONS.DOC_TEAM_MEMBER) {
+          teamId = String(body.team_id || '').trim();
+          if (!teamId) return json({ error: 'Members must belong to a Team Lead (team_id).' }, 400);
+          const tl = await db.collection('employees').findOne({ emp_id: teamId });
+          if (!tl || normalizeDesignation(tl.designation) !== DESIGNATIONS.DOC_TEAM_TL) {
+            return json({ error: 'team_id must be a Doc Team TL emp_id.' }, 400);
+          }
+        }
+
         const count = await db.collection('employees').countDocuments();
-        const newEmpId = `EMP-${1000 + count + 1}`; 
+        const newEmpId = `EMP-${1000 + count + 1}`;
+        if (designation === DESIGNATIONS.DOC_TEAM_TL) teamId = newEmpId;
+
         const newEmployee = { 
             emp_id: newEmpId, 
             name: body.name, 
             email: body.email.toLowerCase(), 
             password: body.password, 
-            role: body.role || 'Employee',
+            role: body.role || designation,
+            designation,
+            team_id: teamId,
             created_at: new Date() 
         };
         const result = await db.collection('employees').insertOne(newEmployee);
-        return json({ success: true, emp_id: newEmpId, id: result.insertedId });
+        try {
+          const folder = await createDriveFolder({ folderName: `${newEmpId} - ${body.name || designation}` });
+          await db.collection('employees').updateOne(
+            { _id: result.insertedId },
+            { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
+          );
+        } catch (err) {
+          console.error('[employees] Drive folder failed:', err?.message || err);
+        }
+        return json({ success: true, emp_id: newEmpId, id: result.insertedId, designation, team_id: teamId });
     }
 
     if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
-       const { folderName, email } = body;
-       
-       if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
-          return json({ error: 'Google Drive Keys missing in Vercel Environment Variables' }, 500);
-       }
-
+       const { folderName, email, collection, emp_id } = body;
        try {
-          const auth = new google.auth.JWT(
-             process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-             null,
-             process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-             ['https://www.googleapis.com/auth/drive.file']
-          );
-          const drive = google.drive({ version: 'v3', auth });
-          
-          const fileMetadata = {
-             name: folderName || `Client - ${email}`,
-             mimeType: 'application/vnd.google-apps.folder',
-          };
-          
-          const folder = await drive.files.create({
-             resource: fileMetadata,
-             fields: 'id, webViewLink'
-          });
-
-          await drive.permissions.create({
-             fileId: folder.data.id,
-             requestBody: {
-                role: 'writer',
-                type: 'anyone'
-             }
-          });
-          
-          if (email) {
+          const folder = await createDriveFolder({ folderName: folderName || `Client - ${email || emp_id || 'Folder'}` });
+          if (collection === 'employees' && emp_id) {
+             await db.collection('employees').updateOne(
+                { emp_id },
+                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
+             );
+          } else if (email) {
              await db.collection('users').updateOne(
-                { email: email.toLowerCase() },
-                { $set: { drive_folder_id: folder.data.id, drive_folder_link: folder.data.webViewLink } }
+                { email: String(email).toLowerCase() },
+                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
              );
           }
-
-          return json({ success: true, folderId: folder.data.id, folderLink: folder.data.webViewLink });
+          return json({ success: true, folderId: folder.folderId, folderLink: folder.folderLink });
        } catch (error) {
           console.error('Drive API Error:', error);
-          return json({ error: 'Failed to create Google Drive folder' }, 500);
+          return json({ error: error.message || 'Failed to create Google Drive folder' }, 500);
        }
     }
 

@@ -111,13 +111,37 @@ function parseGemCalendarDate(value) {
 }
 
 /**
- * Strict rule: Start Date / Published Date must equal today's IST date.
- * Missing or unparseable start dates are skipped (no backdated / older tenders).
+ * How far back a bid's Start/Published date may be and still be collected.
+ *
+ * 🚀 FIX: this used to be hardcoded to "today only", which threw away every bid that
+ * was published even one day earlier — a hunt run on Monday could not see Friday's
+ * bids, and a bid whose start date the card did not print was dropped outright. The
+ * window is now open by default (keep whatever the site's own date filter returned)
+ * and can be narrowed with GEM_HUNTER_LOOKBACK_DAYS=0 for the old today-only behaviour.
  */
-function isStartDateToday(bid) {
+const LOOKBACK_DAYS = (() => {
+  const raw = process.env.GEM_HUNTER_LOOKBACK_DAYS;
+  if (raw === undefined || String(raw).trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+})();
+
+function daysSinceToday(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const then = Date.UTC(y, m - 1, d);
+  const [ty, tm, td] = todayIsoDate().split('-').map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - then) / 86400000);
+}
+
+/** True when the bid falls inside the configured collection window. */
+function isBidWithinWindow(bid) {
+  if (LOOKBACK_DAYS === null) return true;
   const startIso = parseGemCalendarDate(bid?.start_date || bid?.published_date);
-  if (!startIso) return false;
-  return startIso === todayIsoDate();
+  // An unreadable date is kept rather than discarded — the site's own From/To filter
+  // has already bounded the result set, and losing a real bid costs more than a stale one.
+  if (!startIso) return true;
+  const age = daysSinceToday(startIso);
+  return age <= LOOKBACK_DAYS;
 }
 
 function districtAliases(district) {
@@ -207,27 +231,52 @@ function bidMatchesClientKeywords(bid, keywords) {
   return hits.length ? hits : null;
 }
 
+/**
+ * 🚀 FIX: this used to match `[id*="captcha"]` and `[class*="captcha"]` anywhere in the
+ * DOM plus loose phrases like "enable javascript and cookies". BidPlus ships a hidden
+ * captcha container on its login modal on every page, so the hunter announced
+ * "Solve the CAPTCHA" on a page that had no visible challenge at all and then sat
+ * waiting for the officer to clear something that did not exist.
+ *
+ * A challenge now only counts when a real widget is actually rendered and visible, or
+ * the page is unmistakably an interstitial (Cloudflare) with nothing else on it.
+ */
 async function captchaVisible(page) {
   return page.evaluate(() => {
-    const body = (document.body?.innerText || '').toLowerCase();
-    const textHit = /verify you are (a )?human|i.?m not a robot|solve (the )?captcha|attention required|checking your browser|enable javascript and cookies/.test(body);
-    const node = document.querySelector([
-      'iframe[src*="recaptcha"]',
-      'iframe[src*="hcaptcha"]',
-      'iframe[src*="captcha"]',
+    const isVisible = (el) => {
+      if (!el) return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 40 || rect.height < 20) return false;
+      const style = window.getComputedStyle(el);
+      return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > 0.1;
+    };
+
+    const widget = [
+      'iframe[src*="recaptcha/api2/anchor"]',
+      'iframe[src*="recaptcha/enterprise/anchor"]',
+      'iframe[src*="hcaptcha.com"]',
+      'iframe[title*="challenge" i]',
       '.g-recaptcha',
-      '#captcha',
-      'input[name*="captcha" i]',
-      '[id*="captcha" i]',
-      '[class*="captcha" i]',
-    ].join(','));
-    return Boolean(textHit || node);
+      '.h-captcha',
+      '#cf-challenge-running',
+    ].some((selector) => Array.from(document.querySelectorAll(selector)).some(isVisible));
+    if (widget) return true;
+
+    // A visible, enabled text box the user is expected to type a captcha code into.
+    const manualInput = Array.from(document.querySelectorAll('input[name*="captcha" i], input[id*="captcha" i]'))
+      .some((el) => isVisible(el) && !el.disabled && el.type !== 'hidden');
+    if (manualInput) return true;
+
+    // Full-page interstitials replace the site entirely, so they are short and say so.
+    const body = (document.body?.innerText || '').trim().toLowerCase();
+    return body.length < 1200
+      && /verify you are (a )?human|i.?m not a robot|checking your browser|attention required/.test(body);
   }).catch(() => false);
 }
 
 async function waitForCaptchaClear(page) {
   if (!(await captchaVisible(page))) return false;
-  chime('⚠️ CAPTCHA detected. Please solve it on screen...');
+  chime('⚠️ CAPTCHA detected on screen. Please solve it to continue...');
   const started = Date.now();
   while (Date.now() - started < CAPTCHA_TIMEOUT_MS) {
     if (page.isClosed()) throw new Error('Browser closed while waiting for CAPTCHA.');
@@ -1329,13 +1378,31 @@ async function clickNextPage(page) {
       }).catch(() => false);
       if (disabled) return false;
 
-      const before = page.url();
+      const beforeUrl = page.url();
+      const beforeStamp = await page.evaluate(() => {
+        const m = (document.body?.innerText || '').match(/GEM\/\d{4}\/B\/\d+/i);
+        return m ? m[0].toUpperCase() : '';
+      }).catch(() => '');
+
       await next.click({ timeout: 3000 });
       await page.waitForTimeout(1400);
       await waitForCaptchaClear(page);
-      // If the URL and first bid stamp did not change, treat as end-of-list.
-      if (page.url() === before) {
+
+      const afterStamp = await page.evaluate(() => {
+        const m = (document.body?.innerText || '').match(/GEM\/\d{4}\/B\/\d+/i);
+        return m ? m[0].toUpperCase() : '';
+      }).catch(() => '');
+
+      // AJAX lists often keep the same URL. If neither the URL nor the first
+      // visible bid changed, we are stuck on the last page — stop instead of
+      // looping until DISTRICT_TIMEOUT_MS.
+      if (page.url() === beforeUrl && afterStamp && afterStamp === beforeStamp) {
         await page.waitForTimeout(600);
+        const again = await page.evaluate(() => {
+          const m = (document.body?.innerText || '').match(/GEM\/\d{4}\/B\/\d+/i);
+          return m ? m[0].toUpperCase() : '';
+        }).catch(() => '');
+        if (again === beforeStamp) return false;
       }
       return true;
     } catch {
@@ -1426,8 +1493,9 @@ async function ingestTodaysBid(page, db, bid, { district, state, keywords }) {
   const listUrl = page.url();
   let startDate = bid.start_date || bid.published_date || '';
 
-  // Detail peek only for missing start date — never for PDFs.
-  if (!parseGemCalendarDate(startDate) && bid.href && !bid.href.includes('javascript:')) {
+  // Detail peek only for missing start date — never for PDFs. With no lookback window
+  // configured the date changes nothing, so the extra round trip per bid is skipped.
+  if (LOOKBACK_DAYS !== null && !parseGemCalendarDate(startDate) && bid.href && !bid.href.includes('javascript:')) {
     try {
       await page.goto(bid.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await waitForCaptchaClear(page);
@@ -1447,11 +1515,11 @@ async function ingestTodaysBid(page, db, bid, { district, state, keywords }) {
   }
 
   bid = { ...bid, start_date: startDate, published_date: startDate };
-  if (!isStartDateToday(bid)) {
-    log(`Skipped ${bid_no}: Start/Published Date is not today (${startDate || 'missing'}).`);
+  if (!isBidWithinWindow(bid)) {
+    log(`Skipped ${bid_no}: Start/Published Date ${startDate} is older than the ${LOOKBACK_DAYS}-day window.`);
     return {
       bid_no,
-      skipped: 'start_date_not_today',
+      skipped: 'outside_date_window',
       start_date: startDate || null,
     };
   }
@@ -1476,6 +1544,48 @@ async function ingestTodaysBid(page, db, bid, { district, state, keywords }) {
     + `${hits.length ? ` [${hits.join(', ')}]` : ' [feed]'} @ ${state}/${district}`,
   );
   return { bid_no, ...saved, hits };
+}
+
+/** No-skip policy: a district is only ever marked "failed" after this many attempts. */
+const MAX_DISTRICT_ATTEMPTS = 3;
+
+/**
+ * Runs scrapeDistrict for one district, retrying on any non-fatal error (CAPTCHA
+ * timeout, flaky Select2, network blip, etc.) instead of silently moving on after
+ * the first failure. A closed browser/page is fatal and rethrown immediately —
+ * there is nothing to retry against.
+ */
+async function attemptDistrict(page, db, { state, district, keywords, seenBidNos }) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= MAX_DISTRICT_ATTEMPTS; attempt += 1) {
+    try {
+      assertPageAlive(page);
+      if (attempt > 1) {
+        log(`Retry ${attempt}/${MAX_DISTRICT_ATTEMPTS} for ${state}/${district} after: ${lastErr?.message || 'previous failure'}`);
+        await page.goto(START_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await waitForCaptchaClear(page);
+      }
+      const stats = await scrapeDistrict(page, db, { state, district, keywords, seenBidNos });
+      return { ok: true, stats, attempts: attempt };
+    } catch (err) {
+      lastErr = err;
+      if (/browser\/page was closed/i.test(err.message || '')) {
+        throw err; // fatal — nothing left to retry against.
+      }
+      log(`District attempt ${attempt}/${MAX_DISTRICT_ATTEMPTS} failed (${state}/${district}): ${err.message}`);
+      if (attempt < MAX_DISTRICT_ATTEMPTS) {
+        try {
+          assertPageAlive(page);
+          await page.goto(START_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+          await waitForCaptchaClear(page);
+        } catch (navErr) {
+          log(`Could not recover list page before retry: ${navErr.message}`);
+          if (/closed/i.test(navErr.message || '')) throw navErr;
+        }
+      }
+    }
+  }
+  return { ok: false, error: lastErr, attempts: MAX_DISTRICT_ATTEMPTS };
 }
 
 async function scrapeDistrict(page, db, { state, district, keywords, seenBidNos }) {
@@ -1505,13 +1615,13 @@ async function scrapeDistrict(page, db, { state, district, keywords, seenBidNos 
       }
       seenBidNos.add(bid_no);
 
-      // Fast path: card already shows an older Start/Published Date → skip immediately.
-      if (parseGemCalendarDate(bid.start_date || bid.published_date) && !isStartDateToday(bid)) {
+      // Fast path: card already shows a date outside the window → skip immediately.
+      if (parseGemCalendarDate(bid.start_date || bid.published_date) && !isBidWithinWindow(bid)) {
         stats.skipped += 1;
         continue;
       }
 
-      // Pure today's feed — no client-keyword lock. Every today-published GEM/B bid is saved.
+      // No client-keyword lock. Every GEM/B bid the site returned is saved.
       stats.matched += 1;
       try {
         const result = await ingestTodaysBid(page, db, { ...bid, bid_no }, { district, state, keywords });
@@ -1551,7 +1661,9 @@ async function main() {
   const dateWindow = huntDateWindow();
   log(`Approved clients: ${clients.length}. Keyword intel: ${keywords.length} token(s) (annotation only).`);
   log(`Date window: From ${dateWindow.fromSlash} → To ${dateWindow.toSlash} (+3 months)`);
-  log('Mode: pure today\'s feed → live_scraped_bids (no keyword lock).');
+  log(LOOKBACK_DAYS === null
+    ? 'Mode: every bid the site returns → live_scraped_bids (no start-date limit, no keyword lock).'
+    : `Mode: bids started within the last ${LOOKBACK_DAYS} day(s) → live_scraped_bids (no keyword lock).`);
   if (keywords.length) {
     log(`Optional match tags: ${keywords.slice(0, 40).join(', ')}${keywords.length > 40 ? ', …' : ''}`);
   }
@@ -1582,6 +1694,7 @@ async function main() {
     skipped: 0,
   };
   const seenBidNos = new Set();
+  const permanentlyFailedDistricts = [];
   let aborted = false;
 
   try {
@@ -1590,45 +1703,50 @@ async function main() {
     await page.waitForTimeout(1000);
 
     // State 1 Telangana → all districts, then State 2 Andhra Pradesh → all districts.
+    // No-skip policy: every district gets up to MAX_DISTRICT_ATTEMPTS tries via
+    // attemptDistrict() before it is ever counted as failed/skipped.
     for (const plan of STATE_PLANS) {
       if (aborted) break;
       log(`===== STATE: ${plan.state} (${plan.districts.length} districts) =====`);
       for (const district of plan.districts) {
         if (aborted) break;
         totals.districts += 1;
+
+        let result;
         try {
-          assertPageAlive(page);
-          const stats = await scrapeDistrict(page, db, {
+          result = await attemptDistrict(page, db, {
             state: plan.state,
             district,
             keywords,
             seenBidNos,
           });
+        } catch (err) {
+          // Fatal (browser/page closed) — bubbled up out of the retry loop itself.
+          totals.failed_districts += 1;
+          permanentlyFailedDistricts.push(`${plan.state}/${district}`);
+          log(`Browser closed by user during ${plan.state}/${district} — stopping remaining districts.`);
+          aborted = true;
+          break;
+        }
+
+        if (result.ok) {
+          const stats = result.stats;
           totals.pages += stats.pages;
           totals.visible += stats.visible;
           totals.matched += stats.matched;
           totals.inserted += stats.inserted;
           totals.updated += stats.updated;
           totals.skipped += stats.skipped;
-        } catch (err) {
+          if (result.attempts > 1) {
+            log(`${plan.state}/${district}: succeeded on attempt ${result.attempts}/${MAX_DISTRICT_ATTEMPTS}.`);
+          }
+        } else {
           totals.failed_districts += 1;
-          log(`District failed (${plan.state}/${district}): ${err.message} — continuing.`);
-          if (/browser\/page was closed/i.test(err.message)) {
-            aborted = true;
-            log('Browser closed by user — stopping remaining districts.');
-            break;
-          }
-          try {
-            assertPageAlive(page);
-            await page.goto(START_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            await waitForCaptchaClear(page);
-          } catch (navErr) {
-            log(`Could not recover list page: ${navErr.message}`);
-            if (/closed/i.test(navErr.message)) {
-              aborted = true;
-              break;
-            }
-          }
+          permanentlyFailedDistricts.push(`${plan.state}/${district}`);
+          log(
+            `District permanently failed after ${MAX_DISTRICT_ATTEMPTS} attempts `
+            + `(${plan.state}/${district}): ${result.error?.message || 'unknown error'} — moving on.`,
+          );
         }
       }
     }
@@ -1638,6 +1756,11 @@ async function main() {
       + `pages ${totals.pages}, visible ${totals.visible}, matched ${totals.matched}, `
       + `inserted ${totals.inserted}, updated ${totals.updated}, skipped ${totals.skipped}.`,
     );
+    if (permanentlyFailedDistricts.length) {
+      log(`Districts that could NOT be scraped after retries: ${permanentlyFailedDistricts.join(', ')}`);
+    } else {
+      log('No-skip policy held: every district was scraped successfully.');
+    }
     if (!aborted) {
       log('Chrome will stay open for 8s so you can confirm.');
       await page.waitForTimeout(8000).catch(() => {});

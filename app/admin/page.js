@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import { useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
@@ -6,13 +6,19 @@ import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
-import DocumentLetterheadGenerator from '@/components/DocumentLetterheadGenerator';
-import LetterheadManager from '@/components/LetterheadManager';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
+import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
+import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import StaffChat from '@/components/StaffChat';
+import OpsAlerts from '@/components/OpsAlerts';
+import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
+import { deskPathForDesignation } from '@/lib/designations';
 import { formatINR } from '@/lib/format';
+import { launchGemHunter } from '@/lib/gem-hunter-client';
+import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -34,17 +40,12 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot
+  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot, BellRing
 } from 'lucide-react';
 
-const DISTRICTS = [
-  'Hyderabad', 'Adilabad', 'Nizamabad', 'Karimnagar', 'Medak', 'Ranga Reddy',
-  'Mahabubnagar', 'Nalgonda', 'Warangal', 'Khammam', 'Sangareddy',
-  'Medchal-Malkajgiri', 'Siddipet', 'Vikarabad',
-  'Visakhapatnam', 'Vijayawada (NTR)', 'Guntur', 'Tirupati', 'Nellore',
-  'Kurnool', 'Anantapur', 'Kadapa (YSR)', 'Kakinada', 'Eluru',
-  'Srikakulam', 'Vizianagaram', 'Prakasam'
-];
+// 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
+// drifted from the AP district list used elsewhere.
+const DISTRICTS = TS_AP_DISTRICTS;
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -157,7 +158,7 @@ export default function AdminPage() {
   const [tenderSearch, setTenderSearch] = useState('');
   // 🚀 Pagination for the Published Tenders list (20 per page)
   const [tenderPage, setTenderPage] = useState(1);
-  const tendersPerPage = 20;
+  const tendersPerPage = 10;
   const tendersListRef = useRef(null);
 
   // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
@@ -166,8 +167,10 @@ export default function AdminPage() {
 
   // 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) 🚀
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
+  const [analyzingTender, setAnalyzingTender] = useState(false);
   const [bulkDragActive, setBulkDragActive] = useState(false);
   const [bulkFileCount, setBulkFileCount] = useState(0);
+  const [wfJobs, setWfJobs] = useState([]);
 
   // 🚀 AI Matchmaker & Competitor Intel
   const [bidMatches, setBidMatches] = useState([]);
@@ -184,6 +187,14 @@ export default function AdminPage() {
   const [liveScrapedTenders, setLiveScrapedTenders] = useState([]);
   const [liveFeedToday, setLiveFeedToday] = useState('');
   const [liveFeedLoading, setLiveFeedLoading] = useState(false);
+
+  // 🚀 RBAC: MD-only "Team Activity" — every officer's suggestions + every live bid
+  // across the whole team, with attribution (GET /api/dispatches/suggestions,
+  // GET /api/bids/tracking). Lazy-loaded only when that tab opens, not part of the
+  // main polling refresh() below.
+  const [teamSuggestions, setTeamSuggestions] = useState([]);
+  const [teamTracking, setTeamTracking] = useState([]);
+  const [teamActivityLoading, setTeamActivityLoading] = useState(false);
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -210,6 +221,15 @@ export default function AdminPage() {
   // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
 
+  // 🚀 Lazy-load the Team Activity module only when its tab opens — same
+  // "independent of the main refresh cycle" pattern as refreshLiveFeed().
+  useEffect(() => {
+    if (activeTab === 'team-activity' && token) {
+      fetchTeamActivity();
+    }
+    // eslint-disable-next-line
+  }, [activeTab, token]);
+
   // 🚀 FIX: Bulletproof refresh — one blocked/failing route (e.g. expired-tender
   // filter accidentally hiding admin data, a network blip, a non-JSON error page)
   // used to throw inside Promise.all and take the ENTIRE dashboard down to zeros.
@@ -229,7 +249,7 @@ export default function AdminPage() {
     try {
       // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
       // tenders" filter that's meant only for the public site.
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes, wfRes] = await Promise.all([
         safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
         safeFetch(`/api/admin/stats?t=${Date.now()}`),
         safeFetch(`/api/tickets?role=admin&t=${Date.now()}`),
@@ -241,7 +261,8 @@ export default function AdminPage() {
         safeFetch(`/api/finance/ledger?t=${Date.now()}`),
         safeFetch(`/api/guest-queries?t=${Date.now()}`),
         safeFetch(`/api/payments/requests?t=${Date.now()}`),
-        safeFetch(`/api/bid-matches?t=${Date.now()}`)
+        safeFetch(`/api/bid-matches?t=${Date.now()}`),
+        safeFetch(`/api/workflow/queue?t=${Date.now()}`)
       ]);
 
       if (tRes.status === 401) return logout();
@@ -263,25 +284,26 @@ export default function AdminPage() {
         setBidMatches(matchRes.data.matches || []);
         setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
       }
+      if (wfRes.ok) setWfJobs(wfRes.data.jobs || []);
 
       // Soft-refresh the live scraped feed without blocking the rest of the dashboard.
       refreshLiveFeed(token, { silent: true });
 
       const approvedUsers = aRes.ok ? (aRes.data.users || []) : [];
-      const allSuccess = [];
-      approvedUsers.forEach(client => {
-          if (client.payments && client.payments.length > 0) {
-              client.payments.filter(p => p.status === 'SUCCESS').forEach(p => {
-                  allSuccess.push({ ...p, client_name: client.company_name || client.name, email: client.email });
-              });
-          }
-      });
-      setSuccessfulPaymentsLog(allSuccess.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
 
-      const onlineRevenue = sRes.ok ? (sRes.data.revenue || 0) : 0;
-      const offlineBal = ledgerRes.ok ? (ledgerRes.data.balance || 0) : 0;
-      setBreakdown({ offline: offlineBal, online: onlineRevenue });
-      setLedgerBalance(offlineBal + onlineRevenue);
+      // 🚀 FIX: this list used to be built from `client.payments`, a field the users
+      // collection never had — Cashfree payments live in their own `payments`
+      // collection — so "Successful Online Payments" was permanently empty even after
+      // a client had paid. The ledger endpoint now projects those payments, names
+      // already resolved, so read them straight from there.
+      if (ledgerRes.ok) {
+        setSuccessfulPaymentsLog(ledgerRes.data.online_payments || []);
+        // Net Balance previously added /api/admin/stats revenue on top of the ledger
+        // balance. Now that the ledger view already includes online credits, taking
+        // its own balance/breakdown is what keeps the total and the line items agreeing.
+        setLedgerBalance(ledgerRes.data.balance || 0);
+        setBreakdown(ledgerRes.data.breakdown || { offline: 0, online: 0 });
+      }
 
       setClientReports(approvedUsers.map(c => {
          const wonBids = (c.bids || []).filter(b => b.status === 'Won').length || c.stats?.won || 0;
@@ -328,6 +350,34 @@ export default function AdminPage() {
     }
   };
 
+  // 🚀 RBAC: MD-only global attribution views — independent of the main refresh()
+  // Promise.all so every employee's suggestions/tracking don't get pulled on every
+  // 60s poll; only fetched when the "Team Activity" tab is actually open.
+  const fetchTeamActivity = async (authToken = token) => {
+    if (!authToken) return;
+    setTeamActivityLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${authToken}` };
+      const [sugRes, trkRes] = await Promise.all([
+        fetch(`/api/dispatches/suggestions?t=${Date.now()}`, { headers }),
+        fetch(`/api/bids/tracking?t=${Date.now()}`, { headers }),
+      ]);
+      const sugData = await sugRes.json().catch(() => null);
+      const trkData = await trkRes.json().catch(() => null);
+
+      if (sugRes.ok) setTeamSuggestions(sugData?.suggestions || []);
+      else if (sugRes.status !== 401) toast.error(sugData?.error || 'Failed to load global suggestions.');
+
+      if (trkRes.ok) setTeamTracking(trkData?.tracking || []);
+      else if (trkRes.status !== 401) toast.error(trkData?.error || 'Failed to load live tracking.');
+    } catch (e) {
+      console.error('Team activity refresh failed:', e);
+      toast.error('Network error while loading team activity.');
+    } finally {
+      setTeamActivityLoading(false);
+    }
+  };
+
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.clear();
@@ -346,8 +396,46 @@ export default function AdminPage() {
     // 413 after the toast already said it was fine. 3MB raw stays safely under that cap.
     if (file.size > 3 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 3MB.');
     const reader = new FileReader();
-    reader.onload = () => { setPdfBase64(reader.result?.toString().split(',')[1] || ''); setPdfName(file.name); toast.success(`PDF loaded: ${file.name}`); };
+    reader.onload = () => {
+      const base64Str = reader.result?.toString().split(',')[1] || '';
+      setPdfBase64(base64Str);
+      setPdfName(file.name);
+      toast.success(`PDF loaded: ${file.name}`);
+      handleAdminPdfAnalysis(file, base64Str);
+    };
     reader.readAsDataURL(file);
+  };
+
+  const handleAdminPdfAnalysis = async (file, base64Data) => {
+    setAnalyzingTender(true);
+    toast.info('AI is reading the document. Please wait...', { duration: 3000 });
+    try {
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdfBase64: base64Data, saveToDraft: false, fileName: file?.name })
+      });
+      if (!res.ok) {
+        toast.error('AI Analysis failed. You may need to enter manually.');
+        return;
+      }
+      const { data } = await res.json();
+      if (!data) return;
+      setForm(prev => ({
+        ...prev,
+        bid_no: data.bid_no && data.bid_no !== 'N/A' ? data.bid_no : prev.bid_no,
+        title: data.title && data.title !== 'N/A' ? data.title : prev.title,
+        department: data.department && data.department !== 'N/A' ? data.department : prev.department,
+        last_date: data.last_date && data.last_date !== 'N/A' ? data.last_date : prev.last_date,
+        district: data.district && DISTRICTS.includes(data.district) ? data.district : prev.district,
+        supply_details: prev.supply_details || `EMD: ${data.emd_amount}\nTurnover Req: ${data.turnover_req}\nMandatory Docs: ${(data.mandatory_docs || []).join(', ')}`
+      }));
+      toast.success('AI Successfully auto-filled the tender details!');
+    } catch (err) {
+      toast.error('Network error during AI analysis.');
+    } finally {
+      setAnalyzingTender(false);
+    }
   };
 
   const onLedgerProofChange = (e) => {
@@ -469,11 +557,22 @@ export default function AdminPage() {
   const launchGemLiveHunter = async () => {
     setLaunchingGem(true);
     try {
-      const res = await fetch('http://localhost:4001/api/launch-gem', { method: 'POST' });
-      if (!res.ok) throw new Error('launch failed');
-      toast.success('Chrome opened on your screen. Solve CAPTCHA if prompted.');
-    } catch {
-      toast.error("Local agent not running. Run 'npm run gem:agent' in terminal.");
+      const result = await launchGemHunter();
+      if (result.offline) {
+        toast.error(result.error || "Local agent not running. Run 'npm run gem:agent' in terminal.");
+        return;
+      }
+      if (!result.ok) {
+        toast.error(result.error || 'Could not launch the hunter.');
+        return;
+      }
+      toast.success(
+        result.already_running
+          ? 'The hunter is already running in the Chrome window on your screen.'
+          : result.via_popup
+            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
+            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
+      );
     } finally {
       setLaunchingGem(false);
     }
@@ -569,19 +668,22 @@ export default function AdminPage() {
   };
 
 // 🚀 FIX: LocalStorage Injection for Instant MD Bypass
-  const impersonateUser = (type, email_or_id) => {
+  const impersonateUser = async (type, email_or_id, designation) => {
     const toastId = toast.loading(`Bypassing secure access to ${type} dashboard...`);
     try {
         if (type === 'client') {
             localStorage.setItem('tt_email', email_or_id);
+            toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
+            setTimeout(() => { window.open('/client', '_blank'); }, 800);
         } else if (type === 'employee') {
             localStorage.setItem('tt_emp_email', email_or_id);
+            try {
+              await signIn('impersonate', { redirect: false, email: email_or_id, adminToken: token });
+            } catch (_) { /* localStorage fallback still opens the desk */ }
+            const path = deskPathForDesignation(designation);
+            toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
+            setTimeout(() => { window.open(path, '_blank'); }, 800);
         }
-        
-        toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-        setTimeout(() => {
-            window.open(`/${type}`, '_blank');
-        }, 800);
     } catch (e) {
         toast.error("Error during authentication bypass.", { id: toastId });
     }
@@ -910,7 +1012,11 @@ const handleViewDocument = (req) => {
               setFinancialRequests(prev => prev.filter(r => r.id !== reqId));
               toast.success("Payment Link Cancelled & Removed");
           } else {
-              toast.error("Failed to cancel payment.");
+              // 🚀 FIX: show the server's actual error instead of a fixed generic
+              // string, so a future failure (DB hiccup, bad id, etc.) is diagnosable
+              // straight from the toast instead of a dead end.
+              const data = await res.json().catch(() => null);
+              toast.error(data?.error || `Failed to cancel payment (${res.status}).`);
           }
       } catch(e) {
           toast.error("Network Error");
@@ -974,14 +1080,25 @@ const handleViewDocument = (req) => {
     { id: 'ai-operations', label: 'AI & Operations', items: [
       { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo', badge: matchSummary.new },
       { value: 'live-scraped', label: 'Live Scraped', icon: Activity, color: 'teal', badge: liveScrapedTenders.length },
-      { value: 'operations', label: 'Operations', icon: ClipboardList, color: 'purple' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
     ] },
-    { id: 'publishing', label: 'Publishing', items: [
-      { value: 'publisher', label: 'Published Tenders', icon: FileText, color: 'navy' },
+    // 🚀 RBAC: MD-only oversight into per-employee work — Global Suggestions +
+    // Master Live Tracking — kept as its own focused group rather than sprawling
+    // the "Team & Support" group with two more tabs (see Team Directory below).
+    { id: 'team-activity', label: 'Team Activity', items: [
+      { value: 'team-activity', label: 'Team Activity', icon: Users, color: 'blue' },
+    ] },
+    { id: 'workflow', label: 'Tender Workflow', items: [
+      { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
+      { value: 'submitted', label: 'Submitted Board', icon: FileText, color: 'emerald' },
+    ] },
+    { id: 'publishing', label: 'Live Tenders', items: [
+      { value: 'publisher', label: 'Live Tenders', icon: FileText, color: 'navy' },
     ] },
     { id: 'team-support', label: 'Team & Support', items: [
       { value: 'team', label: 'Team Directory', icon: UserCog, color: 'blue' },
+      { value: 'alerts', label: 'Alerts', icon: BellRing, color: 'navy' },
+      { value: 'chat', label: 'Staff Chat', icon: MessageSquare, color: 'navy' },
       { value: 'tickets', label: 'Helpdesk', icon: MessageSquare, color: 'navy', badge: activeTickets.length },
     ] },
     { id: 'setup', label: 'Setup', items: [
@@ -1372,7 +1489,12 @@ const handleViewDocument = (req) => {
                 <tr key={txn._id} className="group">
                   <td className="text-xs text-slate-500 whitespace-nowrap align-top">{new Date(txn.created_at).toLocaleDateString()}</td>
                   <td className="align-top">
-                    <p className="font-semibold text-slate-800 text-xs">{txn.reason}</p>
+                    <p className="font-semibold text-slate-800 text-xs">
+                      {txn.reason}
+                      {txn.source === 'cashfree' && (
+                        <Badge className="ml-2 bg-sky-100 text-sky-800 border border-sky-200 text-[8px] px-1 py-0 align-middle">Cashfree</Badge>
+                      )}
+                    </p>
                     {txn.client_id !== 'N/A' && <p className="text-[9px] text-slate-400 font-mono">{txn.client_id}</p>}
                     
                     <p className="text-[10px] font-bold text-slate-500 mt-1">
@@ -1396,8 +1518,14 @@ const handleViewDocument = (req) => {
                     {txn.type === 'CREDIT' ? '+' : '-'}₹{txn.amount.toLocaleString()}
                   </td>
                   <td className="align-top text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
-                    <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
+                    {/* Cashfree rows are projected from the payments collection, not
+                        ledger documents — there is nothing to edit or delete. */}
+                    {!txn.readonly && (
+                      <>
+                        <button onClick={() => handleEditLedger(txn)} className="text-blue-500 hover:text-blue-700 mr-2"><Pencil className="w-3.5 h-3.5"/></button>
+                        <button onClick={() => handleDeleteLedger(txn._id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1523,87 +1651,109 @@ const handleViewDocument = (req) => {
     </div>
   </div>
 </TabsContent>
-          {/* ==================== 4. TEAM DIRECTORY ==================== */}
           <TabsContent value="team" className="mt-4">
-            <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="tender-shadow border-t-4 border-t-blue-600 h-fit">
-                  <CardHeader className="bg-blue-50/50 border-b pb-4">
-                     <CardTitle className="flex items-center gap-2 text-blue-900 text-lg"><Key className="w-5 h-5 text-blue-600" /> Create Enterprise Login ID</CardTitle>
-                     <CardDescription>Generate secure Unique IDs (UIDs) and passwords for your internal workforce.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                     <form onSubmit={handleCreateTeamMember} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">Full Name *</Label>
-                              <Input placeholder="e.g. Ramesh" value={officerForm.name} onChange={e => setOfficerForm({...officerForm, name: e.target.value})} required className="mt-1" />
-                           </div>
-                           <div className="col-span-2 sm:col-span-1">
-                              <Label className="font-bold text-slate-700">System Role *</Label>
-                              <Select value={officerForm.role} onValueChange={v => setOfficerForm({...officerForm, role: v})}>
-                                 <SelectTrigger className="mt-1"><SelectValue placeholder="Role" /></SelectTrigger>
-                                 <SelectContent>
-                                    <SelectItem value="officer">Tender Officer</SelectItem>
-                                    <SelectItem value="employee">Data Entry Emp</SelectItem>
-                                    <SelectItem value="admin">Manager (MD)</SelectItem>
-                                 </SelectContent>
-                              </Select>
-                           </div>
-                        </div>
-                        <div>
-                           <Label className="font-bold text-slate-700">Official Email *</Label>
-                           <Input type="email" placeholder="name@tgtenders.in" value={officerForm.email} onChange={e => setOfficerForm({...officerForm, email: e.target.value})} required className="mt-1" />
-                        </div>
-                        <div>
-                           <Label className="font-bold text-slate-700">Assign Password *</Label>
-                           <Input type="text" placeholder="Pass@123" value={officerForm.password} onChange={e => setOfficerForm({...officerForm, password: e.target.value})} required className="mt-1" />
-                        </div>
-                        <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 shadow-md h-12 text-base mt-2"><UserPlus className="w-5 h-5 mr-2" /> Save & Auto-Generate ID</Button>
-                     </form>
-                  </CardContent>
-               </Card>
+            <TeamDirectoryPanel actorDesk="md" team={teamMembers} onRefresh={refresh} impersonate={openStaffDesk} />
+          </TabsContent>
 
-               <Card className="tender-shadow border-0 ring-1 ring-slate-200 h-fit">
-                  <CardHeader className="bg-slate-50 border-b pb-4">
-                     <CardTitle className="text-[#0A2647] text-lg">Database: Active Team & Passwords</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 max-h-[500px] overflow-y-auto">
-                     {teamMembers.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400"><ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-30" /><p className="text-sm font-semibold">No Team Members Logged Yet.</p></div>
-                     ) : (
-                        <div className="space-y-4">
-                           {teamMembers.map(off => (
-                              <div key={off._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
-                                 <div className="flex justify-between items-start mb-4">
-                                    <div className="flex items-center gap-3">
-                                       <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-lg">{(off?.name || 'U').charAt(0)}</div>
-                                       <div>
-                                          <h4 className="font-bold text-[#0A2647] text-sm flex items-center gap-2">{off.name} <Badge className="bg-emerald-100 text-emerald-800 border-0 h-4 text-[9px] px-1.5 py-0">Active</Badge></h4>
-                                          <p className="text-[10px] text-slate-500 font-mono tracking-wider mt-0.5">{off.email}</p>
-                                       </div>
-                                    </div>
-                                    <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 border-slate-300">{off.emp_id}</Badge>
-                                 </div>
-                                 <div className="bg-slate-50 p-2.5 rounded-lg flex justify-between items-center border border-slate-200 mb-3">
-                                    <div className="flex flex-col">
-                                       <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Current Password</span>
-                                       <span className="text-sm font-mono font-bold text-[#0A2647]">{showPwdId === off.emp_id ? off.password : '••••••••'}</span>
-                                    </div>
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 font-semibold" onClick={() => setShowPwdId(showPwdId === off.emp_id ? null : off.emp_id)}>
-                                       {showPwdId === off.emp_id ? <EyeOff className="w-3.5 h-3.5 mr-1.5"/> : <Eye className="w-3.5 h-3.5 mr-1.5"/>}
-                                       {showPwdId === off.emp_id ? 'Hide' : 'Reveal'}
-                                    </Button>
-                                 </div>
-                                 <div className="flex gap-2">
-                                    <Button onClick={() => impersonateUser('employee', off.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 text-xs"><LogIn className="w-3.5 h-3.5 mr-1.5" /> Login as {off.role}</Button>
-                                    <Button onClick={() => handleRevokeEmployee(off._id)} variant="outline" className="text-red-500 hover:bg-red-50 border-red-200 h-9 px-4">Delete</Button>
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </CardContent>
-               </Card>
+          <TabsContent value="internal" className="mt-4">
+            <InternalTrackingBoard
+              desk="md"
+              jobs={wfJobs.filter((j) => ['MD_CHECKLIST','TL_ASSIGN','MAKER_PREP','TL_QC','GM_QC','MD_SUBMIT','AWAITING_RECEIPT'].includes(j.status))}
+              tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
+              members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
+              onRefresh={refresh}
+            />
+          </TabsContent>
+          <TabsContent value="submitted" className="mt-4">
+            <SubmittedTrackingBoard jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')} canEdit={false} onRefresh={refresh} />
+          </TabsContent>
+          <TabsContent value="alerts" className="mt-4"><OpsAlerts /></TabsContent>
+          <TabsContent value="chat" className="mt-4"><StaffChat selfId="MD" roster={teamMembers} /></TabsContent>
+
+          {/* ==================== 4b. TEAM ACTIVITY (MD-ONLY GLOBAL ATTRIBUTION) ====================
+              Net-new, additive module: every officer's client_alert suggestions and every
+              live (non-Won/Lost) bid, across the whole team, each row attributed to the
+              employee who owns it. Employee dashboards never see this — GET /api/dispatches
+              and GET /api/bids strictly isolate each officer to their own employee_id there. */}
+          <TabsContent value="team-activity" className="mt-4">
+            <div className="space-y-6">
+              <Card className="shadow-sm border-t-4 border-t-blue-600">
+                <CardHeader className="bg-blue-50/50 border-b pb-4 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Send className="w-5 h-5 text-blue-600"/> Global Suggestions</CardTitle>
+                    <CardDescription>Every tender suggestion every officer has sent to a client — who suggested it, and to whom.</CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => fetchTeamActivity()} disabled={teamActivityLoading}>
+                    <RefreshCw className={`w-4 h-4 ${teamActivityLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
+                  {teamActivityLoading ? (
+                    <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading team suggestions...</p></div>
+                  ) : teamSuggestions.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400"><Send className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No tender suggestions sent yet.</p></div>
+                  ) : (
+                    <table className="premium-table text-sm text-left">
+                      <thead>
+                        <tr><th>Client</th><th>Suggestion</th><th>Status</th><th>Employee</th><th>Date</th></tr>
+                      </thead>
+                      <tbody>
+                        {teamSuggestions.map((s) => (
+                          <tr key={s._id}>
+                            <td className="align-top">
+                              <p className="font-semibold text-slate-800 text-xs">{s.client_display_name}</p>
+                              <p className="text-[9px] text-slate-400 font-mono">{s.target_id}</p>
+                            </td>
+                            <td className="align-top text-xs text-slate-600 max-w-xs">{s.message}</td>
+                            <td className="align-top">
+                              <Badge className={`text-[10px] border ${s.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>{s.status || 'Sent'}</Badge>
+                            </td>
+                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{s.employee_name}</td>
+                            <td className="align-top text-[10px] text-slate-500 whitespace-nowrap">{s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm border-t-4 border-t-purple-600">
+                <CardHeader className="bg-purple-50/50 border-b pb-4">
+                  <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Briefcase className="w-5 h-5 text-purple-600"/> Master Live Tracking</CardTitle>
+                  <CardDescription>Every bid currently in progress (not yet Won or Lost) across the whole team — who's working it.</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
+                  {teamActivityLoading ? (
+                    <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading live tracking...</p></div>
+                  ) : teamTracking.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No bids are currently being tracked.</p></div>
+                  ) : (
+                    <table className="premium-table text-sm text-left">
+                      <thead>
+                        <tr><th>Client</th><th>Bid Detail</th><th>Status</th><th>Employee</th><th className="text-right">Value</th></tr>
+                      </thead>
+                      <tbody>
+                        {teamTracking.map((b) => (
+                          <tr key={b._id}>
+                            <td className="align-top">
+                              <p className="font-semibold text-slate-800 text-xs">{b.client_display_name}</p>
+                              <p className="text-[9px] text-slate-400 font-mono">{b.client_email}</p>
+                            </td>
+                            <td className="align-top">
+                              <p className="font-semibold text-slate-800 text-xs">{b.bid_no || 'PENDING'}</p>
+                              <p className="text-[10px] text-slate-500">{b.description}</p>
+                            </td>
+                            <td className="align-top"><Badge variant="outline" className="text-[10px]">{b.status}</Badge></td>
+                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{b.employee_name}</td>
+                            <td className="align-top text-right text-xs font-bold text-slate-600 whitespace-nowrap">{b.contract_value ? `₹${Number(b.contract_value).toLocaleString()}` : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
@@ -2062,109 +2212,14 @@ const handleViewDocument = (req) => {
           </TabsContent>
 
           <TabsContent value="publisher" className="mt-4">
-            <div className="mb-6">
-              <LetterheadManager />
-            </div>
-            <div className="mb-6">
-              <DocumentLetterheadGenerator
-                tenders={tenders}
-                clients={approvedClients}
-                defaultTenderId={isEditingTender || ''}
-              />
-            </div>
-            
-            {/* 🚀 ఇక్కడ పేస్ట్ చెయ్ (కొత్త కోడ్) - MD Bulk AI Dropzone 🚀 */}
-            <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mb-6">
-               <CardHeader className="bg-purple-50/50 border-b pb-4">
-                  <CardTitle className="text-purple-900 flex items-center gap-2"><UploadCloud className="w-5 h-5 text-purple-600"/> Bulk AI Tender Dropzone</CardTitle>
-                  <CardDescription>Drag &amp; drop multiple tender PDFs. Each document is stored securely in Cloudflare R2, read by AI, and queued for employee review before going live.</CardDescription>
-               </CardHeader>
-               <CardContent className="pt-6">
-                  <label
-                     onDragOver={(e) => { e.preventDefault(); if (!analyzingFiles) setBulkDragActive(true); }}
-                     onDragLeave={(e) => { e.preventDefault(); setBulkDragActive(false); }}
-                     onDrop={handleBulkDrop}
-                     className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center transition-colors ${
-                        analyzingFiles
-                           ? 'border-purple-300 bg-purple-100 cursor-wait'
-                           : bulkDragActive
-                              ? 'border-purple-600 bg-purple-100 cursor-copy ring-2 ring-purple-300'
-                              : 'border-purple-300 bg-purple-50 hover:bg-purple-100 cursor-pointer'
-                     }`}
-                  >
-                     <input type="file" accept="application/pdf" multiple onChange={handleBulkAIUpload} disabled={analyzingFiles} className="hidden"/>
-                     {analyzingFiles ? (
-                        <>
-                           <Loader2 className="w-9 h-9 text-purple-600 animate-spin mb-3" />
-                           <span className="text-sm font-bold text-purple-900">
-                              Uploading &amp; extracting {bulkFileCount > 0 ? `${bulkFileCount} document${bulkFileCount > 1 ? 's' : ''}` : 'documents'}...
-                           </span>
-                           <span className="text-xs text-purple-600 mt-1">This can take up to a minute. Please keep this tab open.</span>
-                        </>
-                     ) : (
-                        <>
-                           <UploadCloud className={`w-11 h-11 mb-3 transition-colors ${bulkDragActive ? 'text-purple-700' : 'text-purple-500'}`} />
-                           <span className="text-base font-bold text-purple-900">
-                              {bulkDragActive ? 'Release to upload' : 'Drag & drop PDFs here'}
-                           </span>
-                           <span className="text-xs text-purple-600 mt-1">or click to browse — up to 25 files, 15MB each</span>
-                        </>
-                     )}
-                  </label>
-               </CardContent>
+            <Card className="mb-6 border-amber-200 bg-amber-50">
+              <CardContent className="pt-4 text-sm text-amber-900">
+                Publishing and bulk AI dropzone live on the TL and Employee desks. MD uses this list for live tenders only (10 per page).
+              </CardContent>
             </Card>
-
             <L1BenchmarkDropzone />
 
-            {/* === దీని పైన ఉందని నిర్ధారించుకో (పాత కోడ్) === */}
-            <div className="grid lg:grid-cols-5 gap-4 sm:gap-6">
-              <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
-                <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
-                   <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
-                      {isEditingTender ? <><Pencil className="w-5 h-5 text-blue-600"/> Edit Tender</> : <><PlusCircle className="w-5 h-5"/> Publish New Tender</>}
-                   </CardTitle>
-                   {isEditingTender && (
-                      <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
-                   )}
-                </CardHeader>
-                <CardContent className="pt-5">
-                  <form onSubmit={publish} className="space-y-4">
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={form.bid_no} onChange={e=>setForm({...form, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={form.title} onChange={e=>setForm({...form, title: e.target.value})} className="bg-white h-10"/></div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label><Input required value={form.department} onChange={e=>setForm({...form, department: e.target.value})} className="bg-white h-10"/></div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label><Input required type="date" value={form.last_date} onChange={e=>setForm({...form, last_date: e.target.value})} className="bg-white h-10 text-sm"/></div>
-                      <div>
-                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
-                        <Select value={form.category} onValueChange={v=>setForm({...form, category: v})}>
-                           <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
-                           <SelectContent><SelectItem value="Product">Product</SelectItem><SelectItem value="Service">Service</SelectItem></SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
-                      <Select value={form.district} onValueChange={v=>setForm({...form, district: v})}>
-                         <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
-                         <SelectContent>{DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={form.supply_details} onChange={e=>setForm({...form, supply_details: e.target.value})}></textarea></div>
-                    <div>
-                      <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
-                      <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
-                         <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                         <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                         <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Click to upload PDF')}</span>
-                      </div>
-                    </div>
-                    <Button type="submit" disabled={loading} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
-                       {loading ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-
+            <div className="grid gap-4 sm:gap-6 mt-6">
               <Card className="lg:col-span-3 tender-shadow">
                 <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                    <div>

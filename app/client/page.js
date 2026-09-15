@@ -23,6 +23,8 @@ import {
   Handshake, Landmark, Gavel, ScrollText
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
+import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -113,6 +115,7 @@ export default function ClientDashboard() {
   const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
   const [recommendedTenders, setRecommendedTenders] = useState([]);
+  const [workflowJobs, setWorkflowJobs] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
 
   // 🚀 STAFF-ONLY: AI Win Probability + JV Partner data for the "AI Tender Match & JV
@@ -121,6 +124,15 @@ export default function ClientDashboard() {
   // ADMIN_TOKEN anyway, so a real client couldn't read it even if they tried.
   const [staffBidMatches, setStaffBidMatches] = useState([]);
   const [submittingLead, setSubmittingLead] = useState('');
+
+  // Deep-link support for ?tab= — used by the post-payment redirect so a client who
+  // paid an invoice lands back on Finance instead of the default dashboard tab.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools'];
+    if (requested && allowed.includes(requested)) setActiveTab(requested);
+  }, []);
 
   useEffect(() => {
     setIsMounted(true);
@@ -236,6 +248,13 @@ export default function ClientDashboard() {
         if(d.action_alerts) {
             setRecommendedTenders(d.action_alerts.filter(a => a.subject.includes('Suggestion') && a.status !== 'Completed'));
         }
+        try {
+          const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(userEmail)}`, { credentials: 'include' });
+          if (wf.ok) {
+            const wfd = await wf.json();
+            setWorkflowJobs(wfd.jobs || []);
+          }
+        } catch (_) { /* workflow queue is additive */ }
         
         if (d.vault_docs && d.vault_docs.length > 0) {
             const mergedDocs = DEFAULT_VAULT_DOCS.map(defaultDoc => {
@@ -744,6 +763,23 @@ export default function ClientDashboard() {
      } catch (e) { toast.error("Network error"); }
   };
 
+  const handleAcceptWorkflowJob = async (job) => {
+    try {
+      const res = await fetch(`/api/workflow/jobs/${job._id}/client-approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ client_email: email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Approve failed');
+      toast.success('Approved. Status is now In Progress.');
+      fetchClientData(email);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
   const handleAcceptRecommendation = async (tenderAlert) => {
       try {
          const match = tenderAlert.message.match(/\[BID: (.*?)\] (.*)/);
@@ -775,9 +811,14 @@ export default function ClientDashboard() {
         body: JSON.stringify({ 
             email: email, 
             plan: 'single', 
-            tenderId: payRecord._id || payRecord.id, 
+            tenderId: payRecord.tenderId || null,
+            pending_payment_id: payRecord.id,
             customAmount: payRecord.amount,
-            reason: payRecord.reason 
+            reason: payRecord.reason,
+            // 🚀 FIX: after Cashfree verification the client used to be dropped on the
+            // public home page, which looks like being logged out. Send them straight
+            // back to the finance tab they paid from.
+            return_to: '/client?tab=finance'
         }) 
       });
       const d1 = await r1.json();
@@ -1024,10 +1065,15 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
   const criticalAlerts = userData?.action_alerts?.filter(a => !a.subject.includes('Suggestion') && a.status !== 'Completed') || [];
   
   // 🚀 FIX: Automatically filter out payments that match a SUCCESS status in the main payments array
-  const pendingPayments = userData?.pending_payments?.filter(p => 
-      p.status !== 'SUCCESS' && p.status !== 'PAID' && 
-      !(userData?.payments || []).some(past => past.amount == p.amount && past.reason == p.reason && past.status === 'SUCCESS')
-  ) || []; 
+  const pendingPayments = userData?.pending_payments?.filter(p => {
+      const st = String(p.status || '').toUpperCase();
+      if (st === 'SUCCESS' || st === 'PAID' || st === 'CANCELLED' || st === 'FAILED') return false;
+      const paidById = (userData?.payments || []).some(past =>
+        past.pending_payment_id && p.id && String(past.pending_payment_id) === String(p.id) && String(past.status).toUpperCase() === 'SUCCESS'
+      );
+      if (paidById) return false;
+      return !(userData?.payments || []).some(past => past.amount == p.amount && past.reason == p.reason && past.status === 'SUCCESS');
+  }) || []; 
 
   const totalEmd = userData?.emd_ledger?.total_paid || 0;
 
@@ -1467,12 +1513,12 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
               </CardContent>
             </Card>
           </TabsContent>
-
           
           {/* ============================================================================== */}
           {/* TAB 3: WINNING BIDS LEDGER */}
           {/* ============================================================================== */}
           <TabsContent value="wins" className="space-y-6">
+            <ClientWinningBoard jobs={workflowJobs} />
             <Card className="tender-shadow border-t-4 border-t-emerald-500">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Trophy className="w-5 h-5 text-emerald-600"/> Successful Bid Allocations</CardTitle>
@@ -1563,6 +1609,20 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        </div>
                     </div>
                  )}
+                 {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length > 0 && (
+                    <div className="grid md:grid-cols-2 gap-4 mb-4">
+                      {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').map((job) => (
+                        <CompactTenderCard
+                          key={job._id}
+                          job={job}
+                          actions={[
+                            { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
+                            { label: 'Approve', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
+                          ]}
+                        />
+                      ))}
+                    </div>
+                 )}
                  {recommendedTenders.length === 0 ? (
                     <div className="text-center py-6 text-slate-400 border-2 border-dashed rounded-xl border-blue-200 bg-white">
                       <Target className="w-8 h-8 mx-auto text-blue-200 mb-2" />
@@ -1621,6 +1681,25 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
               </CardHeader>
               <CardContent className="p-5">
+                 <div className="grid sm:grid-cols-2 gap-3 mb-6">
+                   {workflowJobs.filter(j => j.display_status === 'In Progress' || ['MD_CHECKLIST','TL_ASSIGN','MAKER_PREP','TL_QC','GM_QC','MD_SUBMIT','AWAITING_RECEIPT'].includes(j.status)).map((job) => (
+                     <CompactTenderCard
+                       key={job._id}
+                       job={{ ...job, display_status: 'In Progress' }}
+                       actions={[{ label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') }]}
+                     />
+                   ))}
+                   {workflowJobs.filter(j => j.status === 'SUBMITTED' || j.display_status === 'Submitted' || j.display_status === 'Technical Evaluation' || j.display_status === 'Financial Evaluation').map((job) => (
+                     <CompactTenderCard
+                       key={job._id}
+                       job={job}
+                       actions={[
+                         { label: 'View SOW', icon: 'eye', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=sow`, '_blank') },
+                         job.receipt && { label: 'Receipt', icon: 'download', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=receipt`, '_blank') },
+                       ].filter(Boolean)}
+                     />
+                   ))}
+                 </div>
                  {activeBids.length === 0 ? (
                     <div className="text-center py-6 text-slate-400">
                       <p className="text-sm font-semibold">No active bids in progress.</p>
@@ -1854,11 +1933,10 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        
                        <div className="border-t pt-4">
                           <h4 className="font-bold text-slate-700 mb-3">Pending Payment Requests</h4>
-                          {!pendingPayments || pendingPayments.filter(p => p.status !== 'paid' && p.status !== 'SUCCESS').length === 0 ? (
+                          {!pendingPayments || pendingPayments.length === 0 ? (
                              <p className="text-xs text-slate-500 text-center py-2">No pending fees requested.</p>
                           ) : (
                              pendingPayments
-                               .filter(pay => pay.status !== 'paid' && pay.status !== 'SUCCESS')
                                .map((pay, i) => (
                                <div key={i} className="mb-2 border border-red-200 bg-red-50 p-3 rounded-lg flex flex-col gap-2">
                                   <div className="flex justify-between items-center text-sm">

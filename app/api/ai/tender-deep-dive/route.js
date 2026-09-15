@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { requireStaff } from '@/lib/staff-auth';
-import { findTenderByAnyId } from '@/lib/tender-lookup';
-import { extractTenderLinks, isSafeRemoteUrl } from '@/lib/tender-links';
+import { findTenderByAnyId, suggestSimilarTenders } from '@/lib/tender-lookup';
+import { extractTenderLinks } from '@/lib/tender-links';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
-import { getGeminiApiKey } from '@/lib/env';
+import { fetchDocumentWithFallback } from '@/lib/remote-document';
+import { generateContent } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -14,8 +14,6 @@ export const dynamic = 'force-dynamic';
 // A single deep dive reads at most this many documents. Government portals attach a long
 // tail of corrigenda; reading all of them would blow the function timeout for no gain.
 const MAX_DOCUMENTS = 3;
-const MAX_DOCUMENT_BYTES = 12 * 1024 * 1024;
-const FETCH_TIMEOUT_MS = 20000;
 
 const DEEP_DIVE_PROMPT = `
 You are a Senior GeM Bidding Expert reading the actual tender documents for a consultancy
@@ -43,80 +41,10 @@ Rules:
 - Keep each bullet to one sentence where possible.
 `;
 
-/**
- * Downloads a remote tender document, following redirects, with a hard size and time cap.
- * Government portals are slow and frequently serve HTML error pages with a 200 status, so
- * the content is validated rather than trusted.
- */
-async function fetchRemoteDocument(url) {
-  if (!isSafeRemoteUrl(url)) {
-    return { ok: false, error: 'Blocked: the link does not point at a public host.' };
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        // Several state portals return 403 to a default fetch user-agent.
-        'User-Agent': 'Mozilla/5.0 (compatible; TGTendersBot/1.0; +https://www.tgtenders.in)',
-        Accept: 'application/pdf,application/octet-stream,*/*',
-      },
-    });
-
-    if (!response.ok) {
-      return { ok: false, error: `The portal returned HTTP ${response.status}.` };
-    }
-
-    const declaredLength = Number(response.headers.get('content-length'));
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_DOCUMENT_BYTES) {
-      return { ok: false, error: `The document is ${(declaredLength / 1024 / 1024).toFixed(1)}MB, which is too large to read.` };
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length === 0) return { ok: false, error: 'The portal returned an empty document.' };
-    if (buffer.length > MAX_DOCUMENT_BYTES) {
-      return { ok: false, error: 'The document exceeded the size limit while downloading.' };
-    }
-
-    if (!isValidPDFBuffer(buffer)) {
-      // Almost always a login wall or "session expired" page served with a 200.
-      const peek = buffer.subarray(0, 200).toString('latin1').toLowerCase();
-      const looksLikeHtml = peek.includes('<html') || peek.includes('<!doctype');
-      return {
-        ok: false,
-        error: looksLikeHtml
-          ? 'The link returned a web page, not a PDF — the portal probably requires a login.'
-          : 'The downloaded file is not a readable PDF.',
-      };
-    }
-
-    return { ok: true, buffer };
-  } catch (error) {
-    const aborted = error?.name === 'AbortError';
-    return {
-      ok: false,
-      error: aborted
-        ? `The portal did not respond within ${FETCH_TIMEOUT_MS / 1000}s.`
-        : `Could not reach the portal: ${error?.message || 'network error'}`,
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export async function POST(request) {
   try {
     const auth = await requireStaff(request);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
-    const geminiApiKey = getGeminiApiKey();
-    if (!geminiApiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
-    }
 
     const body = await request.json().catch(() => null);
     const tenderId = body?.tender_id ? String(body.tender_id).trim() : '';
@@ -124,7 +52,16 @@ export async function POST(request) {
 
     const db = await getDb();
     const tender = await findTenderByAnyId(db, tenderId);
-    if (!tender) return NextResponse.json({ error: 'That tender could not be found.' }, { status: 404 });
+    if (!tender) {
+      const suggestions = await suggestSimilarTenders(db, tenderId);
+      return NextResponse.json({
+        error: suggestions.length
+          ? `No tender is recorded under ${tenderId}. Closest matches on file: `
+            + `${suggestions.map((s) => s.bid_no || s.id).join(', ')}.`
+          : `No tender is recorded under ${tenderId}.`,
+        suggestions,
+      }, { status: 404 });
+    }
 
     // Reading three PDFs through Gemini costs real time and tokens, so a completed dive is
     // cached on the tender and replayed unless the caller explicitly asks to redo it.
@@ -150,7 +87,7 @@ export async function POST(request) {
         skipped.push({ url: link.url, type: link.type, reason: 'Document limit reached for one deep dive.' });
         continue;
       }
-      const result = await fetchRemoteDocument(link.url);
+      const result = await fetchDocumentWithFallback(link.url);
       if (result.ok) {
         parts.push({ inlineData: { data: result.buffer.toString('base64'), mimeType: 'application/pdf' } });
         documentsRead.push({ url: link.url, type: link.type, source: link.source, bytes: result.buffer.length });
@@ -194,20 +131,19 @@ export async function POST(request) {
       `EMD: ${tender.emd_amount || 'n/a'}\n\n` +
       `Documents supplied: ${documentsRead.map((d) => d.type).join(', ')}\n`;
 
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-    // GEMINI_API_KEY is actually entitled to (verified live).
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-
     let markdown;
     try {
-      const result = await model.generateContent([DEEP_DIVE_PROMPT, contextHeader, ...parts]);
-      markdown = String(result.response.text() || '').trim();
+      // Pro tier: eligibility clauses decide whether a bid is worth entering.
+      const result = await generateContent({
+        parts: [DEEP_DIVE_PROMPT, contextHeader, ...parts],
+        tier: 'pro',
+      });
+      markdown = result.text.trim();
     } catch (aiError) {
       console.error('[tender-deep-dive] Gemini call failed:', aiError?.message || aiError);
       return NextResponse.json(
         { error: `The AI service could not read the documents: ${aiError?.message || 'unknown error'}` },
-        { status: 502 }
+        { status: aiError?.status || 502 }
       );
     }
 

@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { REMOTE_SOURCES, SEED_DOCUMENTS, htmlToText } from '@/lib/gem-knowledge';
 import {
-  chunkText,
-  embedTexts,
   ensureVectorIndex,
   normaliseWhitespace,
   VECTOR_COLLECTION,
 } from '@/lib/gem-embeddings';
+import { ingestDocumentVectors } from '@/lib/rag-ingest';
+import { generateContent } from '@/lib/gemini';
 import { getGeminiApiKey } from '@/lib/env';
+import { purgeExpiredChatObjects } from '@/lib/chat-purge';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -37,16 +37,19 @@ async function fetchWithTimeout(url) {
 // PDFs need real text extraction. Rather than add a PDF parsing dependency (most of which
 // misbehave under serverless bundling), hand the bytes to Gemini, which reads PDFs
 // natively and returns clean prose.
-async function extractPdfText(buffer, model) {
-  const result = await model.generateContent([
-    'Extract the full readable text of this document. Preserve headings, clause numbers ' +
-    'and list structure. Do not summarise, do not add commentary, output the text only.',
-    { inlineData: { data: buffer.toString('base64'), mimeType: 'application/pdf' } },
-  ]);
-  return result.response.text();
+async function extractPdfText(buffer) {
+  const { text } = await generateContent({
+    tier: 'flash',
+    parts: [
+      'Extract the full readable text of this document. Preserve headings, clause numbers ' +
+      'and list structure. Do not summarise, do not add commentary, output the text only.',
+      { inlineData: { data: buffer.toString('base64'), mimeType: 'application/pdf' } },
+    ],
+  });
+  return text;
 }
 
-async function loadRemoteSource(source, model) {
+async function loadRemoteSource(source) {
   const res = await fetchWithTimeout(source.url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -55,47 +58,10 @@ async function loadRemoteSource(source, model) {
     if (buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
       throw new Error('Response was not a PDF (likely an HTML error or login page).');
     }
-    return normaliseWhitespace(await extractPdfText(buffer, model));
+    return normaliseWhitespace(await extractPdfText(buffer));
   }
 
   return normaliseWhitespace(htmlToText(await res.text()));
-}
-
-// Re-chunks a document and replaces its vectors atomically enough for our purposes:
-// insert the new chunks, then delete anything left over from the previous run. Chunk ids
-// are deterministic, so a re-run with unchanged content simply overwrites in place.
-async function upsertDocument(collection, { documentId, title, sourceUrl, text }) {
-  const chunks = chunkText(text);
-  if (chunks.length === 0) return { chunks: 0 };
-
-  const vectors = await embedTexts(chunks, 'RETRIEVAL_DOCUMENT');
-  const timestamp = new Date();
-
-  const operations = chunks.map((chunk, index) => ({
-    updateOne: {
-      filter: { chunk_id: `${documentId}::${index}` },
-      update: {
-        $set: {
-          chunk_id: `${documentId}::${index}`,
-          document_id: documentId,
-          document_title: title,
-          source_url: sourceUrl || null,
-          chunk_index: index,
-          text: chunk,
-          embedding: vectors[index],
-          timestamp,
-        },
-      },
-      upsert: true,
-    },
-  }));
-
-  await collection.bulkWrite(operations, { ordered: false });
-
-  // Drop chunks from a previous, longer version of this document.
-  await collection.deleteMany({ document_id: documentId, chunk_index: { $gte: chunks.length } });
-
-  return { chunks: chunks.length };
 }
 
 async function runSync() {
@@ -104,13 +70,8 @@ async function runSync() {
 
   const indexResult = await ensureVectorIndex(db);
 
-  let model = null;
-  const geminiApiKeyForSync = getGeminiApiKey();
-  if (geminiApiKeyForSync) {
-    const genAI = new GoogleGenerativeAI(geminiApiKeyForSync);
-    // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-    // GEMINI_API_KEY is actually entitled to (verified live).
-    model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+  if (!getGeminiApiKey()) {
+    console.warn('[gem-sync] GEMINI_API_KEY missing — remote PDF sources will fail; seed documents still sync.');
   }
 
   const results = [];
@@ -118,7 +79,7 @@ async function runSync() {
   // 1. Curated baseline. These never fail, so the Co-Pilot always has something to cite.
   for (const doc of SEED_DOCUMENTS) {
     try {
-      const { chunks } = await upsertDocument(collection, {
+      const { chunks } = await ingestDocumentVectors(db, {
         documentId: doc.id,
         title: doc.title,
         sourceUrl: null,
@@ -134,7 +95,7 @@ async function runSync() {
   // 2. Live GeM sources. A single unreachable or JS-rendered page must not abort the run.
   for (const source of REMOTE_SOURCES) {
     try {
-      const text = await loadRemoteSource(source, model);
+      const text = await loadRemoteSource(source);
       if (text.length < MIN_USEFUL_TEXT_CHARS) {
         results.push({
           id: source.id,
@@ -145,7 +106,7 @@ async function runSync() {
         });
         continue;
       }
-      const { chunks } = await upsertDocument(collection, {
+      const { chunks } = await ingestDocumentVectors(db, {
         documentId: source.id,
         title: source.title,
         sourceUrl: source.url,
@@ -171,6 +132,10 @@ async function runSync() {
       total_chunks_in_kb: totalChunks,
     },
     results,
+    chat_purge: await purgeExpiredChatObjects().catch((err) => {
+      console.warn('[gem-sync] chat purge skipped:', err?.message || err);
+      return { error: err?.message || 'chat purge failed' };
+    }),
   };
 }
 

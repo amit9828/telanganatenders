@@ -69,11 +69,11 @@ export default function AiMatchmakerPanel({ compact = false } = {}) {
 
   const launchHunter = async () => {
     setLaunching(true);
-    const toastId = toast.loading('Contacting local GeM agent…');
+    const toastId = toast.loading('Starting the GeM hunter…');
     try {
       const result = await launchGemHunter();
       if (result.offline) {
-        toast.error(result.error || "Local agent not running. Run 'npm run gem:agent' in terminal.", {
+        toast.error(result.error || 'Could not start the hunter on this computer.', {
           id: toastId,
           duration: 10000,
         });
@@ -85,8 +85,10 @@ export default function AiMatchmakerPanel({ compact = false } = {}) {
       }
       toast.success(
         result.already_running
-          ? 'Chrome is already open on your screen. Solve CAPTCHA if prompted.'
-          : 'Chrome opened on your screen. Solve CAPTCHA if prompted.',
+          ? 'The hunter is already running in the Chrome window on your screen.'
+          : result.via_popup
+            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
+            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
         { id: toastId, duration: 9000 },
       );
     } finally {
