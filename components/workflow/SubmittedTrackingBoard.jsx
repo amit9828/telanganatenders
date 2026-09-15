@@ -41,7 +41,7 @@ export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh, 
               ].filter(Boolean)}
             />
             {chatJobId === job._id && chatSelfId && (
-              <StaffChat selfId={chatSelfId} roster={chatRoster} jobId={job._id} />
+              <div className="h-[420px]"><StaffChat selfId={chatSelfId} roster={chatRoster} jobId={job._id} /></div>
             )}
             {canEdit ? (
               <Select value={job.tracking_status || 'Submitted'} onValueChange={(v) => update(job, v)}>

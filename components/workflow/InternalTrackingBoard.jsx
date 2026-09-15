@@ -171,7 +171,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                 actions={actions}
               />
               {chatJobId === job._id && chatSelfId && (
-                <div className="mt-2"><StaffChat selfId={chatSelfId} roster={roster} jobId={job._id} /></div>
+                <div className="mt-2 h-[420px]"><StaffChat selfId={chatSelfId} roster={roster} jobId={job._id} /></div>
               )}
               {desk === 'employee' && job.status === 'MAKER_PREP' && (
                 <input

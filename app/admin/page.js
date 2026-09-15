@@ -1811,7 +1811,7 @@ const handleViewDocument = (req) => {
               </Card>
             </div>
           </TabsContent>
-          <TabsContent value="chat" className="mt-4"><StaffChat selfId="MD" roster={teamMembers} /></TabsContent>
+          <TabsContent value="chat" className="mt-4 w-full min-h-[560px]"><StaffChat selfId="MD" roster={teamMembers} /></TabsContent>
 
           {/* ==================== 4b. TEAM ACTIVITY (MD-ONLY GLOBAL ATTRIBUTION) ====================
               Net-new, additive module: every officer's client_alert suggestions and every

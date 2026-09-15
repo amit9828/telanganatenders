@@ -2021,7 +2021,7 @@ return (
 
           {/* 🚀 RESTORED: GUEST QUERIES AND SLA TRACKER */}
           <TabsContent value="ops-alerts" className="w-full"><OpsAlerts /></TabsContent>
-          <TabsContent value="chat" className="w-full"><StaffChat selfId={empData.id} roster={teamMembers} /></TabsContent>
+          <TabsContent value="chat" className="w-full min-h-[560px]"><StaffChat selfId={empData.id} roster={teamMembers} /></TabsContent>
           <TabsContent value="sla" className="w-full space-y-6">
             
             {/* GUEST QUERIES */}

@@ -514,7 +514,7 @@ export default function StaffOpsDesk({ desk }) {
                 <TeamDirectoryPanel actorDesk={desk} team={team} onRefresh={load} impersonate={openStaffDesk} />
               </TabsContent>
               <TabsContent value="alerts"><OpsAlerts /></TabsContent>
-              <TabsContent value="chat"><StaffChat selfId={selfId} roster={team} /></TabsContent>
+              <TabsContent value="chat" className="w-full min-h-[560px]"><StaffChat selfId={selfId} roster={team} /></TabsContent>
             </Tabs>
           </div>
         </div>
