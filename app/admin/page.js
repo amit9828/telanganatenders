@@ -709,12 +709,20 @@ export default function AdminPage() {
             setTimeout(() => { window.open('/client', '_blank'); }, 800);
         } else if (type === 'employee') {
             localStorage.setItem('tt_emp_email', email_or_id);
-            try {
-              await signIn('impersonate', { redirect: false, email: email_or_id, adminToken: token });
-            } catch (_) { /* localStorage fallback still opens the desk */ }
+            const result = await signIn('impersonate', {
+              redirect: false,
+              email: email_or_id,
+              emp_id: email_or_id,
+              adminToken: token || localStorage.getItem('tt_admin') || '',
+              target: 'staff',
+            });
+            if (!result?.ok) {
+              toast.error('Please sign in with a staff account.', { id: toastId });
+              return;
+            }
             const path = deskPathForDesignation(designation);
             toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-            setTimeout(() => { window.open(path, '_blank'); }, 800);
+            window.location.assign(path);
         }
     } catch (e) {
         toast.error("Error during authentication bypass.", { id: toastId });
