@@ -20,7 +20,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
-import { resolveActorRole, DESIGNATIONS, normalizeDesignation } from '@/lib/staff-auth';
+import { resolveActorRole, DESIGNATIONS, normalizeDesignation, isMdEmployee } from '@/lib/staff-auth';
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
@@ -1628,6 +1628,21 @@ export async function POST(request, { params }) {
       if (cleanEmail === cleanAdminEmail && cleanPassword === cleanAdminPassword) {
         return NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
       }
+
+      const identifier = cleanEmail.toLowerCase();
+      const mdEmployee = await db.collection('employees').findOne({
+        $or: [
+          { email: identifier },
+          { emp_id: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        ],
+        password: cleanPassword,
+        deleted: { $ne: true },
+        active: { $ne: false },
+      });
+      if (mdEmployee && isMdEmployee(mdEmployee)) {
+        return NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
+      }
+
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 

@@ -1,74 +1,19 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { getToken } from 'next-auth/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
-import { DESIGNATIONS, normalizeDesignation } from '@/lib/designations';
+import {
+  callerCanBypass,
+  findEmployeeForBypass,
+  impersonateCaller,
+  originalIdentityFromCaller,
+  pickOriginalIdentity,
+  staffJwtFromEmployee,
+} from '@/lib/impersonate';
 
 function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function staffJwtFromEmployee(emp) {
-  const mdEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  const isMD = Boolean(mdEmail) && String(emp.email || '').toLowerCase() === mdEmail;
-  return {
-    id: emp._id.toString(),
-    email: emp.email,
-    name: emp.name,
-    emp_id: emp.emp_id,
-    role: isMD ? 'MD' : 'EMPLOYEE',
-    designation: isMD ? null : normalizeDesignation(emp.designation),
-    team_id: isMD ? null : (emp.team_id || null),
-    is_bypass: true,
-  };
-}
-
-async function impersonateCaller(credentials, req) {
-  const provided = String(credentials?.adminToken || '').trim();
-  const adminToken = String(process.env.ADMIN_TOKEN || '').trim();
-  if (provided && (provided === 'admin_success' || (adminToken && provided === adminToken))) {
-    return { kind: 'admin_token' };
-  }
-  try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    if (!token) return null;
-    if (token.role === 'MD') return { kind: 'MD' };
-    const designation = token.designation ? normalizeDesignation(token.designation) : null;
-    if (designation === DESIGNATIONS.GM) return { kind: 'GM' };
-    if (designation === DESIGNATIONS.DOC_TEAM_TL) return { kind: 'TL' };
-  } catch (err) {
-    console.warn('[impersonate] caller session decode failed:', err?.message || err);
-  }
-  return null;
-}
-
-function callerCanBypass(caller, emp) {
-  const dest = normalizeDesignation(emp.designation);
-  if (caller.kind === 'admin_token' || caller.kind === 'MD') return true;
-  if (caller.kind === 'GM') return dest === DESIGNATIONS.DOC_TEAM_TL || dest === DESIGNATIONS.DOC_TEAM_MEMBER;
-  if (caller.kind === 'TL') return dest === DESIGNATIONS.DOC_TEAM_MEMBER;
-  return false;
-}
-
-async function findEmployeeForBypass(db, credentials) {
-  const empId = String(credentials?.emp_id || '').trim();
-  const searchStr = String(credentials?.email || empId || '').trim();
-  const or = [];
-  if (searchStr) {
-    or.push({ email: searchStr.toLowerCase() });
-    or.push({ emp_id: new RegExp(`^${escapeRegex(searchStr)}$`, 'i') });
-  }
-  if (empId && empId.toLowerCase() !== searchStr.toLowerCase()) {
-    or.push({ emp_id: new RegExp(`^${escapeRegex(empId)}$`, 'i') });
-  }
-  if (!or.length) return null;
-  return db.collection('employees').findOne({
-    $or: or,
-    deleted: { $ne: true },
-    active: { $ne: false },
-  });
 }
 
 export const runtime = 'nodejs';
@@ -110,21 +55,7 @@ const handler = NextAuth({
         });
         
         if (employee) {
-          // 🚀 RBAC: binary access role used for data-isolation filters (Bids /
-          // Suggestions). Independent of `employee.role`, which stays a job-title
-          // label ("Tender Officer" / "Data Entry Emp" / "Manager (MD)") used
-          // elsewhere and is left untouched.
-          const mdEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-          const isMD = Boolean(mdEmail) && String(employee.email || '').toLowerCase() === mdEmail;
-          return { 
-             id: employee._id.toString(), 
-             email: employee.email, 
-             name: employee.name, 
-             emp_id: employee.emp_id, 
-             role: isMD ? 'MD' : 'EMPLOYEE',
-             designation: isMD ? null : normalizeDesignation(employee.designation),
-             team_id: isMD ? null : (employee.team_id || null),
-          };
+          return staffJwtFromEmployee(employee, { isBypass: false });
         }
         return null; // Invalid credentials
       }
@@ -144,6 +75,13 @@ const handler = NextAuth({
         const caller = await impersonateCaller(credentials, req);
         if (!caller) return null;
 
+        let currentToken = null;
+        try {
+          const { getStaffToken } = await import('@/lib/staff-auth');
+          currentToken = await getStaffToken(req);
+        } catch (_) { /* caller snapshot is optional */ }
+        const original = originalIdentityFromCaller(currentToken, caller.kind);
+
         const db = await getDb();
         const isStaffTarget = String(credentials?.target || '').toLowerCase() === 'staff'
           || Boolean(String(credentials?.emp_id || '').trim());
@@ -151,7 +89,7 @@ const handler = NextAuth({
         if (isStaffTarget) {
           const emp = await findEmployeeForBypass(db, credentials);
           if (!emp || !callerCanBypass(caller, emp)) return null;
-          return staffJwtFromEmployee(emp);
+          return staffJwtFromEmployee(emp, { isBypass: true, original });
         }
 
         const searchStr = String(credentials?.email || '').trim();
@@ -177,7 +115,9 @@ const handler = NextAuth({
         }
 
         const emp = await findEmployeeForBypass(db, credentials);
-        if (emp && callerCanBypass(caller, emp)) return staffJwtFromEmployee(emp);
+        if (emp && callerCanBypass(caller, emp)) {
+          return staffJwtFromEmployee(emp, { isBypass: true, original });
+        }
 
         return null;
       },
@@ -226,6 +166,12 @@ const handler = NextAuth({
     // ATTACH DATABASE FLAGS TO THE SECURE JWT TOKEN
     async jwt({ token, user }) {
       if (user) {
+         const preserved = pickOriginalIdentity(token)
+           || pickOriginalIdentity(user)
+           || (user.is_bypass && (token.role || token.emp_id)
+             ? originalIdentityFromCaller(token, token.role === 'MD' ? 'MD' : null)
+             : null);
+
          token.email = user.email?.toLowerCase();
          token.id = user.id || token.id;
          token.name = user.name || null;
@@ -236,16 +182,33 @@ const handler = NextAuth({
          token.team_id = user.team_id ?? null;
          token.is_approved = user.is_approved;
          token.is_bypass = Boolean(user.is_bypass);
+
+         if (user.is_bypass && preserved?.originalRole) {
+           token.originalRole = preserved.originalRole;
+           token.originalEmail = preserved.originalEmail || null;
+           token.originalName = preserved.originalName || null;
+           token.originalEmpId = preserved.originalEmpId || null;
+           token.originalDesignation = preserved.originalDesignation ?? null;
+           token.originalTeamId = preserved.originalTeamId ?? null;
+         } else if (!user.is_bypass) {
+           delete token.originalRole;
+           delete token.originalEmail;
+           delete token.originalName;
+           delete token.originalEmpId;
+           delete token.originalDesignation;
+           delete token.originalTeamId;
+         }
       }
       return token;
     },
     
     // SEND JWT FLAGS TO THE FRONTEND SESSION (useSession)
     async session({ session, token }) {
-      if (token?.email) {
-         session.user.email = token.email;
-         session.user.id = token.id;
-         session.user.name = token.name;
+      if (token) {
+         session.user = session.user || {};
+         session.user.email = token.email || session.user.email;
+         session.user.id = token.id || token.sub || session.user.id;
+         session.user.name = token.name || session.user.name;
          session.user.client_id = token.client_id || null;
          session.user.emp_id = token.emp_id || null;
          session.user.role = token.role || null;
@@ -253,6 +216,9 @@ const handler = NextAuth({
          session.user.team_id = token.team_id || null;
          session.user.is_approved = token.is_approved;
          session.user.is_bypass = Boolean(token.is_bypass);
+         session.user.originalRole = token.originalRole || null;
+         session.user.originalEmail = token.originalEmail || null;
+         session.user.originalEmpId = token.originalEmpId || null;
       }
       return session;
     },

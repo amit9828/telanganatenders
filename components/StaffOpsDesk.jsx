@@ -27,7 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile, restoreBypassSession } from '@/components/workflow/api';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
   Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2
@@ -35,6 +35,7 @@ import {
 
 export default function StaffOpsDesk({ desk }) {
   const { data: session, status } = useSession();
+  const canReturnFromBypass = Boolean(session?.user?.is_bypass && session?.user?.originalRole);
   const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'publisher' : 'live');
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
@@ -168,6 +169,14 @@ export default function StaffOpsDesk({ desk }) {
     window.open('/client', '_blank');
   };
 
+  const handleReturnFromBypass = async () => {
+    try {
+      await restoreBypassSession();
+    } catch (err) {
+      toast.error(err.message || 'Could not restore the original session.');
+    }
+  };
+
   if (status === 'loading') {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
   }
@@ -183,7 +192,13 @@ export default function StaffOpsDesk({ desk }) {
               <p className="text-[10px] text-emerald-300 font-mono">{session?.user?.emp_id} · {session?.user?.email}</p>
             </div>
           </div>
-          <a href="/"><Button variant="outline" size="sm" className="border-white/20 text-slate-200"><ArrowLeft className="w-4 h-4 mr-1" /> Exit</Button></a>
+          {canReturnFromBypass ? (
+            <Button variant="outline" size="sm" className="border-amber-300/40 text-amber-100 hover:bg-amber-500/20" onClick={handleReturnFromBypass}>
+              <ArrowLeft className="w-4 h-4 mr-1" /> Return to Admin/MD
+            </Button>
+          ) : (
+            <a href="/"><Button variant="outline" size="sm" className="border-white/20 text-slate-200"><ArrowLeft className="w-4 h-4 mr-1" /> Exit</Button></a>
+          )}
         </div>
       </header>
       <main className="container mx-auto px-4 py-6">
