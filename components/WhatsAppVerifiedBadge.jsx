@@ -2,15 +2,7 @@
 
 import { BadgeCheck, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
-
-function staffHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { staffHeaders } from '@/components/workflow/api';
 
 /**
  * Verification chip next to a client phone number. Staff can click to toggle the flag
@@ -25,7 +17,7 @@ export default function WhatsAppVerifiedBadge({ email, phone, verified, onChange
     try {
       const res = await fetch('/api/users/whatsapp', {
         method: 'PATCH',
-        headers: staffHeaders(),
+        headers: staffHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ email, verified: next }),
       });
       const data = await res.json().catch(() => null);

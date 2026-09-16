@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
-import { DESIGNATION_LABELS, deskPathForDesignation } from '@/lib/designations';
-import { workflowFetch, staffHeaders } from '@/components/workflow/api';
+import { DESIGNATION_LABELS, DESIGNATIONS, deskPathForStaff, loginAsLabel, matchDesignation } from '@/lib/designations';
+import { workflowFetch } from '@/components/workflow/api';
+import { openStaffBypass } from '@/lib/tab-handoff';
 
 function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   const [showPw, setShowPw] = useState(false);
@@ -89,7 +90,7 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
       <div className="flex flex-wrap gap-1.5 mt-2">
         {canBypass && impersonate && (
           <Button size="sm" className="h-7 text-[10px]" onClick={() => impersonate(off)}>
-            <LogIn className="w-3 h-3 mr-1" /> Bypass
+            <LogIn className="w-3 h-3 mr-1" /> {loginAsLabel(off)}
           </Button>
         )}
         {canManage && (
@@ -110,7 +111,7 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   );
 }
 
-export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate }) {
+export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate, actorEmpId = '' }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', designation: actorDesk === 'md' ? 'GM' : 'DOC_TEAM_TL', team_id: '' });
   const tls = team.filter((t) => t.designation === 'DOC_TEAM_TL');
   const gms = team.filter((t) => t.designation === 'GM');
@@ -140,9 +141,16 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
   };
 
   const canBypass = (member) => {
+    const role = matchDesignation(member?.designation) || matchDesignation(member?.role);
     if (actorDesk === 'md') return true;
-    if (actorDesk === 'gm') return member.designation === 'DOC_TEAM_TL' || member.designation === 'DOC_TEAM_MEMBER';
-    if (actorDesk === 'tl') return member.designation === 'DOC_TEAM_MEMBER';
+    if (actorDesk === 'gm') {
+      return role === DESIGNATIONS.DOC_TEAM_TL || role === DESIGNATIONS.DOC_TEAM_MEMBER;
+    }
+    if (actorDesk === 'tl') {
+      return role === DESIGNATIONS.DOC_TEAM_MEMBER
+        && String(member?.team_id || '') === String(actorEmpId || '')
+        && Boolean(actorEmpId);
+    }
     return false;
   };
 
@@ -237,7 +245,7 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
   );
 }
 
-export async function openStaffDesk(member) {
+export function openStaffDesk(member) {
   if (typeof window === 'undefined') return;
   const email = String(member?.email || '').trim();
   const empId = String(member?.emp_id || '').trim();
@@ -246,31 +254,7 @@ export async function openStaffDesk(member) {
     return;
   }
 
-  const path = deskPathForDesignation(member.designation);
-  if (email) localStorage.setItem('tt_emp_email', email);
-  const onAdminDesk = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
-  const adminToken = localStorage.getItem('tt_admin') || (onAdminDesk ? 'admin_success' : '');
-
-  try {
-    const res = await fetch('/api/staff-bypass', {
-      method: 'POST',
-      credentials: 'include',
-      headers: staffHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        email: email || empId,
-        emp_id: empId,
-        adminToken,
-        target: 'staff',
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) {
-      toast.error(data.error || 'Please sign in with a staff account.');
-      return;
-    }
-    toast.success('Bypass successful. Opening live dashboard…');
-    window.open(data.path || path, '_blank', 'noopener,noreferrer');
-  } catch (err) {
-    toast.error(err.message || 'Please sign in with a staff account.');
-  }
+  const path = deskPathForStaff(member);
+  toast.success('Opening live dashboard…');
+  openStaffBypass(path, email || empId);
 }

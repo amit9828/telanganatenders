@@ -2,16 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
+import { staffHeaders } from '@/components/workflow/api';
 
 export function staffLetterheadHeaders(extra = {}) {
-  const headers = { ...extra };
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const emp = localStorage.getItem('tt_emp_email');
-    if (emp) headers['x-employee-email'] = emp;
-  }
-  return headers;
+  return staffHeaders(extra);
 }
 
 export function LetterheadThumb({ id, kind, alt = '', className = 'max-h-28 w-full object-contain' }) {

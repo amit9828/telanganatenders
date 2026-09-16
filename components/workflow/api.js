@@ -1,12 +1,16 @@
+import { isAdminDeskPath, isStaffDeskPath, staffSessionIdent } from '@/lib/tab-handoff';
+
 export function staffHeaders(extra = {}) {
   const headers = { ...extra };
-  if (typeof window !== 'undefined') {
-    const path = window.location.pathname || '';
-    const onAdminDesk = path === '/admin' || path.startsWith('/admin/');
+  if (typeof window === 'undefined') return headers;
+  const path = window.location.pathname || '';
+  if (isAdminDeskPath(path)) {
     const token = localStorage.getItem('tt_admin');
-    // Never send leftover MD bearer from GM / TL / employee desks.
-    if (onAdminDesk && token) headers.Authorization = `Bearer ${token}`;
-    const email = localStorage.getItem('tt_emp_email');
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }
+  if (isStaffDeskPath(path)) {
+    const email = staffSessionIdent();
     if (email) headers['x-employee-email'] = email;
   }
   return headers;
@@ -31,10 +35,7 @@ export async function workflowFetch(url, options = {}) {
 export function staffPdfHref(tenderId, { email, role = 'employee' } = {}) {
   let resolved = email;
   if (!resolved && typeof window !== 'undefined') {
-    resolved = localStorage.getItem('tt_emp_email')
-      || localStorage.getItem('tt_email')
-      || process.env.NEXT_PUBLIC_ADMIN_EMAIL
-      || 'admin';
+    resolved = staffSessionIdent() || process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin';
   }
   resolved = resolved || process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin';
   return `/api/tenders/${tenderId}/pdf?email=${encodeURIComponent(resolved)}&role=${role}`;

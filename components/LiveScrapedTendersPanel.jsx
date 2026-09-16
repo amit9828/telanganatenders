@@ -11,17 +11,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { Activity, Loader2, RefreshCw, Trash2 } from 'lucide-react';
-
-function staffHeaders() {
-  const headers = {};
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const email = localStorage.getItem('tt_emp_email');
-    if (email) headers['x-employee-email'] = email;
-  }
-  return headers;
-}
+import { staffHeaders } from '@/components/workflow/api';
+import { staffSessionIdent } from '@/lib/tab-handoff';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -44,9 +35,7 @@ export default function LiveScrapedTendersPanel() {
   const load = async ({ silent = false } = {}) => {
     setLoading(true);
     try {
-      const email = typeof window !== 'undefined'
-        ? (localStorage.getItem('tt_emp_email') || '')
-        : '';
+      const email = staffSessionIdent();
       const qs = email ? `&email=${encodeURIComponent(email)}` : '';
       const res = await fetch(`/api/tenders/live-feed?t=${Date.now()}${qs}`, {
         headers: staffHeaders(),

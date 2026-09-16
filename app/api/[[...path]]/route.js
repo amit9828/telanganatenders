@@ -22,6 +22,8 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
 import { resolveActorRole, DESIGNATIONS, normalizeDesignation, isMdEmployee } from '@/lib/staff-auth';
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
+import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
+import { persistBrandPayload, brandFieldsFromForm } from '@/lib/brand-settings';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const runtime = 'nodejs';
@@ -898,15 +900,19 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (path === 'me' || path === 'api/me') {
-      const email = searchParams.get('email');
-      if (!email) return json({ error: 'Email required' }, 400);
+      const ident = clientIdentFromRequest(request) || searchParams.get('email') || '';
+      if (!ident) return json({ error: 'Client identity required' }, 400);
 
-      // 🚀 FIX: Block Base64 to stop 3-minute lagging (Amazon Speed)
+      const found = await findExistingClient(db, ident);
+      if (!found) return json({ error: 'Client not found' }, 404);
+
       const user = await db.collection('users').findOne(
-        { email: email.toLowerCase() },
+        { _id: found._id },
         { projection: { "vault_docs.file_base64": 0, "officer_queries.file_base64": 0 } }
       );
-      if (!user) return json({ subscription: null, unlocked_tenders: [], payments: [], profile: null, is_approved: false });
+      if (!user) return json({ error: 'Client not found' }, 404);
+
+      const email = String(user.email || '').toLowerCase();
 
       // 🚀 PERF FIX: These five lookups are all independent of each other (none
       // depends on another's result) but were previously awaited one-at-a-time,
@@ -957,7 +963,8 @@ async function handleGET(request, { params }, attempt = 1) {
        };
       
       return json({
-        subscription: user.subscription || null,
+        email,
+        client_id: user.client_id || null,
         unlocked_tenders: unlocked_tenders,
         payments: payments,
         auto_renew: user.auto_renew !== false,
@@ -1609,6 +1616,20 @@ export async function POST(request, { params }) {
       return await handleCashfreeWebhook(db, request, rawBody);
     }
 
+    if (path === 'settings' || path === 'api/settings') {
+      const contentType = request.headers.get('content-type') || '';
+      let $set;
+      if (contentType.includes('multipart/form-data')) {
+        const form = await request.formData();
+        $set = await brandFieldsFromForm(form);
+      } else {
+        const payload = await request.json().catch(() => ({}));
+        $set = await persistBrandPayload(payload);
+      }
+      await db.collection('settings').updateOne({ id: 'brand' }, { $set }, { upsert: true });
+      return json({ success: true, settings: $set });
+    }
+
     // 🚀 FIX: Missing/empty/malformed JSON bodies (e.g. Adblock-mangled requests)
     // used to bail out early with a 400 before routes like system/verify could even
     // run. Default to {} instead so downstream routes can safely destructure it.
@@ -1689,16 +1710,18 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'settings' || path === 'api/settings') {
-      await db.collection('settings').updateOne({ id: 'brand' }, { $set: { ...body, updated_at: new Date() } }, { upsert: true });
-      return json({ success: true });
+      return json({ error: 'Settings must be saved as FormData or a JSON payload via the dedicated handler.' }, 400);
     }
 
     if (path === 'users' || path === 'api/users') {
-      if (body.email) {
-        const email = body.email.toLowerCase();
-        await db.collection('users').updateOne({ email }, { $set: { email, name: body.name || '', last_login: new Date() } }, { upsert: true });
-      }
-      return json({ success: true });
+      const ident = body.email || body.client_id || '';
+      const existing = await findExistingClient(db, ident);
+      if (!existing) return json({ error: 'Client not found' }, 404);
+      await db.collection('users').updateOne(
+        { _id: existing._id },
+        { $set: { last_login: new Date(), ...(body.name ? { name: body.name } : {}) } },
+      );
+      return json({ success: true, client_id: existing.client_id || null, email: existing.email });
     }
 
     // 🚀 FIX: Guest Queries POST Route
@@ -1745,13 +1768,14 @@ export async function POST(request, { params }) {
         email, client_name, company_name, company_type, phone, address, 
         service_category, gstin, udyam, has_gst, has_msme, has_iso, documents, status, agreement_signed 
       } = body;
-      
-      const userEmail = email.toLowerCase();
-      
+      const userEmail = String(email || '').trim().toLowerCase();
+      const existingProfile = await findExistingClient(db, userEmail);
+      if (!existingProfile) return json({ error: 'Client not found' }, 404);
+
       // అగ్రిమెంట్ కోసం స్పెషల్ చెక్
       if (agreement_signed) {
           await db.collection('users').updateOne(
-            { email: userEmail },
+            { _id: existingProfile._id },
             { $set: { agreement_signed: true, status: 'active' } }
           );
           return json({ success: true });
@@ -1759,7 +1783,7 @@ export async function POST(request, { params }) {
 
       // మిగతా ప్రొఫైల్ డేటా సేవ్
       await db.collection('users').updateOne(
-        { email: userEmail },
+        { _id: existingProfile._id },
         { $set: { 
             company_type, has_gst, has_msme, has_iso,
             client_name, company_name, phone, address, service_category, 
@@ -1770,8 +1794,7 @@ export async function POST(request, { params }) {
             onboarding_complete: true, 
             profile_score: 100 
           } 
-        }, 
-        { upsert: true }
+        }
       );
       return json({ success: true });
     }

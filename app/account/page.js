@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import BrandLogo from '@/components/BrandLogo';
+import { clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,7 +26,7 @@ function AccountPage() {
 
   useEffect(() => {
     setIsMounted(true);
-    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '';
+    const e = clientSessionIdent();
     if (e) setEmail(e);
   }, []);
 
@@ -34,7 +35,7 @@ function AccountPage() {
     setLoading(true);
     
     // Fetch User Data (Only Core Details)
-    fetch(`/api/me?email=${encodeURIComponent(email)}`)
+    fetch(`/api/me?email=${encodeURIComponent(email)}`, { credentials: 'include', headers: clientHeaders() })
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch((err) => console.error(err))
@@ -44,12 +45,12 @@ function AccountPage() {
   const setMyEmail = (e) => {
     e.preventDefault();
     if (!tempEmail) return;
-    localStorage.setItem('tt_email', tempEmail.toLowerCase());
+    rememberRealClientIdent(tempEmail.toLowerCase());
     setEmail(tempEmail.toLowerCase());
   };
 
   const logout = () => {
-    localStorage.removeItem('tt_email');
+    if (typeof window !== 'undefined') sessionStorage.removeItem('tt_email');
     setEmail('');
     setData(null);
   };
@@ -161,7 +162,7 @@ function AccountPage() {
                           const d = await r.json();
                           if (r.ok) {
                             toast.success(d.message || 'Cancelled');
-                            fetch(`/api/me?email=${encodeURIComponent(email)}`)
+                            fetch(`/api/me?email=${encodeURIComponent(email)}`, { credentials: 'include', headers: clientHeaders() })
                               .then((r) => r.json())
                               .then((d) => setData(d));
                           } else {

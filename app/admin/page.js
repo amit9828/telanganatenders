@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react'; 
 import { useSession } from 'next-auth/react'; 
-import BrandLogo from '@/components/BrandLogo';
+import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
@@ -16,10 +16,11 @@ import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
-import { deskPathForDesignation } from '@/lib/designations';
+import { deskPathForStaff } from '@/lib/designations';
+import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
-import { workflowFetch, openWorkflowFile, restoreBypassSession } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
@@ -110,7 +111,6 @@ function AdminDashboardSkeleton() {
 export default function AdminPage() {
   const { data: session, status: sessionStatus } = useSession();
   const isMdSession = session?.user?.role === 'MD';
-  const canReturnFromBypass = Boolean(session?.user?.is_bypass && session?.user?.originalRole);
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -407,14 +407,6 @@ export default function AdminPage() {
     }
   };
 
-  const handleReturnFromBypass = async () => {
-    try {
-      await restoreBypassSession();
-    } catch (err) {
-      toast.error(err.message || 'Could not restore the MD session.');
-    }
-  };
-
   const onPdfChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -479,20 +471,6 @@ export default function AdminPage() {
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin'}&role=admin`, '_blank');
     toast.success('Opening PDF Document...');
-  };
-
-  const forwardToGm = async (t) => {
-    try {
-      await workflowFetch('/api/workflow/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tender_id: t._id || t.id, bid_no: t.bid_no, title: t.title }),
-      });
-      toast.success('Forwarded to GM Suggestion Module.');
-      refresh();
-    } catch (err) {
-      toast.error(err.message);
-    }
   };
 
   const publish = async (e) => {
@@ -715,32 +693,11 @@ export default function AdminPage() {
     const toastId = toast.loading(`Bypassing secure access to ${type} dashboard...`);
     try {
         if (type === 'client') {
-            localStorage.setItem('tt_email', email_or_id);
             toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-            setTimeout(() => { window.open('/client', '_blank'); }, 800);
+            openClientBypass(email_or_id);
         } else if (type === 'employee') {
-            localStorage.setItem('tt_emp_email', email_or_id);
-            const res = await fetch('/api/staff-bypass', {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token || localStorage.getItem('tt_admin') || 'admin_success'}`,
-              },
-              body: JSON.stringify({
-                email: email_or_id,
-                emp_id: email_or_id,
-                adminToken: token || localStorage.getItem('tt_admin') || 'admin_success',
-                target: 'staff',
-              }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.ok) {
-              toast.error(data.error || 'Please sign in with a staff account.', { id: toastId });
-              return;
-            }
             toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-            window.open(data.path || deskPathForDesignation(designation), '_blank', 'noopener,noreferrer');
+            openStaffBypass(deskPathForStaff({ designation, email: email_or_id, emp_id: email_or_id }), email_or_id);
         }
     } catch (e) {
         toast.error("Error during authentication bypass.", { id: toastId });
@@ -1186,18 +1143,13 @@ const handleViewDocument = (req) => {
       <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
         <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-             <div className="bg-white/10 p-2 rounded-xl ring-1 ring-white/10"><ShieldCheck className="w-5 h-5 text-emerald-400" /></div>
              <div>
                <h1 className="font-bold text-lg leading-tight tracking-wide">MD Command Center</h1>
                <p className="text-[10px] text-emerald-300 font-mono tracking-widest">ENTERPRISE ADMINISTRATION</p>
              </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            {canReturnFromBypass && (
-              <Button variant="outline" size="sm" onClick={handleReturnFromBypass} className="text-xs sm:text-sm bg-amber-500/15 border-amber-300/40 text-amber-100 hover:bg-amber-500/25">
-                Return to Admin/MD
-              </Button>
-            )}
+            <BrandMark size="md" />
             <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-white/20 text-slate-200 hover:text-white hover:bg-white/10 transition-all duration-200">View Public Site</Button>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-300 hover:text-red-200 hover:bg-red-500/15 transition-all duration-200"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
@@ -2476,9 +2428,6 @@ const handleViewDocument = (req) => {
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
                          </Button>
                          <SuggestClientControls tender={t} clients={approvedClients} onDone={refresh} />
-                         <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={() => forwardToGm(t)}>
-                           Forward to GM
-                         </Button>
                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
                             <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
                             <Input placeholder="Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), price: e.target.value}}))}/>
@@ -2878,7 +2827,9 @@ function BrandSettings({ token }) {
   const [banners, setBanners] = useState([]);
   const [leaders, setLeaders] = useState([]);
   const [clients, setClients] = useState([]); 
-  const [saving, setSaving] = useState(false);
+  const [logoFile, setLogoFile] = useState(null);
+  const [gemFile, setGemFile] = useState(null);
+  const [sigFile, setSigFile] = useState(null);
 
   const [newLeader, setNewLeader] = useState({ name: '', role: '', image: '', phone: '', email: '' });
   const [newClient, setNewClient] = useState({ client_name: '', company_name: '', udyam_no: '', image: '' });
@@ -2892,31 +2843,33 @@ function BrandSettings({ token }) {
         if (d.settings.name) setBrandName(d.settings.name);
         if (d.settings.tagline) setTagline(d.settings.tagline);
         if (d.settings.vision_text) setVisionText(d.settings.vision_text);
-        if (d.settings.banners) setBanners(d.settings.banners);
+        if (d.settings.banners) setBanners((d.settings.banners || []).map((src) => ({ src, file: null })));
         if (d.settings.leaders) setLeaders(d.settings.leaders);
         if (d.settings.clients) setClients(d.settings.clients);
       }
     }).catch((err) => console.error(err));
   }, []);
 
-  const handleImageUpload = (e, setter) => {
+  const handleImageUpload = (e, previewSetter, fileSetter) => {
     const f = e.target.files?.[0];
     if (!f) return;
     if (!f.type.startsWith('image/')) return toast.error('Please upload an image file');
     if (f.size > 3 * 1024 * 1024) return toast.error('Image too large. Keep under 3 MB.');
+    fileSetter?.(f);
     const reader = new FileReader();
-    reader.onload = () => { setter(reader.result?.toString() || ''); };
+    reader.onload = () => { previewSetter(reader.result?.toString() || ''); };
     reader.readAsDataURL(f);
   };
 
   const onBannerUpload = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    // 🚀 FIX: same base64-inflation issue as onPdfChange above — 4MB raw becomes
-    // ~5.3MB once base64-encoded in the JSON body, over Vercel's ~4.5MB hard cap.
     if (f.size > 3 * 1024 * 1024) return toast.error('Banner too large. Keep under 3 MB.');
     const reader = new FileReader();
-    reader.onload = () => { setBanners(prev => [...prev, reader.result?.toString() || '']); toast.success('Banner added to preview!'); };
+    reader.onload = () => {
+      setBanners((prev) => [...prev, { src: reader.result?.toString() || '', file: f }]);
+      toast.success('Banner added to preview!');
+    };
     reader.readAsDataURL(f);
   };
 
@@ -2952,23 +2905,27 @@ function BrandSettings({ token }) {
   const save = async () => {
     setSaving(true);
     try {
-      const payload = {
-        name: brandName, 
-        tagline: tagline, 
-        logo: logoPreview, 
-        gem_logo: gemLogoPreview,
-        md_signature: mdSignaturePreview,
-        vision_text: visionText,
-        banners: banners,
-        leaders: leaders,
-        clients: clients 
-      };
+      const form = new FormData();
+      form.append('name', brandName);
+      form.append('tagline', tagline);
+      form.append('vision_text', visionText);
+      form.append('logo_url', logoPreview && !String(logoPreview).startsWith('data:') ? logoPreview : '');
+      form.append('gem_logo_url', gemLogoPreview && !String(gemLogoPreview).startsWith('data:') ? gemLogoPreview : '');
+      form.append('md_signature_url', mdSignaturePreview && !String(mdSignaturePreview).startsWith('data:') ? mdSignaturePreview : '');
+      if (logoFile) form.append('logo', logoFile);
+      if (gemFile) form.append('gem_logo', gemFile);
+      if (sigFile) form.append('md_signature', sigFile);
+      const keptBanners = banners.filter((b) => b && !b.file).map((b) => (typeof b === 'string' ? b : b.src));
+      form.append('banners', JSON.stringify(keptBanners));
+      banners.filter((b) => b?.file).forEach((b) => form.append('banner_files', b.file));
+      form.append('leaders', JSON.stringify(leaders));
+      form.append('clients', JSON.stringify(clients));
 
-      const r = await fetch('/api/settings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const r = await fetch('/api/settings', { method: 'POST', credentials: 'include', headers, body: form });
       if (!r.ok) return toast.error('Failed to save settings to database.');
+      invalidateSettingsCache();
       toast.success('All Master Settings published successfully!');
     } catch (error) { toast.error('An error occurred while saving.'); } finally { setSaving(false); }
   };
@@ -2990,8 +2947,8 @@ function BrandSettings({ token }) {
                       {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
                     </div>
                     <div className="flex gap-2 w-full">
-                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setLogoPreview)} className="hidden" />Upload</label>
-                      {logoPreview && <button onClick={() => {if(confirm('Remove?')) setLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setLogoPreview, setLogoFile)} className="hidden" />Upload</label>
+                      {logoPreview && <button onClick={() => {if(confirm('Remove?')) { setLogoPreview(''); setLogoFile(null); }}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
                     </div>
                   </div>
                   
@@ -3001,8 +2958,8 @@ function BrandSettings({ token }) {
                       {gemLogoPreview ? <img src={gemLogoPreview} alt="gem logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
                     </div>
                     <div className="flex gap-2 w-full">
-                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setGemLogoPreview)} className="hidden" />Upload</label>
-                      {gemLogoPreview && <button onClick={() => {if(confirm('Remove?')) setGemLogoPreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setGemLogoPreview, setGemFile)} className="hidden" />Upload</label>
+                      {gemLogoPreview && <button onClick={() => {if(confirm('Remove?')) { setGemLogoPreview(''); setGemFile(null); }}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
                     </div>
                   </div>
                </div>
@@ -3013,8 +2970,8 @@ function BrandSettings({ token }) {
                     {mdSignaturePreview ? <img src={mdSignaturePreview} alt="MD Signature" className="w-full h-full object-contain p-2" /> : <PenTool className="w-8 h-8 text-slate-300" />}
                   </div>
                   <div className="flex gap-2 w-full">
-                    <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setMdSignaturePreview)} className="hidden" />Upload</label>
-                    {mdSignaturePreview && <button onClick={() => {if(confirm('Remove?')) setMdSignaturePreview('');}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
+                    <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setMdSignaturePreview, setSigFile)} className="hidden" />Upload</label>
+                    {mdSignaturePreview && <button onClick={() => {if(confirm('Remove?')) { setMdSignaturePreview(''); setSigFile(null); }}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
                   </div>
                </div>
             </div>
@@ -3037,7 +2994,7 @@ function BrandSettings({ token }) {
            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
               {banners.map((b, i) => (
                  <div key={i} className="relative group rounded-lg overflow-hidden border-2 border-slate-200 shadow-sm">
-                    <img src={b} alt={`Banner ${i}`} className="w-full h-24 object-cover" />
+                    <img src={typeof b === 'string' ? b : b.src} alt={`Banner ${i}`} className="w-full h-24 object-cover" />
                     <button onClick={() => removeBanner(i)} className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded shadow-lg opacity-0 group-hover:opacity-100 transition"><Trash2 className="w-3 h-3"/></button>
                  </div>
               ))}

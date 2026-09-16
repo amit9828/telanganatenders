@@ -5,15 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Image as ImageIcon, Loader2, PenTool, Trash2, UploadCloud } from 'lucide-react';
-
-function staffHeaders() {
-  const headers = {};
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { staffHeaders } from '@/components/workflow/api';
 
 function Slot({ kind, label, hint, url, uploading, onUpload, onClear }) {
   return (

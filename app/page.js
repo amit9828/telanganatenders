@@ -22,6 +22,7 @@ import { TS_DISTRICTS, AP_DISTRICTS } from '@/lib/regions';
 import { deskPathForDesignation } from '@/lib/designations';
 import { numberedPageList } from '@/components/workflow/api';
 import { liveTendersOnly } from '@/lib/tender-sort';
+import { rememberRealClientIdent, rememberRealStaffIdent } from '@/lib/tab-handoff';
 
 const PLANS = [
   { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
@@ -206,7 +207,7 @@ export default function App() {
     if (status === 'authenticated' && session?.user?.email) {
       const e = session.user.email.toLowerCase();
       setEmail(e); 
-      localStorage.setItem('tt_email', e);
+      rememberRealClientIdent(e);
       fetch(`/api/me?email=${encodeURIComponent(e)}&t=${Date.now()}`, { 
         cache: 'no-store',
         headers: {
@@ -220,7 +221,9 @@ export default function App() {
           setLoadingUser(false); 
         }).catch(() => setLoadingUser(false));
     } else if (status === 'unauthenticated') {
-      if (typeof window !== 'undefined') localStorage.removeItem('tt_email');
+      if (typeof window !== 'undefined') {
+        /* real client session lives in NextAuth + per-tab sessionStorage */
+      }
       setEmail(''); 
       setUserData(null); 
       setLoadingUser(false);
@@ -357,15 +360,12 @@ export default function App() {
            const sess = await sessRes.json();
            if (sess?.user?.role === 'MD') {
              desk = '/admin';
-             localStorage.setItem('tt_role', 'md');
            } else {
-             localStorage.setItem('tt_emp_email', empEmail.toLowerCase());
-             localStorage.setItem('tt_role', 'employee');
+             rememberRealStaffIdent(empEmail.toLowerCase());
              if (sess?.user?.designation) desk = deskPathForDesignation(sess.user.designation);
            }
          } catch (_) {
-           localStorage.setItem('tt_emp_email', empEmail.toLowerCase());
-           localStorage.setItem('tt_role', 'employee');
+           rememberRealStaffIdent(empEmail.toLowerCase());
          }
          window.open(desk, '_blank');
          setEmpModalOpen(false);

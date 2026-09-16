@@ -27,7 +27,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { workflowFetch, openWorkflowFile, restoreBypassSession } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
+import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
+import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
   Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2
@@ -35,7 +37,9 @@ import {
 
 export default function StaffOpsDesk({ desk }) {
   const { data: session, status } = useSession();
-  const canReturnFromBypass = Boolean(session?.user?.is_bypass && session?.user?.originalRole);
+  const [localEmpEmail, setLocalEmpEmail] = useState(() => (
+    typeof window !== 'undefined' ? consumeStaffBypass() : ''
+  ));
   const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'publisher' : 'live');
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
@@ -50,8 +54,10 @@ export default function StaffOpsDesk({ desk }) {
     name: '', department: '', designation: '', phone: '', state: '', district: '', address: '', pincode: '', notes: '',
   });
 
-  const selfId = session?.user?.emp_id || '';
-  const staffEmail = session?.user?.email;
+  const staffEmail = localEmpEmail || (session?.user?.role && session.user.role !== 'MD' ? session?.user?.email : '');
+  const selfFromTeam = team.find((t) => String(t.email || '').toLowerCase() === String(staffEmail || '').toLowerCase());
+  const jwtEmpId = session?.user?.emp_id && session?.user?.role && session.user.role !== 'MD' ? session.user.emp_id : '';
+  const selfId = selfFromTeam?.emp_id || jwtEmpId || '';
   const isGm = desk === 'gm';
   const isTl = desk === 'tl';
 
@@ -61,11 +67,11 @@ export default function StaffOpsDesk({ desk }) {
         workflowFetch('/api/workflow/queue'),
         workflowFetch('/api/workflow/queue?board=internal'),
         workflowFetch('/api/workflow/queue?board=submitted'),
-        fetch('/api/tenders', { credentials: 'include' }).then((r) => r.json()),
-        fetch('/api/users/approved', { credentials: 'include' }).then((r) => r.json()),
+        fetch('/api/tenders', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()),
+        fetch('/api/users/approved', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()),
         workflowFetch('/api/employees'),
         isGm
-          ? fetch('/api/gov-officers', { credentials: 'include' }).then((r) => r.json()).catch(() => ({ officers: [] }))
+          ? fetch('/api/gov-officers', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()).catch(() => ({ officers: [] }))
           : Promise.resolve({ officers: [] }),
       ]);
       setJobs(q.jobs || []);
@@ -81,7 +87,13 @@ export default function StaffOpsDesk({ desk }) {
   };
 
   useEffect(() => {
-    if (status !== 'authenticated' && status !== 'unauthenticated') return undefined;
+    if (typeof window !== 'undefined') {
+      setLocalEmpEmail(consumeStaffBypass());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'authenticated' && status !== 'unauthenticated' && !localEmpEmail) return undefined;
     load();
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') load();
@@ -136,6 +148,7 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'copilot', label: 'Co-Pilot', icon: Bot, color: 'violet' },
         ] },
         { id: 'team', label: 'Team', items: [
+          { value: 'clients', label: 'Clients DB', icon: Briefcase, color: 'navy' },
           { value: 'team', label: 'Team', icon: Users, color: 'blue' },
           { value: 'alerts', label: 'Alerts', icon: BellRing, color: 'navy' },
           { value: 'chat', label: 'Chat', icon: MessageSquare, color: 'navy' },
@@ -165,19 +178,10 @@ export default function StaffOpsDesk({ desk }) {
   };
 
   const impersonateClient = (targetEmail) => {
-    localStorage.setItem('tt_email', targetEmail);
-    window.open('/client', '_blank');
+    openClientBypass(targetEmail);
   };
 
-  const handleReturnFromBypass = async () => {
-    try {
-      await restoreBypassSession();
-    } catch (err) {
-      toast.error(err.message || 'Could not restore the original session.');
-    }
-  };
-
-  if (status === 'loading') {
+  if (status === 'loading' && !localEmpEmail) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
   }
 
@@ -186,19 +190,15 @@ export default function StaffOpsDesk({ desk }) {
       <header className="navy-gradient text-white sticky top-0 z-30 shadow-lg">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-white/10 p-2 rounded-xl"><Briefcase className="w-5 h-5 text-emerald-400" /></div>
             <div>
               <h1 className="font-bold text-lg">{isGm ? 'GM Desk' : 'Doc Team TL Desk'}</h1>
-              <p className="text-[10px] text-emerald-300 font-mono">{session?.user?.emp_id} · {session?.user?.email}</p>
+              <p className="text-[10px] text-emerald-300 font-mono">{selfId} · {staffEmail || session?.user?.email}</p>
             </div>
           </div>
-          {canReturnFromBypass ? (
-            <Button variant="outline" size="sm" className="border-amber-300/40 text-amber-100 hover:bg-amber-500/20" onClick={handleReturnFromBypass}>
-              <ArrowLeft className="w-4 h-4 mr-1" /> Return to Admin/MD
-            </Button>
-          ) : (
+          <div className="flex items-center gap-2">
+            <BrandMark size="md" />
             <a href="/"><Button variant="outline" size="sm" className="border-white/20 text-slate-200"><ArrowLeft className="w-4 h-4 mr-1" /> Exit</Button></a>
-          )}
+          </div>
         </div>
       </header>
       <main className="container mx-auto px-4 py-6">
@@ -286,7 +286,7 @@ export default function StaffOpsDesk({ desk }) {
               <TabsContent value="copilot">
                 <GemCoPilot embedded />
               </TabsContent>
-              {isGm && (
+              {(isGm || isTl) && (
                 <TabsContent value="clients">
                   <Card className="tender-shadow border-t-4 border-t-blue-600">
                     <CardHeader className="bg-blue-50/50 border-b pb-4">
@@ -431,7 +431,7 @@ export default function StaffOpsDesk({ desk }) {
                 </TabsContent>
               )}
               <TabsContent value="team">
-                <TeamDirectoryPanel actorDesk={desk} team={team} onRefresh={load} impersonate={openStaffDesk} />
+                <TeamDirectoryPanel actorDesk={desk} team={team} onRefresh={load} impersonate={openStaffDesk} actorEmpId={selfId} />
               </TabsContent>
               <TabsContent value="alerts"><OpsAlerts roster={team} /></TabsContent>
               <TabsContent value="chat" className="w-full overflow-hidden"><StaffChat selfId={selfId} roster={team} /></TabsContent>
