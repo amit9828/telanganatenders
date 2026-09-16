@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Clock, FileText, Plus } from 'lucide-react';
+import { Clock, FileText, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { staffHeaders, staffPdfHref } from '@/components/workflow/api';
 
@@ -74,7 +74,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
       <CardHeader>
         <CardTitle className="text-[#0A2647] text-lg">Suggestion Bar</CardTitle>
         <CardDescription>
-          Parked tenders grouped by client. Attach a SOW with + to forward. The client is not notified until the SOW is uploaded.
+          Parked tenders grouped by client. Upload a SOW PDF to forward. The client is not notified until the SOW is uploaded.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -93,7 +93,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
                 return (
                   <div
                     key={job._id}
-                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between min-h-[148px] max-w-[220px]"
+                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between min-h-[168px]"
                   >
                     <div>
                       <p className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 inline-block">
@@ -106,14 +106,14 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
                         <Clock className="w-3 h-3" /> {fmtDate(job.last_date)}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 mt-2">
+                    <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-100 mt-2">
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-7 text-[10px] flex-1"
+                        className="h-7 text-[10px] w-full"
                         onClick={() => openPdf(job)}
                       >
-                        <FileText className="w-3 h-3 mr-1" /> PDF
+                        <FileText className="w-3 h-3 mr-1" /> View PDF
                       </Button>
                       <input
                         id={inputId}
@@ -129,10 +129,9 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
                       />
                       <label
                         htmlFor={inputId}
-                        title="Attach SOW"
-                        className={`h-7 w-7 inline-flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 cursor-pointer ${busyId === job._id ? 'opacity-50 pointer-events-none' : ''}`}
+                        className={`h-8 w-full inline-flex items-center justify-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold cursor-pointer ${busyId === job._id ? 'opacity-50 pointer-events-none' : ''}`}
                       >
-                        <Plus className="w-4 h-4" />
+                        <Upload className="w-3 h-3" /> {busyId === job._id ? 'Uploading…' : 'Upload SOW'}
                       </label>
                     </div>
                   </div>

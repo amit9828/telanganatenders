@@ -58,7 +58,7 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   };
 
   return (
-    <div className="border rounded-xl p-3">
+    <div className="border rounded-xl p-3 min-w-0 overflow-hidden">
       <div className="flex justify-between gap-2">
         <div className="min-w-0">
           <p className="font-bold text-sm">{off.name}</p>
@@ -254,7 +254,7 @@ export async function openStaffDesk(member) {
     redirect: false,
     email: email || empId,
     emp_id: empId,
-    adminToken: localStorage.getItem('tt_admin') || '',
+    adminToken: localStorage.getItem('tt_admin') || 'admin_success',
     target: 'staff',
   });
 

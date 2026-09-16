@@ -4,18 +4,14 @@ import { signIn } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
-import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
-import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
-import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
-import { workflowFetch } from '@/components/workflow/api';
-import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -32,7 +28,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay, Loader2,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, Sparkles, AlertTriangle, PenTool, Activity, Bot
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -55,20 +51,12 @@ export default function EmployeeDashboard() {
   const [bids, setBids] = useState([]);
   const [officers, setOfficers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
-  const [analyzingTender, setAnalyzingTender] = useState(false);
-  const [launchingGem, setLaunchingGem] = useState(false);
   const [publicTenders, setPublicTenders] = useState([]); 
   const [suggestions, setSuggestions] = useState([]); 
   const [tickets, setTickets] = useState([]); 
   const [guestQueries, setGuestQueries] = useState([]); // 🚀 RESTORED STATE
 
-  const [tenderForm, setTenderForm] = useState({
-    bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: ''
-  });
-  const [publishing, setPublishing] = useState(false);
-  const [isEditingTender, setIsEditingTender] = useState(null); 
-  const [pdfName, setPdfName] = useState('');
-  const [pdfBase64, setPdfBase64] = useState('');
+  const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState(''); 
   const [tenderPage, setTenderPage] = useState(1); 
   
@@ -113,13 +101,7 @@ export default function EmployeeDashboard() {
   const [sharingDocId, setSharingDocId] = useState(null);
   const [targetClientEmail, setTargetClientEmail] = useState('');
   const [uploadingOpPdf, setUploadingOpPdf] = useState(false);
-  const [aiDrafts, setAiDrafts] = useState([]);
   const [wfJobs, setWfJobs] = useState([]);
-  // 🚀 AI Bulk Publisher — review queue state
-  const [reviewDraft, setReviewDraft] = useState(null);
-  const [draftForm, setDraftForm] = useState({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', emd_amount: '', supply_details: '' });
-  const [publishingDraft, setPublishingDraft] = useState(false);
-  const [draftPdfRefs, setDraftPdfRefs] = useState({ pdf_url: null, pdf_r2_key: null });
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
@@ -152,11 +134,8 @@ export default function EmployeeDashboard() {
 
   const fetchLiveOperationsData = async (userEmail) => {
     try {
-      // 🚀 PERF FIX: All 12 endpoints now fire in a single Promise.all instead of
-      // 10 in parallel + 2 more awaited sequentially afterward — eliminates the
-      // extra round-trip latency the sequential `operator/docs`/`ai/drafts`
-      // calls were adding on top of the already-parallel batch.
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, opDocsRes, draftsRes, wfRes] = await Promise.all([
+      // 🚀 PERF FIX: All endpoints fire in a single Promise.all.
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, opDocsRes, wfRes] = await Promise.all([
         fetch(`/api/dispatches?t=${Date.now()}`), 
         fetch(`/api/bids?t=${Date.now()}`), 
         fetch(`/api/gov-officers?t=${Date.now()}`),
@@ -168,18 +147,12 @@ export default function EmployeeDashboard() {
         fetch(`/api/guest-queries?t=${Date.now()}`),
         fetch(`/api/employees?t=${Date.now()}`),
         fetch(`/api/operator/docs?t=${Date.now()}`),
-        fetch(`/api/ai/drafts?t=${Date.now()}`),
         fetch(`/api/workflow/queue?t=${Date.now()}`, { credentials: 'include' })
       ]);
 
       if (opDocsRes.ok) {
          const opData = await opDocsRes.json();
          setOperatorDocs(opData.docs || []);
-      }
-
-      if (draftsRes.ok) {
-         const dData = await draftsRes.json();
-         setAiDrafts(dData.drafts || []);
       }
       if (tasksRes.ok) {
         const tData = await tasksRes.json();
@@ -209,231 +182,15 @@ export default function EmployeeDashboard() {
     } catch (err) { console.error("Employee Sync Error", err); } finally { setLoading(false); }
   };
 
-  const onPdfChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
-    // 🚀 FIX: this file travels as a base64 string inside the tender's JSON payload,
-    // which inflates it by ~33%. Vercel hard-caps the whole serverless request body at
-    // ~4.5MB, so a 4MB raw PDF (≈5.3MB once base64-encoded) used to fail with an opaque
-    // 413 after the toast already said it was fine. 3MB raw stays safely under that cap.
-    if (file.size > 3 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 3MB.');
-    
-    const reader = new FileReader();
-    reader.onload = () => { 
-        const base64Str = reader.result?.toString().split(',')[1] || '';
-        setPdfBase64(base64Str); 
-        setPdfName(file.name); 
-        toast.success(`PDF Loaded. Starting AI Analysis...`);
-        
-        // 🚀 ఫైల్ అటాచ్ అవ్వగానే ఆటోమెటిక్ గా AI ని పిలవడం
-        handleAITenderAnalysis(file, base64Str);
-    };
-    reader.readAsDataURL(file);
-  };
   const handleViewPDF = async (tenderId) => {
     window.open(`/api/tenders/${tenderId}/pdf?email=${email}&role=employee`, '_blank');
     toast.success('Opening PDF Document...');
   };
 
-  const launchGemLiveHunter = async () => {
-    setLaunchingGem(true);
-    try {
-      const result = await launchGemHunter();
-      if (result.offline) {
-        toast.error(result.error || 'Could not start the hunter on this computer.');
-        return;
-      }
-      if (!result.ok) {
-        toast.error(result.error || 'Could not launch the hunter.');
-        return;
-      }
-      toast.success(
-        result.already_running
-          ? 'The hunter is already running in the Chrome window on your screen.'
-          : result.via_popup
-            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
-            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
-      );
-    } finally {
-      setLaunchingGem(false);
-    }
-  };
-
-  // 🚀 AI Auto-Fill Function (FIXED)
-  const handleAITenderAnalysis = async (file, base64Data) => {
-      setAnalyzingTender(true);
-      toast.info("AI is reading the document. Please wait...", { duration: 3000 });
-      
-      try {
-          const res = await fetch('/api/ai/analyze', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pdfBase64: base64Data, saveToDraft: false })
-          });
-          
-          if (res.ok) {
-              const { data } = await res.json();
-              if (data) {
-                  // 🚀 ఇక్కడ setTenderForm అని మార్చాం 🚀
-                  setTenderForm(prev => ({
-                      ...prev,
-                      bid_no: data.bid_no !== "N/A" ? data.bid_no : prev.bid_no,
-                      title: data.title !== "N/A" ? data.title : prev.title,
-                      department: data.department !== "N/A" ? data.department : prev.department,
-                      last_date: data.last_date !== "N/A" ? data.last_date : prev.last_date,
-                      supply_details: `EMD: ${data.emd_amount}\nTurnover Req: ${data.turnover_req}\nMandatory Docs: ${(data.mandatory_docs || []).join(', ')}`
-                  }));
-                  toast.success("AI Successfully auto-filled the tender details!");
-              }
-          } else {
-              toast.error("AI Analysis failed. You may need to enter manually.");
-          }
-      } catch (err) {
-          toast.error("Network error during AI analysis.");
-      }
-      setAnalyzingTender(false);
-  };
-  
-  // 🚀 కొత్త కోడ్: Handle Selection of AI Draft
-  const handleSelectDraft = (draftId) => {
-      if (!draftId) return;
-      const draft = aiDrafts.find(d => d._id === draftId);
-      if (!draft) return;
-
-      setTenderForm({
-          bid_no: draft.bid_no !== "N/A" ? draft.bid_no : "",
-          title: draft.title !== "N/A" ? draft.title : "",
-          department: draft.department !== "N/A" ? draft.department : "",
-          last_date: draft.last_date !== "N/A" ? draft.last_date : "",
-          district: draft.district !== "N/A" && DISTRICTS.includes(draft.district) ? draft.district : "",
-          category: "Product",
-          supply_details: `EMD: ${draft.emd_amount}\nTurnover Req: ${draft.turnover_req}\nMandatory Docs: ${(draft.mandatory_docs || []).join(', ')}`
-      });
-      setPdfBase64(draft.pdf_base64 || "");
-      setPdfName(draft.pdf_filename || "AI_Draft_Document.pdf");
-      // 🚀 FIX: drafts are listed with pdf_base64 projected out (and bulk-uploaded ones
-      // never had it — the file lives in R2), so publishing from this form used to
-      // create a tender with no document attached. Carry the R2 pointers instead.
-      setDraftPdfRefs({ pdf_url: draft.pdf_url || null, pdf_r2_key: draft.pdf_r2_key || null });
-      toast.success("AI Data Auto-Filled!");
-  };
-
-  // 🚀 AI BULK PUBLISHER — Review Pipeline
-  // Opens the reviewer with the Gemini-extracted values pre-filled so the employee only
-  // has to correct what the model got wrong.
-  const openDraftReview = (draft) => {
-      setReviewDraft(draft);
-      setDraftForm({
-          bid_no: draft.bid_no || '',
-          title: draft.title || '',
-          department: draft.department || '',
-          last_date: draft.last_date || '',
-          district: DISTRICTS.includes(draft.district) ? draft.district : '',
-          category: ['Product', 'Service', 'Works'].includes(draft.category) ? draft.category : 'Product',
-          emd_amount: draft.emd_amount || '',
-          supply_details: draft.supply_details || '',
-      });
-  };
-
-  const publishDraftToLive = async () => {
-      if (!reviewDraft) return;
-      if (!draftForm.title || !draftForm.department || !draftForm.last_date || !draftForm.bid_no) {
-          return toast.error('Bid number, title, department and last date are all required.');
-      }
-
-      setPublishingDraft(true);
-      try {
-          const res = await fetch('/api/ai/drafts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: reviewDraft._id, ...draftForm, publishedBy: empData.name || 'Employee' }),
-          });
-          const data = await res.json().catch(() => null);
-
-          if (!res.ok) {
-              toast.error(data?.error || `Failed to publish (${res.status})`, { duration: 8000 });
-              return;
-          }
-
-          toast.success(`"${draftForm.title}" is now live on the portal.`);
-          setAiDrafts(prev => prev.filter(d => d._id !== reviewDraft._id));
-          setReviewDraft(null);
-          fetchLiveOperationsData(email);
-      } catch (err) {
-          console.error('Publish draft error:', err);
-          toast.error('Network error while publishing.');
-      } finally {
-          setPublishingDraft(false);
-      }
-  };
-
-  const discardDraft = async (draft) => {
-      if (!confirm(`Discard the draft for "${draft.title || draft.pdf_filename}"? This cannot be undone.`)) return;
-      try {
-          const res = await fetch(`/api/ai/drafts?id=${draft._id}`, { method: 'DELETE' });
-          if (!res.ok) return toast.error('Failed to discard draft.');
-          toast.success('Draft discarded.');
-          setAiDrafts(prev => prev.filter(d => d._id !== draft._id));
-          if (reviewDraft?._id === draft._id) setReviewDraft(null);
-      } catch (err) {
-          toast.error('Network error while discarding.');
-      }
-  };
-
-  // 🚀 పాత దానికి బదులు ఈ కొత్త ఫంక్షన్ పెట్టు: 
-  const handlePublishTender = async (e) => {
-    e.preventDefault();
-    if(!tenderForm.title || !tenderForm.department || !tenderForm.last_date || !tenderForm.bid_no) return toast.error('Please fill all required fields');
-    setPublishing(true);
-    try {
-      const url = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
-      const method = isEditingTender ? 'PUT' : 'POST';
-      const r = await fetch(url, {
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...tenderForm,
-          // Only send the blob when there is one; an auto-filled draft carries R2
-          // pointers instead so the file is never duplicated into MongoDB.
-          ...(pdfBase64 ? { pdf_base64: pdfBase64 } : {}),
-          ...(draftPdfRefs.pdf_url ? { pdf_url: draftPdfRefs.pdf_url } : {}),
-          ...(draftPdfRefs.pdf_r2_key ? { pdf_r2_key: draftPdfRefs.pdf_r2_key } : {}),
-          pdf_filename: pdfName || 'tender.pdf',
-        })
-      });
-      if(r.ok) {
-        toast.success(isEditingTender ? 'Tender updated successfully!' : 'Tender published successfully!');
-        const published = await r.json().catch(() => ({}));
-        const awaiting = wfJobs.find(j => j.status === 'AWAITING_PUBLISH');
-        if (!isEditingTender && published.id && awaiting) {
-          try {
-            await workflowFetch(`/api/workflow/jobs/${awaiting._id}/publish-attach`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tender_id: published.id, bid_no: tenderForm.bid_no }),
-            });
-          } catch (attachErr) {
-            toast.error(attachErr.message || 'Published, but job attach failed.');
-          }
-        }
-        
-        // 🚀 Auto Delete Draft after publish
-        const drafted = aiDrafts.find(d => d.bid_no === tenderForm.bid_no);
-        if (drafted) {
-           await fetch(`/api/ai/drafts?id=${drafted._id}`, { method: 'DELETE' });
-           setAiDrafts(prev => prev.filter(d => d._id !== drafted._id));
-        }
-
-        setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
-        setPdfBase64(''); setPdfName(''); setIsEditingTender(null);
-        setDraftPdfRefs({ pdf_url: null, pdf_r2_key: null });
-        fetchLiveOperationsData(email); 
-      } else {
-        toast.error('Failed to save tender');
-      }
-    } catch (err) { toast.error('Network error'); }
-    setPublishing(false);
+  const handleEditTender = (t) => {
+    setIsEditingTender(t);
+    setActiveTab('publisher');
+    toast.info('Edit mode active. Update details and click save.');
   };
 
   const handleDeleteTenderDB = async (id) => {
@@ -1067,14 +824,11 @@ export default function EmployeeDashboard() {
   const EMPLOYEE_NAV_GROUPS = [
     { id: 'my-work', label: 'My Work', items: [
       { value: 'kanban', label: 'Assigned Jobs', icon: Kanban, color: 'navy' },
-      { value: 'drafts', label: 'Ready to Publish', icon: Sparkles, color: 'navy', badge: aiDrafts.length },
     ] },
     { id: 'clients-officers', label: 'Clients', items: [
       { value: 'clients', label: 'Clients DB', icon: Users, color: 'navy' },
     ] },
     { id: 'ai-tools', label: 'AI Tools', items: [
-      { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo' },
-      { value: 'live-scraped', label: 'Live Scraped', icon: Activity, color: 'teal' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
     ] },
     { id: 'publishing', label: 'Publishing', items: [
@@ -1159,75 +913,6 @@ return (
         <DashboardNav groups={EMPLOYEE_NAV_GROUPS} activeTab={activeTab} onChange={setActiveTab} title="Operations Desk" />
         <div className="flex-1 w-full min-w-0">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-
-          {/* ==================== AI BULK PUBLISHER — REVIEW PIPELINE ==================== */}
-          <TabsContent value="drafts" className="w-full space-y-6">
-            <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
-              <CardHeader className="bg-purple-50/50 pb-4 border-b">
-                <CardTitle className="text-[#0A2647] flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-purple-600"/> Ready for Publishing (Pending Drafts)
-                </CardTitle>
-                <CardDescription>
-                  Tenders uploaded in bulk by the MD and read by AI. Review the extracted details, check the source PDF, then publish to the live portal.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6">
-                {aiDrafts.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-4">
-                      <CheckCircle2 className="w-7 h-7 text-slate-400"/>
-                    </div>
-                    <p className="font-bold text-slate-700">The review queue is empty</p>
-                    <p className="text-sm text-slate-500 mt-1 max-w-md">
-                      When the MD drops tender PDFs into the Bulk AI Dropzone, they will appear here for your review.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {aiDrafts.map(draft => {
-                      const missingFields = ['bid_no', 'title', 'department', 'last_date'].filter(f => !draft[f]);
-                      return (
-                        <div key={draft._id} className="border border-slate-200 rounded-xl bg-white p-4 flex flex-col shadow-sm hover:shadow-md hover:border-purple-300 transition">
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700 font-mono text-[10px] truncate max-w-[70%]">
-                              {draft.bid_no || 'No Bid No.'}
-                            </Badge>
-                            {missingFields.length > 0 && (
-                              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px] shrink-0">
-                                {missingFields.length} field{missingFields.length > 1 ? 's' : ''} missing
-                              </Badge>
-                            )}
-                          </div>
-
-                          <p className="font-bold text-sm text-[#0A2647] leading-snug line-clamp-2 min-h-[2.5rem]">
-                            {draft.title || 'Untitled tender'}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-1 truncate">{draft.department || 'Department not detected'}</p>
-
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 text-[11px] text-slate-500">
-                            <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {draft.last_date || 'No date'}</span>
-                            {draft.district && <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {draft.district}</span>}
-                          </div>
-
-                          <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                            <Button size="sm" onClick={() => openDraftReview(draft)} className="flex-1 bg-purple-600 hover:bg-purple-700 h-8 text-xs">
-                              <Pencil className="w-3.5 h-3.5 mr-1"/> Review
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => window.open(`/api/ai/drafts/${draft._id}/file`, '_blank')} className="h-8 text-xs" title="View source PDF">
-                              <Eye className="w-3.5 h-3.5"/>
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => discardDraft(draft)} className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50" title="Discard draft">
-                              <Trash2 className="w-3.5 h-3.5"/>
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           <TabsContent value="kanban" className="w-full space-y-6">
             <InternalTrackingBoard
@@ -1791,130 +1476,29 @@ return (
             </div>
           </TabsContent>
 
-          <TabsContent value="matchmaker" className="w-full space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3">
-              <div>
-                <p className="font-bold text-[#0A2647] text-sm">AI Matchmaker &amp; Competitor Intel</p>
-                <p className="text-xs text-slate-500 mt-0.5">Open Chrome via the local GeM agent, then run matching from the panel below.</p>
-              </div>
-              <Button
-                onClick={launchGemLiveHunter}
-                disabled={launchingGem}
-                variant="outline"
-                className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm shrink-0"
-              >
-                {launchingGem
-                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
-                  : <>🚀 Launch GeM Live Hunter</>}
-              </Button>
-            </div>
-            <AiMatchmakerPanel />
-            <L1BenchmarkDropzone />
-          </TabsContent>
-
-          <TabsContent value="live-scraped" className="w-full space-y-6">
-            <LiveScrapedTendersPanel />
-          </TabsContent>
-
           <TabsContent value="copilot-desk" className="w-full space-y-6">
             <GeminiWorkspace
               embedded
-              tenderId={isEditingTender || null}
-              tenderLabel={isEditingTender ? (tenderForm.title || tenderForm.bid_no || 'this tender') : null}
+              tenderId={isEditingTender?._id || isEditingTender?.id || null}
+              tenderLabel={isEditingTender ? (isEditingTender.title || isEditingTender.bid_no || 'this tender') : null}
               clients={approvedClients}
               tenders={publicTenders}
             />
           </TabsContent>
 
           <TabsContent value="publisher" className="w-full space-y-6">
-            <L1BenchmarkDropzone />
             <div className="grid lg:grid-cols-5 gap-6">
-               
-               <Card className={`border-0 shadow-md lg:col-span-2 h-fit ${isEditingTender ? 'ring-2 ring-blue-500' : ''}`}>
-                 <CardHeader className="pb-4 border-b border-slate-100 flex flex-row justify-between items-center">
-                    <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
-                       {isEditingTender ? <><Pencil className="w-5 h-5 text-blue-600"/> Edit Tender</> : <><PlusCircle className="w-5 h-5"/> Publish New Tender</>}
-                    </CardTitle>
-                    {isEditingTender && (
-                       <Button variant="ghost" size="sm" onClick={() => { setIsEditingTender(null); setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' }); }} className="h-7 text-xs text-slate-500 hover:text-red-500">Cancel Edit</Button>
-                    )}
-                 </CardHeader>
-                 <CardContent className="pt-5">
-                    {aiDrafts.length > 0 && !isEditingTender && (
-                       <div className="mb-6 border border-purple-200 rounded-xl overflow-hidden shadow-sm">
-                          <div className="bg-purple-100 text-purple-900 px-4 py-2 font-bold flex items-center gap-2">
-                             <Target className="w-4 h-4"/> Pending for Publish (AI Bulk Uploads)
-                             <Badge className="bg-purple-600 text-white ml-auto">{aiDrafts.length}</Badge>
-                          </div>
-                          <div className="p-3 bg-purple-50/50 flex flex-col gap-2 max-h-[250px] overflow-y-auto">
-                             {aiDrafts.map(d => (
-                                <div key={d._id} className="bg-white border border-purple-100 p-3 rounded-lg flex justify-between items-center hover:border-purple-300 transition shadow-sm">
-                                   <div>
-                                      <p className="font-bold text-sm text-[#0A2647]">{d.bid_no}</p>
-                                      <p className="text-xs text-slate-500">{d.department} - {d.title}</p>
-                                   </div>
-                                   <Button size="sm" onClick={(e) => { e.preventDefault(); handleSelectDraft(d._id); }} className="bg-purple-600 hover:bg-purple-700 h-8 text-xs shrink-0">
-                                      Auto-Fill & Review
-                                   </Button>
-                                </div>
-                             ))}
-                          </div>
-                       </div>
-                    )}
-                   <form onSubmit={handlePublishTender} className="space-y-4">
-                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label><Input required value={tenderForm.title} onChange={e=>setTenderForm({...tenderForm, title: e.target.value})} className="bg-white h-10"/></div>
-                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label><Input required value={tenderForm.bid_no} onChange={e=>setTenderForm({...tenderForm, bid_no: e.target.value})} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/></div>
-                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label><Input required value={tenderForm.department} onChange={e=>setTenderForm({...tenderForm, department: e.target.value})} className="bg-white h-10"/></div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label><Input required type="date" value={tenderForm.last_date} onChange={e=>setTenderForm({...tenderForm, last_date: e.target.value})} className="bg-white h-10 text-sm"/></div>
-                        <div>
-                          <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category *</Label>
-                          <Select value={tenderForm.category} onValueChange={v=>setTenderForm({...tenderForm, category: v})}>
-                             <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
-                             <SelectContent>
-                                <SelectItem value="Product">Product</SelectItem>
-                                <SelectItem value="Service">Service</SelectItem>
-                             </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District (TS & AP) *</Label>
-                        <Select value={tenderForm.district} onValueChange={v=>setTenderForm({...tenderForm, district: v})}>
-                           <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select District" /></SelectTrigger>
-                           <SelectContent>
-                              {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                           </SelectContent>
-                        </Select>
-                      </div>
-                      <div><Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label><textarea className="w-full border rounded-md p-3 h-24 text-sm bg-white outline-none focus:ring-1 focus:ring-slate-300" value={tenderForm.supply_details} onChange={e=>setTenderForm({...tenderForm, supply_details: e.target.value})}></textarea></div>
-                      
-                      {/* 🚀 FIX: Updated PDF Upload Box with AI Loading Animation */}
-                      <div>
-                        <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {isEditingTender && '(Optional to replace)'}</Label>
-                        <div className={`border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group ${analyzingTender ? 'animate-pulse bg-blue-50' : ''}`}>
-                           <input type="file" accept="application/pdf" onChange={onPdfChange} disabled={analyzingTender} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
-                           {analyzingTender ? (
-                              <div className="flex flex-col items-center">
-                                 <Loader2 className="w-6 h-6 text-blue-600 animate-spin mb-2" />
-                                 <span className="text-sm font-bold text-blue-600">AI is analyzing document...</span>
-                              </div>
-                           ) : (
-                              <>
-                                 <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                                 <span className="text-sm font-bold text-[#0A2647]">{pdfName || (isEditingTender ? 'Upload new PDF to replace old' : 'Drop PDF here for AI Auto-Fill')}</span>
-                              </>
-                           )}
-                        </div>
-                      </div>
-
-                      <Button type="submit" disabled={publishing || analyzingTender} className={`w-full h-11 text-base font-bold shadow-md ${isEditingTender ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
-                         {publishing ? (isEditingTender ? 'Updating...' : 'Publishing...') : (isEditingTender ? 'Save Changes' : 'Publish Tender')}
-                      </Button>
-                   </form>
-                 </CardContent>
-               </Card>
-
+               <div className="lg:col-span-2">
+                 <PublishTenderForm
+                   awaitingJobs={wfJobs.filter((j) => j.status === 'AWAITING_PUBLISH')}
+                   editTender={isEditingTender}
+                   onCancelEdit={() => setIsEditingTender(null)}
+                   onPublished={() => {
+                     setIsEditingTender(null);
+                     fetchLiveOperationsData(email);
+                   }}
+                 />
+               </div>
                <Card className="lg:col-span-3 tender-shadow">
                  <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                     <div>
@@ -2022,7 +1606,7 @@ return (
 
           {/* 🚀 RESTORED: GUEST QUERIES AND SLA TRACKER */}
           <TabsContent value="ops-alerts" className="w-full"><OpsAlerts roster={teamMembers} /></TabsContent>
-          <TabsContent value="chat" className="w-full min-h-[560px]"><StaffChat selfId={empData.id} roster={teamMembers} /></TabsContent>
+          <TabsContent value="chat" className="w-full overflow-hidden"><StaffChat selfId={empData.id} roster={teamMembers} /></TabsContent>
           <TabsContent value="sla" className="w-full space-y-6">
             
             {/* GUEST QUERIES */}
@@ -2229,94 +1813,6 @@ return (
         </DialogContent>
       </Dialog>
 
-      {/* ========== AI DRAFT REVIEW & PUBLISH ========== */}
-      <Dialog open={!!reviewDraft} onOpenChange={(val) => { if (!val && !publishingDraft) setReviewDraft(null); }}>
-        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto border-0 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-purple-600"/> Review AI-Extracted Tender
-            </DialogTitle>
-            <DialogDescription>
-              Verify every field against the source document before publishing. AI extraction can be wrong — you are the final check.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg p-3">
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wide">Source document</p>
-                <p className="text-sm font-semibold text-[#0A2647] truncate">{reviewDraft?.pdf_filename || 'draft.pdf'}</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => reviewDraft && window.open(`/api/ai/drafts/${reviewDraft._id}/file`, '_blank')}
-                className="shrink-0 border-blue-200 text-blue-700 hover:bg-blue-50"
-              >
-                <Eye className="w-4 h-4 mr-1.5"/> View PDF
-              </Button>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
-                <Input value={draftForm.title} onChange={e => setDraftForm({ ...draftForm, title: e.target.value })} className="bg-white h-10"/>
-              </div>
-              <div>
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number *</Label>
-                <Input value={draftForm.bid_no} onChange={e => setDraftForm({ ...draftForm, bid_no: e.target.value })} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10"/>
-              </div>
-              <div>
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department *</Label>
-                <Input value={draftForm.department} onChange={e => setDraftForm({ ...draftForm, department: e.target.value })} className="bg-white h-10"/>
-              </div>
-              <div>
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Last Date *</Label>
-                <Input type="date" value={draftForm.last_date} onChange={e => setDraftForm({ ...draftForm, last_date: e.target.value })} className="bg-white h-10 text-sm"/>
-              </div>
-              <div>
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">District</Label>
-                <Select value={draftForm.district} onValueChange={val => setDraftForm({ ...draftForm, district: val })}>
-                  <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select district"/></SelectTrigger>
-                  <SelectContent className="max-h-[240px]">
-                    {DISTRICTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Category</Label>
-                <Select value={draftForm.category} onValueChange={val => setDraftForm({ ...draftForm, category: val })}>
-                  <SelectTrigger className="bg-white h-10"><SelectValue/></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Product">Product</SelectItem>
-                    <SelectItem value="Service">Service</SelectItem>
-                    <SelectItem value="Works">Works</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">EMD Amount (₹)</Label>
-                <Input value={draftForm.emd_amount} onChange={e => setDraftForm({ ...draftForm, emd_amount: e.target.value })} placeholder="e.g. 50000" className="bg-white h-10"/>
-              </div>
-              <div className="sm:col-span-2">
-                <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Supply / Tender Details</Label>
-                <Textarea value={draftForm.supply_details} onChange={e => setDraftForm({ ...draftForm, supply_details: e.target.value })} rows={3} placeholder="Any extra notes shown to clients..." className="bg-white text-sm"/>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="mt-5 gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setReviewDraft(null)} disabled={publishingDraft}>Cancel</Button>
-            <Button type="button" onClick={publishDraftToLive} disabled={publishingDraft} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-              {publishingDraft
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Publishing...</>
-                : <><CheckCircle2 className="w-4 h-4 mr-2"/> Publish to Live</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={lossModalOpen} onOpenChange={setLossModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -2338,13 +1834,6 @@ return (
         client={stationeryClient}
         open={!!stationeryClient}
         onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
-      />
-
-      <GeminiWorkspace
-        tenderId={isEditingTender || null}
-        tenderLabel={isEditingTender ? (tenderForm.title || tenderForm.bid_no || 'this tender') : null}
-        clients={approvedClients}
-        tenders={publicTenders}
       />
     </div>
   );

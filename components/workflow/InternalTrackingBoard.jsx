@@ -108,11 +108,6 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           }
           if (desk === 'employee' && job.status === 'MAKER_PREP') {
             actions.push({
-              label: 'Upload file',
-              icon: 'upload',
-              onClick: () => document.getElementById(`prep-${job._id}`)?.click(),
-            });
-            actions.push({
               label: 'Send to TL',
               variant: 'default',
               disabled: (job.prep_files || []).length < 2,
@@ -178,24 +173,54 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                 <div className="mt-2 h-[420px]"><StaffChat selfId={chatSelfId} roster={roster} jobId={job._id} /></div>
               )}
               {desk === 'employee' && job.status === 'MAKER_PREP' && (
-                <input
-                  id={`prep-${job._id}`}
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const form = new FormData();
-                    form.append('file', file);
-                    form.append('slot', `slot-${Date.now()}`);
-                    form.append('kind', 'final');
-                    run(async () => {
-                      await workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
-                      toast.success('File stored. Re-upload of a bounced slot deletes the old R2 object.');
-                    });
-                    e.target.value = '';
-                  }}
-                />
+                <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                  <p className="text-[11px] font-black text-[#0A2647] uppercase tracking-wide">Additional Documentations</p>
+                  <p className="text-[10px] text-slate-500">
+                    Upload at least 2 files before Send to TL. {(job.prep_files || []).length} stored.
+                  </p>
+                  {(job.prep_files || []).length > 0 && (
+                    <ul className="space-y-1">
+                      {(job.prep_files || []).map((f, i) => (
+                        <li key={f.slot || i} className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="truncate min-w-0">{f.name || f.slot || `File ${i + 1}`}</span>
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => openFile(job, f.slot)}>
+                            View
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <label className={`flex items-center justify-center h-9 rounded-md border border-dashed border-emerald-300 bg-emerald-50 text-[11px] font-bold text-emerald-800 cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
+                    Add files
+                    <input
+                      type="file"
+                      multiple
+                      className="sr-only"
+                      disabled={busy}
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        e.target.value = '';
+                        if (!files.length) return;
+                        setBusy(true);
+                        try {
+                          for (const file of files) {
+                            const form = new FormData();
+                            form.append('file', file);
+                            form.append('slot', `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+                            form.append('kind', 'final');
+                            await workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
+                          }
+                          toast.success(`${files.length} file${files.length === 1 ? '' : 's'} stored.`);
+                          onRefresh?.();
+                        } catch (err) {
+                          toast.error(err.message);
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
               )}
             </div>
           );

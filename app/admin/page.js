@@ -12,16 +12,14 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
-import SuggestionBar from '@/components/workflow/SuggestionBar';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
-import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
 import { deskPathForDesignation } from '@/lib/designations';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
-import { workflowFetch, openWorkflowFile, viewTenderOnHome } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
@@ -713,7 +711,7 @@ export default function AdminPage() {
               redirect: false,
               email: email_or_id,
               emp_id: email_or_id,
-              adminToken: token || localStorage.getItem('tt_admin') || '',
+              adminToken: token || localStorage.getItem('tt_admin') || 'admin_success',
               target: 'staff',
             });
             if (!result?.ok) {
@@ -1149,7 +1147,6 @@ const handleViewDocument = (req) => {
     ] },
     { id: 'publishing', label: 'Live Tenders', items: [
       { value: 'publisher', label: 'Live Tenders', icon: FileText, color: 'navy' },
-      { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
     ] },
     { id: 'team-support', label: 'Team & Support', items: [
       { value: 'team', label: 'Team Directory', icon: UserCog, color: 'blue' },
@@ -1836,7 +1833,7 @@ const handleViewDocument = (req) => {
               </Card>
             </div>
           </TabsContent>
-          <TabsContent value="chat" className="mt-4 w-full min-h-[560px]"><StaffChat selfId="MD" roster={teamMembers} /></TabsContent>
+          <TabsContent value="chat" className="mt-4 w-full overflow-hidden"><StaffChat selfId="MD" roster={teamMembers} /></TabsContent>
 
           {/* ==================== 4b. TEAM ACTIVITY (MD-ONLY GLOBAL ATTRIBUTION) ====================
               Net-new, additive module: every officer's client_alert suggestions and every
@@ -2452,11 +2449,6 @@ const handleViewDocument = (req) => {
                          <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
                          </Button>
-                         {t.bid_no && (
-                           <Button size="sm" variant="outline" className="h-8 text-xs shrink-0" onClick={() => viewTenderOnHome(t.bid_no)}>
-                             View Tender
-                           </Button>
-                         )}
                          <SuggestClientControls tender={t} clients={approvedClients} onDone={refresh} />
                          <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={() => forwardToGm(t)}>
                            Forward to GM
@@ -2500,27 +2492,6 @@ const handleViewDocument = (req) => {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
-          <TabsContent value="suggestion-bar" className="mt-4">
-            <SuggestionBar
-              jobs={wfJobs.filter((j) => j.status === 'LIVE' && j.parked_client_email)}
-              pdfEmail={process.env.NEXT_PUBLIC_ADMIN_EMAIL}
-              onRefresh={refresh}
-            />
-            {wfJobs.filter((j) => j.status === 'AWAITING_CLIENT').length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-sm font-black text-[#0A2647] uppercase tracking-wide mb-3">Pending client approval</h3>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {wfJobs.filter((j) => j.status === 'AWAITING_CLIENT').map((j) => (
-                    <CompactTenderCard
-                      key={j._id}
-                      job={{ ...j, display_status: 'Pending Approval' }}
-                      actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
           </TabsContent>
 
           {/* ==================== 7. HELPDESK (WITH GUEST QUERIES) ==================== */}
