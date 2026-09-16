@@ -1,74 +1,18 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { getToken } from 'next-auth/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
-import { DESIGNATIONS, normalizeDesignation } from '@/lib/designations';
+import { normalizeDesignation } from '@/lib/designations';
+import {
+  callerCanBypass,
+  findEmployeeForBypass,
+  impersonateCaller,
+  staffJwtFromEmployee,
+} from '@/lib/impersonate';
 
 function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function staffJwtFromEmployee(emp) {
-  const mdEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  const isMD = Boolean(mdEmail) && String(emp.email || '').toLowerCase() === mdEmail;
-  return {
-    id: emp._id.toString(),
-    email: emp.email,
-    name: emp.name,
-    emp_id: emp.emp_id,
-    role: isMD ? 'MD' : 'EMPLOYEE',
-    designation: isMD ? null : normalizeDesignation(emp.designation),
-    team_id: isMD ? null : (emp.team_id || null),
-    is_bypass: true,
-  };
-}
-
-async function impersonateCaller(credentials, req) {
-  const provided = String(credentials?.adminToken || '').trim();
-  const adminToken = String(process.env.ADMIN_TOKEN || '').trim();
-  if (provided && (provided === 'admin_success' || (adminToken && provided === adminToken))) {
-    return { kind: 'admin_token' };
-  }
-  try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    if (!token) return null;
-    if (token.role === 'MD') return { kind: 'MD' };
-    const designation = token.designation ? normalizeDesignation(token.designation) : null;
-    if (designation === DESIGNATIONS.GM) return { kind: 'GM' };
-    if (designation === DESIGNATIONS.DOC_TEAM_TL) return { kind: 'TL' };
-  } catch (err) {
-    console.warn('[impersonate] caller session decode failed:', err?.message || err);
-  }
-  return null;
-}
-
-function callerCanBypass(caller, emp) {
-  const dest = normalizeDesignation(emp.designation);
-  if (caller.kind === 'admin_token' || caller.kind === 'MD') return true;
-  if (caller.kind === 'GM') return dest === DESIGNATIONS.DOC_TEAM_TL || dest === DESIGNATIONS.DOC_TEAM_MEMBER;
-  if (caller.kind === 'TL') return dest === DESIGNATIONS.DOC_TEAM_MEMBER;
-  return false;
-}
-
-async function findEmployeeForBypass(db, credentials) {
-  const empId = String(credentials?.emp_id || '').trim();
-  const searchStr = String(credentials?.email || empId || '').trim();
-  const or = [];
-  if (searchStr) {
-    or.push({ email: searchStr.toLowerCase() });
-    or.push({ emp_id: new RegExp(`^${escapeRegex(searchStr)}$`, 'i') });
-  }
-  if (empId && empId.toLowerCase() !== searchStr.toLowerCase()) {
-    or.push({ emp_id: new RegExp(`^${escapeRegex(empId)}$`, 'i') });
-  }
-  if (!or.length) return null;
-  return db.collection('employees').findOne({
-    $or: or,
-    deleted: { $ne: true },
-    active: { $ne: false },
-  });
 }
 
 export const runtime = 'nodejs';
@@ -242,10 +186,11 @@ const handler = NextAuth({
     
     // SEND JWT FLAGS TO THE FRONTEND SESSION (useSession)
     async session({ session, token }) {
-      if (token?.email) {
-         session.user.email = token.email;
-         session.user.id = token.id;
-         session.user.name = token.name;
+      if (token) {
+         session.user = session.user || {};
+         session.user.email = token.email || session.user.email;
+         session.user.id = token.id || token.sub || session.user.id;
+         session.user.name = token.name || session.user.name;
          session.user.client_id = token.client_id || null;
          session.user.emp_id = token.emp_id || null;
          session.user.role = token.role || null;

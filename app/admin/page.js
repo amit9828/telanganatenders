@@ -1,6 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { signIn } from 'next-auth/react'; 
+import { useEffect, useRef, useState } from 'react'; 
 import BrandLogo from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
@@ -707,20 +706,27 @@ export default function AdminPage() {
             setTimeout(() => { window.open('/client', '_blank'); }, 800);
         } else if (type === 'employee') {
             localStorage.setItem('tt_emp_email', email_or_id);
-            const result = await signIn('impersonate', {
-              redirect: false,
-              email: email_or_id,
-              emp_id: email_or_id,
-              adminToken: token || localStorage.getItem('tt_admin') || 'admin_success',
-              target: 'staff',
+            const res = await fetch('/api/staff-bypass', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token || localStorage.getItem('tt_admin') || 'admin_success'}`,
+              },
+              body: JSON.stringify({
+                email: email_or_id,
+                emp_id: email_or_id,
+                adminToken: token || localStorage.getItem('tt_admin') || 'admin_success',
+                target: 'staff',
+              }),
             });
-            if (!result?.ok) {
-              toast.error('Please sign in with a staff account.', { id: toastId });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) {
+              toast.error(data.error || 'Please sign in with a staff account.', { id: toastId });
               return;
             }
-            const path = deskPathForDesignation(designation);
             toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-            window.location.assign(path);
+            window.location.assign(data.path || deskPathForDesignation(designation));
         }
     } catch (e) {
         toast.error("Error during authentication bypass.", { id: toastId });

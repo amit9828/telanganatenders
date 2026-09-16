@@ -8,10 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { signIn } from 'next-auth/react';
 import { Eye, EyeOff, Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { DESIGNATION_LABELS, deskPathForDesignation } from '@/lib/designations';
-import { workflowFetch } from '@/components/workflow/api';
+import { workflowFetch, staffHeaders } from '@/components/workflow/api';
 
 function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   const [showPw, setShowPw] = useState(false);
@@ -249,20 +248,29 @@ export async function openStaffDesk(member) {
 
   const path = deskPathForDesignation(member.designation);
   if (email) localStorage.setItem('tt_emp_email', email);
+  const onAdminDesk = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
+  const adminToken = localStorage.getItem('tt_admin') || (onAdminDesk ? 'admin_success' : '');
 
-  const result = await signIn('impersonate', {
-    redirect: false,
-    email: email || empId,
-    emp_id: empId,
-    adminToken: localStorage.getItem('tt_admin') || 'admin_success',
-    target: 'staff',
-  });
-
-  if (!result?.ok) {
-    toast.error('Please sign in with a staff account.');
-    return;
+  try {
+    const res = await fetch('/api/staff-bypass', {
+      method: 'POST',
+      credentials: 'include',
+      headers: staffHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        email: email || empId,
+        emp_id: empId,
+        adminToken,
+        target: 'staff',
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      toast.error(data.error || 'Please sign in with a staff account.');
+      return;
+    }
+    toast.success('Bypass successful. Opening live dashboard…');
+    window.location.assign(data.path || path);
+  } catch (err) {
+    toast.error(err.message || 'Please sign in with a staff account.');
   }
-
-  toast.success('Bypass successful. Opening live dashboard…');
-  window.location.assign(path);
 }
