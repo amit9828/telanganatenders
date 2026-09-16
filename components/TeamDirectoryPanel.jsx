@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
-import { DESIGNATION_LABELS, deskPathForStaff, loginAsLabel } from '@/lib/designations';
+import { DESIGNATION_LABELS, DESIGNATIONS, deskPathForStaff, loginAsLabel, matchDesignation } from '@/lib/designations';
 import { workflowFetch } from '@/components/workflow/api';
+import { openStaffBypass } from '@/lib/tab-handoff';
 
 function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   const [showPw, setShowPw] = useState(false);
@@ -110,7 +111,7 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   );
 }
 
-export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate }) {
+export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate, actorEmpId = '' }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', designation: actorDesk === 'md' ? 'GM' : 'DOC_TEAM_TL', team_id: '' });
   const tls = team.filter((t) => t.designation === 'DOC_TEAM_TL');
   const gms = team.filter((t) => t.designation === 'GM');
@@ -140,9 +141,16 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
   };
 
   const canBypass = (member) => {
+    const role = matchDesignation(member?.designation) || matchDesignation(member?.role);
     if (actorDesk === 'md') return true;
-    if (actorDesk === 'gm') return member.designation === 'DOC_TEAM_TL' || member.designation === 'DOC_TEAM_MEMBER';
-    if (actorDesk === 'tl') return member.designation === 'DOC_TEAM_MEMBER';
+    if (actorDesk === 'gm') {
+      return role === DESIGNATIONS.DOC_TEAM_TL || role === DESIGNATIONS.DOC_TEAM_MEMBER;
+    }
+    if (actorDesk === 'tl') {
+      return role === DESIGNATIONS.DOC_TEAM_MEMBER
+        && String(member?.team_id || '') === String(actorEmpId || '')
+        && Boolean(actorEmpId);
+    }
     return false;
   };
 
@@ -247,9 +255,6 @@ export function openStaffDesk(member) {
   }
 
   const path = deskPathForStaff(member);
-  localStorage.setItem('tt_emp_email', email || empId);
   toast.success('Opening live dashboard…');
-  setTimeout(() => {
-    window.open(path, '_blank');
-  }, 800);
+  openStaffBypass(path, email || empId);
 }

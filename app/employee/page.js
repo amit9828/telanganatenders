@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
-import BrandLogo from '@/components/BrandLogo';
+import { BrandMark } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
@@ -14,6 +14,8 @@ import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { liveTendersOnly } from '@/lib/tender-sort';
+import { staffHeaders } from '@/components/workflow/api';
+import { consumeStaffBypass } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -27,8 +29,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
-  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, MonitorPlay, Loader2,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, LogIn, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
+  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, Loader2,
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -105,9 +107,13 @@ export default function EmployeeDashboard() {
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
-    const e = typeof window !== 'undefined' ? localStorage.getItem('tt_emp_email') : 'employee@tgtenders.in';
-    const finalEmail = e || 'employee@tgtenders.in';
+    const e = typeof window !== 'undefined' ? consumeStaffBypass() : '';
+    const finalEmail = e;
     setEmail(finalEmail);
+    if (!finalEmail) {
+      setLoading(false);
+      return undefined;
+    }
     
     // అటెండెన్స్ లాగ్
     fetch('/api/employee/activity', {
@@ -136,18 +142,18 @@ export default function EmployeeDashboard() {
     try {
       // 🚀 PERF FIX: All endpoints fire in a single Promise.all.
       const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, opDocsRes, wfRes] = await Promise.all([
-        fetch(`/api/dispatches?t=${Date.now()}`), 
-        fetch(`/api/bids?t=${Date.now()}`), 
-        fetch(`/api/gov-officers?t=${Date.now()}`),
-        fetch(`/api/users/approved?t=${Date.now()}`), 
-        fetch(`/api/tenders?t=${Date.now()}`), 
-        fetch(`/api/tickets?t=${Date.now()}`),
-        fetch(`/api/users/pending?t=${Date.now()}`),
-        fetch(`/api/client-requests?t=${Date.now()}`),
-        fetch(`/api/guest-queries?t=${Date.now()}`),
-        fetch(`/api/employees?t=${Date.now()}`),
-        fetch(`/api/operator/docs?t=${Date.now()}`),
-        fetch(`/api/workflow/queue?t=${Date.now()}`, { credentials: 'include' })
+        fetch(`/api/dispatches?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
+        fetch(`/api/bids?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
+        fetch(`/api/gov-officers?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
+        fetch(`/api/users/approved?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
+        fetch(`/api/tenders?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
+        fetch(`/api/tickets?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
+        fetch(`/api/users/pending?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
+        fetch(`/api/client-requests?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
+        fetch(`/api/guest-queries?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
+        fetch(`/api/employees?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
+        fetch(`/api/operator/docs?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
+        fetch(`/api/workflow/queue?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() })
       ]);
 
       if (opDocsRes.ok) {
@@ -762,21 +768,6 @@ export default function EmployeeDashboard() {
     } catch (e) { toast.error("Failed to escalate."); }
   };
 
-  // 🚀 FIX: LocalStorage Injection for Instant Employee Bypass
-  const handleImpersonate = (targetEmail) => {
-    if (!targetEmail) return toast.error('Enter a valid client email');
-    const toastId = toast.loading(`Connecting to ${targetEmail}'s portal...`);
-
-    try {
-      localStorage.setItem('tt_email', targetEmail);
-      toast.success("Successfully Connected!", { id: toastId });
-      setTimeout(() => {
-          window.open('/client', '_blank');
-      }, 800);
-    } catch (e) { 
-      toast.error("Error connecting to client portal.", { id: toastId }); 
-    }
-  };
   const logActivity = (action, details) => {
     fetch('/api/employee/activity', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -847,13 +838,13 @@ return (
       <header className="navy-gradient border-b border-white/10 sticky top-0 z-30 shadow-lg text-white">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="bg-white/10 p-2 rounded-xl ring-1 ring-white/10"><Briefcase className="w-5 h-5 text-emerald-400" /></div>
              <div>
                <h1 className="font-bold text-lg leading-tight">Operations Desk</h1>
                <p className="text-[10px] text-emerald-300 font-mono tracking-widest">{empData.id} • {email}</p>
              </div>
           </div>
           <div className="flex gap-3 items-center">
+             <BrandMark size="md" />
              <Badge className="bg-emerald-500/90 border border-emerald-400/40 shadow-sm hidden sm:inline-flex">Session Active</Badge>
              <a href="/"><Button variant="outline" size="sm" className="border-white/20 text-slate-300 hover:text-white hover:bg-white/10 transition-all duration-200"><ArrowLeft className="w-4 h-4 mr-2"/> Exit System</Button></a>
           </div>
@@ -1317,9 +1308,6 @@ return (
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
                                 ) : null}
-                                <Button size="sm" onClick={() => handleImpersonate(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
-                                   <LogIn className="w-4 h-4 mr-2" /> Login as Client
-                                </Button>
                              </div>
                           </div>
                        )})}
@@ -1679,7 +1667,6 @@ return (
                                    <Button onClick={() => submitTicketReply(ticket._id)} className="bg-[#16a34a] hover:bg-[#15803d] shrink-0 h-9"><CheckCircle2 className="w-4 h-4 mr-1"/>Resolve</Button>
                                 </div>
                                 <div className="flex gap-2">
-                                   <Button onClick={() => handleImpersonate(ticket.client_email)} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-1 h-9"><MonitorPlay className="w-4 h-4 mr-1"/> Login & Fix</Button>
                                    <Button onClick={() => escalateToMD(ticket)} variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 flex-1 h-9"><ShieldCheck className="w-4 h-4 mr-1"/> Escalate to MD</Button>
                                 </div>
                              </div>

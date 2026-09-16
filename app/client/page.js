@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import { liveTendersOnly } from '@/lib/tender-sort';
+import { consumeClientBypass, clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -137,22 +138,25 @@ export default function ClientDashboard() {
 
   useEffect(() => {
     setIsMounted(true);
-    if (status === "loading") return; 
+    if (status === "loading") return;
 
-    const e = session?.user?.email || (typeof window !== 'undefined' ? localStorage.getItem('tt_email') : '') || 'client@tgtenders.in';
+    const bypassIdent = consumeClientBypass();
+    const sessionIsClient = Boolean(
+      session?.user?.email
+      && !session?.user?.emp_id
+      && session?.user?.role !== 'MD'
+      && session?.user?.role !== 'EMPLOYEE'
+    );
+    const e = bypassIdent || (sessionIsClient ? String(session.user.email).toLowerCase() : '') || clientSessionIdent();
     setEmail(e);
+    setIsStaffPreview(Boolean(bypassIdent) && !sessionIsClient);
+    if (sessionIsClient && session?.user?.email) rememberRealClientIdent(session.user.email);
 
-    // 🚀 RBAC: see isStaffPreview declaration above — MD carries `tt_admin`,
-    // an employee carries `tt_emp_email`; a genuine client has neither.
-    if (typeof window !== 'undefined') {
-      setIsStaffPreview(!!(localStorage.getItem('tt_admin') || localStorage.getItem('tt_emp_email')));
-    }
     fetchPublicTenders();
-    fetchClientData(e); 
-    
+    if (e) fetchClientData(e);
+    else setLoading(false);
+
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
-    // The generator's catalogue is served by the API so the dropdown can never offer a
-    // document type the backend would reject.
     fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
   }, [session, status]);
 
@@ -182,7 +186,11 @@ export default function ClientDashboard() {
     const syncLiveData = async () => {
        try {
          // t=Date.now() వాడటం వల్ల ఎప్పుడూ కొత్త డేటా వస్తుంది, పాత డేటా స్టక్ అవ్వదు
-         const r = await fetch(`/api/me?email=${encodeURIComponent(email)}&t=${Date.now()}`);
+         const r = await fetch(`/api/me?email=${encodeURIComponent(email)}&t=${Date.now()}`, {
+           credentials: 'include',
+           headers: clientHeaders(),
+         });
+         if (r.status === 404) return;
          if(r.ok) {
            const d = await r.json();
            
@@ -192,7 +200,7 @@ export default function ClientDashboard() {
            if (d.onboarding_complete) setLocalOnboardComplete(true);
 
            setUserData(d);
-           setClientId(d.client_id || `CLI-${email.substring(0,4).toUpperCase()}X`);
+           setClientId(d.client_id || '');
 
            if(d.stats) setClientStats((prev) => ({ ...prev, ...d.stats, revenue: Number(d.stats.revenue) || 0 }));
            if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
@@ -230,8 +238,20 @@ export default function ClientDashboard() {
   }, [email, status]);
 
   const fetchClientData = async (userEmail) => {
+    if (!userEmail) {
+      setLoading(false);
+      return;
+    }
     try {
-      const r = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`);
+      const r = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`, {
+        credentials: 'include',
+        headers: clientHeaders(),
+      });
+      if (r.status === 404) {
+        setLoading(false);
+        toast.error('Client not found.');
+        return;
+      }
       if(r.ok) {
         const d = await r.json();
         
@@ -241,7 +261,7 @@ export default function ClientDashboard() {
         if (d.onboarding_complete) setLocalOnboardComplete(true);
 
         setUserData(d);
-        setClientId(d.client_id || `CLI-${userEmail.substring(0,4).toUpperCase()}X`);
+        setClientId(d.client_id || '');
 
         if(d.stats) setClientStats((prev) => ({ ...prev, ...d.stats, revenue: Number(d.stats.revenue) || 0 }));
         if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
@@ -250,7 +270,10 @@ export default function ClientDashboard() {
             setRecommendedTenders(d.action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed'));
         }
         try {
-          const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(userEmail)}`, { credentials: 'include' });
+          const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(userEmail)}`, {
+            credentials: 'include',
+            headers: clientHeaders(),
+          });
           if (wf.ok) {
             const wfd = await wf.json();
             setWorkflowJobs(wfd.jobs || []);

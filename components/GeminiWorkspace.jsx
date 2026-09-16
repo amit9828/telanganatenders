@@ -9,18 +9,10 @@ import { classifyWorkspacePrompt, INTENT, resolveClient } from '@/lib/workspace-
 import { markdownToPlainText, markdownToSafeHtml } from '@/lib/markdown-lite';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { LANGUAGE_OPTIONS, LANGUAGES } from '@/lib/language';
+import { staffHeaders } from '@/components/workflow/api';
 import {
   Bot, Copy, FileText, Library, Loader2, Mic, MicOff, Printer, Send, Sparkles, Volume2, VolumeX, X,
 } from 'lucide-react';
-
-function staffHeaders(extra = {}) {
-  const headers = { ...extra };
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('tt_admin');
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
 
 function printDocumentHtml(html) {
   if (typeof document === 'undefined') return;
