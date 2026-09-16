@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react'; 
+import { useSession } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
@@ -18,7 +19,7 @@ import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPan
 import { deskPathForDesignation } from '@/lib/designations';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
-import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile, restoreBypassSession } from '@/components/workflow/api';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
@@ -107,6 +108,9 @@ function AdminDashboardSkeleton() {
 }
 
 export default function AdminPage() {
+  const { data: session, status: sessionStatus } = useSession();
+  const isMdSession = session?.user?.role === 'MD';
+  const canReturnFromBypass = Boolean(session?.user?.is_bypass && session?.user?.originalRole);
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -209,7 +213,7 @@ export default function AdminPage() {
 
   // 🚀 FIX: Admin Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
-    if (token) {
+    if (token || isMdSession) {
       refresh();
       // 🚀 FIX: Poll every 60s (not 10s) and only while this tab is visible, so we
       // stop hammering the database when the admin is on a different browser tab.
@@ -221,7 +225,7 @@ export default function AdminPage() {
       return () => clearInterval(interval);
     }
     // eslint-disable-next-line
-  }, [token]);
+  }, [token, isMdSession]);
 
   // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
@@ -229,7 +233,7 @@ export default function AdminPage() {
   // 🚀 Lazy-load the Team Activity module only when its tab opens — same
   // "independent of the main refresh cycle" pattern as refreshLiveFeed().
   useEffect(() => {
-    if (activeTab === 'team-activity' && token) {
+    if (activeTab === 'team-activity' && (token || isMdSession)) {
       fetchTeamActivity();
     }
     // eslint-disable-next-line
@@ -240,10 +244,11 @@ export default function AdminPage() {
   // used to throw inside Promise.all and take the ENTIRE dashboard down to zeros.
   // safeFetch isolates each request so a single failure never crashes the rest.
   const refresh = async () => {
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
     const safeFetch = async (url) => {
       try {
-        const res = await fetch(url, { headers });
+        const res = await fetch(url, { credentials: 'include', headers });
         if (!res.ok) return { ok: false, status: res.status };
         return { ok: true, data: await res.json() };
       } catch (e) {
@@ -369,13 +374,14 @@ export default function AdminPage() {
   // Promise.all so every employee's suggestions/tracking don't get pulled on every
   // 60s poll; only fetched when the "Team Activity" tab is actually open.
   const fetchTeamActivity = async (authToken = token) => {
-    if (!authToken) return;
+    if (!authToken && !isMdSession) return;
     setTeamActivityLoading(true);
     try {
-      const headers = { Authorization: `Bearer ${authToken}` };
+      const headers = {};
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
       const [sugRes, trkRes] = await Promise.all([
-        fetch(`/api/dispatches/suggestions?t=${Date.now()}`, { headers }),
-        fetch(`/api/bids/tracking?t=${Date.now()}`, { headers }),
+        fetch(`/api/dispatches/suggestions?t=${Date.now()}`, { credentials: 'include', headers }),
+        fetch(`/api/bids/tracking?t=${Date.now()}`, { credentials: 'include', headers }),
       ]);
       const sugData = await sugRes.json().catch(() => null);
       const trkData = await trkRes.json().catch(() => null);
@@ -398,6 +404,14 @@ export default function AdminPage() {
       localStorage.clear();
       sessionStorage.clear();
       window.location.href = '/';
+    }
+  };
+
+  const handleReturnFromBypass = async () => {
+    try {
+      await restoreBypassSession();
+    } catch (err) {
+      toast.error(err.message || 'Could not restore the MD session.');
     }
   };
 
@@ -726,7 +740,7 @@ export default function AdminPage() {
               return;
             }
             toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-            window.location.assign(data.path || deskPathForDesignation(designation));
+            window.open(data.path || deskPathForDesignation(designation), '_blank', 'noopener,noreferrer');
         }
     } catch (e) {
         toast.error("Error during authentication bypass.", { id: toastId });
@@ -1105,7 +1119,8 @@ const handleViewDocument = (req) => {
   // sense of what's about to load. This skeleton mirrors the real header/stat-card/
   // tab layout below, so the dashboard feels instant and never "pops" into place.
   if (authChecking) return <AdminDashboardSkeleton />;
-  if (!token) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+  if (!token && sessionStatus === 'loading') return <AdminDashboardSkeleton />;
+  if (!token && !isMdSession) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
@@ -1178,6 +1193,11 @@ const handleViewDocument = (req) => {
              </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
+            {canReturnFromBypass && (
+              <Button variant="outline" size="sm" onClick={handleReturnFromBypass} className="text-xs sm:text-sm bg-amber-500/15 border-amber-300/40 text-amber-100 hover:bg-amber-500/25">
+                Return to Admin/MD
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-white/20 text-slate-200 hover:text-white hover:bg-white/10 transition-all duration-200">View Public Site</Button>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-300 hover:text-red-200 hover:bg-red-500/15 transition-all duration-200"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>

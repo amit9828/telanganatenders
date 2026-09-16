@@ -351,14 +351,22 @@ export default function App() {
       if (res?.error) {
          toast.error("Invalid Credentials. Please check your ID and Password.");
       } else {
-         localStorage.setItem('tt_emp_email', empEmail.toLowerCase()); 
-         localStorage.setItem('tt_role', 'employee');
          let desk = '/employee';
          try {
            const sessRes = await fetch('/api/auth/session');
            const sess = await sessRes.json();
-           if (sess?.user?.designation) desk = deskPathForDesignation(sess.user.designation);
-         } catch (_) { /* fall back to employee desk */ }
+           if (sess?.user?.role === 'MD') {
+             desk = '/admin';
+             localStorage.setItem('tt_role', 'md');
+           } else {
+             localStorage.setItem('tt_emp_email', empEmail.toLowerCase());
+             localStorage.setItem('tt_role', 'employee');
+             if (sess?.user?.designation) desk = deskPathForDesignation(sess.user.designation);
+           }
+         } catch (_) {
+           localStorage.setItem('tt_emp_email', empEmail.toLowerCase());
+           localStorage.setItem('tt_role', 'employee');
+         }
          window.open(desk, '_blank');
          setEmpModalOpen(false);
       }

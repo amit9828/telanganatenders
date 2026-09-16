@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { useSession, signIn } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
@@ -10,6 +10,7 @@ import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import { restoreBypassSession } from '@/components/workflow/api';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
@@ -41,6 +42,8 @@ const BORDER_COLORS = [
 ];
 
 export default function EmployeeDashboard() {
+  const { data: session } = useSession();
+  const canReturnFromBypass = Boolean(session?.user?.is_bypass && session?.user?.originalRole);
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState('kanban');
   const [email, setEmail] = useState('');
@@ -855,7 +858,19 @@ return (
           </div>
           <div className="flex gap-3 items-center">
              <Badge className="bg-emerald-500/90 border border-emerald-400/40 shadow-sm hidden sm:inline-flex">Session Active</Badge>
-             <a href="/"><Button variant="outline" size="sm" className="border-white/20 text-slate-300 hover:text-white hover:bg-white/10 transition-all duration-200"><ArrowLeft className="w-4 h-4 mr-2"/> Exit System</Button></a>
+             {canReturnFromBypass ? (
+               <Button variant="outline" size="sm" className="border-amber-300/40 text-amber-100 hover:bg-amber-500/20" onClick={async () => {
+                 try {
+                   await restoreBypassSession();
+                 } catch (err) {
+                   toast.error(err.message || 'Could not restore the original session.');
+                 }
+               }}>
+                 <ArrowLeft className="w-4 h-4 mr-2"/> Return to Admin/MD
+               </Button>
+             ) : (
+               <a href="/"><Button variant="outline" size="sm" className="border-white/20 text-slate-300 hover:text-white hover:bg-white/10 transition-all duration-200"><ArrowLeft className="w-4 h-4 mr-2"/> Exit System</Button></a>
+             )}
           </div>
         </div>
       </header>

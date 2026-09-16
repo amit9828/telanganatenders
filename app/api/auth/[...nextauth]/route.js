@@ -3,11 +3,12 @@ import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
-import { normalizeDesignation } from '@/lib/designations';
 import {
   callerCanBypass,
   findEmployeeForBypass,
   impersonateCaller,
+  originalIdentityFromCaller,
+  pickOriginalIdentity,
   staffJwtFromEmployee,
 } from '@/lib/impersonate';
 
@@ -54,21 +55,7 @@ const handler = NextAuth({
         });
         
         if (employee) {
-          // 🚀 RBAC: binary access role used for data-isolation filters (Bids /
-          // Suggestions). Independent of `employee.role`, which stays a job-title
-          // label ("Tender Officer" / "Data Entry Emp" / "Manager (MD)") used
-          // elsewhere and is left untouched.
-          const mdEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-          const isMD = Boolean(mdEmail) && String(employee.email || '').toLowerCase() === mdEmail;
-          return { 
-             id: employee._id.toString(), 
-             email: employee.email, 
-             name: employee.name, 
-             emp_id: employee.emp_id, 
-             role: isMD ? 'MD' : 'EMPLOYEE',
-             designation: isMD ? null : normalizeDesignation(employee.designation),
-             team_id: isMD ? null : (employee.team_id || null),
-          };
+          return staffJwtFromEmployee(employee, { isBypass: false });
         }
         return null; // Invalid credentials
       }
@@ -88,6 +75,13 @@ const handler = NextAuth({
         const caller = await impersonateCaller(credentials, req);
         if (!caller) return null;
 
+        let currentToken = null;
+        try {
+          const { getStaffToken } = await import('@/lib/staff-auth');
+          currentToken = await getStaffToken(req);
+        } catch (_) { /* caller snapshot is optional */ }
+        const original = originalIdentityFromCaller(currentToken, caller.kind);
+
         const db = await getDb();
         const isStaffTarget = String(credentials?.target || '').toLowerCase() === 'staff'
           || Boolean(String(credentials?.emp_id || '').trim());
@@ -95,7 +89,7 @@ const handler = NextAuth({
         if (isStaffTarget) {
           const emp = await findEmployeeForBypass(db, credentials);
           if (!emp || !callerCanBypass(caller, emp)) return null;
-          return staffJwtFromEmployee(emp);
+          return staffJwtFromEmployee(emp, { isBypass: true, original });
         }
 
         const searchStr = String(credentials?.email || '').trim();
@@ -121,7 +115,9 @@ const handler = NextAuth({
         }
 
         const emp = await findEmployeeForBypass(db, credentials);
-        if (emp && callerCanBypass(caller, emp)) return staffJwtFromEmployee(emp);
+        if (emp && callerCanBypass(caller, emp)) {
+          return staffJwtFromEmployee(emp, { isBypass: true, original });
+        }
 
         return null;
       },
@@ -170,6 +166,12 @@ const handler = NextAuth({
     // ATTACH DATABASE FLAGS TO THE SECURE JWT TOKEN
     async jwt({ token, user }) {
       if (user) {
+         const preserved = pickOriginalIdentity(token)
+           || pickOriginalIdentity(user)
+           || (user.is_bypass && (token.role || token.emp_id)
+             ? originalIdentityFromCaller(token, token.role === 'MD' ? 'MD' : null)
+             : null);
+
          token.email = user.email?.toLowerCase();
          token.id = user.id || token.id;
          token.name = user.name || null;
@@ -180,6 +182,22 @@ const handler = NextAuth({
          token.team_id = user.team_id ?? null;
          token.is_approved = user.is_approved;
          token.is_bypass = Boolean(user.is_bypass);
+
+         if (user.is_bypass && preserved?.originalRole) {
+           token.originalRole = preserved.originalRole;
+           token.originalEmail = preserved.originalEmail || null;
+           token.originalName = preserved.originalName || null;
+           token.originalEmpId = preserved.originalEmpId || null;
+           token.originalDesignation = preserved.originalDesignation ?? null;
+           token.originalTeamId = preserved.originalTeamId ?? null;
+         } else if (!user.is_bypass) {
+           delete token.originalRole;
+           delete token.originalEmail;
+           delete token.originalName;
+           delete token.originalEmpId;
+           delete token.originalDesignation;
+           delete token.originalTeamId;
+         }
       }
       return token;
     },
@@ -198,6 +216,9 @@ const handler = NextAuth({
          session.user.team_id = token.team_id || null;
          session.user.is_approved = token.is_approved;
          session.user.is_bypass = Boolean(token.is_bypass);
+         session.user.originalRole = token.originalRole || null;
+         session.user.originalEmail = token.originalEmail || null;
+         session.user.originalEmpId = token.originalEmpId || null;
       }
       return session;
     },

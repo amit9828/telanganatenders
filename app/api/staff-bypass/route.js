@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getStaffToken } from '@/lib/staff-auth';
 import {
   callerCanBypass,
   deskPathForDesignation,
   encodeStaffSessionCookie,
   findEmployeeForBypass,
+  originalIdentityFromCaller,
   resolveBypassCaller,
 } from '@/lib/impersonate';
 
@@ -31,7 +33,9 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Not allowed to bypass this desk.' }, { status: 403 });
     }
 
-    const cookies = await encodeStaffSessionCookie(emp, request);
+    const currentToken = await getStaffToken(request);
+    const original = originalIdentityFromCaller(currentToken, caller.kind);
+    const cookies = await encodeStaffSessionCookie(emp, request, { original, isBypass: true });
     const path = deskPathForDesignation(emp.designation);
     const res = NextResponse.json({
       ok: true,

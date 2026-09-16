@@ -45,6 +45,22 @@ export function openWorkflowFile(jobId, slot = 'sow') {
   window.location.assign(`/api/workflow/jobs/${jobId}/file?slot=${slot}`);
 }
 
+export async function restoreBypassSession() {
+  const res = await fetch('/api/staff-bypass/restore', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || 'Could not restore the original session.');
+  }
+  if (typeof window !== 'undefined') {
+    window.location.assign(data.path || '/admin');
+  }
+  return data;
+}
+
 export function openStaffChatFile(id) {
   if (typeof window === 'undefined' || !id) return;
   fetch(`/api/staff-chat/file?id=${encodeURIComponent(id)}`, {

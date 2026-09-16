@@ -269,7 +269,7 @@ export async function openStaffDesk(member) {
       return;
     }
     toast.success('Bypass successful. Opening live dashboard…');
-    window.location.assign(data.path || path);
+    window.open(data.path || path, '_blank', 'noopener,noreferrer');
   } catch (err) {
     toast.error(err.message || 'Please sign in with a staff account.');
   }
