@@ -75,7 +75,7 @@ export async function GET(request) {
   if (!peer) {
     const recent = await db.collection('staff_chats').find({
       $or: [{ from_emp_id: from }, { to_emp_id: from }],
-    }).sort({ created_at: -1 }).limit(200).toArray();
+    }).project({ file_base64: 0 }).sort({ created_at: -1 }).limit(200).toArray();
     return json({ messages: recent });
   }
 
@@ -85,7 +85,7 @@ export async function GET(request) {
     ...pairFilter(from, peer),
   };
   if (jobId) filter.job_id = jobId;
-  const messages = await db.collection('staff_chats').find(filter).sort({ created_at: 1 }).toArray();
+  const messages = await db.collection('staff_chats').find(filter).project({ file_base64: 0 }).sort({ created_at: 1 }).toArray();
   return json({ messages, thread_key: key });
 }
 
@@ -104,37 +104,59 @@ export async function POST(request) {
   let hadFile = false;
   let fileMeta = null;
 
-  if (contentType.includes('multipart/form-data')) {
-    const form = await request.formData();
-    toEmpId = String(form.get('to_emp_id') || '').trim();
-    text = String(form.get('text') || form.get('body') || '').trim();
-    jobId = String(form.get('job_id') || '').trim();
-    forwardedFromId = String(form.get('forwarded_from_id') || '').trim();
-    const file = form.get('file');
-    if (file && typeof file !== 'string' && typeof file.arrayBuffer === 'function') {
-      hadFile = true;
-      const buf = Buffer.from(await file.arrayBuffer());
-      if (buf.length) {
-        const contentType = file.type || mimeFromName(file.name);
-        const uploaded = await uploadWorkflowDocument(buf, file.name || 'chat.bin', {
-          jobId: `chat_${threadKey(from, toEmpId)}`,
-          contentType,
-        });
-        if (!uploaded) return json({ error: 'File upload failed. Try again.' }, 503);
-        fileMeta = {
-          r2_key: uploaded.key,
-          url: uploaded.url,
-          name: file.name,
-          content_type: contentType,
-        };
-      }
+  const parseChatFile = async (file) => {
+    if (!file || typeof file === 'string' || typeof file.arrayBuffer !== 'function') return null;
+    const buf = Buffer.from(await file.arrayBuffer());
+    if (!buf.length) return { error: 'The attached file was empty.' };
+    const mime = file.type || mimeFromName(file.name);
+    const uploaded = await uploadWorkflowDocument(buf, file.name || 'chat.bin', {
+      jobId: `chat_${threadKey(from, toEmpId || 'pending')}`,
+      contentType: mime,
+    });
+    if (uploaded?.key) {
+      return {
+        r2_key: uploaded.key,
+        url: uploaded.url,
+        name: file.name,
+        content_type: mime,
+      };
     }
-  } else {
+    return {
+      r2_key: null,
+      url: null,
+      name: file.name,
+      content_type: mime,
+      file_base64: buf.toString('base64'),
+    };
+  };
+
+  if (contentType.includes('application/json')) {
     const body = await request.json().catch(() => ({}));
     toEmpId = String(body.to_emp_id || '').trim();
     text = String(body.text || body.body || '').trim();
     jobId = String(body.job_id || '').trim();
     forwardedFromId = String(body.forwarded_from_id || '').trim();
+  } else {
+    const form = await request.formData().catch(() => null);
+    if (form) {
+      toEmpId = String(form.get('to_emp_id') || '').trim();
+      text = String(form.get('text') || form.get('body') || '').trim();
+      jobId = String(form.get('job_id') || '').trim();
+      forwardedFromId = String(form.get('forwarded_from_id') || '').trim();
+      const file = form.get('file');
+      if (file && typeof file !== 'string') {
+        hadFile = true;
+        const parsed = await parseChatFile(file);
+        if (parsed?.error) return json({ error: parsed.error }, 400);
+        fileMeta = parsed;
+      }
+    } else {
+      const body = await request.json().catch(() => ({}));
+      toEmpId = String(body.to_emp_id || '').trim();
+      text = String(body.text || body.body || '').trim();
+      jobId = String(body.job_id || '').trim();
+      forwardedFromId = String(body.forwarded_from_id || '').trim();
+    }
   }
 
   if (!toEmpId) return json({ error: 'to_emp_id is required' }, 400);
@@ -167,7 +189,7 @@ export async function POST(request) {
     }
   }
 
-  if (hadFile && !fileMeta) return json({ error: 'File upload failed. Try again.' }, 400);
+  if (hadFile && !fileMeta) return json({ error: 'The attached file was empty.' }, 400);
   if (!text && !fileMeta) return json({ error: 'Message or file required' }, 400);
 
   const doc = {
@@ -181,11 +203,13 @@ export async function POST(request) {
     file_url: fileMeta?.url || null,
     file_name: fileMeta?.name || null,
     file_content_type: fileMeta?.content_type || null,
+    file_base64: fileMeta?.file_base64 || null,
     forwarded_from: forwardedFrom,
     created_at: new Date(),
   };
   const result = await db.collection('staff_chats').insertOne(doc);
-  return json({ success: true, message: { ...doc, _id: result.insertedId } }, 201);
+  const { file_base64, ...publicDoc } = doc;
+  return json({ success: true, message: { ...publicDoc, _id: result.insertedId } }, 201);
 }
 
 export async function PATCH(request) {

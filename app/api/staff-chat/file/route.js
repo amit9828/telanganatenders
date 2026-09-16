@@ -33,13 +33,15 @@ export async function GET(request) {
 
   const db = await getDb();
   const doc = await db.collection('staff_chats').findOne({ _id: new ObjectId(id) });
-  if (!doc?.file_r2_key) return NextResponse.json({ error: 'File not found.' }, { status: 404 });
+  if (!doc?.file_r2_key && !doc?.file_base64) return NextResponse.json({ error: 'File not found.' }, { status: 404 });
   if (doc.from_emp_id !== from && doc.to_emp_id !== from) {
     return NextResponse.json({ error: 'Not allowed.' }, { status: 403 });
   }
 
-  const buf = await fetchR2Buffer(doc.file_r2_key);
-  if (!buf) return NextResponse.json({ error: 'Could not read file.' }, { status: 500 });
+  let buf = null;
+  if (doc.file_base64) buf = Buffer.from(String(doc.file_base64), 'base64');
+  else buf = await fetchR2Buffer(doc.file_r2_key);
+  if (!buf?.length) return NextResponse.json({ error: 'Could not read file.' }, { status: 500 });
   const name = encodeURIComponent(doc.file_name || 'attachment');
   const contentType = mimeFromName(doc.file_name, doc.file_content_type);
   return new NextResponse(new Uint8Array(buf), {

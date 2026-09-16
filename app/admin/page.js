@@ -16,10 +16,10 @@ import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
-import { deskPathForDesignation } from '@/lib/designations';
+import { deskPathForStaff } from '@/lib/designations';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
-import { workflowFetch, openWorkflowFile, restoreBypassSession } from '@/components/workflow/api';
+import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
@@ -110,7 +110,6 @@ function AdminDashboardSkeleton() {
 export default function AdminPage() {
   const { data: session, status: sessionStatus } = useSession();
   const isMdSession = session?.user?.role === 'MD';
-  const canReturnFromBypass = Boolean(session?.user?.is_bypass && session?.user?.originalRole);
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -404,14 +403,6 @@ export default function AdminPage() {
       localStorage.clear();
       sessionStorage.clear();
       window.location.href = '/';
-    }
-  };
-
-  const handleReturnFromBypass = async () => {
-    try {
-      await restoreBypassSession();
-    } catch (err) {
-      toast.error(err.message || 'Could not restore the MD session.');
     }
   };
 
@@ -720,27 +711,10 @@ export default function AdminPage() {
             setTimeout(() => { window.open('/client', '_blank'); }, 800);
         } else if (type === 'employee') {
             localStorage.setItem('tt_emp_email', email_or_id);
-            const res = await fetch('/api/staff-bypass', {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token || localStorage.getItem('tt_admin') || 'admin_success'}`,
-              },
-              body: JSON.stringify({
-                email: email_or_id,
-                emp_id: email_or_id,
-                adminToken: token || localStorage.getItem('tt_admin') || 'admin_success',
-                target: 'staff',
-              }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.ok) {
-              toast.error(data.error || 'Please sign in with a staff account.', { id: toastId });
-              return;
-            }
             toast.success("Bypass Successful! Opening Real Dashboard...", { id: toastId });
-            window.open(data.path || deskPathForDesignation(designation), '_blank', 'noopener,noreferrer');
+            setTimeout(() => {
+              window.open(deskPathForStaff({ designation, email: email_or_id, emp_id: email_or_id }), '_blank');
+            }, 800);
         }
     } catch (e) {
         toast.error("Error during authentication bypass.", { id: toastId });
@@ -1193,11 +1167,6 @@ const handleViewDocument = (req) => {
              </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            {canReturnFromBypass && (
-              <Button variant="outline" size="sm" onClick={handleReturnFromBypass} className="text-xs sm:text-sm bg-amber-500/15 border-amber-300/40 text-amber-100 hover:bg-amber-500/25">
-                Return to Admin/MD
-              </Button>
-            )}
             <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-white/20 text-slate-200 hover:text-white hover:bg-white/10 transition-all duration-200">View Public Site</Button>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-300 hover:text-red-200 hover:bg-red-500/15 transition-all duration-200"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>

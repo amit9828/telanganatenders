@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Clock, FileText, Upload } from 'lucide-react';
+import { Clock, FileText, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { staffHeaders, staffPdfHref } from '@/components/workflow/api';
 
@@ -36,6 +36,26 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
     const tenderId = job.tender_id;
     if (!tenderId) return toast.error('No tender PDF is attached to this card.');
     window.location.assign(staffPdfHref(tenderId, { email: pdfEmail, role: 'employee' }));
+  };
+
+  const removeParked = async (job) => {
+    if (!job?._id) return;
+    setBusyId(job._id);
+    try {
+      const res = await fetch(`/api/workflow/jobs/${job._id}/unpark`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: staffHeaders({ 'Content-Type': 'application/json' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Remove failed (${res.status})`);
+      toast.success('Suggestion removed.');
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusyId('');
+    }
   };
 
   const attachSow = async (job, file) => {
@@ -96,9 +116,22 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
                     className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col justify-between min-h-[168px]"
                   >
                     <div>
-                      <p className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 inline-block">
-                        {job.bid_no || 'No tender no'}
-                      </p>
+                      <div className="flex items-start justify-between gap-1">
+                        <p className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 inline-block">
+                          {job.bid_no || 'No tender no'}
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          disabled={busyId === job._id}
+                          onClick={() => removeParked(job)}
+                          title="Remove suggestion"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                       <p className="mt-2 text-xs font-bold text-[#0A2647] line-clamp-2 leading-snug">
                         {job.title || 'Untitled tender'}
                       </p>
