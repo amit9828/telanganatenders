@@ -27,7 +27,7 @@ export const metadata = {
   },
   keywords: [
     // Brand & Core
-    'TG Tenders', 'Telangana Tenders', 'tgtenders.in', 'B2B Tenders Portal', 'B2B Tender tracking',
+    'TG Tenders',  'tgtenders.in', 'B2B Tenders Portal', 'B2B Tender tracking',
     // GeM & National
     'GeM Tenders', 'Government e Marketplace', 'GeM portal services', 'Central government tenders',
     // Broad Keywords
@@ -39,7 +39,7 @@ export const metadata = {
   ],
   openGraph: {
     title: 'Telangana Tenders & Andhra Tenders — GeM Tenders B2B Tenders Portal',
-    description: 'The B2B Tenders Portal for Telangana Tenders, Andhra Tenders, AP Tenders and GeM Tenders — expert tracking and bidding services for Government e-Marketplace (GeM).',
+    description: 'The B2B Tenders Portal for TG Tenders, Andhra Tenders, AP Tenders and GeM Tenders — expert tracking and bidding services for Government e-Marketplace (GeM).',
     url: 'https://www.tgtenders.in',
     siteName: 'TG Tenders',
     images: [
