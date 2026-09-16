@@ -6,11 +6,22 @@ import StaffChat from '@/components/StaffChat';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
-import { TRACKING_LABELS, TRACKING_STAGES, normalizeTrackingStatus } from '@/lib/tracking-status';
+import { TRACKING_LABELS, normalizeTrackingStatus } from '@/lib/tracking-status';
 
-const DROPDOWN_STAGES = [...TRACKING_STAGES, TRACKING_LABELS.LOST, TRACKING_LABELS.WON];
+const DROPDOWN_STAGES = [
+  TRACKING_LABELS.TECHNICAL_EVALUATION,
+  TRACKING_LABELS.FINANCIAL_EVALUATION,
+  TRACKING_LABELS.WON,
+  TRACKING_LABELS.LOST,
+];
 
-export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh, chatSelfId, chatRoster = [] }) {
+export default function SubmittedTrackingBoard({
+  jobs = [],
+  actorEmpId = '',
+  onRefresh,
+  chatSelfId,
+  chatRoster = [],
+}) {
   const [chatJobId, setChatJobId] = useState(null);
   const update = async (job, tracking_status) => {
     try {
@@ -33,6 +44,7 @@ export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh, 
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {jobs.map((job) => {
           const stage = normalizeTrackingStatus(job.tracking_status);
+          const canEdit = Boolean(actorEmpId) && String(job.assigned_emp_id || '') === String(actorEmpId);
           return (
             <div key={job._id} className="space-y-2">
               <CompactTenderCard
@@ -48,13 +60,15 @@ export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh, 
               )}
               {canEdit ? (
                 <Select value={stage || undefined} onValueChange={(v) => update(job, v)}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Set tracking status" /></SelectTrigger>
                   <SelectContent>
                     {DROPDOWN_STAGES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
               ) : (
-                <p className="text-[11px] text-slate-500 px-1">Read-only for MD / Client</p>
+                <p className="text-[11px] text-slate-500 px-1">
+                  {stage || job.display_status || 'Submitted'} · read-only
+                </p>
               )}
             </div>
           );

@@ -9,11 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
-import { DESIGNATION_LABELS, DESIGNATIONS, deskPathForStaff, loginAsLabel, matchDesignation } from '@/lib/designations';
+import { DESIGNATION_LABELS, DESIGNATIONS, deskPathForStaff, loginAsLabel, staffRoleOf } from '@/lib/designations';
 import { workflowFetch } from '@/components/workflow/api';
 import { openStaffBypass } from '@/lib/tab-handoff';
 
-function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
+function StaffCard({ off, canManage, canDelete, canBypass, impersonate, onRefresh, tls }) {
   const [showPw, setShowPw] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
@@ -47,10 +47,10 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   };
 
   const remove = async () => {
-    if (!confirm(`Delete ${off.name} (${off.emp_id})?`)) return;
+    if (!confirm(`Revoke login for ${off.name} (${off.emp_id})? They will not be able to sign in.`)) return;
     try {
       await workflowFetch(`/api/employees?id=${encodeURIComponent(off._id || off.emp_id)}`, { method: 'DELETE' });
-      toast.success('Staff deleted.');
+      toast.success('Login revoked. They can no longer sign in.');
       onRefresh?.();
     } catch (err) {
       toast.error(err.message);
@@ -64,7 +64,12 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
           <p className="font-bold text-sm">{off.name}</p>
           <p className="text-[10px] font-mono text-slate-500">{off.emp_id} · {off.email}</p>
         </div>
-        <Badge variant="outline">{DESIGNATION_LABELS[off.designation] || off.designation || off.role}</Badge>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <Badge variant="outline">{DESIGNATION_LABELS[staffRoleOf(off)] || off.designation || off.role}</Badge>
+          {(off.deleted || off.active === false) && (
+            <Badge className="bg-red-100 text-red-800 border-0">{off.deleted ? 'Revoked' : 'Inactive'}</Badge>
+          )}
+        </div>
       </div>
       {canManage && showPw && (
         <p className="mt-2 text-[11px] font-mono bg-slate-50 border rounded px-2 py-1 break-all">
@@ -88,7 +93,7 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
         </div>
       )}
       <div className="flex flex-wrap gap-1.5 mt-2">
-        {canBypass && impersonate && (
+        {canBypass && impersonate && !off.deleted && off.active !== false && (
           <Button size="sm" className="h-7 text-[10px]" onClick={() => impersonate(off)}>
             <LogIn className="w-3 h-3 mr-1" /> {loginAsLabel(off)}
           </Button>
@@ -101,9 +106,11 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
             <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setShowPw((v) => !v)}>
               {showPw ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />} Password
             </Button>
+            {canDelete && !off.deleted && (
             <Button size="sm" variant="outline" className="h-7 text-[10px] text-red-600 border-red-200" onClick={remove}>
               <Trash2 className="w-3 h-3 mr-1" /> Delete
             </Button>
+            )}
           </>
         )}
       </div>
@@ -113,15 +120,16 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
 
 export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate, actorEmpId = '' }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', designation: actorDesk === 'md' ? 'GM' : 'DOC_TEAM_TL', team_id: '' });
-  const tls = team.filter((t) => t.designation === 'DOC_TEAM_TL');
-  const gms = team.filter((t) => t.designation === 'GM');
-  const members = team.filter((t) => t.designation === 'DOC_TEAM_MEMBER');
+  const tls = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL);
+  const gms = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.GM);
+  const members = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
   const allowed = useMemo(() => {
     if (actorDesk === 'md') return ['GM', 'DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
     if (actorDesk === 'gm') return ['DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
     return [];
   }, [actorDesk]);
   const canManage = actorDesk === 'md' || actorDesk === 'gm';
+  const canDelete = actorDesk === 'md';
 
   const create = async (e) => {
     e.preventDefault();
@@ -141,7 +149,7 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
   };
 
   const canBypass = (member) => {
-    const role = matchDesignation(member?.designation) || matchDesignation(member?.role);
+    const role = staffRoleOf(member);
     if (actorDesk === 'md') return true;
     if (actorDesk === 'gm') {
       return role === DESIGNATIONS.DOC_TEAM_TL || role === DESIGNATIONS.DOC_TEAM_MEMBER;
@@ -157,6 +165,7 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
   const cardProps = (off) => ({
     off,
     canManage,
+    canDelete,
     canBypass: canBypass(off),
     impersonate,
     onRefresh,

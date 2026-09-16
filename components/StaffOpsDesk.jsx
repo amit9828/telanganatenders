@@ -15,7 +15,6 @@ import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import SuggestionBar from '@/components/workflow/SuggestionBar';
-import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import ArchiveBoard from '@/components/workflow/ArchiveBoard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
@@ -33,6 +32,7 @@ import { workflowFetch, openWorkflowFile, staffHeaders } from '@/components/work
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
+import { DESIGNATIONS, staffRoleOf } from '@/lib/designations';
 import {
   Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive
 } from 'lucide-react';
@@ -114,8 +114,8 @@ export default function StaffOpsDesk({ desk }) {
   const internal = internalJobs;
   const submitted = submittedJobs;
   const awaitingPublish = jobs.filter((j) => j.status === 'AWAITING_PUBLISH');
-  const tls = team.filter((t) => t.designation === 'DOC_TEAM_TL');
-  const members = team.filter((t) => t.designation === 'DOC_TEAM_MEMBER');
+  const tls = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL);
+  const members = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
   const filteredOfficers = officers.filter((o) => {
     const needle = officerSearch.trim().toLowerCase();
     if (!needle) return true;
@@ -229,9 +229,6 @@ export default function StaffOpsDesk({ desk }) {
                     tenders={tenders}
                     pdfEmail={staffEmail}
                     pdfRole="employee"
-                    renderActions={(t) => (
-                      <SuggestClientControls tender={t} clients={clients} onDone={load} compact />
-                    )}
                   />
                 </TabsContent>
               )}
@@ -286,7 +283,7 @@ export default function StaffOpsDesk({ desk }) {
                 />
               </TabsContent>
               <TabsContent value="submitted">
-                <SubmittedTrackingBoard jobs={submitted} canEdit={isGm || isTl} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
+                <SubmittedTrackingBoard jobs={submitted} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
               </TabsContent>
               {isGm && (
                 <TabsContent value="archive">

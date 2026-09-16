@@ -803,12 +803,12 @@ return (
            <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Assigned workflow jobs</h3>
            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').length === 0 ? (
-                 <p className="text-sm text-slate-500 py-2">No assigned publish or maker-prep jobs.</p>
+                 <p className="text-sm text-slate-500 py-2">No assigned publish or employee-prep jobs.</p>
               ) : (
                  wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').map(job => (
                     <CompactTenderCard
                       key={job._id}
-                      job={{ ...job, display_status: job.status === 'AWAITING_PUBLISH' ? 'Publish required' : 'Maker prep' }}
+                      job={{ ...job, display_status: job.status === 'AWAITING_PUBLISH' ? 'Publish required' : 'Employee prep' }}
                       actions={job.status === 'AWAITING_PUBLISH' ? [{ label: 'Go publish', onClick: () => setActiveTab('publisher') }] : []}
                     />
                  ))
@@ -861,7 +861,7 @@ return (
             />
             <SubmittedTrackingBoard
               jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')}
-              canEdit
+              actorEmpId={empData.id}
               onRefresh={() => fetchLiveOperationsData(email)}
               chatSelfId={empData.id}
               chatRoster={teamMembers}

@@ -15,7 +15,7 @@ import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 const STATUS_LABEL = {
   MD_CHECKLIST: 'MD Checklist',
   TL_ASSIGN: 'TL Assign',
-  MAKER_PREP: 'Maker Prep',
+  MAKER_PREP: 'Employee Prep',
   TL_QC: 'TL QC',
   GM_QC: 'GM QC',
   MD_SUBMIT: 'Ready to Submit',
@@ -69,13 +69,13 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   };
 
   const assignMaker = async () => {
-    if (!makerId) return toast.error('Select a maker in your team.');
+    if (!makerId) return toast.error('Select an employee in your team.');
     await workflowFetch(`/api/workflow/jobs/${makerJob._id}/advance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'assign_maker', assigned_emp_id: makerId }),
     });
-    toast.success('Maker assigned.');
+    toast.success('Employee assigned.');
     setMakerJob(null);
     onRefresh?.();
   };
@@ -130,7 +130,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'bounce', slots: bounceSlots, note }),
       });
-      toast.success('Bounced to maker.');
+      toast.success('Bounced to employee.');
     } else {
       await workflowFetch(`/api/workflow/jobs/${bounceJob._id}/advance`, {
         method: 'POST',
@@ -160,7 +160,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
             actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', onClick: () => setChecklistJob(job) });
           }
           if ((desk === 'tl' || desk === 'md') && job.status === 'TL_ASSIGN') {
-            actions.push({ label: 'Assign maker', variant: 'default', onClick: () => { setMakerId(''); setMakerJob(job); } });
+            actions.push({ label: 'Assign employee', variant: 'default', onClick: () => { setMakerId(''); setMakerJob(job); } });
           }
           if (desk === 'employee' && job.status === 'MAKER_PREP') {
             actions.push({
@@ -321,12 +321,12 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
 
       <Dialog open={!!makerJob} onOpenChange={() => setMakerJob(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Assign maker</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Assign employee</DialogTitle></DialogHeader>
               {makerOptions.length === 0 ? (
-                <p className="text-sm text-slate-500">No makers on this Team Lead’s team.</p>
+                <p className="text-sm text-slate-500">No employees on this Team Lead’s team.</p>
               ) : (
                 <Select value={makerId} onValueChange={setMakerId}>
-                  <SelectTrigger><SelectValue placeholder="Team member" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Team employee" /></SelectTrigger>
                   <SelectContent>
                     {makerOptions.map((m) => <SelectItem key={m.emp_id} value={m.emp_id}>{m.name} ({m.emp_id})</SelectItem>)}
                   </SelectContent>
@@ -350,7 +350,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
       <Dialog open={!!bounceJob} onOpenChange={() => setBounceJob(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{bounceMode === 'gm' ? 'Bounce to TL' : 'Bounce to maker'}</DialogTitle>
+            <DialogTitle>{bounceMode === 'gm' ? 'Bounce to TL' : 'Bounce to employee'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             {bounceMode === 'tl' && (
@@ -382,7 +382,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                 rows={3}
                 value={bounceNote}
                 onChange={(e) => setBounceNote(e.target.value)}
-                placeholder={bounceMode === 'gm' ? 'Tell the TL what to fix.' : 'Tell the maker which files to replace and why.'}
+                placeholder={bounceMode === 'gm' ? 'Tell the TL what to fix.' : 'Tell the employee which files to replace and why.'}
               />
             </div>
           </div>

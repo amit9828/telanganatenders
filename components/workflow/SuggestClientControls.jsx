@@ -8,20 +8,15 @@ import { workflowFetch } from '@/components/workflow/api';
 
 export default function SuggestClientControls({ tender, clients = [], onDone, compact = false }) {
   const [email, setEmail] = useState('');
-  const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const suggest = async () => {
+  const forwardToGm = async () => {
     if (!email) return toast.error('Select an active client.');
-    if (!file) return toast.error('Attach a SOW PDF.');
-    if (file.type && file.type !== 'application/pdf' && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
-      return toast.error('SOW must be a PDF.');
-    }
     const client = clients.find((c) => c.email === email) || {};
     const tenderId = tender?._id?.$oid || tender?._id || tender?.id || '';
     setBusy(true);
     try {
-      const created = await workflowFetch('/api/workflow/jobs', {
+      await workflowFetch('/api/workflow/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -32,16 +27,7 @@ export default function SuggestClientControls({ tender, clients = [], onDone, co
           client_id: client.client_id || undefined,
         }),
       });
-      const jobId = created.job?._id;
-      if (!jobId) throw new Error('Could not attach this tender.');
-      const form = new FormData();
-      form.append('client_email', email);
-      if (client.client_id) form.append('client_id', client.client_id);
-      form.append('sow', file);
-      await workflowFetch(`/api/workflow/jobs/${jobId}/suggest`, { method: 'POST', body: form });
-      toast.success('SOW sent. Client can approve on Recommended.');
       setEmail('');
-      setFile(null);
       onDone?.();
     } catch (err) {
       toast.error(err.message);
@@ -64,23 +50,13 @@ export default function SuggestClientControls({ tender, clients = [], onDone, co
           ))}
         </SelectContent>
       </Select>
-      <label className={`${compact ? 'h-7 text-[10px] px-2' : 'h-8 text-xs px-3'} inline-flex items-center rounded-md border border-slate-200 bg-white cursor-pointer shrink-0`}>
-        {file ? file.name : 'SOW PDF'}
-        <input
-          type="file"
-          accept="application/pdf"
-          className="sr-only"
-          disabled={busy}
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-        />
-      </label>
       <Button
         size="sm"
         className={`${compact ? 'h-7 text-[10px]' : 'h-8 text-xs'} bg-emerald-600 hover:bg-emerald-700 shrink-0`}
-        onClick={suggest}
+        onClick={forwardToGm}
         disabled={busy}
       >
-        {busy ? 'Sending…' : 'Suggest'}
+        {busy ? 'Forwarding…' : 'Forward to GM'}
       </Button>
     </div>
   );

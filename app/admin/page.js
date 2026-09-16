@@ -18,7 +18,7 @@ import ArchiveBoard from '@/components/workflow/ArchiveBoard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
-import { deskPathForStaff } from '@/lib/designations';
+import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations';
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
@@ -1696,15 +1696,15 @@ const handleViewDocument = (req) => {
           <TabsContent value="internal" className="mt-4 space-y-6">
             <CreatePublishTaskForm
               actorDesk="md"
-              tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
-              members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
+              tls={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL)}
+              members={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER)}
               onCreated={refresh}
             />
             <InternalTrackingBoard
               desk="md"
               jobs={wfInternal}
-              tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
-              members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
+              tls={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL)}
+              members={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER)}
               team={teamMembers}
               onRefresh={refresh}
               chatSelfId="MD"
@@ -1713,7 +1713,7 @@ const handleViewDocument = (req) => {
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
-            <SubmittedTrackingBoard jobs={wfSubmitted} canEdit={false} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
+            <SubmittedTrackingBoard jobs={wfSubmitted} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
           </TabsContent>
           <TabsContent value="archive" className="mt-4">
             <ArchiveBoard jobs={wfArchive} />

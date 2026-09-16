@@ -73,9 +73,9 @@ export default function CreatePublishTaskForm({
             </div>
           )}
           <div>
-            <Label className="text-xs font-bold">Team member *</Label>
+            <Label className="text-xs font-bold">Team employee *</Label>
             <Select value={assignedEmpId} onValueChange={setAssignedEmpId}>
-              <SelectTrigger className="mt-1 h-9"><SelectValue placeholder={makers.length ? 'Select maker' : 'No members on this team'} /></SelectTrigger>
+              <SelectTrigger className="mt-1 h-9"><SelectValue placeholder={makers.length ? 'Select employee' : 'No employees on this team'} /></SelectTrigger>
               <SelectContent>
                 {makers.map((m) => <SelectItem key={m.emp_id} value={m.emp_id}>{m.name} ({m.emp_id})</SelectItem>)}
               </SelectContent>
