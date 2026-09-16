@@ -40,12 +40,6 @@ export function staffPdfHref(tenderId, { email, role = 'employee' } = {}) {
   return `/api/tenders/${tenderId}/pdf?email=${encodeURIComponent(resolved)}&role=${role}`;
 }
 
-export function viewTenderOnHome(bidNo) {
-  if (typeof window === 'undefined') return;
-  const q = String(bidNo || '').trim();
-  window.location.assign(q ? `/?q=${encodeURIComponent(q)}` : '/');
-}
-
 export function openWorkflowFile(jobId, slot = 'sow') {
   if (typeof window === 'undefined' || !jobId) return;
   window.location.assign(`/api/workflow/jobs/${jobId}/file?slot=${slot}`);
@@ -60,7 +54,14 @@ export function openStaffChatFile(id) {
     if (!res.ok) throw new Error('Could not open file');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    window.location.assign(url);
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.click();
+    }
   }).catch((err) => {
     console.error(err);
   });

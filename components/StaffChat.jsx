@@ -361,7 +361,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
 
   const paneClass = compact
     ? 'h-[420px]'
-    : 'min-h-[560px] h-[min(70vh,720px)]';
+    : 'h-[min(70vh,720px)] min-h-[520px] w-full overflow-hidden';
 
   const sidebar = (
     <ContactList

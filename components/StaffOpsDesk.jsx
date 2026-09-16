@@ -11,6 +11,7 @@ import GemCoPilot from '@/components/GemCoPilot';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import SuggestionBar from '@/components/workflow/SuggestionBar';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
@@ -34,7 +35,7 @@ import {
 
 export default function StaffOpsDesk({ desk }) {
   const { data: session, status } = useSession();
-  const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'tasks' : 'live');
+  const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'publisher' : 'live');
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
   const [submittedJobs, setSubmittedJobs] = useState([]);
@@ -47,13 +48,6 @@ export default function StaffOpsDesk({ desk }) {
   const [officerForm, setOfficerForm] = useState({
     name: '', department: '', designation: '', phone: '', state: '', district: '', address: '', pincode: '', notes: '',
   });
-  const [memberId, setMemberId] = useState('');
-  const [taskTitle, setTaskTitle] = useState('Check Drive / Publish tender');
-  const [tenderForm, setTenderForm] = useState({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
-  const [pdfBase64, setPdfBase64] = useState('');
-  const [pdfName, setPdfName] = useState('');
-  const [publishing, setPublishing] = useState(false);
-  const [pendingJobId, setPendingJobId] = useState('');
 
   const selfId = session?.user?.emp_id || '';
   const staffEmail = session?.user?.email;
@@ -133,7 +127,6 @@ export default function StaffOpsDesk({ desk }) {
       ]
     : [
         { id: 'work', label: 'Work', items: [
-          { value: 'tasks', label: 'Create Task', icon: PlusCircle, color: 'navy' },
           { value: 'publisher', label: 'Publish', icon: FileText, color: 'navy' },
           { value: 'internal', label: 'Team Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
@@ -147,55 +140,6 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'chat', label: 'Chat', icon: MessageSquare, color: 'navy' },
         ] },
       ];
-
-  const createTask = async (e) => {
-    e.preventDefault();
-    try {
-      await workflowFetch('/api/workflow/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assigned_emp_id: memberId, title: taskTitle }),
-      });
-      toast.success('Task assigned. Member will see a Publish card.');
-      setMemberId('');
-      load();
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
-
-  const publish = async (e) => {
-    e.preventDefault();
-    setPublishing(true);
-    try {
-      const res = await fetch('/api/tenders', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...tenderForm, ...(pdfBase64 ? { pdf_base64: pdfBase64 } : {}), pdf_filename: pdfName || 'tender.pdf' }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Publish failed');
-      const tenderId = data.id || data.tender?._id || data.tender_id;
-      const jobId = pendingJobId || awaitingPublish[0]?._id;
-      if (tenderId && jobId) {
-        await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tender_id: tenderId, bid_no: tenderForm.bid_no }),
-        });
-      }
-      toast.success('Published and attached to the job.');
-      setTenderForm({ bid_no: '', title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '' });
-      setPdfBase64('');
-      setPdfName('');
-      load();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setPublishing(false);
-    }
-  };
 
   const handleSaveOfficer = async (e) => {
     e.preventDefault();
@@ -288,78 +232,15 @@ export default function StaffOpsDesk({ desk }) {
                 </TabsContent>
               )}
               {isTl && (
-                <TabsContent value="tasks">
-                  <Card>
-                    <CardHeader><CardTitle>Create task</CardTitle></CardHeader>
-                    <CardContent>
-                      <form onSubmit={createTask} className="space-y-3 max-w-lg">
-                        <div>
-                          <Label>Team member</Label>
-                          <Select value={memberId} onValueChange={setMemberId}>
-                            <SelectTrigger className="mt-1"><SelectValue placeholder="Select maker" /></SelectTrigger>
-                            <SelectContent>
-                              {members.map((m) => <SelectItem key={m.emp_id} value={m.emp_id}>{m.name} ({m.emp_id})</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label>Notes</Label>
-                          <Input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className="mt-1" />
-                        </div>
-                        <Button type="submit">Assign work</Button>
-                      </form>
-                      <div className="grid sm:grid-cols-2 gap-3 mt-6">
-                        {awaitingPublish.map((j) => (
-                          <CompactTenderCard key={j._id} job={{ ...j, display_status: 'Awaiting publish' }} />
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              )}
-              {isTl && (
-                <TabsContent value="publisher">
-                  <Card className="max-w-xl mb-6">
-                    <CardHeader><CardTitle>Publish tender</CardTitle></CardHeader>
-                    <CardContent>
-                      <form onSubmit={publish} className="space-y-3">
-                        {awaitingPublish.length > 0 && (
-                          <div>
-                            <Label>Attach to task</Label>
-                            <Select value={pendingJobId} onValueChange={setPendingJobId}>
-                              <SelectTrigger className="mt-1"><SelectValue placeholder="Select assigned job" /></SelectTrigger>
-                              <SelectContent>
-                                {awaitingPublish.map((j) => <SelectItem key={j._id} value={j._id}>{j.assigned_emp_name} — {j.title}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
-                        {['bid_no', 'title', 'department', 'last_date'].map((k) => (
-                          <div key={k}>
-                            <Label className="capitalize">{k.replace('_', ' ')}</Label>
-                            <Input required type={k === 'last_date' ? 'date' : 'text'} value={tenderForm[k]} onChange={(e) => setTenderForm({ ...tenderForm, [k]: e.target.value })} className="mt-1" />
-                          </div>
-                        ))}
-                        <div>
-                          <Label>District</Label>
-                          <Select value={tenderForm.district} onValueChange={(v) => setTenderForm({ ...tenderForm, district: v })}>
-                            <SelectTrigger className="mt-1"><SelectValue placeholder="District" /></SelectTrigger>
-                            <SelectContent>{TS_AP_DISTRICTS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-                          </Select>
-                        </div>
-                        <input type="file" accept="application/pdf" onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-                          setPdfName(f.name);
-                          const r = new FileReader();
-                          r.onload = () => setPdfBase64(String(r.result).split(',')[1] || '');
-                          r.readAsDataURL(f);
-                        }} />
-                        <Button type="submit" disabled={publishing}>{publishing ? 'Publishing…' : 'Publish'}</Button>
-                      </form>
-                    </CardContent>
-                  </Card>
-                  <LiveTendersPaged tenders={tenders} pdfEmail={staffEmail} pdfRole="employee" />
+                <TabsContent value="publisher" className="space-y-6">
+                  <div className="grid lg:grid-cols-5 gap-6">
+                    <div className="lg:col-span-2">
+                      <PublishTenderForm awaitingJobs={awaitingPublish} onPublished={load} />
+                    </div>
+                    <div className="lg:col-span-3">
+                      <LiveTendersPaged tenders={tenders} pdfEmail={staffEmail} pdfRole="employee" />
+                    </div>
+                  </div>
                 </TabsContent>
               )}
               <TabsContent value="internal">
@@ -377,16 +258,16 @@ export default function StaffOpsDesk({ desk }) {
               <TabsContent value="submitted">
                 <SubmittedTrackingBoard jobs={submitted} canEdit={isGm || isTl} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
               </TabsContent>
-              <TabsContent value="matchmaker">
-                <AiMatchmakerPanel />
-                {isGm && (
-                  <>
-                    <div className="mt-6"><L1BenchmarkDropzone /></div>
-                    <div className="mt-6"><MatchedOpportunitiesPanel /></div>
-                  </>
-                )}
-              </TabsContent>
-              <TabsContent value="scraped"><LiveScrapedTendersPanel /></TabsContent>
+              {isGm && (
+                <TabsContent value="matchmaker">
+                  <AiMatchmakerPanel />
+                  <div className="mt-6"><L1BenchmarkDropzone /></div>
+                  <div className="mt-6"><MatchedOpportunitiesPanel /></div>
+                </TabsContent>
+              )}
+              {isGm && (
+                <TabsContent value="scraped"><LiveScrapedTendersPanel /></TabsContent>
+              )}
               <TabsContent value="copilot">
                 <GemCoPilot embedded />
               </TabsContent>
@@ -538,7 +419,7 @@ export default function StaffOpsDesk({ desk }) {
                 <TeamDirectoryPanel actorDesk={desk} team={team} onRefresh={load} impersonate={openStaffDesk} />
               </TabsContent>
               <TabsContent value="alerts"><OpsAlerts roster={team} /></TabsContent>
-              <TabsContent value="chat" className="w-full min-h-[560px]"><StaffChat selfId={selfId} roster={team} /></TabsContent>
+              <TabsContent value="chat" className="w-full overflow-hidden"><StaffChat selfId={selfId} roster={team} /></TabsContent>
             </Tabs>
           </div>
         </div>

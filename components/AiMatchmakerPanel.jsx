@@ -9,7 +9,7 @@ import { launchGemHunter } from '@/lib/gem-hunter-client';
 import {
   Clock, FileText, Loader2, MapPin, MessageCircle, Radar, RefreshCw, Rocket, Sparkles, Target, Zap,
 } from 'lucide-react';
-import { staffPdfHref, viewTenderOnHome, staffHeaders } from '@/components/workflow/api';
+import { staffPdfHref, staffHeaders } from '@/components/workflow/api';
 import { formatINR } from '@/lib/format';
 
 function countdownLabel(lastDate) {
@@ -346,15 +346,6 @@ export default function AiMatchmakerPanel({ compact = false } = {}) {
                       }}
                     >
                       <FileText className="w-4 h-4 mr-2" /> View PDF
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1"
-                      disabled={!m.tender?.bid_no}
-                      onClick={() => viewTenderOnHome(m.tender?.bid_no)}
-                    >
-                      View Tender
                     </Button>
                     <Button
                       size="sm"

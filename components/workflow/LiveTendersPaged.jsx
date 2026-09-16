@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ChevronLeft, ChevronRight, Clock, Search, FileText } from 'lucide-react';
-import { numberedPageList, staffPdfHref, viewTenderOnHome } from '@/components/workflow/api';
+import { numberedPageList, staffPdfHref } from '@/components/workflow/api';
 import { liveTendersOnly } from '@/lib/tender-sort';
 
 function fmtDate(value) {
@@ -82,11 +82,6 @@ export default function LiveTendersPaged({
               <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => openPdf(t)}>
                 <FileText className="w-3 h-3 mr-1" /> View PDF
               </Button>
-              {t.bid_no && (
-                <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => viewTenderOnHome(t.bid_no)}>
-                  View Tender
-                </Button>
-              )}
               {renderActions?.(t)}
             </div>
           </div>

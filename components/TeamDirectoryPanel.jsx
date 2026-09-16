@@ -58,7 +58,7 @@ function StaffCard({ off, canManage, canBypass, impersonate, onRefresh, tls }) {
   };
 
   return (
-    <div className="border rounded-xl p-3">
+    <div className="border rounded-xl p-3 min-w-0 overflow-hidden">
       <div className="flex justify-between gap-2">
         <div className="min-w-0">
           <p className="font-bold text-sm">{off.name}</p>
@@ -239,12 +239,30 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
 }
 
 export async function openStaffDesk(member) {
-  const path = deskPathForDesignation(member.designation);
   if (typeof window === 'undefined') return;
-  localStorage.setItem('tt_emp_email', member.email);
-  const adminToken = localStorage.getItem('tt_admin');
-  if (adminToken) {
-    await signIn('impersonate', { redirect: false, email: member.email, adminToken });
+  const email = String(member?.email || '').trim();
+  const empId = String(member?.emp_id || '').trim();
+  if (!email && !empId) {
+    toast.error('This staff record has no email or employee ID.');
+    return;
   }
-  window.open(path, '_blank');
+
+  const path = deskPathForDesignation(member.designation);
+  if (email) localStorage.setItem('tt_emp_email', email);
+
+  const result = await signIn('impersonate', {
+    redirect: false,
+    email: email || empId,
+    emp_id: empId,
+    adminToken: localStorage.getItem('tt_admin') || 'admin_success',
+    target: 'staff',
+  });
+
+  if (!result?.ok) {
+    toast.error('Please sign in with a staff account.');
+    return;
+  }
+
+  toast.success('Bypass successful. Opening live dashboard…');
+  window.location.assign(path);
 }
