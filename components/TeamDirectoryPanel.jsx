@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
-import { DESIGNATION_LABELS, DESIGNATIONS, deskPathForStaff, loginAsLabel, staffRoleOf } from '@/lib/designations';
+import { DESIGNATION_LABELS, DESIGNATIONS, deskPathForStaff, loginAsLabel, resolveStaffDesignation } from '@/lib/designations';
 import { workflowFetch } from '@/components/workflow/api';
 import { openStaffBypass } from '@/lib/tab-handoff';
 
@@ -65,7 +65,7 @@ function StaffCard({ off, canManage, canDelete, canBypass, impersonate, onRefres
           <p className="text-[10px] font-mono text-slate-500">{off.emp_id} · {off.email}</p>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <Badge variant="outline">{DESIGNATION_LABELS[staffRoleOf(off)] || off.designation || off.role}</Badge>
+          <Badge variant="outline">{DESIGNATION_LABELS[resolveStaffDesignation(off)] || off.designation || off.role}</Badge>
           {(off.deleted || off.active === false) && (
             <Badge className="bg-red-100 text-red-800 border-0">{off.deleted ? 'Revoked' : 'Inactive'}</Badge>
           )}
@@ -120,9 +120,9 @@ function StaffCard({ off, canManage, canDelete, canBypass, impersonate, onRefres
 
 export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate, actorEmpId = '' }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', designation: actorDesk === 'md' ? 'GM' : 'DOC_TEAM_TL', team_id: '' });
-  const tls = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL);
-  const gms = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.GM);
-  const members = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
+  const tls = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_TL);
+  const gms = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.GM);
+  const members = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
   const allowed = useMemo(() => {
     if (actorDesk === 'md') return ['GM', 'DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
     if (actorDesk === 'gm') return ['DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
@@ -149,7 +149,7 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
   };
 
   const canBypass = (member) => {
-    const role = staffRoleOf(member);
+    const role = resolveStaffDesignation(member);
     if (actorDesk === 'md') return true;
     if (actorDesk === 'gm') {
       return role === DESIGNATIONS.DOC_TEAM_TL || role === DESIGNATIONS.DOC_TEAM_MEMBER;

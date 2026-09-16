@@ -20,7 +20,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
-import { resolveActorRole, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation } from '@/lib/staff-auth';
+import { resolveActorRole, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
 import { persistBrandPayload, brandFieldsFromForm } from '@/lib/brand-settings';
@@ -667,9 +667,19 @@ async function handleGET(request, { params }, attempt = 1) {
       return json({ users });
     }
     if (path === 'client-requests' || path === 'api/client-requests') {
-      const email = searchParams.get('email');
+      const email = String(searchParams.get('email') || '').trim().toLowerCase();
+      const actor = await resolveActorRole(request);
+      const canStaffList = actor.role === 'MD' || isGmActor(actor);
       let query = {};
-      if (email) query.client_email = email.toLowerCase(); 
+      if (email) {
+        const clientEmail = await resolveClientEmail(request);
+        if (clientEmail !== email && !canStaffList) {
+          return json({ error: 'Not allowed to view these requests.' }, 403);
+        }
+        query.client_email = email;
+      } else if (!canStaffList) {
+        return json({ error: 'Only GM can view bid support requests.' }, 403);
+      }
       const requests = await db.collection('client_requests').find(query).sort({ created_at: -1 }).toArray();
       return json({ requests });
     }
@@ -811,7 +821,7 @@ async function handleGET(request, { params }, attempt = 1) {
     if (path === 'employees' || path === 'api/employees') {
       const actor = await resolveActorRole(request);
       const isMd = actor.role === 'MD';
-      const isGm = matchDesignation(actor.designation) === DESIGNATIONS.GM;
+      const isGm = isGmActor(actor);
       const isTl = matchDesignation(actor.designation) === DESIGNATIONS.DOC_TEAM_TL;
 
       let docs = [];
@@ -823,7 +833,7 @@ async function handleGET(request, { params }, attempt = 1) {
           active: { $ne: false },
         }).sort({ created_at: -1 }).toArray();
         docs = all.filter((emp) => {
-          const role = matchDesignation(emp.designation) || matchDesignation(emp.role);
+          const role = resolveStaffDesignation(emp);
           return role === DESIGNATIONS.DOC_TEAM_TL || role === DESIGNATIONS.DOC_TEAM_MEMBER;
         });
       } else if (isTl && actor.empId) {
@@ -1089,7 +1099,7 @@ export async function PUT(request, { params }) {
 
      if (path === 'employees' || path === 'api/employees') {
         const actor = await resolveActorRole(request);
-        if (actor.role !== 'MD' && actor.designation !== DESIGNATIONS.GM) {
+        if (actor.role !== 'MD' && !isGmActor(actor)) {
           return json({ error: 'Only MD or GM can update employees.' }, 403);
         }
         const url = new URL(request.url);
@@ -1103,7 +1113,7 @@ export async function PUT(request, { params }) {
         const nextDesignation = body.designation
           ? normalizeDesignation(body.designation)
           : existing.designation;
-        if (actor.designation === DESIGNATIONS.GM && nextDesignation === DESIGNATIONS.GM) {
+        if (isGmActor(actor) && nextDesignation === DESIGNATIONS.GM) {
           return json({ error: 'GM can update TL and Member only.' }, 403);
         }
 
@@ -1183,6 +1193,8 @@ export async function PUT(request, { params }) {
      }
 
      if (path === 'client-requests/reply' || path === 'api/client-requests/reply') {
+        const actor = await resolveActorRole(request);
+        if (!isGmActor(actor)) return json({ error: 'Only GM can process bid support requests.' }, 403);
         const { req_id, status, reply } = body;
         if (!ObjectId.isValid(req_id)) return json({ error: 'Invalid Request ID' }, 400);
         await db.collection('client_requests').updateOne(
@@ -1193,6 +1205,8 @@ export async function PUT(request, { params }) {
      }
 
      if (path === 'client-requests/assign' || path === 'api/client-requests/assign') {
+        const actor = await resolveActorRole(request);
+        if (!isGmActor(actor)) return json({ error: 'Only GM can assign bid support requests.' }, 403);
         const { req_id, emp_id, emp_name, status, reply } = body;
         if (!ObjectId.isValid(req_id)) return json({ error: 'Invalid Request ID' }, 400);
 
@@ -1509,6 +1523,8 @@ export async function DELETE(request, { params }) {
     }
 
     if (path === 'client-requests' || path === 'api/client-requests') {
+       const actor = await resolveActorRole(request);
+       if (!isGmActor(actor)) return json({ error: 'Only GM can delete bid support requests.' }, 403);
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Request ID' }, 400);
        if (!ObjectId.isValid(id)) return json({ error: 'Invalid Request ID' }, 400);
@@ -2039,7 +2055,7 @@ export async function POST(request, { params }) {
         if (actor.designation === DESIGNATIONS.DOC_TEAM_TL) {
           return json({ error: 'Team Leads cannot create staff logins.' }, 403);
         }
-        if (actor.designation === DESIGNATIONS.GM && designation === DESIGNATIONS.GM) {
+        if (isGmActor(actor) && designation === DESIGNATIONS.GM) {
           return json({ error: 'GM can create TL and Member only.' }, 403);
         }
 

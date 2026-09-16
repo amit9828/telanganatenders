@@ -9,6 +9,7 @@ import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import MatchedOpportunitiesPanel from '@/components/MatchedOpportunitiesPanel';
 import GemCoPilot from '@/components/GemCoPilot';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
+import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
@@ -19,6 +20,7 @@ import ArchiveBoard from '@/components/workflow/ArchiveBoard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
+import ClientBidSupportPanel from '@/components/ClientBidSupportPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,9 +34,9 @@ import { workflowFetch, openWorkflowFile, staffHeaders } from '@/components/work
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
-import { DESIGNATIONS, staffRoleOf } from '@/lib/designations';
+import { DESIGNATIONS, resolveStaffDesignation } from '@/lib/designations';
 import {
-  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive
+  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud
 } from 'lucide-react';
 
 export default function StaffOpsDesk({ desk }) {
@@ -114,8 +116,8 @@ export default function StaffOpsDesk({ desk }) {
   const internal = internalJobs;
   const submitted = submittedJobs;
   const awaitingPublish = jobs.filter((j) => j.status === 'AWAITING_PUBLISH');
-  const tls = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL);
-  const members = team.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
+  const tls = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_TL);
+  const members = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
   const filteredOfficers = officers.filter((o) => {
     const needle = officerSearch.trim().toLowerCase();
     if (!needle) return true;
@@ -129,6 +131,7 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
           { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
+          { value: 'bid-support', label: 'Bid Support', icon: UploadCloud, color: 'blue' },
           { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
         ] },
         { id: 'ai', label: 'AI', items: [
@@ -229,6 +232,15 @@ export default function StaffOpsDesk({ desk }) {
                     tenders={tenders}
                     pdfEmail={staffEmail}
                     pdfRole="employee"
+                    renderActions={(t) => (
+                      <SuggestClientControls
+                        tender={t}
+                        clients={clients}
+                        onDone={load}
+                        compact
+                        variant="suggest"
+                      />
+                    )}
                   />
                 </TabsContent>
               )}
@@ -285,6 +297,11 @@ export default function StaffOpsDesk({ desk }) {
               <TabsContent value="submitted">
                 <SubmittedTrackingBoard jobs={submitted} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
               </TabsContent>
+              {isGm && (
+                <TabsContent value="bid-support">
+                  <ClientBidSupportPanel team={team} tenders={tenders} pdfEmail={staffEmail} />
+                </TabsContent>
+              )}
               {isGm && (
                 <TabsContent value="archive">
                   <ArchiveBoard jobs={archivedJobs} />

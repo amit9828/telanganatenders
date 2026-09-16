@@ -86,7 +86,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Forward failed (${res.status})`);
-      toast.success('Forwarded to client. They will see it on Recommended.');
+      toast.success('Sent to client. They will see it on Recommended.');
       setSowByJob((prev) => {
         const next = { ...prev };
         delete next[job._id];
@@ -105,12 +105,12 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
       <CardHeader>
         <CardTitle className="text-[#0A2647] text-lg">Suggestion Bar</CardTitle>
         <CardDescription>
-          Tenders MD forwarded for a client. Attach the SOW PDF, then click Forward to Client. The client is not notified until you forward.
+          Tenders parked for a client. Attach the SOW PDF, then click Send to Client. The client is not notified until you send.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {groups.length === 0 && (
-          <p className="text-sm text-slate-400 text-center py-10">No parked suggestions yet. MD forwards a live tender here from Live Tenders.</p>
+          <p className="text-sm text-slate-400 text-center py-10">No parked suggestions yet. Select a client and click Suggest on Live Tenders.</p>
         )}
         {groups.map((group) => (
           <div key={group.email} className="space-y-3">
@@ -184,7 +184,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
                         disabled={busyId === job._id}
                         onClick={() => forwardToClient(job)}
                       >
-                        {busyId === job._id ? 'Forwarding…' : 'Forward to Client'}
+                        {busyId === job._id ? 'Sending…' : 'Send to Client'}
                       </Button>
                     </div>
                   </div>
