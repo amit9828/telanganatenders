@@ -151,7 +151,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
                       <input
                         id={inputId}
                         type="file"
-                        accept=".pdf,application/pdf"
+                        accept="application/pdf"
                         className="sr-only"
                         disabled={busyId === job._id}
                         onChange={(e) => {

@@ -12,7 +12,9 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
+import ArchiveBoard from '@/components/workflow/ArchiveBoard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
@@ -44,7 +46,7 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot, BellRing
+  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot, BellRing, Archive
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -180,6 +182,7 @@ export default function AdminPage() {
   const [wfJobs, setWfJobs] = useState([]);
   const [wfInternal, setWfInternal] = useState([]);
   const [wfSubmitted, setWfSubmitted] = useState([]);
+  const [wfArchive, setWfArchive] = useState([]);
 
   // 🚀 AI Matchmaker & Competitor Intel
   const [bidMatches, setBidMatches] = useState([]);
@@ -294,14 +297,16 @@ export default function AdminPage() {
         setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
       }
       try {
-        const [internalQ, submittedQ, allQ] = await Promise.all([
+        const [internalQ, submittedQ, allQ, archiveQ] = await Promise.all([
           workflowFetch(`/api/workflow/queue?board=internal&t=${Date.now()}`),
           workflowFetch(`/api/workflow/queue?board=submitted&t=${Date.now()}`),
           workflowFetch(`/api/workflow/queue?t=${Date.now()}`),
+          workflowFetch(`/api/workflow/archive?t=${Date.now()}`).catch(() => ({ jobs: [] })),
         ]);
         setWfInternal(internalQ.jobs || []);
         setWfSubmitted(submittedQ.jobs || []);
         setWfJobs(allQ.jobs || []);
+        setWfArchive(archiveQ.jobs || []);
       } catch (err) {
         console.error('Workflow queue sync failed', err);
       }
@@ -1122,6 +1127,7 @@ const handleViewDocument = (req) => {
     { id: 'workflow', label: 'Tender Workflow', items: [
       { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
       { value: 'submitted', label: 'Submitted Board', icon: FileText, color: 'emerald' },
+      { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
     ] },
     { id: 'publishing', label: 'Live Tenders', items: [
       { value: 'publisher', label: 'Live Tenders', icon: FileText, color: 'navy' },
@@ -1687,7 +1693,13 @@ const handleViewDocument = (req) => {
             <TeamDirectoryPanel actorDesk="md" team={teamMembers} onRefresh={refresh} impersonate={openStaffDesk} />
           </TabsContent>
 
-          <TabsContent value="internal" className="mt-4">
+          <TabsContent value="internal" className="mt-4 space-y-6">
+            <CreatePublishTaskForm
+              actorDesk="md"
+              tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
+              members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
+              onCreated={refresh}
+            />
             <InternalTrackingBoard
               desk="md"
               jobs={wfInternal}
@@ -1696,11 +1708,15 @@ const handleViewDocument = (req) => {
               team={teamMembers}
               onRefresh={refresh}
               chatSelfId="MD"
+              actorEmpId=""
               chatRoster={teamMembers}
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
             <SubmittedTrackingBoard jobs={wfSubmitted} canEdit={false} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
+          </TabsContent>
+          <TabsContent value="archive" className="mt-4">
+            <ArchiveBoard jobs={wfArchive} />
           </TabsContent>
           <TabsContent value="alerts" className="mt-4"><OpsAlerts roster={teamMembers} /></TabsContent>
           <TabsContent value="client-queries" className="mt-4">

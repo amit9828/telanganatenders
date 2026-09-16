@@ -47,7 +47,7 @@ export default function SubmittedTrackingBoard({ jobs = [], canEdit, onRefresh, 
                 <div className="h-[420px]"><StaffChat selfId={chatSelfId} roster={chatRoster} jobId={job._id} /></div>
               )}
               {canEdit ? (
-                <Select value={stage} onValueChange={(v) => update(job, v)}>
+                <Select value={stage || undefined} onValueChange={(v) => update(job, v)}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {DROPDOWN_STAGES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}

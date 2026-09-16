@@ -115,6 +115,7 @@ export default function PublishTenderForm({
     setForm(EMPTY_FORM);
     setPdfBase64('');
     setPdfName('');
+    setPendingJobId('');
   };
 
   const submit = async (e) => {
@@ -124,6 +125,12 @@ export default function PublishTenderForm({
     }
     setPublishing(true);
     try {
+      if (!editingId) {
+        const jobId = pendingJobId || awaitingJobs[0]?._id;
+        if (!jobId) {
+          throw new Error('Select an assigned publish job first. Ask your Team Lead to create one.');
+        }
+      }
       const url = editingId ? `/api/tenders/${editingId}` : '/api/tenders';
       const method = editingId ? 'PUT' : 'POST';
       const r = await fetch(url, {
@@ -141,13 +148,17 @@ export default function PublishTenderForm({
       if (!editingId) {
         const jobId = pendingJobId || awaitingJobs[0]?._id;
         const tenderId = published.id || published.tender?._id || published.tender_id;
-        if (tenderId && jobId) {
-          await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tender_id: tenderId, bid_no: form.bid_no }),
-          });
+        if (!jobId) {
+          throw new Error('Select an assigned publish job first. Ask your Team Lead to create one.');
         }
+        if (!tenderId) {
+          throw new Error('Tender saved without an id; could not attach it to the workflow job.');
+        }
+        await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tender_id: tenderId, bid_no: form.bid_no }),
+        });
       }
       toast.success(editingId ? 'Tender updated successfully!' : 'Tender published successfully!');
       reset();
@@ -179,19 +190,25 @@ export default function PublishTenderForm({
       </CardHeader>
       <CardContent className="pt-5">
         <form onSubmit={submit} className="space-y-4">
-          {awaitingJobs.length > 0 && !editingId && (
+          {!editingId && (
             <div>
-              <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Attach to assigned job</Label>
-              <Select value={pendingJobId} onValueChange={setPendingJobId}>
-                <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select AWAITING_PUBLISH job" /></SelectTrigger>
-                <SelectContent>
-                  {awaitingJobs.map((j) => (
-                    <SelectItem key={j._id} value={j._id}>
-                      {(j.assigned_emp_name || j.assigned_emp_id || 'Job')} — {j.title || j.bid_no || j._id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Attach to assigned job *</Label>
+              {awaitingJobs.length === 0 ? (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-2">
+                  No AWAITING_PUBLISH job is assigned to you. Ask your Team Lead to create a publish job first.
+                </p>
+              ) : (
+                <Select value={pendingJobId} onValueChange={setPendingJobId}>
+                  <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Select AWAITING_PUBLISH job" /></SelectTrigger>
+                  <SelectContent>
+                    {awaitingJobs.map((j) => (
+                      <SelectItem key={j._id} value={j._id}>
+                        {(j.assigned_emp_name || j.assigned_emp_id || 'Job')} — {j.title || j.bid_no || j._id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           )}
           <div>
@@ -256,8 +273,8 @@ export default function PublishTenderForm({
               )}
             </div>
           </div>
-          <Button type="submit" disabled={publishing || analyzing} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
-            {publishing ? (editingId ? 'Updating...' : 'Publishing...') : (editingId ? 'Save Changes' : 'Publish Tender')}
+          <Button type="submit" disabled={publishing || analyzing || (!editingId && (!pendingJobId || awaitingJobs.length === 0))} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+            {publishing ? (editingId ? 'Updating...' : 'Publishing...') : (editingId ? 'Save Changes' : 'Publish')}
           </Button>
         </form>
       </CardContent>
