@@ -30,7 +30,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, Loader2,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, XCircle, Lightbulb, Search, Trophy, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
+  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -77,11 +77,7 @@ export default function EmployeeDashboard() {
     bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
   });
   const [editingBid, setEditingBid] = useState(null); 
-  const [suggestForm, setSuggestForm] = useState({}); 
-
-  const [publishWinModalOpen, setPublishWinModalOpen] = useState(false);
-  const [winForm, setWinForm] = useState({ bid_id: null, contract_value: '', validity: '' });
-  const [processingWin, setProcessingWin] = useState(false);
+  const [suggestForm, setSuggestForm] = useState({});
 
   const [mdTaskReply, setMdTaskReply] = useState({});
   const [viewClientDocs, setViewClientDocs] = useState(null);
@@ -312,26 +308,6 @@ export default function EmployeeDashboard() {
        else toast.error("Failed to remove. Backend route might need update.");
      } catch(e) { toast.error("Network error"); }
   }
-
-  const handlePublishWin = async (e) => {
-      e.preventDefault();
-      if (!winForm.contract_value || !winForm.validity) return toast.error("Please fill in contract value and validity.");
-      setProcessingWin(true);
-      try {
-          const res = await fetch('/api/bids/update', {
-              method: 'PUT', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ bid_id: winForm.bid_id, status: 'Won', contract_value: winForm.contract_value, validity: winForm.validity })
-          });
-          if (res.ok) {
-              toast.success("Winning Bid Published to Client Ledger!");
-              logActivity('PUBLISHED_WIN', `Published bid ${winForm.bid_id} as Won`);
-              setPublishWinModalOpen(false);
-              setWinForm({ bid_id: null, contract_value: '', validity: '' });
-              fetchLiveOperationsData(email);
-          } else toast.error("Failed to publish win.");
-      } catch (err) { toast.error("Network Error."); }
-      setProcessingWin(false);
-  };
 
   const [approvalModal, setApprovalModal] = useState({ open: false, email: '', docId: '', docName: '', clientName: '' });
   const [customFileName, setCustomFileName] = useState('');
@@ -648,19 +624,9 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error('Network Error.'); }
   };
 
-  const [lossModalOpen, setLossModalOpen] = useState(false);
-  const [lossForm, setLossForm] = useState({ bid_id: null, l1_price: '', l1_winner: '' });
-
   const updateBidStatus = async (id, newStatus) => {
-    if (newStatus === 'Won') {
-        setWinForm({ bid_id: id, contract_value: '', validity: '' });
-        setPublishWinModalOpen(true);
-        return;
-    }
-    if (newStatus === 'Lost') {
-        setLossForm({ bid_id: id, l1_price: '', l1_winner: '' });
-        setLossModalOpen(true);
-        return;
+    if (newStatus === 'Won' || newStatus === 'Lost') {
+      return toast.error('Won and Lost are set on the Submitted board, not this tracker.');
     }
 
     setBids(bids.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b));
@@ -676,26 +642,6 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error('Network Error during status update.'); }
   };
 
-  const handleProcessLoss = async (e) => {
-      e.preventDefault();
-      if (!lossForm.l1_price) return toast.error("Please enter the L1 Price.");
-      
-      try {
-          await fetch('/api/bids/update', {
-              method: 'PUT', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ bid_id: lossForm.bid_id, status: 'Lost', l1_price: lossForm.l1_price, l1_winner: lossForm.l1_winner })
-          });
-          
-          await fetch(`/api/bids?id=${lossForm.bid_id}`, { method: 'DELETE' });
-
-          toast.success("L1 Price saved to Database & Bid removed from active tracking.");
-          setLossModalOpen(false);
-          fetchLiveOperationsData(email);
-      } catch (err) {
-          toast.error("Network Error.");
-      }
-  };
-// 🚀 FIX: Employee Task File Upload
   const onTaskFileChange = (taskId, e) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -857,12 +803,12 @@ return (
            <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Assigned workflow jobs</h3>
            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').length === 0 ? (
-                 <p className="text-sm text-slate-500 py-2">No assigned publish or maker-prep jobs.</p>
+                 <p className="text-sm text-slate-500 py-2">No assigned publish or employee-prep jobs.</p>
               ) : (
                  wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').map(job => (
                     <CompactTenderCard
                       key={job._id}
-                      job={{ ...job, display_status: job.status === 'AWAITING_PUBLISH' ? 'Publish required' : 'Maker prep' }}
+                      job={{ ...job, display_status: job.status === 'AWAITING_PUBLISH' ? 'Publish required' : 'Employee prep' }}
                       actions={job.status === 'AWAITING_PUBLISH' ? [{ label: 'Go publish', onClick: () => setActiveTab('publisher') }] : []}
                     />
                  ))
@@ -915,7 +861,7 @@ return (
             />
             <SubmittedTrackingBoard
               jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')}
-              canEdit
+              actorEmpId={empData.id}
               onRefresh={() => fetchLiveOperationsData(email)}
               chatSelfId={empData.id}
               chatRoster={teamMembers}
@@ -964,8 +910,6 @@ return (
                                   <SelectItem value="Technical Evaluation">Technical Evaluation</SelectItem>
                                   <SelectItem value="Technical Qualification">Technical Qualification</SelectItem>
                                   <SelectItem value="Financial Evaluation">Financial Evaluation</SelectItem>
-                                  <SelectItem value="Won">Won</SelectItem>
-                                  <SelectItem value="Lost">Lost</SelectItem>
                                </SelectContent>
                             </Select>
                          </div>
@@ -1058,8 +1002,6 @@ return (
                                         <option value="Technical Evaluation">Technical Evaluation</option>
                                         <option value="Technical Qualification">Technical Qualification</option>
                                         <option value="Financial Evaluation">Financial Evaluation</option>
-                                        <option value="Won">Won</option>
-                                        <option value="Lost">Lost</option>
                                       </select>
                                     </div>
                                   )}
@@ -1711,33 +1653,6 @@ return (
       </main>
 
       {/* MODALS */}
-      <Dialog open={publishWinModalOpen} onOpenChange={setPublishWinModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-emerald-700"><Trophy className="w-5 h-5"/> Publish Winning Bid</DialogTitle>
-            <DialogDescription>
-              Enter the final contract details to officially mark this bid as won and push it to the Client's Ledger.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handlePublishWin} className="space-y-4 pt-2">
-            <div>
-              <Label className="font-bold text-[#0A2647]">Total Contract Value (₹) *</Label>
-              <Input type="text" required placeholder="e.g. ₹ 5,00,000" value={winForm.contract_value} onChange={e => setWinForm({...winForm, contract_value: e.target.value})} className="mt-1 font-bold"/>
-            </div>
-            <div>
-              <Label className="font-bold text-[#0A2647]">Contract Validity / Due Date *</Label>
-              <Input type="text" required placeholder="e.g. 1 Year (Dec 2027)" value={winForm.validity} onChange={e => setWinForm({...winForm, validity: e.target.value})} className="mt-1"/>
-            </div>
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={() => setPublishWinModalOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={processingWin} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                 {processingWin ? 'Publishing...' : 'Confirm Win 🏆'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={!!viewClientDocs} onOpenChange={() => setViewClientDocs(null)}>
         <DialogContent className="sm:max-w-2xl bg-white">
           <DialogHeader>
@@ -1797,23 +1712,6 @@ return (
                 Confirm & Save to Drive
              </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={lossModalOpen} onOpenChange={setLossModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600"><XCircle className="w-5 h-5"/> Process Lost Bid & Record L1</DialogTitle>
-            <DialogDescription>Enter the winning L1 details. This bid will be removed from your tracking list and the intel will be saved.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleProcessLoss} className="space-y-4 pt-2">
-            <div><Label className="font-bold text-[#0A2647]">L1 Winning Price (₹) *</Label><Input type="number" required placeholder="e.g. 450000" value={lossForm.l1_price} onChange={e => setLossForm({...lossForm, l1_price: e.target.value})} className="mt-1 font-bold"/></div>
-            <div><Label className="font-bold text-[#0A2647]">L1 Winner Name (Optional)</Label><Input type="text" placeholder="e.g. XYZ Constructions" value={lossForm.l1_winner} onChange={e => setLossForm({...lossForm, l1_winner: e.target.value})} className="mt-1"/></div>
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={() => setLossModalOpen(false)}>Cancel</Button>
-              <Button type="submit" className="bg-red-600 hover:bg-red-700 text-white">Save L1 & Remove Bid</Button>
-            </DialogFooter>
-          </form>
         </DialogContent>
       </Dialog>
 

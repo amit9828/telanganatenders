@@ -6,11 +6,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { workflowFetch } from '@/components/workflow/api';
 
-export default function SuggestClientControls({ tender, clients = [], onDone, compact = false }) {
+export default function SuggestClientControls({
+  tender,
+  clients = [],
+  onDone,
+  compact = false,
+  variant = 'forward-gm',
+}) {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
+  const isSuggest = variant === 'suggest';
 
-  const suggest = async () => {
+  const parkForClient = async () => {
     if (!email) return toast.error('Select an active client.');
     const client = clients.find((c) => c.email === email) || {};
     const tenderId = tender?._id?.$oid || tender?._id || tender?.id || '';
@@ -27,7 +34,7 @@ export default function SuggestClientControls({ tender, clients = [], onDone, co
           client_id: client.client_id || undefined,
         }),
       });
-      toast.success('Moved to Suggestion Bar. Attach SOW there to send to the client.');
+      toast.success(isSuggest ? 'Parked on Suggestion Bar.' : 'Forwarded to GM Suggestion Bar.');
       setEmail('');
       onDone?.();
     } catch (err) {
@@ -54,10 +61,10 @@ export default function SuggestClientControls({ tender, clients = [], onDone, co
       <Button
         size="sm"
         className={`${compact ? 'h-7 text-[10px]' : 'h-8 text-xs'} bg-emerald-600 hover:bg-emerald-700 shrink-0`}
-        onClick={suggest}
+        onClick={parkForClient}
         disabled={busy}
       >
-        {busy ? 'Suggesting…' : 'Suggest'}
+        {busy ? (isSuggest ? 'Parking…' : 'Forwarding…') : (isSuggest ? 'Suggest' : 'Forward to GM')}
       </Button>
     </div>
   );

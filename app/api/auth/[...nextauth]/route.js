@@ -49,9 +49,11 @@ const handler = NextAuth({
         const employee = await db.collection('employees').findOne({ 
            $or: [
              { email: identifier.toLowerCase() },
-             { emp_id: new RegExp(`^${identifier}$`, 'i') } // Matches EMP-XXXX exactly
+             { emp_id: new RegExp(`^${identifier}$`, 'i') }
            ],
-           password: credentials.password 
+           password: credentials.password,
+           deleted: { $ne: true },
+           active: { $ne: false },
         });
         
         if (employee) {

@@ -8,20 +8,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 
 const STATUS_LABEL = {
   MD_CHECKLIST: 'MD Checklist',
   TL_ASSIGN: 'TL Assign',
-  MAKER_PREP: 'Maker Prep',
+  MAKER_PREP: 'Employee Prep',
   TL_QC: 'TL QC',
   GM_QC: 'GM QC',
   MD_SUBMIT: 'Ready to Submit',
   AWAITING_RECEIPT: 'Awaiting Receipt',
 };
 
-export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], chatSelfId, chatRoster }) {
+export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], chatSelfId, chatRoster, actorEmpId = '' }) {
   const [checklistJob, setChecklistJob] = useState(null);
   const [chatJobId, setChatJobId] = useState(null);
   const [checklistFile, setChecklistFile] = useState(null);
@@ -30,10 +31,16 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   const [makerId, setMakerId] = useState('');
   const [receiptJob, setReceiptJob] = useState(null);
   const [receiptFile, setReceiptFile] = useState(null);
+  const [bounceJob, setBounceJob] = useState(null);
+  const [bounceMode, setBounceMode] = useState('');
+  const [bounceSlots, setBounceSlots] = useState([]);
+  const [bounceNote, setBounceNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   const openFile = (job, slot) => openWorkflowFile(job._id, slot);
   const roster = chatRoster || [...tls, ...members, ...team];
+  const makerTeamId = makerJob?.team_id || makerJob?.routed_tl_emp_id || (desk === 'tl' ? actorEmpId : '');
+  const makerOptions = members.filter((m) => String(m.team_id || '') === String(makerTeamId || '') && Boolean(makerTeamId));
 
   const run = async (fn) => {
     setBusy(true);
@@ -62,13 +69,13 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   };
 
   const assignMaker = async () => {
-    if (!makerId) return toast.error('Select a maker in your team.');
+    if (!makerId) return toast.error('Select an employee in your team.');
     await workflowFetch(`/api/workflow/jobs/${makerJob._id}/advance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'assign_maker', assigned_emp_id: makerId }),
     });
-    toast.success('Maker assigned.');
+    toast.success('Employee assigned.');
     setMakerJob(null);
     onRefresh?.();
   };
@@ -77,15 +84,64 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
     if (!receiptFile) return toast.error('Submission Receipt PDF is required.');
     const form = new FormData();
     form.append('receipt', receiptFile);
-    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/files`, { method: 'POST', body: form });
-    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'confirm_receipt' }),
-    });
-    toast.success('Drive pack uploaded. Status is Submitted.');
-    setReceiptJob(null);
-    setReceiptFile(null);
+    try {
+      await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/files`, { method: 'POST', body: form });
+      await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm_receipt' }),
+      });
+      toast.success('Drive pack uploaded. Status is Submitted.');
+      setReceiptJob(null);
+      setReceiptFile(null);
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err.message || 'Drive upload failed. Job stays unsubmitted.');
+    }
+  };
+
+  const openTlBounce = (job) => {
+    setBounceMode('tl');
+    setBounceJob(job);
+    setBounceSlots([]);
+    setBounceNote('');
+  };
+
+  const openGmBounce = (job) => {
+    setBounceMode('gm');
+    setBounceJob(job);
+    setBounceSlots([]);
+    setBounceNote('');
+  };
+
+  const toggleBounceSlot = (slot) => {
+    setBounceSlots((prev) => (prev.includes(slot) ? prev.filter((s) => s !== slot) : [...prev, slot]));
+  };
+
+  const submitBounce = async () => {
+    const note = bounceNote.trim();
+    if (!note) return toast.error('A bounce note is required.');
+    if (bounceMode === 'tl') {
+      if ((bounceJob.prep_files || []).length && bounceSlots.length === 0) {
+        return toast.error('Select at least one file to bounce.');
+      }
+      await workflowFetch(`/api/workflow/jobs/${bounceJob._id}/advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bounce', slots: bounceSlots, note }),
+      });
+      toast.success('Bounced to employee.');
+    } else {
+      await workflowFetch(`/api/workflow/jobs/${bounceJob._id}/advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'gm_bounce', note }),
+      });
+      toast.success('Bounced to TL.');
+    }
+    setBounceJob(null);
+    setBounceNote('');
+    setBounceSlots([]);
     onRefresh?.();
   };
 
@@ -103,8 +159,8 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           if (desk === 'md' && job.status === 'MD_CHECKLIST') {
             actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', onClick: () => setChecklistJob(job) });
           }
-          if (desk === 'tl' && job.status === 'TL_ASSIGN') {
-            actions.push({ label: 'Assign maker', variant: 'default', onClick: () => setMakerJob(job) });
+          if ((desk === 'tl' || desk === 'md') && job.status === 'TL_ASSIGN') {
+            actions.push({ label: 'Assign employee', variant: 'default', onClick: () => { setMakerId(''); setMakerJob(job); } });
           }
           if (desk === 'employee' && job.status === 'MAKER_PREP') {
             actions.push({
@@ -131,10 +187,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
             });
             actions.push({
               label: 'Bounce',
-              onClick: () => run(() => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'bounce' }),
-              })),
+              onClick: () => openTlBounce(job),
             });
           }
           if (desk === 'gm' && job.status === 'GM_QC') {
@@ -145,6 +198,10 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'send_md' }),
               })),
+            });
+            actions.push({
+              label: 'Bounce',
+              onClick: () => openGmBounce(job),
             });
           }
           if (desk === 'md' && job.status === 'MD_SUBMIT') {
@@ -172,6 +229,11 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
               {chatJobId === job._id && chatSelfId && (
                 <div className="mt-2 h-[420px]"><StaffChat selfId={chatSelfId} roster={roster} jobId={job._id} /></div>
               )}
+              {job.bounce_note && (job.status === 'MAKER_PREP' || job.status === 'TL_QC') && (
+                <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
+                  Bounce note: {job.bounce_note}
+                </p>
+              )}
               {desk === 'employee' && job.status === 'MAKER_PREP' && (
                 <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 space-y-2">
                   <p className="text-[11px] font-black text-[#0A2647] uppercase tracking-wide">Additional Documentations</p>
@@ -180,14 +242,19 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                   </p>
                   {(job.prep_files || []).length > 0 && (
                     <ul className="space-y-1">
-                      {(job.prep_files || []).map((f, i) => (
+                      {(job.prep_files || []).map((f, i) => {
+                        const bounced = (job.bounced_slots || []).includes(f.slot);
+                        return (
                         <li key={f.slot || i} className="flex items-center justify-between gap-2 text-[11px]">
-                          <span className="truncate min-w-0">{f.name || f.slot || `File ${i + 1}`}</span>
+                          <span className={`truncate min-w-0 ${bounced ? 'text-red-700 font-semibold' : ''}`}>
+                            {f.name || f.slot || `File ${i + 1}`}{bounced ? ' (bounced)' : ''}
+                          </span>
                           <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => openFile(job, f.slot)}>
                             View
                           </Button>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   )}
                   <label className={`flex items-center justify-center h-9 rounded-md border border-dashed border-emerald-300 bg-emerald-50 text-[11px] font-bold text-emerald-800 cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -195,6 +262,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                     <input
                       type="file"
                       multiple
+                      accept="application/pdf"
                       className="sr-only"
                       disabled={busy}
                       onChange={async (e) => {
@@ -233,7 +301,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           <div className="space-y-3">
             <div>
               <Label>Checklist document *</Label>
-              <input type="file" accept="application/pdf,.doc,.docx" className="mt-1 block w-full text-sm" onChange={(e) => setChecklistFile(e.target.files?.[0] || null)} />
+              <input type="file" accept="application/pdf" className="mt-1 block w-full text-sm" onChange={(e) => setChecklistFile(e.target.files?.[0] || null)} />
             </div>
             <div>
               <Label>Route to TL *</Label>
@@ -253,13 +321,17 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
 
       <Dialog open={!!makerJob} onOpenChange={() => setMakerJob(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Assign maker</DialogTitle></DialogHeader>
-          <Select value={makerId} onValueChange={setMakerId}>
-            <SelectTrigger><SelectValue placeholder="Team member" /></SelectTrigger>
-            <SelectContent>
-              {members.map((m) => <SelectItem key={m.emp_id} value={m.emp_id}>{m.name} ({m.emp_id})</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <DialogHeader><DialogTitle>Assign employee</DialogTitle></DialogHeader>
+              {makerOptions.length === 0 ? (
+                <p className="text-sm text-slate-500">No employees on this Team Lead’s team.</p>
+              ) : (
+                <Select value={makerId} onValueChange={setMakerId}>
+                  <SelectTrigger><SelectValue placeholder="Team employee" /></SelectTrigger>
+                  <SelectContent>
+                    {makerOptions.map((m) => <SelectItem key={m.emp_id} value={m.emp_id}>{m.name} ({m.emp_id})</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
           <DialogFooter><Button onClick={assignMaker} disabled={busy}>Assign</Button></DialogFooter>
         </DialogContent>
       </Dialog>
@@ -271,6 +343,52 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           <Input type="file" accept="application/pdf" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} />
           <DialogFooter>
             <Button onClick={confirmReceipt} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">Confirm & push to Drive</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!bounceJob} onOpenChange={() => setBounceJob(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{bounceMode === 'gm' ? 'Bounce to TL' : 'Bounce to employee'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {bounceMode === 'tl' && (
+              <div className="space-y-2">
+                <Label>Files to replace *</Label>
+                {(bounceJob?.prep_files || []).length === 0 ? (
+                  <p className="text-sm text-slate-500">No files on this job.</p>
+                ) : (
+                  <ul className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
+                    {(bounceJob.prep_files || []).map((f, i) => (
+                      <li key={f.slot || i} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={bounceSlots.includes(f.slot)}
+                          onChange={() => toggleBounceSlot(f.slot)}
+                        />
+                        <span className="truncate">{f.name || f.slot || `File ${i + 1}`}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <div>
+              <Label>Bounce note *</Label>
+              <Textarea
+                className="mt-1"
+                rows={3}
+                value={bounceNote}
+                onChange={(e) => setBounceNote(e.target.value)}
+                placeholder={bounceMode === 'gm' ? 'Tell the TL what to fix.' : 'Tell the employee which files to replace and why.'}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBounceJob(null)}>Cancel</Button>
+            <Button onClick={() => run(submitBounce)} disabled={busy} className="bg-red-600 hover:bg-red-700">Bounce</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

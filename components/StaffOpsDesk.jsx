@@ -9,15 +9,18 @@ import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import MatchedOpportunitiesPanel from '@/components/MatchedOpportunitiesPanel';
 import GemCoPilot from '@/components/GemCoPilot';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
+import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
+import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import SuggestionBar from '@/components/workflow/SuggestionBar';
-import SuggestClientControls from '@/components/workflow/SuggestClientControls';
+import ArchiveBoard from '@/components/workflow/ArchiveBoard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
+import ClientBidSupportPanel from '@/components/ClientBidSupportPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,8 +34,9 @@ import { workflowFetch, openWorkflowFile, staffHeaders } from '@/components/work
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
+import { DESIGNATIONS, resolveStaffDesignation } from '@/lib/designations';
 import {
-  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2
+  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud
 } from 'lucide-react';
 
 export default function StaffOpsDesk({ desk }) {
@@ -44,6 +48,7 @@ export default function StaffOpsDesk({ desk }) {
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
   const [submittedJobs, setSubmittedJobs] = useState([]);
+  const [archivedJobs, setArchivedJobs] = useState([]);
   const [tenders, setTenders] = useState([]);
   const [clients, setClients] = useState([]);
   const [team, setTeam] = useState([]);
@@ -63,7 +68,7 @@ export default function StaffOpsDesk({ desk }) {
 
   const load = async () => {
     try {
-      const [q, internalQ, submittedQ, t, c, e, o] = await Promise.all([
+      const [q, internalQ, submittedQ, t, c, e, o, archivedQ] = await Promise.all([
         workflowFetch('/api/workflow/queue'),
         workflowFetch('/api/workflow/queue?board=internal'),
         workflowFetch('/api/workflow/queue?board=submitted'),
@@ -73,6 +78,9 @@ export default function StaffOpsDesk({ desk }) {
         isGm
           ? fetch('/api/gov-officers', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()).catch(() => ({ officers: [] }))
           : Promise.resolve({ officers: [] }),
+        isGm
+          ? workflowFetch('/api/workflow/archive').catch(() => ({ jobs: [] }))
+          : Promise.resolve({ jobs: [] }),
       ]);
       setJobs(q.jobs || []);
       setInternalJobs(internalQ.jobs || []);
@@ -81,6 +89,7 @@ export default function StaffOpsDesk({ desk }) {
       setClients(c.users || []);
       setTeam(e.team || []);
       setOfficers(o.officers || []);
+      setArchivedJobs(archivedQ.jobs || []);
     } catch (err) {
       toast.error(err.message);
     }
@@ -107,8 +116,8 @@ export default function StaffOpsDesk({ desk }) {
   const internal = internalJobs;
   const submitted = submittedJobs;
   const awaitingPublish = jobs.filter((j) => j.status === 'AWAITING_PUBLISH');
-  const tls = team.filter((t) => t.designation === 'DOC_TEAM_TL');
-  const members = team.filter((t) => t.designation === 'DOC_TEAM_MEMBER');
+  const tls = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_TL);
+  const members = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
   const filteredOfficers = officers.filter((o) => {
     const needle = officerSearch.trim().toLowerCase();
     if (!needle) return true;
@@ -122,6 +131,8 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
           { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
+          { value: 'bid-support', label: 'Bid Support', icon: UploadCloud, color: 'blue' },
+          { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
         ] },
         { id: 'ai', label: 'AI', items: [
           { value: 'matchmaker', label: 'AI Matchmaker / Live Hunting', icon: Target, color: 'indigo' },
@@ -222,7 +233,13 @@ export default function StaffOpsDesk({ desk }) {
                     pdfEmail={staffEmail}
                     pdfRole="employee"
                     renderActions={(t) => (
-                      <SuggestClientControls tender={t} clients={clients} onDone={load} compact />
+                      <SuggestClientControls
+                        tender={t}
+                        clients={clients}
+                        onDone={load}
+                        compact
+                        variant="suggest"
+                      />
                     )}
                   />
                 </TabsContent>
@@ -249,7 +266,13 @@ export default function StaffOpsDesk({ desk }) {
               {isTl && (
                 <TabsContent value="publisher" className="space-y-6">
                   <div className="grid lg:grid-cols-5 gap-6">
-                    <div className="lg:col-span-2">
+                    <div className="lg:col-span-2 space-y-4">
+                      <CreatePublishTaskForm
+                        actorDesk="tl"
+                        actorEmpId={selfId}
+                        members={members}
+                        onCreated={load}
+                      />
                       <PublishTenderForm awaitingJobs={awaitingPublish} onPublished={load} />
                     </div>
                     <div className="lg:col-span-3">
@@ -267,12 +290,23 @@ export default function StaffOpsDesk({ desk }) {
                   team={team}
                   onRefresh={load}
                   chatSelfId={selfId}
+                  actorEmpId={selfId}
                   chatRoster={team}
                 />
               </TabsContent>
               <TabsContent value="submitted">
-                <SubmittedTrackingBoard jobs={submitted} canEdit={isGm || isTl} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
+                <SubmittedTrackingBoard jobs={submitted} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
               </TabsContent>
+              {isGm && (
+                <TabsContent value="bid-support">
+                  <ClientBidSupportPanel team={team} tenders={tenders} pdfEmail={staffEmail} />
+                </TabsContent>
+              )}
+              {isGm && (
+                <TabsContent value="archive">
+                  <ArchiveBoard jobs={archivedJobs} />
+                </TabsContent>
+              )}
               {isGm && (
                 <TabsContent value="matchmaker">
                   <AiMatchmakerPanel />

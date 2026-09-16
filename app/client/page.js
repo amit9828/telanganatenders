@@ -27,6 +27,7 @@ import {
 import { formatINR } from '@/lib/format';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
+import { openClientWorkflowFile } from '@/components/workflow/api';
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -791,13 +792,29 @@ export default function ClientDashboard() {
     try {
       const res = await fetch(`/api/workflow/jobs/${job._id}/client-approve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: clientHeaders({ 'Content-Type': 'application/json' }),
         credentials: 'include',
-        body: JSON.stringify({ client_email: email }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Approve failed');
       toast.success('Approved. Status is now In Progress.');
+      fetchClientData(email);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleRejectWorkflowJob = async (job) => {
+    if (!confirm('Reject this tender suggestion? It will leave your Recommended list.')) return;
+    try {
+      const res = await fetch(`/api/workflow/jobs/${job._id}/client-reject`, {
+        method: 'POST',
+        headers: clientHeaders({ 'Content-Type': 'application/json' }),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Reject failed');
+      toast.success('Rejected. The tender is no longer on your Recommended list.');
       fetchClientData(email);
     } catch (e) {
       toast.error(e.message);
@@ -1640,8 +1657,9 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           key={job._id}
                           job={job}
                           actions={[
-                            { label: 'View SOW', icon: 'eye', onClick: () => window.location.assign(`/api/workflow/jobs/${job._id}/file?slot=sow`) },
-                            { label: 'Approve', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
+                            { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
+                            { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
+                            { label: 'Reject', onClick: () => handleRejectWorkflowJob(job) },
                           ]}
                         />
                       ))}
@@ -1710,7 +1728,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                      <CompactTenderCard
                        key={job._id}
                        job={{ ...job, display_status: 'In Progress' }}
-                       actions={[{ label: 'View SOW', icon: 'eye', onClick: () => window.location.assign(`/api/workflow/jobs/${job._id}/file?slot=sow`) }]}
+                       actions={[{ label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) }]}
                      />
                    ))}
                    {workflowJobs.filter(j => j.status === 'SUBMITTED' || j.display_status === 'Submitted' || j.display_status === 'Technical Evaluation' || j.display_status === 'Financial Evaluation').map((job) => (
@@ -1718,8 +1736,8 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        key={job._id}
                        job={job}
                        actions={[
-                         { label: 'View SOW', icon: 'eye', onClick: () => window.location.assign(`/api/workflow/jobs/${job._id}/file?slot=sow`) },
-                         job.receipt && { label: 'Receipt', icon: 'download', onClick: () => window.open(`/api/workflow/jobs/${job._id}/file?slot=receipt`, '_blank') },
+                         { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
+                         job.receipt && { label: 'Receipt', icon: 'download', onClick: () => openClientWorkflowFile(job._id, 'receipt').catch((err) => toast.error(err.message)) },
                        ].filter(Boolean)}
                      />
                    ))}

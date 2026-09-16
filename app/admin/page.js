@@ -12,11 +12,13 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
+import ArchiveBoard from '@/components/workflow/ArchiveBoard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
-import { deskPathForStaff } from '@/lib/designations';
+import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations';
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
@@ -44,7 +46,7 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot, BellRing
+  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot, BellRing, Archive
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -151,10 +153,6 @@ export default function AdminPage() {
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [queryForm, setQueryForm] = useState({ client_email: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
-  const [bidRequests, setBidRequests] = useState([]);
-  const [bidReply, setBidReply] = useState({});
-  const [bidAssignee, setBidAssignee] = useState({});
-
   // Tender Publisher State
   const [form, setForm] = useState({
     title: '', department: '', last_date: '', district: '', category: 'Product', supply_details: '', bid_no: ''
@@ -180,6 +178,7 @@ export default function AdminPage() {
   const [wfJobs, setWfJobs] = useState([]);
   const [wfInternal, setWfInternal] = useState([]);
   const [wfSubmitted, setWfSubmitted] = useState([]);
+  const [wfArchive, setWfArchive] = useState([]);
 
   // 🚀 AI Matchmaker & Competitor Intel
   const [bidMatches, setBidMatches] = useState([]);
@@ -259,13 +258,12 @@ export default function AdminPage() {
     try {
       // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
       // tenders" filter that's meant only for the public site.
-      const [tRes, sRes, tkRes, uRes, aRes, reqRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
+      const [tRes, sRes, tkRes, uRes, aRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
         safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
         safeFetch(`/api/admin/stats?t=${Date.now()}`),
         safeFetch(`/api/tickets?role=admin&t=${Date.now()}`),
         safeFetch(`/api/users/pending?t=${Date.now()}`),
         safeFetch(`/api/users/approved?t=${Date.now()}`),
-        safeFetch(`/api/client-requests?t=${Date.now()}`),
         safeFetch(`/api/dispatches?t=${Date.now()}`),
         safeFetch(`/api/employees?t=${Date.now()}`),
         safeFetch(`/api/finance/ledger?t=${Date.now()}`),
@@ -282,7 +280,6 @@ export default function AdminPage() {
       if (guestQRes.ok) setGuestQueries(guestQRes.data.queries || guestQRes.data['guest-queries'] || []);
       if (uRes.ok) setPendingUsers(uRes.data.users || []);
       if (aRes.ok) setApprovedClients(aRes.data.users || []);
-      if (reqRes.ok) setBidRequests(reqRes.data.requests || []);
       if (dispRes.ok) setDispatches(dispRes.data.dispatches || []);
       if (empRes.ok) setTeamMembers(empRes.data.team || []);
       if (ledgerRes.ok) setLedgerTxns(ledgerRes.data.transactions || []);
@@ -294,14 +291,16 @@ export default function AdminPage() {
         setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
       }
       try {
-        const [internalQ, submittedQ, allQ] = await Promise.all([
+        const [internalQ, submittedQ, allQ, archiveQ] = await Promise.all([
           workflowFetch(`/api/workflow/queue?board=internal&t=${Date.now()}`),
           workflowFetch(`/api/workflow/queue?board=submitted&t=${Date.now()}`),
           workflowFetch(`/api/workflow/queue?t=${Date.now()}`),
+          workflowFetch(`/api/workflow/archive?t=${Date.now()}`).catch(() => ({ jobs: [] })),
         ]);
         setWfInternal(internalQ.jobs || []);
         setWfSubmitted(submittedQ.jobs || []);
         setWfJobs(allQ.jobs || []);
+        setWfArchive(archiveQ.jobs || []);
       } catch (err) {
         console.error('Workflow queue sync failed', err);
       }
@@ -850,24 +849,6 @@ export default function AdminPage() {
       if (analyzingFiles) return;
       await processBulkFiles(e.dataTransfer?.files);
   };
-  const handleProcessBidRequest = async (reqId, status) => {
-    const reply = bidReply[reqId];
-    const assigneeId = bidAssignee[reqId];
-    if(status === 'Assigned' && !assigneeId) return toast.error('Please select an employee from the dropdown to assign.');
-    try {
-      let endpoint = '/api/client-requests/reply';
-      let payload = { req_id: reqId, status: status, reply: reply || 'Processed by MD' };
-      if (status === 'Assigned' && assigneeId) {
-         const emp = teamMembers.find(t => t.emp_id === assigneeId);
-         endpoint = '/api/client-requests/assign';
-         payload = { req_id: reqId, emp_id: emp.emp_id, emp_name: emp.name, status: 'Assigned', reply: reply || 'Assigned to Employee' };
-      }
-      const res = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
-      if(res.ok) { toast.success(`Client Request ${status}!`); setBidReply(prev => ({...prev, [reqId]: ''})); setBidAssignee(prev => ({...prev, [reqId]: ''})); refresh(); } 
-      else { toast.error("Failed to update status."); }
-    } catch(err) { toast.error("Network Error."); }
-  };
-
   const handleDispatchTask = async (e) => {
     e.preventDefault();
     if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
@@ -878,15 +859,10 @@ export default function AdminPage() {
     } catch (err) { toast.error('Network Error.'); }
   };
 
-  const deleteDispatch = async (id, isRequest = true) => {
+  const deleteDispatch = async (id) => {
      if(!confirm("Permanently delete this task?")) return;
-     if(isRequest) {
-         setBidRequests(prev => prev.filter(r => r._id !== id));
-         await fetch(`/api/client-requests?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-     } else {
-         setDispatches(prev => prev.filter(d => d._id !== id));
-         await fetch(`/api/dispatches?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-     }
+     setDispatches(prev => prev.filter(d => d._id !== id));
+     await fetch(`/api/dispatches?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
      toast.success("Deleted permanently.");
   };
   const handleCloseQuery = async (queryId, clientEmail) => {
@@ -937,20 +913,6 @@ export default function AdminPage() {
       toast.success("Task force closed."); refresh();
     } catch(e) { toast.error("Network error"); }
   };
-const handleViewDocument = (req) => {
-    // 🚀 FIX: MongoDB లో క్లయింట్ ఫైల్ సేవ్ అయ్యే అన్ని రకాల పేర్లను ఇక్కడ యాడ్ చేశాను
-    const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file;
-    
-    if (docLink) {
-       const finalUrl = docLink.startsWith('http') ? docLink : (docLink.startsWith('/') ? docLink : `/uploads/${docLink}`);
-       window.open(finalUrl, '_blank');
-    } else if (req.link_or_id && req.link_or_id.startsWith('http')) {
-       window.open(req.link_or_id, '_blank');
-    } else { 
-       toast.info("No file attached. The link/ID reference is shown above."); 
-    }
-  };
-
   const handleLedgerSubmit = async (e) => {
     e.preventDefault();
     if(!ledgerForm.amount || !ledgerForm.reason) return toast.error("Amount and Reason are required");
@@ -1122,6 +1084,7 @@ const handleViewDocument = (req) => {
     { id: 'workflow', label: 'Tender Workflow', items: [
       { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
       { value: 'submitted', label: 'Submitted Board', icon: FileText, color: 'emerald' },
+      { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
     ] },
     { id: 'publishing', label: 'Live Tenders', items: [
       { value: 'publisher', label: 'Live Tenders', icon: FileText, color: 'navy' },
@@ -1176,7 +1139,7 @@ const handleViewDocument = (req) => {
             
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<AlertTriangle className="w-4 h-4 text-amber-500" />} label="Pending Operations" value={dispatches.filter(d => d.status !== 'Completed' && !d.status.includes('Force Closed')).length + bidRequests.filter(r => r.status === 'Pending Officer Review').length} accent={true} />
+                 <StatCard icon={<AlertTriangle className="w-4 h-4 text-amber-500" />} label="Pending Operations" value={dispatches.filter(d => d.status !== 'Completed' && !d.status.includes('Force Closed')).length} accent={true} />
               </div>
               <div onClick={() => setActiveTab('live_tenders')} className="cursor-pointer transition hover:scale-[1.01]">
                  <StatCard icon={<Globe className="w-4 h-4 text-blue-500" />} label="Live Tenders" value={tenders.length} />
@@ -1687,20 +1650,30 @@ const handleViewDocument = (req) => {
             <TeamDirectoryPanel actorDesk="md" team={teamMembers} onRefresh={refresh} impersonate={openStaffDesk} />
           </TabsContent>
 
-          <TabsContent value="internal" className="mt-4">
+          <TabsContent value="internal" className="mt-4 space-y-6">
+            <CreatePublishTaskForm
+              actorDesk="md"
+              tls={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL)}
+              members={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER)}
+              onCreated={refresh}
+            />
             <InternalTrackingBoard
               desk="md"
               jobs={wfInternal}
-              tls={teamMembers.filter((t) => t.designation === 'DOC_TEAM_TL')}
-              members={teamMembers.filter((t) => t.designation === 'DOC_TEAM_MEMBER')}
+              tls={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL)}
+              members={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER)}
               team={teamMembers}
               onRefresh={refresh}
               chatSelfId="MD"
+              actorEmpId=""
               chatRoster={teamMembers}
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
-            <SubmittedTrackingBoard jobs={wfSubmitted} canEdit={false} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
+            <SubmittedTrackingBoard jobs={wfSubmitted} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
+          </TabsContent>
+          <TabsContent value="archive" className="mt-4">
+            <ArchiveBoard jobs={wfArchive} />
           </TabsContent>
           <TabsContent value="alerts" className="mt-4"><OpsAlerts roster={teamMembers} /></TabsContent>
           <TabsContent value="client-queries" className="mt-4">
@@ -2044,7 +2017,7 @@ const handleViewDocument = (req) => {
                                                {hoursElapsed > 48 && (
                                                    <Button size="sm" onClick={() => handleForceClose(task._id)} className="flex-1 h-7 text-[10px] bg-red-600 hover:bg-red-700 text-white"><XCircle className="w-3 h-3 mr-1"/> Force Close</Button>
                                                )}
-                                               <Button size="sm" variant="ghost" onClick={() => deleteDispatch(task._id, false)} className="h-7 text-[10px] text-slate-500 hover:text-red-600 hover:bg-red-50 px-2"><Trash2 className="w-3 h-3"/></Button>
+                                               <Button size="sm" variant="ghost" onClick={() => deleteDispatch(task._id)} className="h-7 text-[10px] text-slate-500 hover:text-red-600 hover:bg-red-50 px-2"><Trash2 className="w-3 h-3"/></Button>
                                            </div>
                                        </div>
                                    )
@@ -2055,78 +2028,6 @@ const handleViewDocument = (req) => {
                   </Card>
                </div>
 
-               <Card className="tender-shadow border-0 bg-slate-50/50">
-                  <CardHeader className="border-b pb-4">
-                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><UploadCloud className="w-5 h-5 text-blue-600"/> Client Bid Support Requests ({bidRequests.length})</CardTitle>
-                     <CardDescription>Live database fetch of requests submitted by clients. Assign to employees to track progress.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-4 max-h-[850px] overflow-y-auto">
-                     {bidRequests.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-slate-400"><UploadCloud className="w-12 h-12 mb-3 opacity-20"/><p className="text-sm font-semibold">No custom bid requests pending.</p></div>
-                     ) : (
-                        <div className="space-y-4">
-                           {bidRequests.map(req => {
-                              // 🚀 FIX: ఇక్కడ క్లయింట్ డాక్యుమెంట్ అప్‌లోడ్ చేశాడో లేదో ఖచ్చితంగా చెక్ చేస్తుంది
-                              const hasDoc = req.file_url || req.document_url || req.file || req.attachment || req.pdf || req.document || req.uploaded_file || req.client_file || (req.link_or_id && req.link_or_id.startsWith('http'));
-                              
-                              const matchedTender = tenders.find(t => t.bid_no === req.link_or_id);
-                              // 🚀 FIX: ఇది టెండర్ కాదు, క్లయింట్ సొంతంగా పెట్టిన ఫైల్ అని గుర్తుపట్టడానికి
-                              const isClientUpload = hasDoc && !matchedTender;
-
-                              return (
-                              <div key={req._id} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-blue-300 transition">
-                                 <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                       <Badge className="mb-2 bg-blue-50 text-blue-700 border-blue-200">{req.client_email}</Badge>
-                                       <h4 className="font-bold text-[#0A2647] text-sm break-all">{req.link_or_id}</h4>
-                                    </div>
-                                    <Badge className={req.status === 'Pending Officer Review' ? 'bg-amber-100 text-amber-800 border-0 animate-pulse' : 'bg-emerald-100 text-emerald-800 border-0'}>{req.status}</Badge>
-                                 </div>
-                                 <p className="text-xs bg-slate-50 p-3 rounded-md border border-slate-100 text-slate-700 font-medium mb-3">"{req.description}"</p>
-                                 
-                                 {/* 🚀 FIX: క్లయింట్ అప్‌లోడ్ చేస్తే "View Uploaded Document", లేకపోతే "View Original Tender PDF" */}
-                                 <Button variant="outline" size="sm" disabled={!hasDoc && !matchedTender} onClick={() => {
-                                     if (isClientUpload || !matchedTender) {
-                                         handleViewDocument(req);
-                                     } else if (matchedTender) {
-                                         handleViewPDF(matchedTender._id || matchedTender.id);
-                                     }
-                                 }} className={`mb-4 w-full sm:w-auto h-8 text-xs ${hasDoc || matchedTender ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'text-slate-400 border-slate-200 bg-slate-100'}`}>
-                                    <FileText className="w-3.5 h-3.5 mr-1" /> 
-                                    {isClientUpload ? "View Uploaded Document" : (matchedTender ? "View Original Tender PDF" : "No Document Attached")}
-                                 </Button>
-
-                                 {req.status === 'Pending Officer Review' ? (
-                                    <div className="flex flex-col gap-3 border-t pt-3">
-                                       <Input placeholder="MD / Officer Reply or Instructions..." className="h-9 text-xs bg-white" value={bidReply[req._id] || ''} onChange={e => setBidReply({...bidReply, [req._id]: e.target.value})} />
-                                       
-                                       <div className="flex flex-col sm:flex-row gap-2">
-                                          <Select value={bidAssignee[req._id] || ''} onValueChange={v => setBidAssignee({...bidAssignee, [req._id]: v})}>
-                                             <SelectTrigger className="flex-1 h-8 text-xs bg-white"><SelectValue placeholder="Assign to Employee..."/></SelectTrigger>
-                                             <SelectContent>
-                                                {teamMembers.map(emp => <SelectItem key={emp.emp_id} value={emp.emp_id}>{emp.name}</SelectItem>)}
-                                             </SelectContent>
-                                          </Select>
-                                          <Button size="sm" className="bg-[#16a34a] hover:bg-[#15803d] h-8" onClick={() => handleProcessBidRequest(req._id, 'Assigned')}><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Assign & Notify</Button>
-                                       </div>
-                                       <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 h-8 mt-1" onClick={() => handleProcessBidRequest(req._id, 'Rejected')}>Reject Request</Button>
-                                    </div>
-                                 ) : (
-                                    <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 mt-2">
-                                       <p className="text-xs text-emerald-800 font-bold mb-1">Status: {req.status}</p>
-                                       <p className="text-xs text-slate-700 font-medium">Reply: {req.reply}</p>
-                                       <div className="flex gap-2 mt-3 pt-2 border-t border-emerald-200/50">
-                                          <Button size="sm" variant="ghost" onClick={()=>handleProcessBidRequest(req._id, 'Pending Officer Review')} className="h-7 text-[10px] text-amber-600 bg-amber-50 hover:bg-amber-100"><RefreshCw className="w-3 h-3 mr-1"/> Re-Query</Button>
-                                          <Button size="sm" variant="ghost" onClick={()=>deleteDispatch(req._id, true)} className="h-7 text-[10px] text-red-600 bg-red-50 hover:bg-red-100"><Trash2 className="w-3 h-3 mr-1"/> Delete Permanently</Button>
-                                       </div>
-                                    </div>
-                                 )}
-                              </div>
-                           )})}
-                        </div>
-                     )}
-                  </CardContent>
-               </Card>
             </div>
           </TabsContent>
           {/* ==================== 6. PUBLISHER ==================== */}

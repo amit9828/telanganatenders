@@ -1,4 +1,4 @@
-import { isAdminDeskPath, isStaffDeskPath, staffSessionIdent } from '@/lib/tab-handoff';
+import { isAdminDeskPath, isClientDeskPath, isStaffDeskPath, staffSessionIdent, clientHeaders } from '@/lib/tab-handoff';
 
 export function staffHeaders(extra = {}) {
   const headers = { ...extra };
@@ -41,8 +41,36 @@ export function staffPdfHref(tenderId, { email, role = 'employee' } = {}) {
   return `/api/tenders/${tenderId}/pdf?email=${encodeURIComponent(resolved)}&role=${role}`;
 }
 
+export async function openClientWorkflowFile(jobId, slot = 'sow') {
+  if (typeof window === 'undefined' || !jobId) return;
+  const res = await fetch(`/api/workflow/jobs/${jobId}/file?slot=${encodeURIComponent(slot)}`, {
+    credentials: 'include',
+    headers: clientHeaders(),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Could not open file');
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+  }
+}
+
 export function openWorkflowFile(jobId, slot = 'sow') {
   if (typeof window === 'undefined' || !jobId) return;
+  if (isClientDeskPath(window.location.pathname || '')) {
+    openClientWorkflowFile(jobId, slot).catch((err) => {
+      console.error(err);
+    });
+    return;
+  }
   window.location.assign(`/api/workflow/jobs/${jobId}/file?slot=${slot}`);
 }
 

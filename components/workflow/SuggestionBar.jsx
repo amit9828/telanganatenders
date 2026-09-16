@@ -20,6 +20,7 @@ function clientLabel(job) {
 
 export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
   const [busyId, setBusyId] = useState('');
+  const [sowByJob, setSowByJob] = useState({});
 
   const groups = useMemo(() => {
     const map = new Map();
@@ -49,7 +50,11 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Remove failed (${res.status})`);
-      toast.success('Suggestion removed.');
+      setSowByJob((prev) => {
+        const next = { ...prev };
+        delete next[job._id];
+        return next;
+      });
       onRefresh?.();
     } catch (err) {
       toast.error(err.message);
@@ -58,9 +63,10 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
     }
   };
 
-  const attachSow = async (job, file) => {
+  const forwardToClient = async (job) => {
+    const file = sowByJob[job._id];
     if (!file) {
-      toast.error('Choose a SOW PDF.');
+      toast.error('Choose a SOW PDF first.');
       return;
     }
     if (file.type && file.type !== 'application/pdf' && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
@@ -79,8 +85,13 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
         body: form,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
-      toast.success('SOW attached. Client will see Pending Approval.');
+      if (!res.ok) throw new Error(data.error || `Forward failed (${res.status})`);
+      toast.success('Sent to client. They will see it on Recommended.');
+      setSowByJob((prev) => {
+        const next = { ...prev };
+        delete next[job._id];
+        return next;
+      });
       onRefresh?.();
     } catch (err) {
       toast.error(err.message);
@@ -94,12 +105,12 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
       <CardHeader>
         <CardTitle className="text-[#0A2647] text-lg">Suggestion Bar</CardTitle>
         <CardDescription>
-          Parked tenders grouped by client. Upload a SOW PDF to forward. The client is not notified until the SOW is uploaded.
+          Tenders parked for a client. Attach the SOW PDF, then click Send to Client. The client is not notified until you send.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {groups.length === 0 && (
-          <p className="text-sm text-slate-400 text-center py-10">No parked suggestions yet. Select a client on Live Tenders and click Suggest.</p>
+          <p className="text-sm text-slate-400 text-center py-10">No parked suggestions yet. Select a client and click Suggest on Live Tenders.</p>
         )}
         {groups.map((group) => (
           <div key={group.email} className="space-y-3">
@@ -110,6 +121,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
               {group.jobs.map((job) => {
                 const inputId = `sow-${job._id}`;
+                const selected = sowByJob[job._id];
                 return (
                   <div
                     key={job._id}
@@ -151,21 +163,29 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
                       <input
                         id={inputId}
                         type="file"
-                        accept=".pdf,application/pdf"
+                        accept="application/pdf"
                         className="sr-only"
                         disabled={busyId === job._id}
                         onChange={(e) => {
-                          const file = e.target.files?.[0];
+                          const file = e.target.files?.[0] || null;
                           e.target.value = '';
-                          attachSow(job, file);
+                          setSowByJob((prev) => ({ ...prev, [job._id]: file }));
                         }}
                       />
                       <label
                         htmlFor={inputId}
-                        className={`h-8 w-full inline-flex items-center justify-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold cursor-pointer ${busyId === job._id ? 'opacity-50 pointer-events-none' : ''}`}
+                        className={`h-8 w-full inline-flex items-center justify-center gap-1 rounded-md border border-slate-200 bg-white text-[#0A2647] text-[10px] font-bold cursor-pointer ${busyId === job._id ? 'opacity-50 pointer-events-none' : ''}`}
                       >
-                        <Upload className="w-3 h-3" /> {busyId === job._id ? 'Uploading…' : 'Upload SOW'}
+                        <Upload className="w-3 h-3" /> {selected ? selected.name : 'SOW PDF'}
                       </label>
+                      <Button
+                        size="sm"
+                        className="h-8 text-[10px] w-full bg-emerald-600 hover:bg-emerald-700"
+                        disabled={busyId === job._id}
+                        onClick={() => forwardToClient(job)}
+                      >
+                        {busyId === job._id ? 'Sending…' : 'Send to Client'}
+                      </Button>
                     </div>
                   </div>
                 );
