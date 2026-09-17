@@ -23,7 +23,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 import { resolveActorRole, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
-import { persistBrandPayload, brandFieldsFromForm } from '@/lib/brand-settings';
+import { brandFieldsFromForm } from '@/lib/brand-settings';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const runtime = 'nodejs';
@@ -1660,16 +1660,14 @@ export async function POST(request, { params }) {
 
     if (path === 'settings' || path === 'api/settings') {
       const contentType = request.headers.get('content-type') || '';
-      let $set;
-      if (contentType.includes('multipart/form-data')) {
-        const form = await request.formData();
-        $set = await brandFieldsFromForm(form);
-      } else {
-        const payload = await request.json().catch(() => ({}));
-        $set = await persistBrandPayload(payload);
+      if (!contentType.includes('multipart/form-data')) {
+        return json({ error: 'Settings must be sent as multipart/form-data, not JSON.' }, 415);
       }
+      const form = await request.formData();
+      const existing = await db.collection('settings').findOne({ id: 'brand' }) || {};
+      const $set = await brandFieldsFromForm(form, existing);
       await db.collection('settings').updateOne({ id: 'brand' }, { $set }, { upsert: true });
-      return json({ success: true, settings: $set });
+      return json({ success: true });
     }
 
     // 🚀 FIX: Missing/empty/malformed JSON bodies (e.g. Adblock-mangled requests)
