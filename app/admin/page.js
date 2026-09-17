@@ -2727,6 +2727,20 @@ function StatCard({ icon, label, value, accent }) {
   );
 }
 
+const MAX_BRAND_IMAGE_BYTES = 2 * 1024 * 1024;
+
+function isPublicImageUrl(value) {
+  const s = String(value || '');
+  return /^https?:\/\//i.test(s) || (s.startsWith('/') && !s.startsWith('data:'));
+}
+
+function imageFormRef(value, originIndex) {
+  const s = String(value || '');
+  if (isPublicImageUrl(s)) return s;
+  if (s.startsWith('data:') && originIndex != null && originIndex >= 0) return `__keep__:${originIndex}`;
+  return '';
+}
+
 function BrandSettings({ token }) {
   const [logoPreview, setLogoPreview] = useState('');
   const [gemLogoPreview, setGemLogoPreview] = useState('');
@@ -2741,50 +2755,68 @@ function BrandSettings({ token }) {
   const [gemFile, setGemFile] = useState(null);
   const [sigFile, setSigFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [saveBlocked, setSaveBlocked] = useState(false);
+  const [logoOrigin, setLogoOrigin] = useState(null);
+  const [gemOrigin, setGemOrigin] = useState(null);
+  const [sigOrigin, setSigOrigin] = useState(null);
 
-  const [newLeader, setNewLeader] = useState({ name: '', role: '', image: '', phone: '', email: '' });
-  const [newClient, setNewClient] = useState({ client_name: '', company_name: '', udyam_no: '', image: '' });
+  const [newLeader, setNewLeader] = useState({ name: '', role: '', image: '', imageFile: null, phone: '', email: '' });
+  const [newClient, setNewClient] = useState({ client_name: '', company_name: '', udyam_no: '', image: '', imageFile: null });
 
   useEffect(() => {
     fetch('/api/settings').then(async (r) => {
       const d = await r.json().catch(() => ({}));
       const settings = d?.settings;
       if (!settings) return;
-      if (settings.logo) setLogoPreview(settings.logo);
-      if (settings.gem_logo) setGemLogoPreview(settings.gem_logo);
-      if (settings.md_signature) setMdSignaturePreview(settings.md_signature);
+      if (settings.logo) { setLogoPreview(settings.logo); setLogoOrigin(0); }
+      if (settings.gem_logo) { setGemLogoPreview(settings.gem_logo); setGemOrigin(0); }
+      if (settings.md_signature) { setMdSignaturePreview(settings.md_signature); setSigOrigin(0); }
       if (settings.name) setBrandName(settings.name);
       if (settings.tagline) setTagline(settings.tagline);
       if (settings.vision_text) setVisionText(settings.vision_text);
       if (Array.isArray(settings.banners)) {
-        setBanners(settings.banners.map((src) => (typeof src === 'string' ? { src, file: null } : src)));
+        setBanners(settings.banners.map((src, i) => ({ src, file: null, originIndex: i })));
       }
-      if (Array.isArray(settings.leaders)) setLeaders(settings.leaders);
-      if (Array.isArray(settings.clients)) setClients(settings.clients);
+      if (Array.isArray(settings.leaders)) {
+        setLeaders(settings.leaders.map((row, i) => ({ ...row, imageFile: null, originIndex: i })));
+      }
+      if (Array.isArray(settings.clients)) {
+        setClients(settings.clients.map((row, i) => ({ ...row, imageFile: null, originIndex: i })));
+      }
     }).catch((err) => console.error(err));
   }, []);
 
+  const takeImageFile = (e, onAccepted) => {
+    const input = e.target;
+    const f = input.files?.[0];
+    input.value = '';
+    if (!f) return null;
+    if (!f.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return null;
+    }
+    if (f.size > MAX_BRAND_IMAGE_BYTES) {
+      toast.error('Image size must be under 2MB');
+      setSaveBlocked(true);
+      return null;
+    }
+    setSaveBlocked(false);
+    onAccepted({ url: URL.createObjectURL(f), file: f });
+    return f;
+  };
+
   const handleImageUpload = (e, previewSetter, fileSetter) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (!f.type.startsWith('image/')) return toast.error('Please upload an image file');
-    if (f.size > 3 * 1024 * 1024) return toast.error('Image too large. Keep under 3 MB.');
-    fileSetter?.(f);
-    const reader = new FileReader();
-    reader.onload = () => { previewSetter(reader.result?.toString() || ''); };
-    reader.readAsDataURL(f);
+    takeImageFile(e, ({ url, file }) => {
+      previewSetter(url);
+      fileSetter?.(file);
+    });
   };
 
   const onBannerUpload = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > 3 * 1024 * 1024) return toast.error('Banner too large. Keep under 3 MB.');
-    const reader = new FileReader();
-    reader.onload = () => {
-      setBanners((prev) => [...prev, { src: reader.result?.toString() || '', file: f }]);
+    takeImageFile(e, ({ url, file }) => {
+      setBanners((prev) => [...prev, { src: url, file, originIndex: null }]);
       toast.success('Banner added to preview!');
-    };
-    reader.readAsDataURL(f);
+    });
   };
 
   const removeBanner = (index) => {
@@ -2793,9 +2825,9 @@ function BrandSettings({ token }) {
   };
 
   const addLeader = () => {
-    if (!newLeader.name || !newLeader.role || !newLeader.image) return toast.error('Name, Role, and Photo are required!');
-    setLeaders(prev => [...prev, newLeader]);
-    setNewLeader({ name: '', role: '', image: '', phone: '', email: '' });
+    if (!newLeader.name || !newLeader.role || (!newLeader.imageFile && !newLeader.image)) return toast.error('Name, Role, and Photo are required!');
+    setLeaders(prev => [...prev, { ...newLeader, originIndex: null }]);
+    setNewLeader({ name: '', role: '', image: '', imageFile: null, phone: '', email: '' });
     toast.success('Leader added to preview list. Click Save Settings to publish.');
   };
 
@@ -2805,9 +2837,9 @@ function BrandSettings({ token }) {
   };
 
   const addClient = () => {
-    if (!newClient.client_name || !newClient.company_name || !newClient.image) return toast.error('Client Name, Company, and Photo are required!');
-    setClients(prev => [...prev, newClient]);
-    setNewClient({ client_name: '', company_name: '', udyam_no: '', image: '' });
+    if (!newClient.client_name || !newClient.company_name || (!newClient.imageFile && !newClient.image)) return toast.error('Client Name, Company, and Photo are required!');
+    setClients(prev => [...prev, { ...newClient, originIndex: null }]);
+    setNewClient({ client_name: '', company_name: '', udyam_no: '', image: '', imageFile: null });
     toast.success('Client added to showcase. Click Save Settings to publish.');
   };
 
@@ -2817,23 +2849,46 @@ function BrandSettings({ token }) {
   };
 
   const save = async () => {
+    if (saveBlocked) return toast.error('Image size must be under 2MB');
     setSaving(true);
     try {
       const form = new FormData();
       form.append('name', brandName);
       form.append('tagline', tagline);
       form.append('vision_text', visionText);
-      form.append('logo_url', logoPreview && !String(logoPreview).startsWith('data:') ? logoPreview : '');
-      form.append('gem_logo_url', gemLogoPreview && !String(gemLogoPreview).startsWith('data:') ? gemLogoPreview : '');
-      form.append('md_signature_url', mdSignaturePreview && !String(mdSignaturePreview).startsWith('data:') ? mdSignaturePreview : '');
+      form.append('logo_url', logoFile ? '' : imageFormRef(logoPreview, logoOrigin));
+      form.append('gem_logo_url', gemFile ? '' : imageFormRef(gemLogoPreview, gemOrigin));
+      form.append('md_signature_url', sigFile ? '' : imageFormRef(mdSignaturePreview, sigOrigin));
       if (logoFile) form.append('logo', logoFile);
       if (gemFile) form.append('gem_logo', gemFile);
       if (sigFile) form.append('md_signature', sigFile);
-      const keptBanners = banners.filter((b) => b && !b.file).map((b) => (typeof b === 'string' ? b : b.src));
+
+      const keptBanners = banners
+        .filter((b) => b && !b.file)
+        .map((b) => imageFormRef(typeof b === 'string' ? b : b.src, b.originIndex));
       form.append('banners', JSON.stringify(keptBanners));
-      banners.filter((b) => b?.file).forEach((b) => form.append('banner_files', b.file));
-      form.append('leaders', JSON.stringify(leaders));
-      form.append('clients', JSON.stringify(clients));
+      banners.filter((b) => b?.file instanceof File).forEach((b) => form.append('banner_files', b.file));
+
+      form.append('leaders', JSON.stringify(leaders.map((ld) => ({
+        name: ld.name || '',
+        role: ld.role || '',
+        phone: ld.phone || '',
+        email: ld.email || '',
+        image: ld.imageFile ? '' : imageFormRef(ld.image, ld.originIndex),
+      }))));
+      leaders.forEach((ld, i) => {
+        if (ld.imageFile instanceof File) form.append(`leader_image_${i}`, ld.imageFile);
+      });
+
+      form.append('clients', JSON.stringify(clients.map((cl) => ({
+        client_name: cl.client_name || '',
+        company_name: cl.company_name || '',
+        udyam_no: cl.udyam_no || '',
+        image: cl.imageFile ? '' : imageFormRef(cl.image, cl.originIndex),
+      }))));
+      clients.forEach((cl, i) => {
+        if (cl.imageFile instanceof File) form.append(`client_image_${i}`, cl.imageFile);
+      });
 
       const headers = {};
       if (token) headers.Authorization = `Bearer ${token}`;
@@ -2858,7 +2913,7 @@ function BrandSettings({ token }) {
       <Card className="tender-shadow border-0 ring-1 ring-slate-200">
         <CardHeader className="pb-4 bg-slate-50/50 border-b flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><ImageIcon className="w-5 h-5 text-slate-500" /> Brand Identity & Logos</CardTitle>
-          <Button onClick={save} disabled={saving} className="bg-[#16a34a] hover:bg-[#15803d] shadow-md h-9 text-xs"><ShieldCheck className="w-4 h-4 mr-2"/> {saving ? 'Saving...' : 'Save All Settings'}</Button>
+          <Button onClick={save} disabled={saving || saveBlocked} className="bg-[#16a34a] hover:bg-[#15803d] shadow-md h-9 text-xs"><ShieldCheck className="w-4 h-4 mr-2"/> {saving ? 'Saving...' : 'Save All Settings'}</Button>
         </CardHeader>
         <CardContent className="pt-6">
           <div className="grid lg:grid-cols-2 gap-8 items-start">
@@ -2870,7 +2925,7 @@ function BrandSettings({ token }) {
                       {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
                     </div>
                     <div className="flex gap-2 w-full">
-                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setLogoPreview, setLogoFile)} className="hidden" />Upload</label>
+                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (url) => { setLogoPreview(url); setLogoOrigin(null); }, setLogoFile)} className="hidden" />Upload</label>
                       {logoPreview && <button onClick={() => {if(confirm('Remove?')) { setLogoPreview(''); setLogoFile(null); }}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
                     </div>
                   </div>
@@ -2881,7 +2936,7 @@ function BrandSettings({ token }) {
                       {gemLogoPreview ? <img src={gemLogoPreview} alt="gem logo" className="w-full h-full object-contain p-1" /> : <ImageIcon className="w-8 h-8 text-slate-300" />}
                     </div>
                     <div className="flex gap-2 w-full">
-                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setGemLogoPreview, setGemFile)} className="hidden" />Upload</label>
+                      <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (url) => { setGemLogoPreview(url); setGemOrigin(null); }, setGemFile)} className="hidden" />Upload</label>
                       {gemLogoPreview && <button onClick={() => {if(confirm('Remove?')) { setGemLogoPreview(''); setGemFile(null); }}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
                     </div>
                   </div>
@@ -2893,7 +2948,7 @@ function BrandSettings({ token }) {
                     {mdSignaturePreview ? <img src={mdSignaturePreview} alt="MD Signature" className="w-full h-full object-contain p-2" /> : <PenTool className="w-8 h-8 text-slate-300" />}
                   </div>
                   <div className="flex gap-2 w-full">
-                    <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" onChange={(e)=>handleImageUpload(e, setMdSignaturePreview, setSigFile)} className="hidden" />Upload</label>
+                    <label className="cursor-pointer flex-1 text-[10px] font-bold px-2 py-1.5 bg-[#0A2647] hover:bg-[#144272] text-white rounded text-center transition"><input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (url) => { setMdSignaturePreview(url); setSigOrigin(null); }, setSigFile)} className="hidden" />Upload</label>
                     {mdSignaturePreview && <button onClick={() => {if(confirm('Remove?')) { setMdSignaturePreview(''); setSigFile(null); }}} className="text-[10px] font-bold px-2 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded transition">Del</button>}
                   </div>
                </div>
@@ -2964,7 +3019,7 @@ function BrandSettings({ token }) {
                  <div className="sm:col-span-2 lg:col-span-4 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
                     <label className={`flex-1 w-full border ${newLeader.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
                        <UploadCloud className="w-4 h-4"/> {newLeader.image ? 'Professional Photo Selected ✓' : 'Upload Professional Photo *'}
-                       <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewLeader({...newLeader, image: b64}))} className="hidden"/>
+                       <input type="file" accept="image/*" onChange={(e)=>takeImageFile(e, ({ url, file }) => setNewLeader((prev) => ({ ...prev, image: url, imageFile: file })))} className="hidden"/>
                     </label>
                     <Button type="button" onClick={addLeader} className="flex-1 w-full bg-blue-600 hover:bg-blue-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Leaders List</Button>
                  </div>
@@ -3005,7 +3060,7 @@ function BrandSettings({ token }) {
                  <div className="sm:col-span-2 lg:col-span-3 flex flex-col sm:flex-row gap-3 items-center mt-2 border-t border-slate-200 pt-4">
                     <label className={`flex-1 w-full border ${newClient.image ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white hover:bg-slate-100'} px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition flex items-center justify-center gap-2`}>
                        <UploadCloud className="w-4 h-4"/> {newClient.image ? 'Company Logo Selected ✓' : 'Upload Company Logo *'}
-                       <input type="file" accept="image/*" onChange={(e)=>handleImageUpload(e, (b64) => setNewClient({...newClient, image: b64}))} className="hidden"/>
+                       <input type="file" accept="image/*" onChange={(e)=>takeImageFile(e, ({ url, file }) => setNewClient((prev) => ({ ...prev, image: url, imageFile: file })))} className="hidden"/>
                     </label>
                     <Button type="button" onClick={addClient} className="flex-1 w-full bg-emerald-600 hover:bg-emerald-700 h-9 text-xs shadow-sm"><Plus className="w-4 h-4 mr-1"/> Add to Public Showcase</Button>
                  </div>
