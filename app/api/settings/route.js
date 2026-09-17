@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { brandFieldsFromForm, MAX_BRAND_IMAGE_BYTES } from '@/lib/brand-settings';
+import { brandFieldsFromForm, MAX_BRAND_IMAGE_BYTES, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,9 @@ export async function GET() {
   try {
     const db = await getDb();
     const settings = await db.collection('settings').findOne({ id: 'brand' });
-    return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
+    return json({
+      settings: sanitizeSettingsForBrowser(settings) || { name: 'Telangana Tenders', logo: null },
+    });
   } catch (error) {
     return json({ error: error?.message || 'Failed to load settings' }, 500);
   }

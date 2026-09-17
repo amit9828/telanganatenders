@@ -23,7 +23,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
-import { brandFieldsFromForm } from '@/lib/brand-settings';
+import { brandFieldsFromForm, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const runtime = 'nodejs';
@@ -275,7 +275,9 @@ async function handleGET(request, { params }, attempt = 1) {
 
     if (path === 'settings' || path === 'api/settings') {
       const settings = await db.collection('settings').findOne({ id: 'brand' });
-      return json({ settings: settings || { name: 'Telangana Tenders', logo: null } });
+      return json({
+        settings: sanitizeSettingsForBrowser(settings) || { name: 'Telangana Tenders', logo: null },
+      });
     }
 
     // 🚀 Live Portal Traffic Counter — dedupes via cookies so polling the same

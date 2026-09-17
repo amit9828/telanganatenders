@@ -722,7 +722,8 @@ export default function App() {
       )}
 
       {/* Main Content follows below... */}
-      <section className="w-full relative h-[300px] md:h-[400px] overflow-hidden bg-slate-900 group">
+      <section className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group">
+        <div className="relative w-full max-w-none aspect-[3/1]">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
             {brandSettings.banners.map((imgUrl, idx) => (
@@ -733,10 +734,10 @@ export default function App() {
                 fill
                 priority={idx === activeBanner}
                 sizes="100vw"
-                className={`object-cover transition-opacity duration-200 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`}
+                className={`w-full h-full object-cover object-center transition-opacity duration-200 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`}
               />
             ))}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end justify-center pb-8">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent flex items-end justify-center pb-6 pointer-events-none">
                 <Badge className="bg-[#16a34a] text-white border-0 text-sm md:text-base px-4 py-1 shadow-2xl">Official B2B Tenders Portal</Badge>
             </div>
             <button onClick={prevBanner} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-20">
@@ -747,6 +748,7 @@ export default function App() {
             </button>
           </>
         )}
+        </div>
       </section>
 
       <section className="container mx-auto px-4 -mt-8 z-20 relative">
