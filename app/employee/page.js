@@ -10,7 +10,6 @@ import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import OperationsStoragePanel from '@/components/OperationsStoragePanel';
-import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
@@ -30,7 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
-  Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, Loader2,
+  Briefcase, Kanban, Building2, ClipboardList, AlertCircle, Contact, Loader2,
   Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
 } from 'lucide-react';
 
@@ -43,9 +42,12 @@ const BORDER_COLORS = [
   'border-orange-500', 'border-indigo-500', 'border-rose-500'
 ];
 
+const INTERNAL_BOARD_STATUSES = ['MD_CHECKLIST', 'TL_ASSIGN', 'MAKER_PREP', 'TL_QC', 'GM_QC', 'MD_SUBMIT', 'AWAITING_RECEIPT'];
+const SUBMITTED_BOARD_STATUSES = ['SUBMITTED', 'WON'];
+
 export default function EmployeeDashboard() {
   const [isMounted, setIsMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState('kanban');
+  const [activeTab, setActiveTab] = useState('internal');
   const [email, setEmail] = useState('');
   const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
   const [loading, setLoading] = useState(true);
@@ -693,6 +695,7 @@ export default function EmployeeDashboard() {
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
   const pendingClientAlerts = mdTasks.filter(t => t.target_type === 'client_alert' && t.status !== 'Completed').length;
+  const activeMdPriorityTasks = mdTasks.filter((t) => t.status !== 'Completed');
 
   // Grouped nav (Enterprise UI/UX Blueprint, section A) — replaces the old single-row
   // flat TabsList (11 tabs) with a left rail on desktop and a Sheet drawer on
@@ -700,7 +703,8 @@ export default function EmployeeDashboard() {
   // is untouched.
   const EMPLOYEE_NAV_GROUPS = [
     { id: 'my-work', label: 'My Work', items: [
-      { value: 'kanban', label: 'Assigned Jobs', icon: Kanban, color: 'navy' },
+      { value: 'internal', label: 'Internal Tracking', icon: ClipboardList, color: 'navy' },
+      { value: 'submitted', label: 'Submitted Tracking', icon: FileText, color: 'navy' },
     ] },
     { id: 'clients-officers', label: 'Clients', items: [
       { value: 'clients', label: 'Clients DB', icon: Users, color: 'navy' },
@@ -738,69 +742,54 @@ return (
       </header>
 
       <main className="w-full px-4 sm:px-8 py-6 space-y-6">
-        <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
-           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-           <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><LayoutDashboard className="w-4 h-4 text-blue-500"/> Assigned workflow jobs</h3>
-           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').length === 0 ? (
-                 <p className="text-sm text-slate-500 py-2">No assigned publish or employee-prep jobs.</p>
-              ) : (
-                 wfJobs.filter(j => j.status === 'AWAITING_PUBLISH' || j.status === 'MAKER_PREP').map(job => (
-                    <CompactTenderCard
-                      key={job._id}
-                      job={{ ...job, display_status: job.status === 'AWAITING_PUBLISH' ? 'Publish required' : 'Employee prep' }}
-                      actions={job.status === 'AWAITING_PUBLISH' ? [{ label: 'Go publish', onClick: () => setActiveTab('publisher') }] : []}
-                    />
-                 ))
-              )}
-           </div>
-           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-              {mdTasks.length === 0 ? (
-                 <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
-              ) : (
-                 mdTasks.map(task => (
-                    <div key={task._id || task.id} className="flex flex-col bg-slate-50 border p-3 rounded-lg shadow-sm">
-                       <div className="flex justify-between items-start">
-                          <div>
-                             <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>Priority Task</Badge>
-                             <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
-                             <p className="text-xs text-slate-500 mt-1">{task.message}</p>
-                          </div>
-                          {task.status === 'Completed' && <Badge className="bg-emerald-100 text-emerald-800 border-0 shrink-0"><CheckCircle2 className="w-3 h-3 mr-1"/> Done</Badge>}
-                       </div>
-                       
-                      {task.status !== 'Completed' && (
-                           <div className="flex flex-col gap-2 mt-3 border-t border-slate-200 pt-3">
-                              <Input placeholder="Type your reply to MD..." className="h-8 text-xs bg-white" value={mdTaskReply[task._id || task.id] || ''} onChange={(e) => setMdTaskReply({...mdTaskReply, [task._id || task.id]: e.target.value})} />
-                              <div className="flex gap-2 items-center">
-                                 <Input type="file" accept=".pdf, image/*" className="h-8 text-xs bg-white flex-1" onChange={(e) => onTaskFileChange(task._id || task.id, e)} />
-                                 <Button size="sm" disabled={uploadingTask} onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0">
-                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1"/> {uploadingTask ? 'Sending...' : 'Send Reply & Close'}
-                                 </Button>
-                              </div>
-                           </div>
-                        )}
-                    </div>
-                 ))
-              )}
-           </div>
-        </div>
-
         <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 items-start">
         <DashboardNav groups={EMPLOYEE_NAV_GROUPS} activeTab={activeTab} onChange={setActiveTab} title="Operations Desk" />
         <div className="flex-1 w-full min-w-0">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
 
-          <TabsContent value="kanban" className="w-full space-y-6">
+          <TabsContent value="internal" className="w-full space-y-6">
+            <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm relative overflow-hidden w-full">
+              <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+              <h3 className="font-bold text-[#0A2647] flex items-center gap-2 mb-3"><ClipboardList className="w-4 h-4 text-blue-500"/> MD Priority Tasks</h3>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeMdPriorityTasks.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-2">No pending tasks from MD.</p>
+                ) : (
+                  activeMdPriorityTasks.map((task) => (
+                    <div key={task._id || task.id} className="flex flex-col bg-slate-50 border p-3 rounded-lg shadow-sm">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <Badge variant="outline" className={`mb-1 ${task.priority === 'High' ? 'text-red-600 border-red-200 bg-red-50' : 'text-amber-600 border-amber-200 bg-amber-50'}`}>Priority Task</Badge>
+                          <p className="font-semibold text-sm text-slate-800">{task.subject}</p>
+                          <p className="text-xs text-slate-500 mt-1">{task.message}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 mt-3 border-t border-slate-200 pt-3">
+                        <Input placeholder="Type your reply to MD..." className="h-8 text-xs bg-white" value={mdTaskReply[task._id || task.id] || ''} onChange={(e) => setMdTaskReply({...mdTaskReply, [task._id || task.id]: e.target.value})} />
+                        <div className="flex gap-2 items-center">
+                          <Input type="file" accept=".pdf, image/*" className="h-8 text-xs bg-white flex-1" onChange={(e) => onTaskFileChange(task._id || task.id, e)} />
+                          <Button size="sm" disabled={uploadingTask} onClick={() => markTaskDone(task._id || task.id)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0">
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1"/> {uploadingTask ? 'Sending...' : 'Send Reply & Close'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
             <InternalTrackingBoard
               desk="employee"
-              jobs={wfJobs.filter((j) => ['MAKER_PREP','TL_QC','TL_ASSIGN'].includes(j.status))}
+              jobs={wfJobs.filter((j) => INTERNAL_BOARD_STATUSES.includes(j.status))}
               onRefresh={() => fetchLiveOperationsData(email)}
               chatSelfId={empData.id}
               chatRoster={teamMembers}
             />
+          </TabsContent>
+
+          <TabsContent value="submitted" className="w-full space-y-6">
             <SubmittedTrackingBoard
-              jobs={wfJobs.filter((j) => j.status === 'SUBMITTED' || j.status === 'WON')}
+              jobs={wfJobs.filter((j) => SUBMITTED_BOARD_STATUSES.includes(j.status))}
               actorEmpId={empData.id}
               onRefresh={() => fetchLiveOperationsData(email)}
               chatSelfId={empData.id}
