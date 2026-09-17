@@ -722,7 +722,8 @@ export default function App() {
       )}
 
       {/* Main Content follows below... */}
-      <section className="w-full relative h-[240px] sm:h-[320px] md:h-[400px] overflow-hidden bg-slate-900 group">
+      <section className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group">
+        <div className="relative w-full max-w-none aspect-[3/1]">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
             {brandSettings.banners.map((imgUrl, idx) => (
@@ -733,7 +734,7 @@ export default function App() {
                 fill
                 priority={idx === activeBanner}
                 sizes="100vw"
-                className={`object-contain object-center transition-opacity duration-200 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`}
+                className={`w-full h-full object-cover object-center transition-opacity duration-200 ${idx === activeBanner ? 'opacity-100' : 'opacity-0'}`}
               />
             ))}
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent flex items-end justify-center pb-6 pointer-events-none">
@@ -747,6 +748,7 @@ export default function App() {
             </button>
           </>
         )}
+        </div>
       </section>
 
       <section className="container mx-auto px-4 -mt-8 z-20 relative">
