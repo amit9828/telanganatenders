@@ -63,15 +63,31 @@ export async function openClientWorkflowFile(jobId, slot = 'sow') {
   }
 }
 
-export function openWorkflowFile(jobId, slot = 'sow') {
+export async function openWorkflowFile(jobId, slot = 'sow') {
   if (typeof window === 'undefined' || !jobId) return;
   if (isClientDeskPath(window.location.pathname || '')) {
-    openClientWorkflowFile(jobId, slot).catch((err) => {
-      console.error(err);
-    });
-    return;
+    return openClientWorkflowFile(jobId, slot);
   }
-  window.location.assign(`/api/workflow/jobs/${jobId}/file?slot=${slot}`);
+  const res = await fetch(`/api/workflow/jobs/${jobId}/file?slot=${encodeURIComponent(slot)}`, {
+    credentials: 'include',
+    headers: staffHeaders(),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data.error || 'Could not open file');
+    console.error(err);
+    throw err;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+  }
 }
 
 export async function restoreBypassSession() {
