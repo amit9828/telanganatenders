@@ -21,6 +21,7 @@ import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
 import ClientBidSupportPanel from '@/components/ClientBidSupportPanel';
+import OperationsStoragePanel from '@/components/OperationsStoragePanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -110,7 +111,6 @@ export default function StaffOpsDesk({ desk }) {
     return () => clearInterval(interval);
   }, [status]);
 
-  const liveJobs = jobs.filter((j) => j.status === 'LIVE' && !j.parked_client_email);
   const parkedJobs = jobs.filter((j) => j.status === 'LIVE' && j.parked_client_email);
   const pendingClientJobs = jobs.filter((j) => j.status === 'AWAITING_CLIENT');
   const internal = internalJobs;
@@ -128,6 +128,7 @@ export default function StaffOpsDesk({ desk }) {
     ? [
         { id: 'work', label: 'Work', items: [
           { value: 'live', label: 'Live Tenders', icon: FileText, color: 'navy' },
+          { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
           { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
           { value: 'bid-support', label: 'Bid Support', icon: UploadCloud, color: 'blue' },
@@ -218,15 +219,6 @@ export default function StaffOpsDesk({ desk }) {
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               {isGm && (
                 <TabsContent value="live">
-                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {liveJobs.map((j) => (
-                      <CompactTenderCard
-                        key={j._id}
-                        job={{ ...j, display_status: 'LIVE' }}
-                        actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
-                      />
-                    ))}
-                  </div>
                   <LiveTendersPaged
                     tenders={tenders}
                     pdfEmail={staffEmail}
@@ -278,6 +270,7 @@ export default function StaffOpsDesk({ desk }) {
                       <LiveTendersPaged tenders={tenders} pdfEmail={staffEmail} pdfRole="employee" />
                     </div>
                   </div>
+                  <OperationsStoragePanel clients={clients} uploadedBy={staffEmail || selfId} />
                 </TabsContent>
               )}
               <TabsContent value="internal">
