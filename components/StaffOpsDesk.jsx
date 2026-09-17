@@ -128,7 +128,6 @@ export default function StaffOpsDesk({ desk }) {
     ? [
         { id: 'work', label: 'Work', items: [
           { value: 'live', label: 'Live Tenders', icon: FileText, color: 'navy' },
-          { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
           { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
           { value: 'bid-support', label: 'Bid Support', icon: UploadCloud, color: 'blue' },
