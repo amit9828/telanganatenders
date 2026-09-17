@@ -24,6 +24,7 @@ import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isM
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
 import { brandFieldsFromForm, brandFieldsFromJson, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
+import { allocateEmpId, ensureUniqueEmpIds } from '@/lib/emp-id';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const runtime = 'nodejs';
@@ -2116,8 +2117,8 @@ export async function POST(request, { params }) {
           }
         }
 
-        const count = await db.collection('employees').countDocuments();
-        const newEmpId = `EMP-${1000 + count + 1}`;
+        await ensureUniqueEmpIds(db);
+        const newEmpId = await allocateEmpId(db);
         if (designation === DESIGNATIONS.DOC_TEAM_TL) teamId = newEmpId;
 
         const newEmployee = { 

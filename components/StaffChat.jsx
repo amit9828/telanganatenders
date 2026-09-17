@@ -140,7 +140,8 @@ function ContactList({ contacts, peer, query, onQuery, onSelect }) {
 }
 
 export default function StaffChat({ selfId, roster = [], teammates, jobId = null }) {
-  const people = teammates || roster;
+  const [directory, setDirectory] = useState([]);
+  const people = directory.length ? directory : (teammates || roster);
   const isMobile = useIsMobile();
   const compact = Boolean(jobId);
   const [me, setMe] = useState(selfId);
@@ -166,13 +167,28 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
     setMe(selfId);
   }, [selfId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    workflowFetch('/api/staff-chat/roster')
+      .then((data) => {
+        if (cancelled) return;
+        if (data.me) setMe(data.me);
+        setDirectory(Array.isArray(data.team) ? data.team : []);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const list = useMemo(() => {
-    const seen = new Set();
+    const seenRow = new Set();
+    const seenEmp = new Set();
     const out = [];
     const add = (row) => {
-      const id = contactId(row);
-      if (!id || id === me || seen.has(id)) return;
-      seen.add(id);
+      const emp = contactId(row);
+      const rowKey = String(row?._id || emp);
+      if (!emp || emp === me || seenRow.has(rowKey) || seenEmp.has(emp)) return;
+      seenRow.add(rowKey);
+      seenEmp.add(emp);
       out.push(row);
     };
     if (me !== 'MD') add(MD_PEER);
