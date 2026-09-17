@@ -1165,6 +1165,8 @@ export async function PUT(request, { params }) {
      }
 
      if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
+        const gate = await requireOperatorStorageAccess(request);
+        if (!gate.ok) return gate.response;
         const tenderId = pathArray[1];
         if (!ObjectId.isValid(tenderId)) return json({ error: 'Invalid Tender ID' }, 400);
         let updateFields = { ...body, updated_at: new Date() };
@@ -1481,6 +1483,8 @@ export async function DELETE(request, { params }) {
     }
 
     if (pathArray.length === 2 && (pathArray[0] === 'tenders' || pathArray[0] === 'api')) {
+      const gate = await requireOperatorStorageAccess(request);
+      if (!gate.ok) return gate.response;
       const id = pathArray[1];
       if (!id) return json({ error: 'Missing Tender ID' }, 400);
 

@@ -192,7 +192,7 @@ export default function EmployeeDashboard() {
   const handleDeleteTenderDB = async (id) => {
     if(!confirm("Are you sure you want to permanently delete this tender from the Live Portal?")) return;
     try {
-      const res = await fetch(`/api/tenders/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/tenders/${id}`, { method: 'DELETE', credentials: 'include', headers: staffHeaders() });
       if(res.ok) { toast.success("Tender deleted successfully."); fetchLiveOperationsData(email); }
       else { toast.error("Failed to delete tender."); }
     } catch(e) { toast.error("Network error"); }
@@ -496,7 +496,7 @@ export default function EmployeeDashboard() {
       if (!data?.price) return toast.error('Please enter the L1 Price');
       try {
           await fetch(`/api/tenders/${tender_id}`, {
-              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              method: 'PUT', headers: staffHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ l1_price: data.price, l1_winner: data.winner })
           });
           toast.success('L1 Intel saved successfully!'); fetchLiveOperationsData(email);
