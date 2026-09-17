@@ -106,15 +106,26 @@ export async function restoreBypassSession() {
   return data;
 }
 
-export function openStaffChatFile(id) {
-  if (typeof window === 'undefined' || !id) return;
-  fetch(`/api/staff-chat/file?id=${encodeURIComponent(id)}`, {
+export function openStaffChatFile(id, { download = false, fileName = 'attachment' } = {}) {
+  if (typeof window === 'undefined' || !id) return Promise.resolve();
+  const qs = new URLSearchParams({ id: String(id) });
+  if (download) qs.set('download', '1');
+  return fetch(`/api/staff-chat/file?${qs.toString()}`, {
     credentials: 'include',
     headers: staffHeaders(),
   }).then(async (res) => {
     if (!res.ok) throw new Error('Could not open file');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
+    if (download) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || 'attachment';
+      a.rel = 'noopener noreferrer';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      return url;
+    }
     const opened = window.open(url, '_blank', 'noopener,noreferrer');
     if (!opened) {
       const a = document.createElement('a');
@@ -123,8 +134,10 @@ export function openStaffChatFile(id) {
       a.rel = 'noopener noreferrer';
       a.click();
     }
+    return url;
   }).catch((err) => {
     console.error(err);
+    throw err;
   });
 }
 

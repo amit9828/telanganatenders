@@ -169,7 +169,7 @@ export default function EmployeeDashboard() {
         const eData = await empRes.json();
         const team = eData.team || [];
         setTeamMembers(team);
-        const mine = team.find((t) => String(t.email || '').toLowerCase() === String(userEmail || '').toLowerCase()) || team[0];
+        const mine = team.find((t) => String(t.email || '').toLowerCase() === String(userEmail || '').toLowerCase());
         if (mine?.emp_id) {
           setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer' });
         }

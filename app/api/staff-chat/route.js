@@ -3,7 +3,28 @@ import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db';
 import { resolveActorRole } from '@/lib/staff-auth';
 import { ensureWorkflowIndexes } from '@/lib/workflow';
-import { uploadWorkflowDocument, deleteR2Key } from '@/lib/cloudflare-r2';
+import {
+  assertLivePeer,
+  chatSenderId,
+  cloneChatFile,
+  ensureStaffChatIndexes,
+  fileMetaOnMessage,
+  isAllowedChatFile,
+  loadChatFileMeta,
+  markThreadRead,
+  mimeFromName,
+  pairFilter,
+  peerReadAt,
+  peerTyping,
+  presenceMap,
+  publicChatMessage,
+  readsForInbox,
+  releaseChatFile,
+  setTyping,
+  storeChatBuffer,
+  threadKey,
+  touchPresence,
+} from '@/lib/staff-chat';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,52 +36,19 @@ function json(data, status = 200) {
   });
 }
 
-function threadKey(a, b) {
-  return [String(a || ''), String(b || '')].sort().join('::');
-}
-
-function senderId(actor) {
-  if (actor?.role === 'MD') return 'MD';
-  return String(actor?.empId || '').trim();
-}
-
-function pairFilter(from, peer) {
-  return {
-    $or: [
-      { from_emp_id: from, to_emp_id: peer },
-      { from_emp_id: peer, to_emp_id: from },
-    ],
-  };
-}
-
-async function assertLivePeer(db, toEmpId) {
-  if (toEmpId === 'MD') return true;
-  const emp = await db.collection('employees').findOne({
-    emp_id: toEmpId,
-    deleted: { $ne: true },
-    active: { $ne: false },
-  });
-  return Boolean(emp);
-}
-
-function mimeFromName(name, fallback = 'application/octet-stream') {
-  const n = String(name || '').toLowerCase();
-  if (n.endsWith('.pdf')) return 'application/pdf';
-  if (n.endsWith('.png')) return 'image/png';
-  if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg';
-  if (n.endsWith('.gif')) return 'image/gif';
-  if (n.endsWith('.webp')) return 'image/webp';
-  if (n.endsWith('.doc')) return 'application/msword';
-  if (n.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  return fallback;
-}
-
 async function actorOr401(request) {
   const actor = await resolveActorRole(request);
   if (!actor.role) return { error: json({ error: 'Please sign in.' }, 401) };
-  const from = senderId(actor);
+  const from = chatSenderId(actor);
   if (!from) return { error: json({ error: 'Staff chat requires an Employee ID.' }, 401) };
   return { actor, from };
+}
+
+async function readyDb() {
+  const db = await getDb();
+  await ensureWorkflowIndexes(db);
+  await ensureStaffChatIndexes(db);
+  return db;
 }
 
 export async function GET(request) {
@@ -69,94 +57,95 @@ export async function GET(request) {
   const { from } = gate;
   const peer = String(request.nextUrl.searchParams.get('peer') || '').trim();
   const jobId = String(request.nextUrl.searchParams.get('job_id') || '').trim();
-  const db = await getDb();
-  await ensureWorkflowIndexes(db);
+  const db = await readyDb();
+  await touchPresence(db, from);
 
   if (!peer) {
     const recent = await db.collection('staff_chats').find({
       $or: [{ from_emp_id: from }, { to_emp_id: from }],
-    }).project({ file_base64: 0 }).sort({ created_at: -1 }).limit(200).toArray();
-    return json({ messages: recent });
+    }).project({ file_base64: 0, file_url: 0 }).sort({ created_at: -1 }).limit(200).toArray();
+    const messages = recent.map(publicChatMessage);
+    const ids = messages.flatMap((m) => [m.from_emp_id, m.to_emp_id]);
+    return json({
+      me: from,
+      messages,
+      reads: await readsForInbox(db, from, recent),
+      presence: await presenceMap(db, ids),
+    });
   }
 
   const key = threadKey(from, peer);
-  const filter = {
-    thread_key: key,
-    ...pairFilter(from, peer),
-  };
+  const filter = { thread_key: key, ...pairFilter(from, peer) };
   if (jobId) filter.job_id = jobId;
-  const messages = await db.collection('staff_chats').find(filter).project({ file_base64: 0 }).sort({ created_at: 1 }).toArray();
-  return json({ messages, thread_key: key });
+  const messages = await db.collection('staff_chats').find(filter)
+    .project({ file_base64: 0, file_url: 0 })
+    .sort({ created_at: 1 })
+    .toArray();
+  return json({
+    me: from,
+    messages: messages.map(publicChatMessage),
+    thread_key: key,
+    peer_read_at: await peerReadAt(db, from, peer),
+    peer_typing: await peerTyping(db, from, peer),
+    presence: await presenceMap(db, [peer, from]),
+  });
 }
 
 export async function POST(request) {
   const gate = await actorOr401(request);
   if (gate.error) return gate.error;
   const { actor, from } = gate;
-  const db = await getDb();
-  await ensureWorkflowIndexes(db);
+  const db = await readyDb();
+  await touchPresence(db, from);
 
   const contentType = request.headers.get('content-type') || '';
   let toEmpId = '';
   let text = '';
   let jobId = '';
   let forwardedFromId = '';
+  let fileId = '';
+  let typing = null;
   let hadFile = false;
   let fileMeta = null;
 
-  const parseChatFile = async (file) => {
-    if (!file || typeof file === 'string' || typeof file.arrayBuffer !== 'function') return null;
-    const buf = Buffer.from(await file.arrayBuffer());
-    if (!buf.length) return { error: 'The attached file was empty.' };
-    const mime = file.type || mimeFromName(file.name);
-    const uploaded = await uploadWorkflowDocument(buf, file.name || 'chat.bin', {
-      jobId: `chat_${threadKey(from, toEmpId || 'pending')}`,
-      contentType: mime,
-    });
-    if (uploaded?.key) {
-      return {
-        r2_key: uploaded.key,
-        url: uploaded.url,
-        name: file.name,
-        content_type: mime,
-      };
-    }
-    return {
-      r2_key: null,
-      url: null,
-      name: file.name,
-      content_type: mime,
-      file_base64: buf.toString('base64'),
-    };
-  };
-
   if (contentType.includes('application/json')) {
     const body = await request.json().catch(() => ({}));
-    toEmpId = String(body.to_emp_id || '').trim();
+    toEmpId = String(body.to_emp_id || body.peer || '').trim();
     text = String(body.text || body.body || '').trim();
     jobId = String(body.job_id || '').trim();
     forwardedFromId = String(body.forwarded_from_id || '').trim();
+    fileId = String(body.file_id || '').trim();
+    if (body.typing != null) typing = Boolean(body.typing);
   } else {
     const form = await request.formData().catch(() => null);
-    if (form) {
-      toEmpId = String(form.get('to_emp_id') || '').trim();
-      text = String(form.get('text') || form.get('body') || '').trim();
-      jobId = String(form.get('job_id') || '').trim();
-      forwardedFromId = String(form.get('forwarded_from_id') || '').trim();
-      const file = form.get('file');
-      if (file && typeof file !== 'string') {
-        hadFile = true;
-        const parsed = await parseChatFile(file);
-        if (parsed?.error) return json({ error: parsed.error }, 400);
-        fileMeta = parsed;
+    if (!form) return json({ error: 'Invalid body.' }, 400);
+    toEmpId = String(form.get('to_emp_id') || form.get('peer') || '').trim();
+    text = String(form.get('text') || form.get('body') || '').trim();
+    jobId = String(form.get('job_id') || '').trim();
+    forwardedFromId = String(form.get('forwarded_from_id') || '').trim();
+    fileId = String(form.get('file_id') || '').trim();
+    const file = form.get('file');
+    if (file && typeof file !== 'string') {
+      hadFile = true;
+      const buf = Buffer.from(await file.arrayBuffer());
+      if (!buf.length) return json({ error: 'The attached file was empty.' }, 400);
+      const mime = file.type || mimeFromName(file.name);
+      if (!isAllowedChatFile(mime, file.name, buf.length)) {
+        return json({ error: 'Send an image or PDF under 4 MB.' }, 400);
       }
-    } else {
-      const body = await request.json().catch(() => ({}));
-      toEmpId = String(body.to_emp_id || '').trim();
-      text = String(body.text || body.body || '').trim();
-      jobId = String(body.job_id || '').trim();
-      forwardedFromId = String(body.forwarded_from_id || '').trim();
+      fileMeta = await storeChatBuffer(buf, { name: file.name, mime, from, toEmpId });
     }
+  }
+
+  if (typing != null) {
+    if (!toEmpId) return json({ error: 'to_emp_id is required' }, 400);
+    await setTyping(db, from, toEmpId, typing);
+    return json({ success: true, typing });
+  }
+
+  if (fileId) {
+    fileMeta = await loadChatFileMeta(db, fileId, from);
+    if (!fileMeta) return json({ error: 'Upload the file again.' }, 400);
   }
 
   if (!toEmpId) return json({ error: 'to_emp_id is required' }, 400);
@@ -179,13 +168,8 @@ export async function POST(request) {
       file_name: original.file_name,
     };
     if (!text) text = original.text || '';
-    if (!fileMeta && original.file_r2_key) {
-      fileMeta = {
-        r2_key: original.file_r2_key,
-        url: original.file_url,
-        name: original.file_name,
-        content_type: original.file_content_type || mimeFromName(original.file_name),
-      };
+    if (!fileMeta && (original.file_r2_key || original.file_mongo_id || original.file_base64)) {
+      fileMeta = await cloneChatFile(original, from, toEmpId);
     }
   }
 
@@ -196,20 +180,16 @@ export async function POST(request) {
     thread_key: threadKey(from, toEmpId),
     job_id: jobId || null,
     from_emp_id: from,
-    from_name: actor.role === 'MD' ? (actor.name || 'Managing Director') : (actor.name || from),
+    from_name: actor.name || (from === 'MD' ? 'Managing Director' : from),
     to_emp_id: toEmpId,
     text,
-    file_r2_key: fileMeta?.r2_key || null,
-    file_url: fileMeta?.url || null,
-    file_name: fileMeta?.name || null,
-    file_content_type: fileMeta?.content_type || null,
-    file_base64: fileMeta?.file_base64 || null,
+    ...fileMetaOnMessage(fileMeta),
     forwarded_from: forwardedFrom,
     created_at: new Date(),
   };
   const result = await db.collection('staff_chats').insertOne(doc);
-  const { file_base64, ...publicDoc } = doc;
-  return json({ success: true, message: { ...publicDoc, _id: result.insertedId } }, 201);
+  await setTyping(db, from, toEmpId, false);
+  return json({ success: true, me: from, message: publicChatMessage({ ...doc, _id: result.insertedId }) }, 201);
 }
 
 export async function PATCH(request) {
@@ -217,11 +197,19 @@ export async function PATCH(request) {
   if (gate.error) return gate.error;
   const { from } = gate;
   const body = await request.json().catch(() => ({}));
+  const db = await readyDb();
+  await touchPresence(db, from);
+
+  const peer = String(body.peer || body.to_emp_id || '').trim();
+  if (peer && !body.id) {
+    await markThreadRead(db, from, peer);
+    return json({ success: true, me: from, peer_read_at: await peerReadAt(db, from, peer) });
+  }
+
   const id = String(body.id || '').trim();
   const text = String(body.text || '').trim();
   if (!id || !ObjectId.isValid(id)) return json({ error: 'id required' }, 400);
   if (!text) return json({ error: 'text required' }, 400);
-  const db = await getDb();
   const doc = await db.collection('staff_chats').findOne({ _id: new ObjectId(id) });
   if (!doc) return json({ error: 'Message not found' }, 404);
   if (doc.from_emp_id !== from) return json({ error: 'You can only edit your own messages.' }, 403);
@@ -229,7 +217,7 @@ export async function PATCH(request) {
     { _id: doc._id },
     { $set: { text, edited_at: new Date() } },
   );
-  return json({ success: true });
+  return json({ success: true, me: from });
 }
 
 export async function DELETE(request) {
@@ -238,11 +226,11 @@ export async function DELETE(request) {
   const { from } = gate;
   const id = request.nextUrl.searchParams.get('id');
   if (!id || !ObjectId.isValid(id)) return json({ error: 'id required' }, 400);
-  const db = await getDb();
+  const db = await readyDb();
   const doc = await db.collection('staff_chats').findOne({ _id: new ObjectId(id) });
   if (!doc) return json({ error: 'Message not found' }, 404);
   if (doc.from_emp_id !== from) return json({ error: 'You can only delete your own messages.' }, 403);
-  if (doc.file_r2_key) await deleteR2Key(doc.file_r2_key);
+  await releaseChatFile(db, doc);
   await db.collection('staff_chats').deleteOne({ _id: doc._id });
-  return json({ success: true });
+  return json({ success: true, me: from });
 }
