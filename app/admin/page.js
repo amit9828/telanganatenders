@@ -1670,10 +1670,10 @@ export default function AdminPage() {
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
-            <SubmittedTrackingBoard jobs={wfSubmitted} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
+            <SubmittedTrackingBoard jobs={wfSubmitted} onRefresh={refresh} canDelete chatSelfId="MD" chatRoster={teamMembers} />
           </TabsContent>
           <TabsContent value="archive" className="mt-4">
-            <ArchiveBoard jobs={wfArchive} />
+            <ArchiveBoard jobs={wfArchive} canDelete onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="alerts" className="mt-4"><OpsAlerts roster={teamMembers} /></TabsContent>
           <TabsContent value="client-queries" className="mt-4">
@@ -1870,13 +1870,13 @@ export default function AdminPage() {
                       </tbody>
                     </table>
                     )}
-                    {wfJobs.filter((j) => j.status !== 'AWAITING_PUBLISH').length > 0 && (
+                    {wfJobs.length > 0 && (
                       <table className="premium-table text-sm text-left mt-4">
                         <thead>
-                          <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th></tr>
+                          <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th><th></th></tr>
                         </thead>
                         <tbody>
-                          {wfJobs.filter((j) => j.status !== 'AWAITING_PUBLISH').map((job) => (
+                          {wfJobs.map((job) => (
                             <tr key={job._id}>
                               <td className="align-top text-xs font-semibold">{job.client_name || job.client_email || '—'}</td>
                               <td className="align-top">
@@ -1889,6 +1889,26 @@ export default function AdminPage() {
                                 {job.sow ? (
                                   <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => openWorkflowFile(job._id, 'sow')}>View SOW</Button>
                                 ) : '—'}
+                              </td>
+                              <td className="align-top">
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-7 text-[10px]"
+                                  onClick={async () => {
+                                    const name = job.bid_no || job.title || 'this card';
+                                    if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+                                    try {
+                                      await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
+                                      toast.success('Card deleted.');
+                                      refresh();
+                                    } catch (err) {
+                                      toast.error(err.message || 'Delete failed.');
+                                    }
+                                  }}
+                                >
+                                  Delete
+                                </Button>
                               </td>
                             </tr>
                           ))}

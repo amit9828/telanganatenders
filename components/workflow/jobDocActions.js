@@ -23,3 +23,13 @@ export function workflowDocActions(job, openFile) {
   }
   return actions;
 }
+
+export function mdDeleteCardAction(job, onDelete) {
+  if (!job || typeof onDelete !== 'function') return null;
+  return {
+    label: 'Delete',
+    variant: 'destructive',
+    icon: 'trash',
+    onClick: () => onDelete(job),
+  };
+}

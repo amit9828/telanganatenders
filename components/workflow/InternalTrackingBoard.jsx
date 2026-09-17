@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
-import { workflowDocActions } from '@/components/workflow/jobDocActions';
+import { workflowDocActions, mdDeleteCardAction } from '@/components/workflow/jobDocActions';
 
 const STATUS_LABEL = {
   MD_CHECKLIST: 'MD Checklist',
@@ -66,6 +66,15 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
     setChecklistFile(null);
     setTlId('');
     onRefresh?.();
+  };
+
+  const deleteCard = (job) => {
+    const name = job.bid_no || job.title || 'this card';
+    if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+    return run(async () => {
+      await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
+      toast.success('Card deleted.');
+    });
   };
 
   const assignMaker = async () => {
@@ -209,6 +218,10 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           }
           if (desk === 'md' && job.status === 'AWAITING_RECEIPT') {
             actions.push({ label: 'Receipt + Drive', icon: 'upload', variant: 'default', onClick: () => setReceiptJob(job) });
+          }
+          if (desk === 'md') {
+            const del = mdDeleteCardAction(job, deleteCard);
+            if (del) actions.push(del);
           }
           return (
             <div key={job._id}>

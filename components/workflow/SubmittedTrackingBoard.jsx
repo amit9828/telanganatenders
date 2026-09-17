@@ -4,7 +4,7 @@ import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
-import { workflowDocActions } from '@/components/workflow/jobDocActions';
+import { workflowDocActions, mdDeleteCardAction } from '@/components/workflow/jobDocActions';
 import { TRACKING_LABELS, normalizeTrackingStatus } from '@/lib/tracking-status';
 
 const DROPDOWN_STAGES = [
@@ -18,6 +18,7 @@ export default function SubmittedTrackingBoard({
   jobs = [],
   actorEmpId = '',
   onRefresh,
+  canDelete = false,
 }) {
   const update = async (job, tracking_status) => {
     try {
@@ -27,6 +28,18 @@ export default function SubmittedTrackingBoard({
         body: JSON.stringify({ tracking_status }),
       });
       toast.success(tracking_status === 'Lost' ? 'Moved to archive.' : `Updated to ${tracking_status}`);
+      onRefresh?.();
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  const deleteCard = async (job) => {
+    const name = job.bid_no || job.title || 'this card';
+    if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+    try {
+      await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
+      toast.success('Card deleted.');
       onRefresh?.();
     } catch (e) {
       toast.error(e.message);
@@ -45,7 +58,10 @@ export default function SubmittedTrackingBoard({
             <div key={job._id} className="space-y-2">
               <CompactTenderCard
                 job={{ ...job, display_status: stage || job.display_status || 'Submitted' }}
-                actions={workflowDocActions(job, (docJob, slot) => openWorkflowFile(docJob._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
+                actions={[
+                  ...workflowDocActions(job, (docJob, slot) => openWorkflowFile(docJob._id, slot).catch((err) => toast.error(err.message || 'Could not open file'))),
+                  canDelete && mdDeleteCardAction(job, deleteCard),
+                ].filter(Boolean)}
               />
               {canEdit ? (
                 <Select value={stage || undefined} onValueChange={(v) => update(job, v)}>

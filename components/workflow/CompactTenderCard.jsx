@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FileText, Upload, Download, Eye } from 'lucide-react';
+import { FileText, Upload, Download, Eye, Trash2 } from 'lucide-react';
 
 function fmtDate(value) {
   if (!value) return '—';
@@ -25,7 +25,7 @@ export default function CompactTenderCard({ job, actions = [] }) {
         <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
           {actions.map((a) => (
             <Button key={a.label} size="sm" variant={a.variant || 'outline'} className="h-7 text-[10px]" onClick={a.onClick} disabled={a.disabled}>
-              {a.icon === 'upload' ? <Upload className="w-3 h-3 mr-1" /> : a.icon === 'download' ? <Download className="w-3 h-3 mr-1" /> : a.icon === 'eye' ? <Eye className="w-3 h-3 mr-1" /> : <FileText className="w-3 h-3 mr-1" />}
+              {a.icon === 'upload' ? <Upload className="w-3 h-3 mr-1" /> : a.icon === 'download' ? <Download className="w-3 h-3 mr-1" /> : a.icon === 'eye' ? <Eye className="w-3 h-3 mr-1" /> : a.icon === 'trash' ? <Trash2 className="w-3 h-3 mr-1" /> : <FileText className="w-3 h-3 mr-1" />}
               {a.label}
             </Button>
           ))}
