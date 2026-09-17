@@ -23,7 +23,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
-import { brandFieldsFromForm, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
+import { brandFieldsFromForm, brandFieldsFromJson, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const runtime = 'nodejs';
@@ -1688,12 +1688,22 @@ export async function POST(request, { params }) {
 
     if (path === 'settings' || path === 'api/settings') {
       const contentType = request.headers.get('content-type') || '';
-      if (!contentType.includes('multipart/form-data')) {
-        return json({ error: 'Settings must be sent as multipart/form-data, not JSON.' }, 415);
-      }
-      const form = await request.formData();
       const existing = await db.collection('settings').findOne({ id: 'brand' }) || {};
-      const $set = await brandFieldsFromForm(form, existing);
+      let $set;
+      if (contentType.includes('application/json')) {
+        const body = await request.json();
+        $set = await brandFieldsFromJson(body, existing);
+      } else if (contentType.includes('multipart/form-data')) {
+        const form = await request.formData();
+        for (const value of form.values()) {
+          if (value && typeof value !== 'string') {
+            return json({ error: 'Upload each image separately first, then save settings.' }, 400);
+          }
+        }
+        $set = await brandFieldsFromForm(form, existing);
+      } else {
+        return json({ error: 'Settings must be sent as JSON.' }, 415);
+      }
       await db.collection('settings').updateOne({ id: 'brand' }, { $set }, { upsert: true });
       return json({ success: true });
     }
