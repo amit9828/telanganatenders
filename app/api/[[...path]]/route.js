@@ -957,7 +957,13 @@ async function handleGET(request, { params }, attempt = 1) {
           .toArray(),
         db.collection('client_requests').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray(),
         db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray(),
-        db.collection('dispatches').find({ target_type: 'client_alert', target_id: user.email }).sort({ created_at: -1 }).toArray(),
+        db.collection('dispatches').find({
+          target_type: 'client_alert',
+          $or: [
+            { target_id: email },
+            { target_id: user.email },
+          ],
+        }).sort({ created_at: -1 }).toArray(),
       ]);
 
       const unlocked_tenders = tendersData.map(t => ({

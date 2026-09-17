@@ -209,6 +209,17 @@ export default function ClientDashboard() {
            if(d.action_alerts) {
                setRecommendedTenders(d.action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed'));
            }
+
+           try {
+             const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(email)}&t=${Date.now()}`, {
+               credentials: 'include',
+               headers: clientHeaders(),
+             });
+             if (wf.ok) {
+               const wfd = await wf.json();
+               setWorkflowJobs(wfd.jobs || []);
+             }
+           } catch (_) { /* workflow queue is additive */ }
            
            // డాక్యుమెంట్స్ అప్‌డేట్
            if (d.vault_docs && d.vault_docs.length > 0) {
@@ -1665,7 +1676,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                       ))}
                     </div>
                  )}
-                 {recommendedTenders.length === 0 ? (
+                 {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length === 0 && recommendedTenders.length === 0 ? (
                     <div className="text-center py-6 text-slate-400 border-2 border-dashed rounded-xl border-blue-200 bg-white">
                       <Target className="w-8 h-8 mx-auto text-blue-200 mb-2" />
                       <p className="text-sm font-semibold">No new recommendations right now.</p>

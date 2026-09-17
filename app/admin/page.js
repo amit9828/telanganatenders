@@ -1138,10 +1138,10 @@ export default function AdminPage() {
             </div>
             
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div onClick={() => setActiveTab('operations')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<AlertTriangle className="w-4 h-4 text-amber-500" />} label="Pending Operations" value={dispatches.filter(d => d.status !== 'Completed' && !d.status.includes('Force Closed')).length} accent={true} />
+              <div onClick={() => setActiveTab('team-activity')} className="cursor-pointer transition hover:scale-[1.01]">
+                 <StatCard icon={<Users className="w-4 h-4 text-blue-500" />} label="Team Activity" value={dispatches.filter(d => d.target_type === 'client_alert' && d.status !== 'Completed' && !String(d.status || '').includes('Force Closed')).length} accent={true} />
               </div>
-              <div onClick={() => setActiveTab('live_tenders')} className="cursor-pointer transition hover:scale-[1.01]">
+              <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]">
                  <StatCard icon={<Globe className="w-4 h-4 text-blue-500" />} label="Live Tenders" value={tenders.length} />
               </div>
               <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
@@ -2306,9 +2306,18 @@ export default function AdminPage() {
                 <CardContent ref={tendersListRef} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
                   {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
                   {paginatedTenders.map((t) => (
-                    <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
+                    <div
+                      key={t._id || t.id}
+                      className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3"
+                    >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => handleViewPDF(t._id || t.id)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewPDF(t._id || t.id); } }}
+                        >
                           <div className="flex items-center gap-2 mb-2">
                             <Badge className="bg-[#0A2647]">{t.district}</Badge>
                             {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
@@ -2318,14 +2327,14 @@ export default function AdminPage() {
                           <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>
                           <p className="text-xs text-slate-500 mt-1">{t.department}</p>
                         </div>
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
                            <Button variant="ghost" size="icon" onClick={() => handleEditTender(t)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8"><Pencil className="w-4 h-4" /></Button>
                            <Button variant="ghost" size="icon" onClick={() => remove(t._id || t.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8"><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </div>
                       
-                      <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                         <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
+                      <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                         <Button size="sm" onClick={() => handleViewPDF(t._id || t.id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
                          </Button>
                          <SuggestClientControls tender={t} clients={approvedClients} onDone={refresh} />
@@ -2731,23 +2740,27 @@ function BrandSettings({ token }) {
   const [logoFile, setLogoFile] = useState(null);
   const [gemFile, setGemFile] = useState(null);
   const [sigFile, setSigFile] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const [newLeader, setNewLeader] = useState({ name: '', role: '', image: '', phone: '', email: '' });
   const [newClient, setNewClient] = useState({ client_name: '', company_name: '', udyam_no: '', image: '' });
 
   useEffect(() => {
-    fetch('/api/settings').then((r) => r.json()).then((d) => {
-      if (d.settings) {
-        if (d.settings.logo) setLogoPreview(d.settings.logo);
-        if (d.settings.gem_logo) setGemLogoPreview(d.settings.gem_logo);
-        if (d.settings.md_signature) setMdSignaturePreview(d.settings.md_signature); 
-        if (d.settings.name) setBrandName(d.settings.name);
-        if (d.settings.tagline) setTagline(d.settings.tagline);
-        if (d.settings.vision_text) setVisionText(d.settings.vision_text);
-        if (d.settings.banners) setBanners((d.settings.banners || []).map((src) => ({ src, file: null })));
-        if (d.settings.leaders) setLeaders(d.settings.leaders);
-        if (d.settings.clients) setClients(d.settings.clients);
+    fetch('/api/settings').then(async (r) => {
+      const d = await r.json().catch(() => ({}));
+      const settings = d?.settings;
+      if (!settings) return;
+      if (settings.logo) setLogoPreview(settings.logo);
+      if (settings.gem_logo) setGemLogoPreview(settings.gem_logo);
+      if (settings.md_signature) setMdSignaturePreview(settings.md_signature);
+      if (settings.name) setBrandName(settings.name);
+      if (settings.tagline) setTagline(settings.tagline);
+      if (settings.vision_text) setVisionText(settings.vision_text);
+      if (Array.isArray(settings.banners)) {
+        setBanners(settings.banners.map((src) => (typeof src === 'string' ? { src, file: null } : src)));
       }
+      if (Array.isArray(settings.leaders)) setLeaders(settings.leaders);
+      if (Array.isArray(settings.clients)) setClients(settings.clients);
     }).catch((err) => console.error(err));
   }, []);
 
