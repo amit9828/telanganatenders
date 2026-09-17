@@ -2838,10 +2838,19 @@ function BrandSettings({ token }) {
       const headers = {};
       if (token) headers.Authorization = `Bearer ${token}`;
       const r = await fetch('/api/settings', { method: 'POST', credentials: 'include', headers, body: form });
-      if (!r.ok) return toast.error('Failed to save settings to database.');
+      if (!r.ok) {
+        const payload = await r.json().catch(() => null);
+        const apiError = payload?.error || payload?.details || payload?.message;
+        return toast.error(apiError
+          ? `Could not save settings: ${apiError}`
+          : `Could not save settings (HTTP ${r.status}).`);
+      }
       invalidateSettingsCache();
       toast.success('All Master Settings published successfully!');
-    } catch (error) { toast.error('An error occurred while saving.'); } finally { setSaving(false); }
+    } catch (error) {
+      const msg = error?.message || 'Network request failed';
+      toast.error(`Network Error: Cannot reach database. ${msg}`);
+    } finally { setSaving(false); }
   };
 
   return (
