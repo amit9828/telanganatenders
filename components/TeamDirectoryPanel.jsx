@@ -155,9 +155,8 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
       return role === DESIGNATIONS.DOC_TEAM_TL || role === DESIGNATIONS.DOC_TEAM_MEMBER;
     }
     if (actorDesk === 'tl') {
-      return role === DESIGNATIONS.DOC_TEAM_MEMBER
-        && String(member?.team_id || '') === String(actorEmpId || '')
-        && Boolean(actorEmpId);
+      // GET /api/employees already returns only this TL's roster.
+      return role === DESIGNATIONS.DOC_TEAM_MEMBER;
     }
     return false;
   };

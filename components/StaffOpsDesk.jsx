@@ -21,6 +21,7 @@ import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPanel';
 import ClientBidSupportPanel from '@/components/ClientBidSupportPanel';
+import OperationsStoragePanel from '@/components/OperationsStoragePanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -269,6 +270,7 @@ export default function StaffOpsDesk({ desk }) {
                       <LiveTendersPaged tenders={tenders} pdfEmail={staffEmail} pdfRole="employee" />
                     </div>
                   </div>
+                  <OperationsStoragePanel clients={clients} uploadedBy={staffEmail || selfId} />
                 </TabsContent>
               )}
               <TabsContent value="internal">

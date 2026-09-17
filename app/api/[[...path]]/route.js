@@ -20,7 +20,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
-import { resolveActorRole, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
+import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
 import { brandFieldsFromForm } from '@/lib/brand-settings';
@@ -46,6 +46,24 @@ async function ensureTendersTextIndex(db) {
 }
 
 // 🚀 STRICT RULE: ప్రతీ API రెస్పాన్స్ కి No-Cache హెడర్స్ పంపడం
+function canAccessOperatorStorage(actor) {
+  if (!actor) return false;
+  if (actor.role === 'MD' || actor.role === 'EMPLOYEE') return true;
+  if (isGmActor(actor)) return true;
+  const designation = matchDesignation(actor.designation);
+  return designation === DESIGNATIONS.DOC_TEAM_TL || designation === DESIGNATIONS.DOC_TEAM_MEMBER;
+}
+
+async function requireOperatorStorageAccess(request) {
+  const auth = await requireStaff(request);
+  if (!auth.ok) return { ok: false, response: json({ error: auth.error }, auth.status) };
+  const actor = await resolveActorRole(request);
+  if (!canAccessOperatorStorage(actor)) {
+    return { ok: false, response: json({ error: 'This action is restricted to staff accounts.' }, 403) };
+  }
+  return { ok: true, auth, actor };
+}
+
 function json(data, status = 200) {
   return NextResponse.json(data, { 
     status,
@@ -758,6 +776,8 @@ async function handleGET(request, { params }, attempt = 1) {
 
     // 🚀 Operator Docs GET
     if (pathArray.length === 4 && pathArray[0] === 'operator' && pathArray[1] === 'docs' && pathArray[3] === 'file') {
+       const gate = await requireOperatorStorageAccess(request);
+       if (!gate.ok) return gate.response;
        const docId = pathArray[2];
        if (!ObjectId.isValid(docId)) return json({ error: 'Invalid document ID' }, 400);
        const doc = await db.collection('operator_storage').findOne(
@@ -769,6 +789,8 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (path === 'operator/docs' || path === 'api/operator/docs') {
+       const gate = await requireOperatorStorageAccess(request);
+       if (!gate.ok) return gate.response;
        const docs = await db.collection('operator_storage')
          .find({})
          .project({ file_base64: 0 }) // 🚀 FIX: Block heavy storage loads
@@ -2019,7 +2041,10 @@ export async function POST(request, { params }) {
     }
     // 🚀 Operator Docs POST (Store)
     if (path === 'operator/docs' || path === 'api/operator/docs') {
-       const { name, file_base64, uploaded_by } = body;
+       const gate = await requireOperatorStorageAccess(request);
+       if (!gate.ok) return gate.response;
+       const { name, file_base64 } = body;
+       const uploaded_by = gate.actor.email || gate.actor.empId || gate.auth.email || 'staff';
        const result = await db.collection('operator_storage').insertOne({
           name, file_base64, uploaded_by, created_at: new Date()
        });
@@ -2028,6 +2053,8 @@ export async function POST(request, { params }) {
 
     // 🚀 Operator Share Doc with Client
     if (path === 'operator/share' || path === 'api/operator/share') {
+       const gate = await requireOperatorStorageAccess(request);
+       if (!gate.ok) return gate.response;
        const { docId, client_email } = body;
        if (!ObjectId.isValid(docId)) return json({ error: 'Invalid Document ID' }, 400);
        const doc = await db.collection('operator_storage').findOne({ _id: new ObjectId(docId) });

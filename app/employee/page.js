@@ -9,6 +9,7 @@ import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
+import OperationsStoragePanel from '@/components/OperationsStoragePanel';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
@@ -30,7 +31,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, LayoutDashboard, AlertCircle, Contact, Loader2,
-  Database, Lock, Globe, MapPin, Target, UploadCloud, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
+  Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -95,10 +96,6 @@ export default function EmployeeDashboard() {
   const [pendingUsers, setPendingUsers] = useState([]);
   const [mdTaskFile, setMdTaskFile] = useState({});
   const [uploadingTask, setUploadingTask] = useState(false);
-  const [operatorDocs, setOperatorDocs] = useState([]);
-  const [sharingDocId, setSharingDocId] = useState(null);
-  const [targetClientEmail, setTargetClientEmail] = useState('');
-  const [uploadingOpPdf, setUploadingOpPdf] = useState(false);
   const [wfJobs, setWfJobs] = useState([]);
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
@@ -137,7 +134,7 @@ export default function EmployeeDashboard() {
   const fetchLiveOperationsData = async (userEmail) => {
     try {
       // 🚀 PERF FIX: All endpoints fire in a single Promise.all.
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, opDocsRes, wfRes] = await Promise.all([
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, wfRes] = await Promise.all([
         fetch(`/api/dispatches?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
         fetch(`/api/bids?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
         fetch(`/api/gov-officers?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
@@ -148,14 +145,9 @@ export default function EmployeeDashboard() {
         fetch(`/api/client-requests?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
         fetch(`/api/guest-queries?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
         fetch(`/api/employees?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
-        fetch(`/api/operator/docs?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
         fetch(`/api/workflow/queue?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() })
       ]);
 
-      if (opDocsRes.ok) {
-         const opData = await opDocsRes.json();
-         setOperatorDocs(opData.docs || []);
-      }
       if (tasksRes.ok) {
         const tData = await tasksRes.json();
         const allDispatches = tData.dispatches || [];
@@ -346,58 +338,6 @@ export default function EmployeeDashboard() {
       } catch (err) { toast.error("Network error."); }
   };
   
-  const handleOperatorPdfUpload = async (e) => {
-     const file = e.target.files?.[0];
-     if (!file) return;
-     if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
-     
-     setUploadingOpPdf(true);
-     const reader = new FileReader();
-     reader.onload = async () => {
-        try {
-           const res = await fetch('/api/operator/docs', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                 name: file.name,
-                 file_base64: reader.result.toString().split(',')[1],
-                 uploaded_by: email
-              })
-           });
-           if (res.ok) {
-              toast.success("Document stored successfully in Operations Storage!");
-              fetchLiveOperationsData(email);
-           } else {
-              toast.error("Failed to store document.");
-           }
-        } catch (err) {
-           toast.error("Network error during upload.");
-        } finally {
-           setUploadingOpPdf(false);
-        }
-     };
-     reader.readAsDataURL(file);
-  };
-
-  const handleShareDocWithClient = async (docId) => {
-     if (!targetClientEmail) return toast.error("Please select a client to share with.");
-     try {
-        const res = await fetch('/api/operator/share', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ docId, client_email: targetClientEmail })
-        });
-        if (res.ok) {
-           toast.success("Document successfully shared with the client!");
-           setSharingDocId(null);
-           setTargetClientEmail('');
-        } else {
-           toast.error("Failed to share document.");
-        }
-     } catch (e) {
-        toast.error("Network error.");
-     }
-  };
   const approveClient = async (clientEmail) => {
       try {
           await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: clientEmail }) });
@@ -1478,60 +1418,7 @@ return (
                </Card>
             </div>
 
-            {/* 🚀 NEW: Operator Storage & Client Sharing Block */}
-            <Card className="shadow-sm border-t-4 border-t-purple-600 w-full mt-6">
-               <CardHeader className="bg-purple-50/50 border-b pb-4">
-                  <CardTitle className="text-purple-900 flex items-center gap-2"><FolderPlus className="w-5 h-5 text-purple-600"/> Operations Storage & Client Sharing</CardTitle>
-                  <CardDescription>Upload blank proformas, GeM formats, or reference docs here and share directly to clients.</CardDescription>
-               </CardHeader>
-               <CardContent className="pt-4">
-                  <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                     <label className="flex-1 border-2 border-dashed border-purple-300 bg-purple-50 rounded-lg flex flex-col items-center justify-center h-24 cursor-pointer hover:bg-purple-100 transition shadow-sm">
-                        <UploadCloud className="w-6 h-6 text-purple-500 mb-1"/>
-                        <span className="text-[10px] font-bold text-purple-700 uppercase">{uploadingOpPdf ? 'Uploading...' : 'Upload New Document to Storage'}</span>
-                        <input type="file" accept="application/pdf" onChange={handleOperatorPdfUpload} disabled={uploadingOpPdf} className="hidden"/>
-                     </label>
-                  </div>
-                  
-                  <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-[300px] overflow-y-auto pr-2">
-                     {operatorDocs.length === 0 ? (
-                        <p className="text-xs text-slate-500 col-span-full text-center py-4">No documents stored yet.</p>
-                     ) : (
-                        operatorDocs.map(doc => (
-                           <div key={doc._id} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex flex-col justify-between hover:border-purple-300 transition">
-                              <div className="flex items-start justify-between mb-3">
-                                 <div className="min-w-0 pr-2">
-                                    <h4 className="text-sm font-bold text-[#0A2647] truncate" title={doc.name}>{doc.name}</h4>
-                                    <p className="text-[9px] text-slate-400 mt-0.5">Uploaded: {new Date(doc.created_at).toLocaleDateString()}</p>
-                                 </div>
-                                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-blue-500 hover:bg-blue-50" onClick={() => {
-                                     window.open(`/api/operator/docs/${doc._id}/file`, '_blank');
-                                 }}><Eye className="w-3.5 h-3.5"/></Button>
-                              </div>
-                              <div className="border-t border-slate-100 pt-3 mt-auto">
-                                 {sharingDocId === doc._id ? (
-                                    <div className="flex flex-col gap-2">
-                                       <Select value={targetClientEmail} onValueChange={setTargetClientEmail}>
-                                          <SelectTrigger className="h-8 text-[10px] bg-slate-50"><SelectValue placeholder="Select Client"/></SelectTrigger>
-                                          <SelectContent>
-                                             {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.company_name} ({c.client_id})</SelectItem>)}
-                                          </SelectContent>
-                                       </Select>
-                                       <div className="flex gap-2">
-                                          <Button size="sm" onClick={() => handleShareDocWithClient(doc._id)} className="flex-1 bg-purple-600 hover:bg-purple-700 h-7 text-[10px]">Share</Button>
-                                          <Button size="sm" variant="outline" onClick={() => setSharingDocId(null)} className="h-7 text-[10px] px-2 text-slate-500">Cancel</Button>
-                                       </div>
-                                    </div>
-                                 ) : (
-                                    <Button size="sm" variant="outline" onClick={() => setSharingDocId(doc._id)} className="w-full text-purple-600 border-purple-200 hover:bg-purple-50 h-8 text-xs"><Send className="w-3 h-3 mr-1"/> Share to Client</Button>
-                                 )}
-                              </div>
-                           </div>
-                        ))
-                     )}
-                  </div>
-               </CardContent>
-            </Card>
+            <OperationsStoragePanel clients={approvedClients} uploadedBy={email} />
           </TabsContent>
 
           {/* 🚀 RESTORED: GUEST QUERIES AND SLA TRACKER */}
