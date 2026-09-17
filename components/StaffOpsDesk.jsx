@@ -15,7 +15,6 @@ import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
-import SuggestionBar from '@/components/workflow/SuggestionBar';
 import ArchiveBoard from '@/components/workflow/ArchiveBoard';
 import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
@@ -111,8 +110,6 @@ export default function StaffOpsDesk({ desk }) {
   }, [status]);
 
   const liveJobs = jobs.filter((j) => j.status === 'LIVE' && !j.parked_client_email);
-  const parkedJobs = jobs.filter((j) => j.status === 'LIVE' && j.parked_client_email);
-  const pendingClientJobs = jobs.filter((j) => j.status === 'AWAITING_CLIENT');
   const internal = internalJobs;
   const submitted = submittedJobs;
   const awaitingPublish = jobs.filter((j) => j.status === 'AWAITING_PUBLISH');
@@ -241,25 +238,6 @@ export default function StaffOpsDesk({ desk }) {
                       />
                     )}
                   />
-                </TabsContent>
-              )}
-              {isGm && (
-                <TabsContent value="suggestion-bar">
-                  <SuggestionBar jobs={parkedJobs} pdfEmail={staffEmail} onRefresh={load} />
-                  {pendingClientJobs.length > 0 && (
-                    <div className="mt-6">
-                      <h3 className="text-sm font-black text-[#0A2647] uppercase tracking-wide mb-3">Pending client approval</h3>
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        {pendingClientJobs.map((j) => (
-                          <CompactTenderCard
-                            key={j._id}
-                            job={{ ...j, display_status: 'Pending Approval' }}
-                            actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </TabsContent>
               )}
               {isTl && (
