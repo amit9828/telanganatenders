@@ -32,6 +32,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
+import { workflowDocActions } from '@/components/workflow/jobDocActions';
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
@@ -61,9 +62,18 @@ export default function StaffOpsDesk({ desk }) {
   });
   const [editTender, setEditTender] = useState(null);
 
-  const staffEmail = localEmpEmail || (session?.user?.role && session.user.role !== 'MD' ? session?.user?.email : '');
-  const selfFromTeam = team.find((t) => String(t.email || '').toLowerCase() === String(staffEmail || '').toLowerCase());
-  const jwtEmpId = session?.user?.emp_id && session?.user?.role && session.user.role !== 'MD' ? session.user.emp_id : '';
+  const sessionMatchesDesk = (() => {
+    const user = session?.user;
+    if (!user || user.role === 'MD') return false;
+    const d = resolveStaffDesignation(user);
+    if (desk === 'gm') return d === DESIGNATIONS.GM;
+    if (desk === 'tl') return d === DESIGNATIONS.DOC_TEAM_TL;
+    return d === DESIGNATIONS.DOC_TEAM_MEMBER;
+  })();
+  const staffEmail = localEmpEmail || (sessionMatchesDesk ? session?.user?.email : '');
+  const selfFromTeam = team.find((t) => String(t.email || '').toLowerCase() === String(staffEmail || '').toLowerCase())
+    || (localEmpEmail ? team.find((t) => String(t.emp_id || '') === String(localEmpEmail)) : null);
+  const jwtEmpId = sessionMatchesDesk && session?.user?.emp_id ? session.user.emp_id : '';
   const selfId = selfFromTeam?.emp_id || jwtEmpId || '';
   const isGm = desk === 'gm';
   const isTl = desk === 'tl';
@@ -228,7 +238,7 @@ export default function StaffOpsDesk({ desk }) {
           <div className="flex items-center gap-3">
             <div>
               <h1 className="font-bold text-lg">{isGm ? 'GM Desk' : 'Doc Team TL Desk'}</h1>
-              <p className="text-[10px] text-emerald-300 font-mono">{selfId} · {staffEmail || session?.user?.email}</p>
+              <p className="text-[10px] text-emerald-300 font-mono">{selfId} · {staffEmail || '—'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -271,7 +281,7 @@ export default function StaffOpsDesk({ desk }) {
                           <CompactTenderCard
                             key={j._id}
                             job={{ ...j, display_status: 'Pending Approval' }}
-                            actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
+                            actions={workflowDocActions(j, (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
                           />
                         ))}
                       </div>

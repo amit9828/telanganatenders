@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
-import StaffChat from '@/components/StaffChat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import { workflowDocActions } from '@/components/workflow/jobDocActions';
 
 const STATUS_LABEL = {
   MD_CHECKLIST: 'MD Checklist',
@@ -22,9 +22,8 @@ const STATUS_LABEL = {
   AWAITING_RECEIPT: 'Awaiting Receipt',
 };
 
-export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], chatSelfId, chatRoster, actorEmpId = '' }) {
+export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], actorEmpId = '' }) {
   const [checklistJob, setChecklistJob] = useState(null);
-  const [chatJobId, setChatJobId] = useState(null);
   const [checklistFile, setChecklistFile] = useState(null);
   const [tlId, setTlId] = useState('');
   const [makerJob, setMakerJob] = useState(null);
@@ -38,7 +37,6 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   const [busy, setBusy] = useState(false);
 
   const openFile = (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file'));
-  const roster = chatRoster || [...tls, ...members, ...team];
   const makerTeamKeys = [makerJob?.team_id, makerJob?.routed_tl_emp_id, desk === 'tl' ? actorEmpId : '']
     .map((value) => String(value || '').trim())
     .filter(Boolean);
@@ -86,20 +84,16 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
     if (!receiptFile) return toast.error('Submission Receipt PDF is required.');
     const form = new FormData();
     form.append('receipt', receiptFile);
-    try {
-      await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/files`, { method: 'POST', body: form });
-      await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'confirm_receipt' }),
-      });
-      toast.success('Drive pack uploaded. Status is Submitted.');
-      setReceiptJob(null);
-      setReceiptFile(null);
-      onRefresh?.();
-    } catch (err) {
-      toast.error(err.message || 'Drive upload failed. Job stays unsubmitted.');
-    }
+    form.append('kind', 'receipt');
+    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/files`, { method: 'POST', body: form });
+    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'confirm_receipt' }),
+    });
+    toast.success('Drive pack uploaded. Status is Submitted.');
+    setReceiptJob(null);
+    setReceiptFile(null);
   };
 
   const openTlBounce = (job) => {
@@ -154,10 +148,8 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {jobs.map((job) => {
           const actions = [
-            { label: 'View SOW', icon: 'eye', onClick: () => openFile(job, 'sow') },
-            chatSelfId && { label: 'Chat', onClick: () => setChatJobId((id) => id === job._id ? null : job._id) },
-          ].filter(Boolean);
-          if (job.checklist_file) actions.push({ label: 'Checklist', onClick: () => openFile(job, 'checklist') });
+            ...workflowDocActions(job, openFile),
+          ];
           if (desk === 'md' && job.status === 'MD_CHECKLIST') {
             actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', onClick: () => setChecklistJob(job) });
           }
@@ -228,9 +220,6 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                 job={{ ...job, display_status: STATUS_LABEL[job.status] || job.status }}
                 actions={actions}
               />
-              {chatJobId === job._id && chatSelfId && (
-                <div className="mt-2 h-[420px]"><StaffChat selfId={chatSelfId} roster={roster} jobId={job._id} /></div>
-              )}
               {job.bounce_note && (job.status === 'MAKER_PREP' || job.status === 'TL_QC') && (
                 <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
                   Bounce note: {job.bounce_note}
@@ -344,7 +333,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           <p className="text-sm text-slate-600">Upload the GeM submission receipt. Confirm packs SOW, checklist, employee finals, and receipt into a Drive child folder named [Tender Number] - [Tender Title]. The job stays unsubmitted if Drive fails.</p>
           <Input type="file" accept="application/pdf" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} />
           <DialogFooter>
-            <Button onClick={confirmReceipt} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">Confirm & push to Drive</Button>
+            <Button onClick={() => run(confirmReceipt)} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">Confirm & push to Drive</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

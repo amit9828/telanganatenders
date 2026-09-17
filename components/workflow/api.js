@@ -1,4 +1,4 @@
-import { isAdminDeskPath, isClientDeskPath, isStaffDeskPath, staffSessionIdent, clientHeaders } from '@/lib/tab-handoff';
+import { isAdminDeskPath, isClientDeskPath, isStaffDeskPath, consumeStaffBypass, staffSessionIdent, clientHeaders } from '@/lib/tab-handoff';
 
 export function staffHeaders(extra = {}) {
   const headers = { ...extra };
@@ -10,7 +10,7 @@ export function staffHeaders(extra = {}) {
     return headers;
   }
   if (isStaffDeskPath(path)) {
-    const email = staffSessionIdent();
+    const email = consumeStaffBypass() || staffSessionIdent();
     if (email) headers['x-employee-email'] = email;
   }
   return headers;
