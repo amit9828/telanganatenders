@@ -83,14 +83,10 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   const confirmReceipt = async () => {
     if (!receiptFile) return toast.error('Submission Receipt PDF is required.');
     const form = new FormData();
+    form.append('action', 'confirm_receipt');
     form.append('receipt', receiptFile);
     form.append('kind', 'receipt');
-    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/files`, { method: 'POST', body: form });
-    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'confirm_receipt' }),
-    });
+    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, { method: 'POST', body: form });
     toast.success('Drive pack uploaded. Status is Submitted.');
     setReceiptJob(null);
     setReceiptFile(null);
