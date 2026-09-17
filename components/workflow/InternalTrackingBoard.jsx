@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
-import StaffChat from '@/components/StaffChat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,9 +21,8 @@ const STATUS_LABEL = {
   AWAITING_RECEIPT: 'Awaiting Receipt',
 };
 
-export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], chatSelfId, chatRoster, actorEmpId = '' }) {
+export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], actorEmpId = '' }) {
   const [checklistJob, setChecklistJob] = useState(null);
-  const [chatJobId, setChatJobId] = useState(null);
   const [checklistFile, setChecklistFile] = useState(null);
   const [tlId, setTlId] = useState('');
   const [makerJob, setMakerJob] = useState(null);
@@ -38,7 +36,6 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   const [busy, setBusy] = useState(false);
 
   const openFile = (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file'));
-  const roster = chatRoster || [...tls, ...members, ...team];
   const makerTeamKeys = [makerJob?.team_id, makerJob?.routed_tl_emp_id, desk === 'tl' ? actorEmpId : '']
     .map((value) => String(value || '').trim())
     .filter(Boolean);
@@ -155,7 +152,6 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
         {jobs.map((job) => {
           const actions = [
             { label: 'View SOW', icon: 'eye', onClick: () => openFile(job, 'sow') },
-            chatSelfId && { label: 'Chat', onClick: () => setChatJobId((id) => id === job._id ? null : job._id) },
           ].filter(Boolean);
           if (job.checklist_file) actions.push({ label: 'Checklist', onClick: () => openFile(job, 'checklist') });
           if (desk === 'md' && job.status === 'MD_CHECKLIST') {
@@ -228,9 +224,6 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                 job={{ ...job, display_status: STATUS_LABEL[job.status] || job.status }}
                 actions={actions}
               />
-              {chatJobId === job._id && chatSelfId && (
-                <div className="mt-2 h-[420px]"><StaffChat selfId={chatSelfId} roster={roster} jobId={job._id} /></div>
-              )}
               {job.bounce_note && (job.status === 'MAKER_PREP' || job.status === 'TL_QC') && (
                 <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
                   Bounce note: {job.bounce_note}
