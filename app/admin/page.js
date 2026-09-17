@@ -1670,10 +1670,10 @@ export default function AdminPage() {
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
-            <SubmittedTrackingBoard jobs={wfSubmitted} onRefresh={refresh} chatSelfId="MD" chatRoster={teamMembers} />
+            <SubmittedTrackingBoard jobs={wfSubmitted} onRefresh={refresh} canDelete chatSelfId="MD" chatRoster={teamMembers} />
           </TabsContent>
           <TabsContent value="archive" className="mt-4">
-            <ArchiveBoard jobs={wfArchive} />
+            <ArchiveBoard jobs={wfArchive} canDelete onRefresh={refresh} />
           </TabsContent>
           <TabsContent value="alerts" className="mt-4"><OpsAlerts roster={teamMembers} /></TabsContent>
           <TabsContent value="client-queries" className="mt-4">
@@ -1870,13 +1870,13 @@ export default function AdminPage() {
                       </tbody>
                     </table>
                     )}
-                    {wfJobs.filter((j) => j.status !== 'AWAITING_PUBLISH').length > 0 && (
+                    {wfJobs.length > 0 && (
                       <table className="premium-table text-sm text-left mt-4">
                         <thead>
-                          <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th></tr>
+                          <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th><th></th></tr>
                         </thead>
                         <tbody>
-                          {wfJobs.filter((j) => j.status !== 'AWAITING_PUBLISH').map((job) => (
+                          {wfJobs.map((job) => (
                             <tr key={job._id}>
                               <td className="align-top text-xs font-semibold">{job.client_name || job.client_email || '—'}</td>
                               <td className="align-top">
@@ -1889,6 +1889,26 @@ export default function AdminPage() {
                                 {job.sow ? (
                                   <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => openWorkflowFile(job._id, 'sow')}>View SOW</Button>
                                 ) : '—'}
+                              </td>
+                              <td className="align-top">
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-7 text-[10px]"
+                                  onClick={async () => {
+                                    const name = job.bid_no || job.title || 'this card';
+                                    if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+                                    try {
+                                      await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
+                                      toast.success('Card deleted.');
+                                      refresh();
+                                    } catch (err) {
+                                      toast.error(err.message || 'Delete failed.');
+                                    }
+                                  }}
+                                >
+                                  Delete
+                                </Button>
                               </td>
                             </tr>
                           ))}
@@ -2852,59 +2872,106 @@ function BrandSettings({ token }) {
     if (saveBlocked) return toast.error('Image size must be under 2MB');
     setSaving(true);
     try {
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const uploadAsset = async (file) => {
+        if (!(file instanceof File)) return '';
+        if (file.size > MAX_BRAND_IMAGE_BYTES) {
+          throw new Error('Image size must be under 2MB');
+        }
+        const assetForm = new FormData();
+        assetForm.append('file', file);
+        const res = await fetch('/api/settings/asset', {
+          method: 'POST',
+          credentials: 'include',
+          headers,
+          body: assetForm,
+        });
+        if (res.status === 413) {
+          throw new Error('This image is too large for the server. Use a file under 2MB.');
+        }
+        const payload = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(payload?.error || `Upload failed (HTTP ${res.status}).`);
+        if (!payload?.url) throw new Error('Upload did not return a URL.');
+        return payload.url;
+      };
+
+      const logoUrl = logoFile ? await uploadAsset(logoFile) : '';
+      const gemUrl = gemFile ? await uploadAsset(gemFile) : '';
+      const sigUrl = sigFile ? await uploadAsset(sigFile) : '';
+
+      const bannerUrls = [];
+      for (const banner of banners) {
+        if (banner?.file instanceof File) bannerUrls.push(await uploadAsset(banner.file));
+        else bannerUrls.push(imageFormRef(typeof banner === 'string' ? banner : banner?.src, banner?.originIndex));
+      }
+
+      const leaderRows = [];
+      for (let i = 0; i < leaders.length; i += 1) {
+        const ld = leaders[i];
+        const image = ld.imageFile instanceof File
+          ? await uploadAsset(ld.imageFile)
+          : imageFormRef(ld.image, ld.originIndex);
+        leaderRows.push({
+          name: ld.name || '',
+          role: ld.role || '',
+          phone: ld.phone || '',
+          email: ld.email || '',
+          image,
+        });
+      }
+
+      const clientRows = [];
+      for (let i = 0; i < clients.length; i += 1) {
+        const cl = clients[i];
+        const image = cl.imageFile instanceof File
+          ? await uploadAsset(cl.imageFile)
+          : imageFormRef(cl.image, cl.originIndex);
+        clientRows.push({
+          client_name: cl.client_name || '',
+          company_name: cl.company_name || '',
+          udyam_no: cl.udyam_no || '',
+          image,
+        });
+      }
+
       const form = new FormData();
       form.append('name', brandName);
       form.append('tagline', tagline);
       form.append('vision_text', visionText);
-      form.append('logo_url', logoFile ? '' : imageFormRef(logoPreview, logoOrigin));
-      form.append('gem_logo_url', gemFile ? '' : imageFormRef(gemLogoPreview, gemOrigin));
-      form.append('md_signature_url', sigFile ? '' : imageFormRef(mdSignaturePreview, sigOrigin));
-      if (logoFile) form.append('logo', logoFile);
-      if (gemFile) form.append('gem_logo', gemFile);
-      if (sigFile) form.append('md_signature', sigFile);
+      form.append('logo_url', logoUrl || imageFormRef(logoPreview, logoOrigin));
+      form.append('gem_logo_url', gemUrl || imageFormRef(gemLogoPreview, gemOrigin));
+      form.append('md_signature_url', sigUrl || imageFormRef(mdSignaturePreview, sigOrigin));
+      form.append('banners', JSON.stringify(bannerUrls));
+      form.append('leaders', JSON.stringify(leaderRows));
+      form.append('clients', JSON.stringify(clientRows));
 
-      const keptBanners = banners
-        .filter((b) => b && !b.file)
-        .map((b) => imageFormRef(typeof b === 'string' ? b : b.src, b.originIndex));
-      form.append('banners', JSON.stringify(keptBanners));
-      banners.filter((b) => b?.file instanceof File).forEach((b) => form.append('banner_files', b.file));
-
-      form.append('leaders', JSON.stringify(leaders.map((ld) => ({
-        name: ld.name || '',
-        role: ld.role || '',
-        phone: ld.phone || '',
-        email: ld.email || '',
-        image: ld.imageFile ? '' : imageFormRef(ld.image, ld.originIndex),
-      }))));
-      leaders.forEach((ld, i) => {
-        if (ld.imageFile instanceof File) form.append(`leader_image_${i}`, ld.imageFile);
-      });
-
-      form.append('clients', JSON.stringify(clients.map((cl) => ({
-        client_name: cl.client_name || '',
-        company_name: cl.company_name || '',
-        udyam_no: cl.udyam_no || '',
-        image: cl.imageFile ? '' : imageFormRef(cl.image, cl.originIndex),
-      }))));
-      clients.forEach((cl, i) => {
-        if (cl.imageFile instanceof File) form.append(`client_image_${i}`, cl.imageFile);
-      });
-
-      const headers = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
       const r = await fetch('/api/settings', { method: 'POST', credentials: 'include', headers, body: form });
       if (!r.ok) {
         const payload = await r.json().catch(() => null);
         const apiError = payload?.error || payload?.details || payload?.message;
         return toast.error(apiError
           ? `Could not save settings: ${apiError}`
-          : `Could not save settings (HTTP ${r.status}).`);
+          : r.status === 413
+            ? 'Could not save settings: the request is too large. Upload fewer or smaller images.'
+            : `Could not save settings (HTTP ${r.status}).`);
       }
+
+      if (logoUrl) { setLogoPreview(logoUrl); setLogoFile(null); setLogoOrigin(null); }
+      if (gemUrl) { setGemLogoPreview(gemUrl); setGemFile(null); setGemOrigin(null); }
+      if (sigUrl) { setMdSignaturePreview(sigUrl); setSigFile(null); setSigOrigin(null); }
+      setBanners(bannerUrls.map((src) => ({ src, file: null, originIndex: null })));
+      setLeaders(leaderRows.map((row) => ({ ...row, imageFile: null, originIndex: null })));
+      setClients(clientRows.map((row) => ({ ...row, imageFile: null, originIndex: null })));
+
       invalidateSettingsCache();
       toast.success('All Master Settings published successfully!');
     } catch (error) {
       const msg = error?.message || 'Network request failed';
-      toast.error(`Network Error: Cannot reach database. ${msg}`);
+      toast.error(msg.startsWith('Image') || msg.startsWith('This image') || msg.startsWith('Upload') || msg.startsWith('Please')
+        ? msg
+        : `Network Error: Cannot reach database. ${msg}`);
     } finally { setSaving(false); }
   };
 

@@ -1,9 +1,23 @@
 'use client';
 
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
-import { openWorkflowFile } from '@/components/workflow/api';
+import { toast } from 'sonner';
+import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import { workflowDocActions, mdDeleteCardAction } from '@/components/workflow/jobDocActions';
 
-export default function ArchiveBoard({ jobs = [] }) {
+export default function ArchiveBoard({ jobs = [], canDelete = false, onRefresh }) {
+  const deleteCard = async (job) => {
+    const name = job.bid_no || job.title || 'this card';
+    if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+    try {
+      await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
+      toast.success('Card deleted.');
+      onRefresh?.();
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <h3 className="font-bold text-[#0A2647]">Archive</h3>
@@ -15,8 +29,8 @@ export default function ArchiveBoard({ jobs = [] }) {
             key={job._id}
             job={{ ...job, display_status: job.archive_reason || 'Lost' }}
             actions={[
-              job.sow && { label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(job._id, 'sow') },
-              job.receipt && { label: 'Receipt', icon: 'download', onClick: () => openWorkflowFile(job._id, 'receipt') },
+              ...workflowDocActions(job, (docJob, slot) => openWorkflowFile(docJob._id, slot).catch((err) => toast.error(err.message || 'Could not open file'))),
+              canDelete && mdDeleteCardAction(job, deleteCard),
             ].filter(Boolean)}
           />
         ))}
