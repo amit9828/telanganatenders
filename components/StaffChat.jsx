@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { toast } from 'sonner';
 import { workflowFetch, staffHeaders, openStaffChatFile } from '@/components/workflow/api';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { Menu, MessageSquare, Paperclip, Pencil, Search, Send, Trash2, Forward } from 'lucide-react';
+import { Check, CheckCheck, Download, Menu, MessageSquare, Paperclip, Pencil, Search, Send, Trash2, Forward } from 'lucide-react';
 
 const MD_PEER = { emp_id: 'MD', name: 'Managing Director', designation: 'MD' };
 const CHAT_MAX_BYTES = 4 * 1024 * 1024;
@@ -48,26 +48,31 @@ function formatPreviewTime(value) {
     : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
-function readKey(selfId) {
-  return `tt_chat_read_${selfId || 'anon'}`;
-}
-
-function loadLastRead(selfId) {
-  if (typeof window === 'undefined') return {};
-  try {
-    return JSON.parse(localStorage.getItem(readKey(selfId)) || '{}') || {};
-  } catch {
-    return {};
-  }
-}
-
-function saveLastRead(selfId, map) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(readKey(selfId), JSON.stringify(map));
-}
-
 function threadCacheKey(peer, jobId) {
   return jobId ? `job::${jobId}` : `peer::${peer}`;
+}
+
+function ChatImage({ id, alt }) {
+  const [src, setSrc] = useState('');
+  useEffect(() => {
+    let dead = false;
+    let url = '';
+    fetch(`/api/staff-chat/file?id=${encodeURIComponent(id)}`, {
+      credentials: 'include',
+      headers: staffHeaders(),
+    }).then(async (res) => {
+      if (!res.ok) throw new Error('preview');
+      const blob = await res.blob();
+      url = URL.createObjectURL(blob);
+      if (!dead) setSrc(url);
+    }).catch(() => {});
+    return () => {
+      dead = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id]);
+  if (!src) return <p className="text-[11px] opacity-80">Loading image…</p>;
+  return <img src={src} alt={alt || 'Image'} className="mt-1 max-h-52 rounded-lg object-cover w-full" />;
 }
 
 function ContactList({ contacts, peer, query, onQuery, onSelect }) {
@@ -106,9 +111,12 @@ function ContactList({ contacts, peer, query, onQuery, onSelect }) {
                 active ? 'bg-sky-50' : 'hover:bg-slate-50'
               }`}
             >
-              <Avatar className="h-9 w-9 shrink-0">
-                <AvatarFallback className="bg-[#0A2647] text-white text-[11px] font-bold">{c.initials}</AvatarFallback>
-              </Avatar>
+              <div className="relative shrink-0">
+                <Avatar className="h-9 w-9">
+                  <AvatarFallback className="bg-[#0A2647] text-white text-[11px] font-bold">{c.initials}</AvatarFallback>
+                </Avatar>
+                {c.online && <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />}
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <p className={`text-sm truncate ${c.unread ? 'font-black text-[#0A2647]' : 'font-semibold text-slate-800'}`}>{c.name}</p>
@@ -135,6 +143,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
   const people = teammates || roster;
   const isMobile = useIsMobile();
   const compact = Boolean(jobId);
+  const [me, setMe] = useState(selfId);
   const [peer, setPeer] = useState('');
   const [messages, setMessages] = useState([]);
   const [inbox, setInbox] = useState([]);
@@ -143,14 +152,18 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [lastRead, setLastRead] = useState({});
+  const [reads, setReads] = useState({});
+  const [presence, setPresence] = useState({});
+  const [peerReadAt, setPeerReadAt] = useState(null);
+  const [peerTyping, setPeerTyping] = useState(false);
   const [editingId, setEditingId] = useState('');
   const [forwardMsg, setForwardMsg] = useState(null);
   const cacheRef = useRef(new Map());
   const endRef = useRef(null);
+  const typingTimer = useRef(null);
 
   useEffect(() => {
-    setLastRead(loadLastRead(selfId));
+    setMe(selfId);
   }, [selfId]);
 
   const list = useMemo(() => {
@@ -158,26 +171,26 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
     const out = [];
     const add = (row) => {
       const id = contactId(row);
-      if (!id || id === selfId || seen.has(id)) return;
+      if (!id || id === me || seen.has(id)) return;
       seen.add(id);
       out.push(row);
     };
-    if (selfId !== 'MD') add(MD_PEER);
+    if (me !== 'MD') add(MD_PEER);
     (people || []).filter(isActiveEmployee).forEach(add);
     return out;
-  }, [people, selfId]);
+  }, [people, me]);
 
   const contacts = useMemo(() => {
     const meta = new Map();
     for (const msg of inbox) {
-      const other = msg.from_emp_id === selfId ? msg.to_emp_id : msg.from_emp_id;
-      if (!other || other === selfId) continue;
+      const other = msg.from_emp_id === me ? msg.to_emp_id : msg.from_emp_id;
+      if (!other || other === me) continue;
       const prev = meta.get(other) || { last: null, unread: 0 };
       const ts = new Date(msg.created_at).getTime();
       const lastTs = prev.last ? new Date(prev.last.created_at).getTime() : 0;
       if (ts >= lastTs) prev.last = msg;
-      const readAt = lastRead[other] ? new Date(lastRead[other]).getTime() : 0;
-      if (msg.from_emp_id === other && msg.to_emp_id === selfId && ts > readAt) {
+      const readAt = reads[other] ? new Date(reads[other]).getTime() : 0;
+      if (msg.from_emp_id === other && msg.to_emp_id === me && ts > readAt) {
         prev.unread += 1;
       }
       meta.set(other, prev);
@@ -187,6 +200,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       const id = contactId(row);
       const info = meta.get(id) || { last: null, unread: 0 };
       const last = info.last;
+      const live = presence[id];
       return {
         id,
         emp_id: row.emp_id,
@@ -197,6 +211,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
         previewAt: last ? formatPreviewTime(last.created_at) : '',
         recency: last ? new Date(last.created_at).getTime() : 0,
         unread: peer === id ? 0 : info.unread,
+        online: Boolean(live?.online),
       };
     });
 
@@ -206,7 +221,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       return a.name.localeCompare(b.name);
     });
     return rows;
-  }, [list, inbox, lastRead, selfId, peer]);
+  }, [list, inbox, reads, me, peer, presence]);
 
   const active = contacts.find((c) => c.id === peer) || list.find((r) => contactId(r) === peer);
 
@@ -215,35 +230,49 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
     if (!target) return;
     try {
       const qs = new URLSearchParams();
-      if (target) qs.set('peer', target);
+      qs.set('peer', target);
       if (jobId) qs.set('job_id', jobId);
       const data = await workflowFetch(`/api/staff-chat?${qs.toString()}`);
+      if (data.me) setMe(data.me);
       const next = (data.messages || []).filter((m) =>
-        (m.from_emp_id === selfId && m.to_emp_id === target)
-        || (m.from_emp_id === target && m.to_emp_id === selfId)
+        (m.from_emp_id === (data.me || me) && m.to_emp_id === target)
+        || (m.from_emp_id === target && m.to_emp_id === (data.me || me))
       );
       cacheRef.current.set(threadCacheKey(target, jobId), next);
       setMessages(next);
+      setPeerReadAt(data.peer_read_at || null);
+      setPeerTyping(Boolean(data.peer_typing));
+      if (data.presence) setPresence((prev) => ({ ...prev, ...data.presence }));
     } catch (e) {
       if (!silent) toast.error(e.message);
     }
-  }, [peer, jobId, selfId]);
+  }, [peer, jobId, me]);
 
   const loadInbox = useCallback(async () => {
     try {
       const data = await workflowFetch('/api/staff-chat');
+      if (data.me) setMe(data.me);
       setInbox(data.messages || []);
+      if (data.reads) setReads(data.reads);
+      if (data.presence) setPresence((prev) => ({ ...prev, ...data.presence }));
     } catch {
       /* inbox poll is best-effort */
     }
   }, []);
 
-  const markRead = useCallback((id) => {
+  const markRead = useCallback(async (id) => {
     if (!id) return;
-    const next = { ...loadLastRead(selfId), [id]: new Date().toISOString() };
-    setLastRead(next);
-    saveLastRead(selfId, next);
-  }, [selfId]);
+    try {
+      await workflowFetch('/api/staff-chat', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ peer: id }),
+      });
+      setReads((prev) => ({ ...prev, [id]: new Date().toISOString() }));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const selectPeer = (id) => {
     setPeer(id);
@@ -262,14 +291,49 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
   useEffect(() => {
     const id = setInterval(() => {
       loadInbox();
-      if (peer) loadThread(peer, { silent: true });
+      if (peer) {
+        loadThread(peer, { silent: true });
+        markRead(peer);
+      }
     }, 8000);
     return () => clearInterval(id);
-  }, [loadInbox, loadThread, peer]);
+  }, [loadInbox, loadThread, peer, markRead]);
+
+  useEffect(() => {
+    if (!peer || typeof EventSource === 'undefined') return undefined;
+    const es = new EventSource(`/api/staff-chat/stream?peer=${encodeURIComponent(peer)}`, { withCredentials: true });
+    const onState = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data.me) setMe(data.me);
+        if (data.peer_read_at) setPeerReadAt(data.peer_read_at);
+        setPeerTyping(Boolean(data.peer_typing));
+        if (data.presence) setPresence((prev) => ({ ...prev, ...data.presence }));
+        if (data.changed) loadThread(peer, { silent: true });
+      } catch {
+        /* ignore */
+      }
+    };
+    es.addEventListener('state', onState);
+    es.onerror = () => {};
+    return () => {
+      es.removeEventListener('state', onState);
+      es.close();
+    };
+  }, [peer, loadThread]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, peer]);
+
+  const notifyTyping = (on) => {
+    if (!peer) return;
+    workflowFetch('/api/staff-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_emp_id: peer, typing: on }),
+    }).catch(() => {});
+  };
 
   const send = async () => {
     if (!peer) return toast.error('Pick a teammate.');
@@ -298,30 +362,36 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
     }
     setBusy(true);
     try {
+      let fileId = '';
       if (file) {
-        const form = new FormData();
-        form.append('to_emp_id', peer);
-        form.append('text', text);
-        if (jobId) form.append('job_id', jobId);
-        form.append('file', file);
-        const res = await fetch('/api/staff-chat', {
+        const assetForm = new FormData();
+        assetForm.append('file', file);
+        assetForm.append('to_emp_id', peer);
+        const res = await fetch('/api/staff-chat/asset', {
           method: 'POST',
           credentials: 'include',
           headers: staffHeaders(),
-          body: form,
+          body: assetForm,
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
-      } else {
-        await workflowFetch('/api/staff-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to_emp_id: peer, text, ...(jobId ? { job_id: jobId } : {}) }),
-        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || `Upload failed (${res.status})`);
+        fileId = payload.file_id || '';
+        if (!fileId) throw new Error('Upload did not return a file id.');
       }
+      await workflowFetch('/api/staff-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_emp_id: peer,
+          text,
+          ...(fileId ? { file_id: fileId } : {}),
+          ...(jobId ? { job_id: jobId } : {}),
+        }),
+      });
       setText('');
       setFile(null);
-      markRead(peer);
+      notifyTyping(false);
+      await markRead(peer);
       await Promise.all([loadThread(peer, { silent: true }), loadInbox()]);
     } catch (e) {
       toast.error(e.message);
@@ -373,6 +443,17 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
     />
   );
 
+  const peerLive = presence[peer];
+  const statusLine = jobId
+    ? 'Tender thread · 7-day history'
+    : peerTyping
+      ? 'typing…'
+      : peerLive?.online
+        ? 'Online'
+        : peerLive?.last_seen_at
+          ? `Last seen ${formatWhen(peerLive.last_seen_at)}`
+          : (active?.designation || active?.emp_id || 'Staff');
+
   return (
     <div className={`w-full ${paneClass} rounded-xl border border-slate-200 bg-[#efeae2] overflow-hidden flex shadow-sm`}>
       <aside className="hidden md:flex w-[280px] shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -397,12 +478,15 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
           )}
           {peer && active ? (
             <>
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-white/15 text-white text-[10px] font-bold">{initials(active.name)}</AvatarFallback>
-              </Avatar>
+              <div className="relative">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-white/15 text-white text-[10px] font-bold">{initials(active.name)}</AvatarFallback>
+                </Avatar>
+                {peerLive?.online && <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-[#0A2647]" />}
+              </div>
               <div className="min-w-0">
                 <p className="text-sm font-bold truncate">{active.name}</p>
-                <p className="text-[10px] text-white/70 truncate">{jobId ? 'Tender thread · 7-day history' : (active.designation || active.emp_id || 'Staff')}</p>
+                <p className="text-[10px] text-white/70 truncate">{statusLine}</p>
               </div>
             </>
           ) : (
@@ -425,7 +509,8 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
           ) : (
             <>
               {messages.map((m) => {
-                const mine = m.from_emp_id === selfId;
+                const mine = m.from_emp_id === me;
+                const read = mine && peerReadAt && new Date(peerReadAt).getTime() >= new Date(m.created_at).getTime();
                 return (
                   <div key={m._id} className={`mb-2 flex ${mine ? 'justify-end' : 'justify-start'} group`}>
                     <div className={`max-w-[78%] rounded-2xl px-3 py-1.5 shadow-sm text-sm ${
@@ -441,18 +526,31 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
                           Forwarded from {m.forwarded_from.from_name || m.forwarded_from.from_emp_id}
                         </p>
                       )}
-                      <p className="whitespace-pre-wrap break-words">{m.text || m.file_name}</p>
-                      {(m.file_r2_key || m.file_name) && (
-                        <button
-                          type="button"
-                          onClick={() => openStaffChatFile(m._id)}
-                          className={`block text-[10px] underline mt-0.5 ${mine ? 'text-sky-200' : 'text-blue-600'}`}
-                        >
-                          {m.file_name || 'Attachment'}
-                        </button>
+                      {m.text ? <p className="whitespace-pre-wrap break-words">{m.text}</p> : null}
+                      {m.has_file && m.is_image && <ChatImage id={m._id} alt={m.file_name} />}
+                      {m.has_file && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => openStaffChatFile(m._id).catch((e) => toast.error(e.message))}
+                            className={`text-[10px] underline ${mine ? 'text-sky-200' : 'text-blue-600'}`}
+                          >
+                            {m.file_name || 'Open'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openStaffChatFile(m._id, { download: true, fileName: m.file_name }).catch((e) => toast.error(e.message))}
+                            className={`text-[10px] underline inline-flex items-center gap-0.5 ${mine ? 'text-sky-200' : 'text-blue-600'}`}
+                          >
+                            <Download className="w-3 h-3" /> Download
+                          </button>
+                        </div>
                       )}
-                      <span className={`block text-[9px] mt-1 ${mine ? 'text-white/60' : 'text-slate-400'}`}>
+                      <span className={`flex items-center gap-1 text-[9px] mt-1 ${mine ? 'text-white/60' : 'text-slate-400'}`}>
                         {formatWhen(m.created_at)}{m.edited_at ? ' · edited' : ''}
+                        {mine && (read
+                          ? <CheckCheck className="w-3 h-3 text-sky-300" />
+                          : <Check className="w-3 h-3" />)}
                       </span>
                       <div className={`flex gap-1 mt-1 ${mine ? 'justify-end' : 'justify-start'} opacity-0 group-hover:opacity-100`}>
                         {mine && (
@@ -483,7 +581,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
             <div className="mb-2 bg-white border rounded-lg p-2">
               <p className="text-[10px] font-bold text-[#0A2647] mb-1">Forward to</p>
               <div className="flex flex-wrap gap-1">
-                {list.filter((row) => contactId(row) !== selfId).map((row) => (
+                {list.filter((row) => contactId(row) !== me).map((row) => (
                   <Button key={contactId(row)} size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => forwardTo(contactId(row))}>
                     {row.name || contactId(row)}
                   </Button>
@@ -517,7 +615,13 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
             </label>
             <Input
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (!peer) return;
+                notifyTyping(true);
+                clearTimeout(typingTimer.current);
+                typingTimer.current = setTimeout(() => notifyTyping(false), 1500);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -528,7 +632,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
               placeholder={peer ? (file ? `File: ${file.name}` : 'Type a message') : 'Select a contact first'}
               className="h-9 bg-white rounded-full"
             />
-            <Button size="icon" className="h-9 w-9 rounded-full bg-[#0A2647] hover:bg-[#144272]" onClick={send} disabled={busy || !peer}>
+            <Button type="button" size="icon" className="h-9 w-9 rounded-full bg-[#0A2647] hover:bg-[#144272]" onClick={send} disabled={busy || !peer}>
               <Send className="w-4 h-4" />
             </Button>
           </div>

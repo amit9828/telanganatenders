@@ -2749,16 +2749,13 @@ function StatCard({ icon, label, value, accent }) {
 
 const MAX_BRAND_IMAGE_BYTES = 2 * 1024 * 1024;
 
-function isPublicImageUrl(value) {
-  const s = String(value || '');
-  return /^https?:\/\//i.test(s) || (s.startsWith('/') && !s.startsWith('data:'));
-}
-
 function imageFormRef(value, originIndex) {
-  const s = String(value || '');
-  if (isPublicImageUrl(s)) return s;
-  if (s.startsWith('data:') && originIndex != null && originIndex >= 0) return `__keep__:${originIndex}`;
-  return '';
+  const s = String(value || '').trim();
+  if (!s || s.startsWith('data:') || s.startsWith('blob:') || s.length > 2048) {
+    return originIndex != null && originIndex >= 0 ? `__keep__:${originIndex}` : '';
+  }
+  if (/^https?:\/\//i.test(s) || s.startsWith('/')) return s;
+  return originIndex != null && originIndex >= 0 ? `__keep__:${originIndex}` : '';
 }
 
 function BrandSettings({ token }) {
@@ -2893,8 +2890,11 @@ function BrandSettings({ token }) {
         }
         const payload = await res.json().catch(() => null);
         if (!res.ok) throw new Error(payload?.error || `Upload failed (HTTP ${res.status}).`);
-        if (!payload?.url) throw new Error('Upload did not return a URL.');
-        return payload.url;
+        const url = String(payload?.url || '');
+        if (!url || url.startsWith('data:') || url.startsWith('blob:')) {
+          throw new Error('Upload did not return a stored image URL. Check Cloudflare R2.');
+        }
+        return url;
       };
 
       const logoUrl = logoFile ? await uploadAsset(logoFile) : '';
@@ -2936,18 +2936,28 @@ function BrandSettings({ token }) {
         });
       }
 
-      const form = new FormData();
-      form.append('name', brandName);
-      form.append('tagline', tagline);
-      form.append('vision_text', visionText);
-      form.append('logo_url', logoUrl || imageFormRef(logoPreview, logoOrigin));
-      form.append('gem_logo_url', gemUrl || imageFormRef(gemLogoPreview, gemOrigin));
-      form.append('md_signature_url', sigUrl || imageFormRef(mdSignaturePreview, sigOrigin));
-      form.append('banners', JSON.stringify(bannerUrls));
-      form.append('leaders', JSON.stringify(leaderRows));
-      form.append('clients', JSON.stringify(clientRows));
+      const payload = {
+        name: brandName,
+        tagline,
+        vision_text: visionText,
+        logo: logoUrl || imageFormRef(logoPreview, logoOrigin),
+        gem_logo: gemUrl || imageFormRef(gemLogoPreview, gemOrigin),
+        md_signature: sigUrl || imageFormRef(mdSignaturePreview, sigOrigin),
+        banners: bannerUrls,
+        leaders: leaderRows,
+        clients: clientRows,
+      };
+      const body = JSON.stringify(payload);
+      if (body.length > 100_000) {
+        throw new Error('Settings payload is too large. Upload images individually, then save.');
+      }
 
-      const r = await fetch('/api/settings', { method: 'POST', credentials: 'include', headers, body: form });
+      const r = await fetch('/api/settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body,
+      });
       if (!r.ok) {
         const payload = await r.json().catch(() => null);
         const apiError = payload?.error || payload?.details || payload?.message;
@@ -2980,7 +2990,7 @@ function BrandSettings({ token }) {
       <Card className="tender-shadow border-0 ring-1 ring-slate-200">
         <CardHeader className="pb-4 bg-slate-50/50 border-b flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><ImageIcon className="w-5 h-5 text-slate-500" /> Brand Identity & Logos</CardTitle>
-          <Button onClick={save} disabled={saving || saveBlocked} className="bg-[#16a34a] hover:bg-[#15803d] shadow-md h-9 text-xs"><ShieldCheck className="w-4 h-4 mr-2"/> {saving ? 'Saving...' : 'Save All Settings'}</Button>
+          <Button type="button" onClick={save} disabled={saving || saveBlocked} className="bg-[#16a34a] hover:bg-[#15803d] shadow-md h-9 text-xs"><ShieldCheck className="w-4 h-4 mr-2"/> {saving ? 'Saving...' : 'Save All Settings'}</Button>
         </CardHeader>
         <CardContent className="pt-6">
           <div className="grid lg:grid-cols-2 gap-8 items-start">

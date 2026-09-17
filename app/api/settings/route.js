@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { brandFieldsFromForm, MAX_BRAND_IMAGE_BYTES, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
+import { requireDashboardStaff } from '@/lib/staff-auth';
+import { brandFieldsFromForm, brandFieldsFromJson, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,22 +31,30 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  const auth = await requireDashboardStaff(request);
+  if (!auth.ok) return json({ error: auth.error || 'Please sign in.' }, auth.status || 401);
+
   try {
     const contentType = request.headers.get('content-type') || '';
-    if (!contentType.includes('multipart/form-data')) {
-      return json({ error: 'Settings must be sent as multipart/form-data, not JSON.' }, 415);
-    }
-
-    const form = await request.formData();
-    for (const value of form.values()) {
-      if (value && typeof value !== 'string' && typeof value.size === 'number' && value.size > MAX_BRAND_IMAGE_BYTES) {
-        return json({ error: 'Image size must be under 2MB' }, 413);
-      }
-    }
-
     const db = await getDb();
     const existing = await db.collection('settings').findOne({ id: 'brand' }) || {};
-    const $set = await brandFieldsFromForm(form, existing);
+    let $set;
+
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      $set = await brandFieldsFromJson(body, existing);
+    } else if (contentType.includes('multipart/form-data')) {
+      const form = await request.formData();
+      for (const value of form.values()) {
+        if (value && typeof value !== 'string') {
+          return json({ error: 'Upload each image separately first, then save settings.' }, 400);
+        }
+      }
+      $set = await brandFieldsFromForm(form, existing);
+    } else {
+      return json({ error: 'Settings must be sent as JSON.' }, 415);
+    }
+
     await db.collection('settings').updateOne({ id: 'brand' }, { $set }, { upsert: true });
     return json({ success: true });
   } catch (error) {
