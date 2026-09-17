@@ -64,7 +64,8 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
   };
 
   const forwardToClient = async (job) => {
-    const file = sowByJob[job._id];
+    const jobId = String(job._id?.$oid || job._id || '');
+    const file = sowByJob[job._id] || sowByJob[jobId];
     if (!file) {
       toast.error('Choose a SOW PDF first.');
       return;
@@ -73,12 +74,16 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
       toast.error('SOW must be a PDF.');
       return;
     }
-    setBusyId(job._id);
+    if (!jobId) return toast.error('This parked tender is missing an id.');
+    setBusyId(jobId);
     try {
       const form = new FormData();
-      form.append('client_email', job.parked_client_email);
+      if (job.parked_client_email) form.append('client_email', String(job.parked_client_email));
+      if (job.parked_client_id || job.client_id) {
+        form.append('client_id', String(job.parked_client_id || job.client_id));
+      }
       form.append('sow', file);
-      const res = await fetch(`/api/workflow/jobs/${job._id}/suggest`, {
+      const res = await fetch(`/api/workflow/jobs/${encodeURIComponent(jobId)}/suggest`, {
         method: 'POST',
         credentials: 'include',
         headers: staffHeaders(),
