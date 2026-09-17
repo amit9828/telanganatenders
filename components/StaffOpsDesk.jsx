@@ -37,7 +37,7 @@ import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { DESIGNATIONS, resolveStaffDesignation } from '@/lib/designations';
 import {
-  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud
+  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2
 } from 'lucide-react';
 
 export default function StaffOpsDesk({ desk }) {
@@ -59,6 +59,7 @@ export default function StaffOpsDesk({ desk }) {
   const [officerForm, setOfficerForm] = useState({
     name: '', department: '', designation: '', phone: '', state: '', district: '', address: '', pincode: '', notes: '',
   });
+  const [editTender, setEditTender] = useState(null);
 
   const staffEmail = localEmpEmail || (session?.user?.role && session.user.role !== 'MD' ? session?.user?.email : '');
   const selfFromTeam = team.find((t) => String(t.email || '').toLowerCase() === String(staffEmail || '').toLowerCase());
@@ -188,6 +189,30 @@ export default function StaffOpsDesk({ desk }) {
     }
   };
 
+  const handleEditTender = (t) => {
+    setEditTender(t);
+    setActiveTab('publisher');
+    toast.info('Edit mode active. Update details and click save.');
+  };
+
+  const handleDeleteTender = async (id) => {
+    if (!confirm('Are you sure you want to permanently delete this tender from the Live Portal?')) return;
+    try {
+      const res = await fetch(`/api/tenders/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: staffHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to delete tender.');
+      toast.success('Tender deleted successfully.');
+      if (String(editTender?._id || editTender?.id || '') === String(id)) setEditTender(null);
+      load();
+    } catch (err) {
+      toast.error(err.message || 'Network error');
+    }
+  };
+
   const impersonateClient = (targetEmail) => {
     openClientBypass(targetEmail);
   };
@@ -264,10 +289,32 @@ export default function StaffOpsDesk({ desk }) {
                         members={members}
                         onCreated={load}
                       />
-                      <PublishTenderForm awaitingJobs={awaitingPublish} onPublished={load} />
+                      <PublishTenderForm
+                        awaitingJobs={awaitingPublish}
+                        editTender={editTender}
+                        onCancelEdit={() => setEditTender(null)}
+                        onPublished={() => {
+                          setEditTender(null);
+                          load();
+                        }}
+                      />
                     </div>
                     <div className="lg:col-span-3">
-                      <LiveTendersPaged tenders={tenders} pdfEmail={staffEmail} pdfRole="employee" />
+                      <LiveTendersPaged
+                        tenders={tenders}
+                        pdfEmail={staffEmail}
+                        pdfRole="employee"
+                        renderActions={(t) => (
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleEditTender(t)}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDeleteTender(t._id || t.id)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      />
                     </div>
                   </div>
                   <OperationsStoragePanel clients={clients} uploadedBy={staffEmail || selfId} />

@@ -37,10 +37,12 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   const [bounceNote, setBounceNote] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const openFile = (job, slot) => openWorkflowFile(job._id, slot);
+  const openFile = (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file'));
   const roster = chatRoster || [...tls, ...members, ...team];
-  const makerTeamId = makerJob?.team_id || makerJob?.routed_tl_emp_id || (desk === 'tl' ? actorEmpId : '');
-  const makerOptions = members.filter((m) => String(m.team_id || '') === String(makerTeamId || '') && Boolean(makerTeamId));
+  const makerTeamKeys = [makerJob?.team_id, makerJob?.routed_tl_emp_id, desk === 'tl' ? actorEmpId : '']
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const makerOptions = members.filter((m) => makerTeamKeys.includes(String(m.team_id || '').trim()));
 
   const run = async (fn) => {
     setBusy(true);
@@ -332,7 +334,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                   </SelectContent>
                 </Select>
               )}
-          <DialogFooter><Button onClick={assignMaker} disabled={busy}>Assign</Button></DialogFooter>
+          <DialogFooter><Button onClick={() => run(assignMaker)} disabled={busy}>Assign</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

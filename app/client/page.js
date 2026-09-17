@@ -1669,6 +1669,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           job={job}
                           actions={[
                             { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
+                            { label: 'View Tender PDF', icon: 'file', onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)) },
                             { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
                             { label: 'Reject', onClick: () => handleRejectWorkflowJob(job) },
                           ]}
@@ -1739,7 +1740,10 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                      <CompactTenderCard
                        key={job._id}
                        job={{ ...job, display_status: 'In Progress' }}
-                       actions={[{ label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) }]}
+                       actions={[
+                         { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
+                         { label: 'View Tender PDF', icon: 'file', onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)) },
+                       ]}
                      />
                    ))}
                    {workflowJobs.filter(j => j.status === 'SUBMITTED' || j.display_status === 'Submitted' || j.display_status === 'Technical Evaluation' || j.display_status === 'Financial Evaluation').map((job) => (
@@ -1748,6 +1752,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        job={job}
                        actions={[
                          { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
+                         { label: 'View Tender PDF', icon: 'file', onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)) },
                          job.receipt && { label: 'Receipt', icon: 'download', onClick: () => openClientWorkflowFile(job._id, 'receipt').catch((err) => toast.error(err.message)) },
                        ].filter(Boolean)}
                      />
