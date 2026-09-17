@@ -722,8 +722,7 @@ export default function App() {
       )}
 
       {/* Main Content follows below... */}
-      <section className="w-full relative overflow-hidden bg-slate-900 group">
-        <div className="relative w-full aspect-[21/9] min-h-[200px] md:min-h-[360px] lg:min-h-[520px]">
+      <section className="w-full relative h-[240px] sm:h-[320px] md:h-[400px] overflow-hidden bg-slate-900 group">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
             {brandSettings.banners.map((imgUrl, idx) => (
@@ -748,7 +747,6 @@ export default function App() {
             </button>
           </>
         )}
-        </div>
       </section>
 
       <section className="container mx-auto px-4 -mt-8 z-20 relative">
