@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import { workflowDocActions } from '@/components/workflow/jobDocActions';
 
 const STATUS_LABEL = {
   MD_CHECKLIST: 'MD Checklist',
@@ -83,20 +84,16 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
     if (!receiptFile) return toast.error('Submission Receipt PDF is required.');
     const form = new FormData();
     form.append('receipt', receiptFile);
-    try {
-      await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/files`, { method: 'POST', body: form });
-      await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'confirm_receipt' }),
-      });
-      toast.success('Drive pack uploaded. Status is Submitted.');
-      setReceiptJob(null);
-      setReceiptFile(null);
-      onRefresh?.();
-    } catch (err) {
-      toast.error(err.message || 'Drive upload failed. Job stays unsubmitted.');
-    }
+    form.append('kind', 'receipt');
+    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/files`, { method: 'POST', body: form });
+    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'confirm_receipt' }),
+    });
+    toast.success('Drive pack uploaded. Status is Submitted.');
+    setReceiptJob(null);
+    setReceiptFile(null);
   };
 
   const openTlBounce = (job) => {
@@ -151,9 +148,8 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {jobs.map((job) => {
           const actions = [
-            { label: 'View SOW', icon: 'eye', onClick: () => openFile(job, 'sow') },
-          ].filter(Boolean);
-          if (job.checklist_file) actions.push({ label: 'Checklist', onClick: () => openFile(job, 'checklist') });
+            ...workflowDocActions(job, openFile),
+          ];
           if (desk === 'md' && job.status === 'MD_CHECKLIST') {
             actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', onClick: () => setChecklistJob(job) });
           }
@@ -337,7 +333,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           <p className="text-sm text-slate-600">Upload the GeM submission receipt. Confirm packs SOW, checklist, employee finals, and receipt into a Drive child folder named [Tender Number] - [Tender Title]. The job stays unsubmitted if Drive fails.</p>
           <Input type="file" accept="application/pdf" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} />
           <DialogFooter>
-            <Button onClick={confirmReceipt} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">Confirm & push to Drive</Button>
+            <Button onClick={() => run(confirmReceipt)} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">Confirm & push to Drive</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

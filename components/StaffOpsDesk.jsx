@@ -32,6 +32,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
+import { workflowDocActions } from '@/components/workflow/jobDocActions';
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
@@ -280,7 +281,7 @@ export default function StaffOpsDesk({ desk }) {
                           <CompactTenderCard
                             key={j._id}
                             job={{ ...j, display_status: 'Pending Approval' }}
-                            actions={j.sow ? [{ label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(j._id, 'sow') }] : []}
+                            actions={workflowDocActions(j, (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
                           />
                         ))}
                       </div>

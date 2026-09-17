@@ -4,6 +4,7 @@ import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import { workflowDocActions } from '@/components/workflow/jobDocActions';
 import { TRACKING_LABELS, normalizeTrackingStatus } from '@/lib/tracking-status';
 
 const DROPDOWN_STAGES = [
@@ -44,10 +45,7 @@ export default function SubmittedTrackingBoard({
             <div key={job._id} className="space-y-2">
               <CompactTenderCard
                 job={{ ...job, display_status: stage || job.display_status || 'Submitted' }}
-                actions={[
-                  { label: 'View SOW', icon: 'eye', onClick: () => openWorkflowFile(job._id, 'sow') },
-                  job.receipt && { label: 'Receipt', icon: 'download', onClick: () => openWorkflowFile(job._id, 'receipt') },
-                ].filter(Boolean)}
+                actions={workflowDocActions(job, (docJob, slot) => openWorkflowFile(docJob._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
               />
               {canEdit ? (
                 <Select value={stage || undefined} onValueChange={(v) => update(job, v)}>
