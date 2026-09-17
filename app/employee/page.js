@@ -690,7 +690,8 @@ export default function EmployeeDashboard() {
      t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
   );
   const empTenderPages = Math.max(1, Math.ceil(filteredTenders.length / 10));
-  const pagedTenders = filteredTenders.slice((tenderPage - 1) * 10, tenderPage * 10);
+  const safeTenderPage = Math.min(tenderPage, empTenderPages);
+  const pagedTenders = filteredTenders.slice((safeTenderPage - 1) * 10, safeTenderPage * 10);
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
@@ -1358,17 +1359,17 @@ return (
                    }}
                  />
                </div>
-               <Card className="lg:col-span-3 tender-shadow">
+               <Card className="lg:col-span-3 tender-shadow self-start">
                  <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                     <div>
                        <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
                     </div>
                     <div className="relative shrink-0 w-full sm:w-[250px]">
                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                       <Input placeholder="Search Bid No or Title..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full bg-white shadow-sm text-xs" />
+                       <Input placeholder="Search Bid No or Title..." value={tenderSearch} onChange={e=>{ setTenderSearch(e.target.value); setTenderPage(1); }} className="pl-9 h-9 w-full bg-white shadow-sm text-xs" />
                     </div>
                  </CardHeader>
-                 <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                 <CardContent className="space-y-4">
                     {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
                     {pagedTenders.map((t) => (
                       <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
@@ -1396,13 +1397,11 @@ return (
                         </div>
                       </div>
                     ))}
-                    {empTenderPages > 1 && (
-                      <div className="flex items-center justify-center gap-3 pt-2">
-                        <Button variant="outline" size="sm" disabled={tenderPage === 1} onClick={() => setTenderPage(tenderPage - 1)}>Previous</Button>
-                        <span className="text-xs font-bold">Page {tenderPage} of {empTenderPages}</span>
-                        <Button variant="outline" size="sm" disabled={tenderPage === empTenderPages} onClick={() => setTenderPage(tenderPage + 1)}>Next</Button>
-                      </div>
-                    )}
+                    <div className="flex items-center justify-center gap-3 pt-2">
+                      <Button variant="outline" size="sm" disabled={safeTenderPage === 1} onClick={() => setTenderPage(safeTenderPage - 1)}>Previous</Button>
+                      <span className="text-xs font-bold">Page {safeTenderPage} of {empTenderPages}</span>
+                      <Button variant="outline" size="sm" disabled={safeTenderPage === empTenderPages} onClick={() => setTenderPage(safeTenderPage + 1)}>Next</Button>
+                    </div>
                  </CardContent>
                </Card>
             </div>
