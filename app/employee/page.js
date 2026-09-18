@@ -24,7 +24,7 @@ import {
   setListIfChanged,
   SUBMITTED_BOARD_STATUSES,
 } from '@/lib/job-board-state';
-import { staffHeaders } from '@/components/workflow/api';
+import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
 import { consumeStaffBypass } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -172,7 +172,7 @@ export default function EmployeeDashboard() {
       if (want.has('employees')) tasks.employees = fetch(`/api/employees?t=${stamp}`, { credentials: 'include', headers });
       if (want.has('workflow')) {
         const board = tab === 'submitted' ? 'submitted' : 'internal';
-        tasks.workflow = fetch(`/api/workflow/queue?board=${board}&t=${stamp}`, { credentials: 'include', headers });
+        tasks.workflow = fetchWorkflowQueue(board);
       }
 
       const keys = Object.keys(tasks);
@@ -180,6 +180,10 @@ export default function EmployeeDashboard() {
       const got = {};
       await Promise.all(keys.map(async (k, i) => {
         const res = responses[i];
+        if (k === 'workflow') {
+          got[k] = res;
+          return;
+        }
         if (res?.ok) got[k] = await res.json();
       }));
 

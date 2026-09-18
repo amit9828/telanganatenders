@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
   Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, Award, TrendingUp, Loader2, Star,
-  FileBadge, Activity, Eye, User, Sparkles, X, Phone
+  FileBadge, Activity, Eye, User, Sparkles, X, Phone, Smartphone
 } from 'lucide-react';
 import { TS_DISTRICTS, AP_DISTRICTS } from '@/lib/regions';
 import { deskPathForDesignation } from '@/lib/designations';
@@ -709,18 +709,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* 🚀 NEW: Install App Banner (Shows only on mobile/compatible browsers) */}
-      {showInstallBtn && (
-        <div className="w-full bg-blue-50 py-3 border-b border-blue-100 flex justify-center px-4">
-          <Button 
-            onClick={handleInstallApp} 
-            className="bg-[#16a34a] hover:bg-[#15803d] text-white font-bold w-full max-w-[350px] shadow-md animate-pulse"
-          >
-            ⬇️ Install TG Tenders App
-          </Button>
-        </div>
-      )}
-
       {/* Main Content follows below... */}
       <section className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group">
         <div className="relative w-full max-w-none aspect-[3/1]">
@@ -1110,6 +1098,17 @@ export default function App() {
 
       {/* 🚀 FLOATING SOCIAL MEDIA & SHARE BUTTONS */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 items-center">
+        {showInstallBtn && (
+          <button
+            type="button"
+            onClick={handleInstallApp}
+            className="bg-[#16a34a] text-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
+            title="Install TG Tenders App"
+            aria-label="Install TG Tenders App"
+          >
+            <Smartphone className="w-6 h-6" />
+          </button>
+        )}
         {/* Web Share Button */}
         <button onClick={() => {
             if (navigator.share) {

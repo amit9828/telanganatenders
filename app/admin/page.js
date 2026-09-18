@@ -22,7 +22,7 @@ import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations'
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
-import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import { workflowFetch, fetchWorkflowQueue, openWorkflowFile } from '@/components/workflow/api';
 import {
   applyJobToBoard,
   belongsOnInternal,
@@ -310,8 +310,8 @@ export default function AdminPage() {
       if (want.has('guests')) tasks.guests = safeFetch(`/api/guest-queries?t=${stamp}`);
       if (want.has('payments')) tasks.payments = safeFetch(`/api/payments/requests?t=${stamp}`);
       if (want.has('matches')) tasks.matches = safeFetch(`/api/bid-matches?t=${stamp}`);
-      if (want.has('wfInternal')) tasks.wfInternal = workflowFetch(`/api/workflow/queue?board=internal&t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
-      if (want.has('wfSubmitted')) tasks.wfSubmitted = workflowFetch(`/api/workflow/queue?board=submitted&t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfInternal')) tasks.wfInternal = fetchWorkflowQueue('internal').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfSubmitted')) tasks.wfSubmitted = fetchWorkflowQueue('submitted').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfArchive')) tasks.wfArchive = workflowFetch(`/api/workflow/archive?t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
 
       const keys = Object.keys(tasks);
