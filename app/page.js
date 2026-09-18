@@ -109,6 +109,8 @@ export default function App() {
     name: 'TG Tenders', logo: null, gem_logo: null, banners: [], leaders: [], clients: [], vision_text: null 
   });
   const [activeBanner, setActiveBanner] = useState(0);
+  const [bannerPaused, setBannerPaused] = useState(false);
+  const [bannerResetKey, setBannerResetKey] = useState(0);
   const [logoFlip, setLogoFlip] = useState(false); // 🚀 3D Rotating Logo State for Loading Screen
 
   // Visitor API State
@@ -128,19 +130,27 @@ export default function App() {
     return () => clearInterval(flipTimer);
   }, []);
 
-  // Auto-Slide Logic for Banners
+  // Auto-Slide Logic for Banners (30s; pause on hover; reset on manual click)
   useEffect(() => {
-    if (brandSettings.banners && brandSettings.banners.length > 0) {
-      const bannerTimer = setInterval(() => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length), 5000);
-      return () => clearInterval(bannerTimer);
-    }
-  }, [brandSettings.banners]);
+    if (!brandSettings.banners?.length || bannerPaused) return;
+    const bannerTimer = setInterval(
+      () => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length),
+      30000
+    );
+    return () => clearInterval(bannerTimer);
+  }, [brandSettings.banners, bannerPaused, bannerResetKey]);
 
   const prevBanner = () => {
-    if(brandSettings.banners?.length > 0) setActiveBanner(p => (p === 0 ? brandSettings.banners.length - 1 : p - 1));
+    if (brandSettings.banners?.length > 0) {
+      setActiveBanner(p => (p === 0 ? brandSettings.banners.length - 1 : p - 1));
+      setBannerResetKey(k => k + 1);
+    }
   }
   const nextBanner = () => {
-    if(brandSettings.banners?.length > 0) setActiveBanner(p => (p + 1) % brandSettings.banners.length);
+    if (brandSettings.banners?.length > 0) {
+      setActiveBanner(p => (p + 1) % brandSettings.banners.length);
+      setBannerResetKey(k => k + 1);
+    }
   }
 
   // URL Intent Tracking
@@ -710,7 +720,11 @@ export default function App() {
       </header>
 
       {/* Main Content follows below... */}
-      <section className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group">
+      <section
+        className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group"
+        onMouseEnter={() => setBannerPaused(true)}
+        onMouseLeave={() => setBannerPaused(false)}
+      >
         <div className="relative w-full max-w-none aspect-[3/1]">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
