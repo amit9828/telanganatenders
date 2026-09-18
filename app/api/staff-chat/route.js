@@ -2,12 +2,10 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db';
 import { resolveActorRole } from '@/lib/staff-auth';
-import { ensureWorkflowIndexes } from '@/lib/workflow';
 import {
   assertLivePeer,
   chatSenderId,
   cloneChatFile,
-  ensureStaffChatIndexes,
   fileMetaOnMessage,
   isAllowedChatFile,
   loadChatFileMeta,
@@ -45,10 +43,13 @@ async function actorOr401(request) {
 }
 
 async function readyDb() {
-  const db = await getDb();
-  await ensureWorkflowIndexes(db);
-  await ensureStaffChatIndexes(db);
-  return db;
+  return getDb();
+}
+
+function parseSince(value) {
+  if (!value) return null;
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
 export async function GET(request) {
@@ -57,18 +58,26 @@ export async function GET(request) {
   const { from } = gate;
   const peer = String(request.nextUrl.searchParams.get('peer') || '').trim();
   const jobId = String(request.nextUrl.searchParams.get('job_id') || '').trim();
+  const since = parseSince(request.nextUrl.searchParams.get('since'));
   const db = await readyDb();
   await touchPresence(db, from);
 
   if (!peer) {
-    const recent = await db.collection('staff_chats').find({
+    const inboxFilter = {
       $or: [{ from_emp_id: from }, { to_emp_id: from }],
-    }).project({ file_base64: 0, file_url: 0 }).sort({ created_at: -1 }).limit(200).toArray();
+      ...(since ? { created_at: { $gt: since } } : {}),
+    };
+    const recent = await db.collection('staff_chats').find(inboxFilter)
+      .project({ file_base64: 0, file_url: 0 })
+      .sort({ created_at: -1 })
+      .limit(since ? 50 : 200)
+      .toArray();
     const messages = recent.map(publicChatMessage);
     const ids = messages.flatMap((m) => [m.from_emp_id, m.to_emp_id]);
     return json({
       me: from,
       messages,
+      incremental: Boolean(since),
       reads: await readsForInbox(db, from, recent),
       presence: await presenceMap(db, ids),
     });
@@ -77,13 +86,16 @@ export async function GET(request) {
   const key = threadKey(from, peer);
   const filter = { thread_key: key, ...pairFilter(from, peer) };
   if (jobId) filter.job_id = jobId;
+  if (since) filter.created_at = { $gt: since };
   const messages = await db.collection('staff_chats').find(filter)
     .project({ file_base64: 0, file_url: 0 })
     .sort({ created_at: 1 })
+    .limit(since ? 50 : 200)
     .toArray();
   return json({
     me: from,
     messages: messages.map(publicChatMessage),
+    incremental: Boolean(since),
     thread_key: key,
     peer_read_at: await peerReadAt(db, from, peer),
     peer_typing: await peerTyping(db, from, peer),

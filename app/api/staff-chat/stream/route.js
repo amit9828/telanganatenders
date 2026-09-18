@@ -68,7 +68,7 @@ export async function GET(request) {
         await tick();
         const id = setInterval(() => {
           tick().catch(() => {});
-        }, 2500);
+        }, 8000);
         const ping = setInterval(() => {
           controller.enqueue(encoder.encode(`: ping\n\n`));
         }, 15000);

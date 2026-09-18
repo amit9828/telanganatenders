@@ -189,15 +189,17 @@ export default function PublishTenderForm({
       });
       const published = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(published.error || 'Failed to save tender');
+      let attachJob = null;
       if (!editingId) {
         const tenderId = published.id || published.tender?._id || published.tender_id;
         if (jobId && tenderId) {
           try {
-            await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
+            const attached = await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ tender_id: tenderId, bid_no: form.bid_no }),
             });
+            attachJob = attached?.job || null;
           } catch (attachErr) {
             setPendingJobId('');
             onPublished?.(published);
@@ -208,7 +210,7 @@ export default function PublishTenderForm({
       toast.success(editingId ? 'Tender updated successfully!' : 'Tender published successfully!');
       reset();
       onCancelEdit?.();
-      onPublished?.(published);
+      onPublished?.({ ...published, job: attachJob });
     } catch (err) {
       toast.error(err.message || 'Network error');
     } finally {

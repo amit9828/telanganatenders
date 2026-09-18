@@ -31,7 +31,7 @@ export default function CreatePublishTaskForm({
     if (!assignedEmpId) return toast.error('Select a team member to publish.');
     setBusy(true);
     try {
-      await workflowFetch('/api/workflow/jobs', {
+      const data = await workflowFetch('/api/workflow/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -45,7 +45,7 @@ export default function CreatePublishTaskForm({
       setAssignedEmpId('');
       setTitle('');
       setNotes('');
-      onCreated?.();
+      onCreated?.(data?.job);
     } catch (err) {
       toast.error(err.message);
     } finally {

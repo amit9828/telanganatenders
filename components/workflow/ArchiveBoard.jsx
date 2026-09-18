@@ -5,15 +5,17 @@ import { toast } from 'sonner';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 import { workflowDocActions, mdDeleteCardAction } from '@/components/workflow/jobDocActions';
 
-export default function ArchiveBoard({ jobs = [], canDelete = false, onRefresh }) {
+export default function ArchiveBoard({ jobs = [], canDelete = false, onRefresh, onRemoveJob }) {
   const deleteCard = async (job) => {
     const name = job.bid_no || job.title || 'this card';
     if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+    const snapshot = job;
+    onRemoveJob?.(job._id);
     try {
       await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
       toast.success('Card deleted.');
-      onRefresh?.();
     } catch (e) {
+      onRefresh?.();
       toast.error(e.message);
     }
   };

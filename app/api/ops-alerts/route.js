@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db';
 import { resolveActorRole } from '@/lib/staff-auth';
-import { ensureWorkflowIndexes } from '@/lib/workflow';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,7 +21,6 @@ export async function GET(request) {
   const me = actorId(actor);
   if (!me) return json({ error: 'Employee ID required.' }, 401);
   const db = await getDb();
-  await ensureWorkflowIndexes(db);
   const alerts = await db.collection('ops_alerts').find({
     recipient_emp_id: me,
   }).sort({ created_at: -1 }).limit(100).toArray();
@@ -42,7 +40,6 @@ export async function POST(request) {
   if (toEmpId === from) return json({ error: 'Cannot alert yourself.' }, 400);
 
   const db = await getDb();
-  await ensureWorkflowIndexes(db);
   if (toEmpId !== 'MD') {
     const emp = await db.collection('employees').findOne({
       emp_id: toEmpId,

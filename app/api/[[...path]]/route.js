@@ -330,51 +330,56 @@ async function handleGET(request, { params }, attempt = 1) {
       const year = searchParams.get('year');
       const scope = searchParams.get('scope');
       const q = searchParams.get('q');
+      const role = searchParams.get('role');
 
       let query = {};
       if (district && district !== 'all') query.district = district;
       if (q) {
-        // 🚀 PERF: Use a MongoDB text index instead of an unanchored regex scan —
-        // far cheaper on large collections and lets Mongo use its own relevance/index.
         await ensureTendersTextIndex(db);
         query.$text = { $search: q };
       }
 
-      // 🚀 FIX: Auto-Hide/Delete Expired Tenders from interface
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const todayIso = today.toISOString().slice(0, 10);
+      const skipLiveFilter = role === 'admin' || scope === 'all';
+      const isArchive = scope === 'archive';
+      if (!skipLiveFilter) {
+        query.$and = [
+          ...(query.$and || []),
+          isArchive
+            ? { $or: [{ last_date: { $lt: today } }, { last_date: { $lt: todayIso } }] }
+            : { $or: [{ last_date: { $gte: today } }, { last_date: { $gte: todayIso } }] },
+        ];
+      }
+      if (month && year && scope !== 'all') {
+        const m = parseInt(month, 10);
+        const y = parseInt(year, 10);
+        if (m >= 1 && m <= 12 && y > 2000) {
+          const start = new Date(y, m - 1, 1);
+          const end = new Date(y, m, 1);
+          query.$and = [
+            ...(query.$and || []),
+            { $or: [{ last_date: { $gte: start, $lt: end } }, { last_date: { $gte: start.toISOString().slice(0, 10), $lt: end.toISOString().slice(0, 10) } }] },
+          ];
+        }
+      }
+
+      const limit = Math.min(300, Math.max(1, Number(searchParams.get('limit') || searchParams.get('pageSize')) || 100));
+      const page = Math.max(1, Number(searchParams.get('page')) || 1);
+      const skip = (page - 1) * limit;
 
       const __tendersQueryStart = Date.now();
-      let allTenders = await db.collection('tenders')
+      const tenders = await db.collection('tenders')
         .find(query)
-        .project({ pdf_base64: 0 }) 
+        .project({ pdf_base64: 0 })
         .sort({ last_date: 1 })
-        .limit(300)
+        .skip(skip)
+        .limit(limit)
         .toArray();
-      console.log(`🔍 [tenders] DB find().toArray() took ${Date.now() - __tendersQueryStart}ms | returned ${allTenders.length} docs`);
-
-      const isArchive = scope === 'archive';
-      let tenders = allTenders.filter(t => {
-          const ms = t.last_date ? new Date(t.last_date).getTime() : NaN;
-          if (Number.isNaN(ms)) return false;
-          if (isArchive) return ms < today.getTime();
-          return ms >= today.getTime();
-      });
-      tenders.sort((a, b) => {
-        const aMs = a.last_date ? new Date(a.last_date).getTime() : Number.POSITIVE_INFINITY;
-        const bMs = b.last_date ? new Date(b.last_date).getTime() : Number.POSITIVE_INFINITY;
-        return aMs - bMs;
-      });
-
-      if (month && year && scope !== 'all') {
-        tenders = tenders.filter(t => {
-          if (!t.last_date) return false;
-          const d = new Date(t.last_date);
-          return d.getMonth() + 1 === parseInt(month) && d.getFullYear() === parseInt(year);
-        });
-      }
+      console.log(`🔍 [tenders] DB find().toArray() took ${Date.now() - __tendersQueryStart}ms | returned ${tenders.length} docs`);
       console.log(`🔍 [tenders] EXIT | TOTAL ${Date.now() - __reqStart}ms`);
-      return json({ tenders });
+      return json({ tenders, page, limit });
     }
 
     // 🚀 FIX: Fetch Vault Document Instantly Without Lag
@@ -687,9 +692,12 @@ async function handleGET(request, { params }, attempt = 1) {
     
     if (path === 'users/approved' || path === 'api/users/approved') {
       const __t = Date.now();
+      const directory = searchParams.get('directory') === '1';
       const users = await db.collection('users')
          .find({ is_approved: true })
-         .project({ "vault_docs.file_base64": 0 }) // 🚀 FIX: Block heavy PDF loads
+         .project(directory
+           ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1 }
+           : { password: 0, 'vault_docs.file_base64': 0 })
          .sort({ created_at: -1 })
          .toArray();
       console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${users.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
@@ -734,6 +742,7 @@ async function handleGET(request, { params }, attempt = 1) {
         .find(query)
         .project({ file_base64: 0, document_base64: 0 })
         .sort({ created_at: -1 })
+        .limit(100)
         .toArray();
       return json({ requests: requests.map(publicClientRequest) });
     }
@@ -754,24 +763,20 @@ async function handleGET(request, { params }, attempt = 1) {
       let query = {};
       if (targetId) query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') }; 
       else {
-        // 🚀 RBAC: Employee dashboard call (no target_id — it loads everything and
-        // splits client_alert vs employee_task client-side, see mdTasks in
-        // app/employee/page.js). Isolate only the 'client_alert' suggestions this
-        // employee authored to their own employee_id; 'employee_task' (MD -> employee
-        // assignments) and every other target_type stay fully visible so the
-        // employee still sees work the MD assigned to them. MD/unresolved: unfiltered.
         const actor = await resolveActorRole(request);
         if (actor.role === 'EMPLOYEE') {
+          const empId = actor.empId || '';
           query.$or = [
-            { target_type: { $ne: 'client_alert' } },
-            { target_type: 'client_alert', employee_id: actor.empId },
+            { target_type: 'employee_task', target_id: empId },
+            { target_type: 'client_alert', employee_id: empId },
           ];
         }
       }
       const dispatches = await db.collection('dispatches')
          .find(query)
-         .project({ file_base64: 0 }) // 🚀 FIX: Block heavy task attachment loads
+         .project({ file_base64: 0 })
          .sort({ created_at: -1 })
+         .limit(300)
          .toArray();
       return json({ dispatches });
     }
@@ -1297,7 +1302,7 @@ export async function PUT(request, { params }) {
         return json({
           success: true,
           message: 'Parked on Suggestion Bar',
-          job: parked.job ? { _id: String(parked.job._id) } : null,
+          job: parked.job || null,
         });
      }
 
