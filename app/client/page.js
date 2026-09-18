@@ -117,7 +117,6 @@ export default function ClientDashboard() {
   const [vaultDocs, setVaultDocs] = useState(DEFAULT_VAULT_DOCS);
   const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
-  const [recommendedTenders, setRecommendedTenders] = useState([]);
   const [workflowJobs, setWorkflowJobs] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
 
@@ -205,10 +204,6 @@ export default function ClientDashboard() {
 
            if(d.stats) setClientStats((prev) => ({ ...prev, ...d.stats, revenue: Number(d.stats.revenue) || 0 }));
            if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
-           
-           if(d.action_alerts) {
-               setRecommendedTenders(d.action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed'));
-           }
 
            try {
              const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(email)}&t=${Date.now()}`, {
@@ -277,10 +272,7 @@ export default function ClientDashboard() {
 
         if(d.stats) setClientStats((prev) => ({ ...prev, ...d.stats, revenue: Number(d.stats.revenue) || 0 }));
         if(d.active_bids) setWonBids(d.active_bids.filter(b => b.status === 'Won'));
-        
-        if(d.action_alerts) {
-            setRecommendedTenders(d.action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed'));
-        }
+
         try {
           const wf = await fetch(`/api/workflow/client?email=${encodeURIComponent(userEmail)}`, {
             credentials: 'include',
@@ -844,28 +836,6 @@ export default function ClientDashboard() {
     } catch (e) {
       toast.error(e.message);
     }
-  };
-
-  const handleAcceptRecommendation = async (tenderAlert) => {
-      try {
-         const match = tenderAlert.message.match(/\[BID: (.*?)\] (.*)/);
-         const bid_no = match ? match[1] : '';
-         const desc = match ? match[2] : tenderAlert.message;
-
-         await fetch('/api/bids', { 
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ client_email: email, bid_no, description: desc, status: 'Client Approved' }) 
-         });
-         
-         await fetch('/api/dispatches/update', { 
-            method: 'PUT', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ task_id: tenderAlert._id, status: 'Completed', reply: 'Client Accepted the Tender' }) 
-         });
-
-         toast.success("Added to your Active Bids Tracking!");
-         fetchClientData(email);
-         handleCardClick('dashboard', 'tracking-section');
-      } catch (e) { toast.error("Error accepting tender."); }
   };
 
  const executePayment = async (payRecord) => {
@@ -1675,8 +1645,8 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                        </div>
                     </div>
                  )}
-                 {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length > 0 && (
-                    <div className="grid md:grid-cols-2 gap-4 mb-4">
+                 {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length > 0 ? (
+                    <div className="grid md:grid-cols-2 gap-4">
                       {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').map((job) => (
                         <CompactTenderCard
                           key={job._id}
@@ -1690,54 +1660,10 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                         />
                       ))}
                     </div>
-                 )}
-                 {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length === 0 && recommendedTenders.length === 0 ? (
+                 ) : (
                     <div className="text-center py-6 text-slate-400 border-2 border-dashed rounded-xl border-blue-200 bg-white">
                       <Target className="w-8 h-8 mx-auto text-blue-200 mb-2" />
                       <p className="text-sm font-semibold">No new recommendations right now.</p>
-                    </div>
-                 ) : (
-                    <div className="grid md:grid-cols-2 gap-4">
-                       {recommendedTenders.map((alert, i) => {
-                          const match = typeof alert?.message === 'string' ? alert.message.match(/\[BID: (.*?)\] (.*)/) : null;
-                          const bid_no = match ? match[1] : 'N/A';
-                          
-                          // Cross reference with live tenders database
-                          const fullTender = publicTenders.find(t => t.bid_no === bid_no);
-
-                          return (
-                          <div key={i} className="border border-blue-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition">
-                             <div>
-                               <div className="flex justify-between items-start mb-2">
-                                 <div className="flex items-center gap-2 flex-wrap">
-                                   <Badge variant="outline" className="text-[10px] font-mono bg-slate-50">{bid_no}</Badge>
-                                   {fullTender && <Badge className="bg-[#0A2647]">{fullTender.district}</Badge>}
-                                   {fullTender?.category && <Badge variant="outline" className="text-[10px]">{fullTender.category}</Badge>}
-                                 </div>
-                                 <Badge className="bg-blue-100 text-blue-800 border-0 text-[10px] uppercase font-bold tracking-wider shrink-0">High Match</Badge>
-                               </div>
-                               <h4 className="font-bold text-[#0A2647] text-sm leading-tight mb-2">{fullTender ? fullTender.title : (match ? match[2] : alert.message)}</h4>
-                               {fullTender && (
-                                   <div className="flex justify-between items-center text-xs mt-1">
-                                      <span className="text-slate-500">{fullTender.department}</span>
-                                      <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 inline mr-1"/> Ends: {new Date(fullTender.last_date).toLocaleDateString()}</span>
-                                   </div>
-                               )}
-                             </div>
-                             
-                             {fullTender && (
-                                <Button size="sm" variant="outline" onClick={() => handleViewPDF(fullTender._id)} className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm w-full mt-2">
-                                   <FileText className="w-3 h-3 mr-1.5"/> View PDF Document
-                                </Button>
-                             )}
-                             
-                             <div className="pt-3 mt-2 border-t border-slate-100 flex gap-2">
-                                <Button size="sm" onClick={() => handleAcceptRecommendation(alert)} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-4 h-4 mr-1"/> Accept & Apply</Button>
-                                <Button size="sm" onClick={() => handleAlertReply(alert._id)} variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs"><XCircle className="w-4 h-4 mr-1"/> Reject</Button>
-                             </div>
-                          </div>
-                          )
-                       })}
                     </div>
                  )}
               </CardContent>
