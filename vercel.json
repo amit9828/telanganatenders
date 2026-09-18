@@ -13,6 +13,14 @@
     {
       "path": "/api/cron/gem-copilot-knowledge",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/tender-expiry",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/tender-payload-purge",
+      "schedule": "15 4 * * *"
     }
   ]
 }
