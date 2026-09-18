@@ -348,7 +348,7 @@ export default function StaffOpsDesk({ desk }) {
               </TabsContent>
               {isGm && (
                 <TabsContent value="bid-support">
-                  <ClientBidSupportPanel team={team} tenders={tenders} pdfEmail={staffEmail} />
+                  <ClientBidSupportPanel tenders={tenders} pdfEmail={staffEmail} onSuggested={load} />
                 </TabsContent>
               )}
               {isGm && (

@@ -89,9 +89,6 @@ export default function EmployeeDashboard() {
   const [ticketReply, setTicketReply] = useState({});
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
-  const [bidRequests, setBidRequests] = useState([]);
-  const [bidReply, setBidReply] = useState({});
-  const [bidAssignee, setBidAssignee] = useState({});
   const [rejectReason, setRejectReason] = useState({});
   const [teamMembers, setTeamMembers] = useState([]);
   const [l1Data, setL1Data] = useState({});
@@ -136,7 +133,7 @@ export default function EmployeeDashboard() {
   const fetchLiveOperationsData = async (userEmail) => {
     try {
       // 🚀 PERF FIX: All endpoints fire in a single Promise.all.
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, reqRes, guestRes, empRes, wfRes] = await Promise.all([
+      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, guestRes, empRes, wfRes] = await Promise.all([
         fetch(`/api/dispatches?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
         fetch(`/api/bids?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
         fetch(`/api/gov-officers?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
@@ -144,7 +141,6 @@ export default function EmployeeDashboard() {
         fetch(`/api/tenders?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
         fetch(`/api/tickets?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
         fetch(`/api/users/pending?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
-        fetch(`/api/client-requests?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
         fetch(`/api/guest-queries?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
         fetch(`/api/employees?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
         fetch(`/api/workflow/queue?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() })
@@ -163,7 +159,6 @@ export default function EmployeeDashboard() {
       if (tendersRes.ok) { const pData = await tendersRes.json(); setPublicTenders(pData.tenders || []); }
       if (ticketsRes.ok) { const tkData = await ticketsRes.json(); setTickets(tkData.tickets || []); }
       if (pendRes.ok) { const pendData = await pendRes.json(); setPendingUsers(pendData.users || []); }
-      if (reqRes.ok) { const reqData = await reqRes.json(); setBidRequests(reqData.requests || []); }
       if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } 
       if (empRes.ok) {
         const eData = await empRes.json();
@@ -403,28 +398,6 @@ export default function EmployeeDashboard() {
       } catch(e) { toast.error("Network error"); }
   };
 
-  const handleProcessBidRequest = async (reqId, status) => {
-      const reply = bidReply[reqId];
-      const assigneeId = bidAssignee[reqId];
-      if(status === 'Assigned' && !assigneeId) return toast.error('Please select an employee from the dropdown to assign.');
-      try {
-          let endpoint = '/api/client-requests/reply';
-          let payload = { req_id: reqId, status: status, reply: reply || 'Processed by Operations' };
-          if (status === 'Assigned' && assigneeId) {
-              const emp = teamMembers.find(t => t.emp_id === assigneeId);
-              endpoint = '/api/client-requests/assign';
-              payload = { req_id: reqId, emp_id: emp.emp_id, emp_name: emp.name, status: 'Assigned', reply: reply || 'Assigned to Employee' };
-          }
-          const res = await fetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          if(res.ok) { 
-              toast.success(`Client Request ${status}!`); 
-              setBidReply(prev => ({...prev, [reqId]: ''})); 
-              setBidAssignee(prev => ({...prev, [reqId]: ''})); 
-              fetchLiveOperationsData(email); 
-          } else toast.error("Failed to update status.");
-      } catch(err) { toast.error("Network Error."); }
-  };
-
   const handleDispatchTask = async (e) => {
       e.preventDefault();
       if(!taskForm.target_id || !taskForm.subject || !taskForm.message) return toast.error("Fill all details to dispatch");
@@ -438,15 +411,10 @@ export default function EmployeeDashboard() {
       } catch (err) { toast.error('Network Error.'); }
   };
 
-  const deleteDispatch = async (id, isRequest = true) => {
+  const deleteDispatch = async (id) => {
       if(!confirm("Permanently delete this task?")) return;
-      if(isRequest) {
-          setBidRequests(prev => prev.filter(r => r._id !== id));
-          await fetch(`/api/client-requests?id=${id}`, { method: 'DELETE' });
-      } else {
-          setDispatches(prev => prev.filter(d => d._id !== id));
-          await fetch(`/api/dispatches?id=${id}`, { method: 'DELETE' });
-      }
+      setDispatches(prev => prev.filter(d => d._id !== id));
+      await fetch(`/api/dispatches?id=${id}`, { method: 'DELETE' });
       toast.success("Deleted permanently.");
   };
 
@@ -469,26 +437,6 @@ export default function EmployeeDashboard() {
           });
           toast.success("Task force closed."); fetchLiveOperationsData(email);
       } catch(e) { toast.error("Network error"); }
-  };
-
-  const handleViewDocument = (req) => {
-      if (req.file_base64 || req.document_base64) {
-          const cleanBase64 = (req.file_base64 || req.document_base64).replace(/^data:(.*,)?/, '');
-          const byteCharacters = atob(cleanBase64);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-          const blob = new Blob([new Uint8Array(byteNumbers)], {type: 'application/pdf'});
-          window.open(URL.createObjectURL(blob), '_blank');
-          return;
-      }
-
-      const docLink = req.file_url || req.document_url || req.file || req.attachment || req.pdf;
-      if (docLink) {
-          const finalUrl = docLink.startsWith('http') ? docLink : (docLink.startsWith('/') ? docLink : `/uploads/${docLink}`);
-          window.open(finalUrl, '_blank');
-      } else if (req.link_or_id && req.link_or_id.startsWith('http')) {
-          window.open(req.link_or_id, '_blank');
-      } else { toast.info("No file attached. The link/ID reference is shown above."); }
   };
 
   const submitL1Price = async (tender_id) => {
