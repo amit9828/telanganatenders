@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,10 +21,39 @@ const EMPTY_FORM = {
   supply_details: '',
 };
 
+const CATEGORIES = ['Product', 'Service', 'Works'];
+const PDF_MAX_BYTES = 3 * 1024 * 1024;
+
 function lastDateValue(value) {
   if (!value) return '';
+  const raw = String(value).trim();
+  const iso = raw.match(/\d{4}-\d{2}-\d{2}/);
+  if (iso) return iso[0];
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? String(value).slice(0, 10) : d.toISOString().split('T')[0];
+  if (Number.isNaN(d.getTime())) return raw.slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function matchDistrict(value) {
+  const needle = String(value || '').trim().toLowerCase();
+  if (!needle) return '';
+  return TS_AP_DISTRICTS.find((d) => d.toLowerCase() === needle)
+    || TS_AP_DISTRICTS.find((d) => needle.includes(d.toLowerCase()) || d.toLowerCase().includes(needle))
+    || '';
+}
+
+function matchCategory(value) {
+  const needle = String(value || '').trim().toLowerCase();
+  return CATEGORIES.find((c) => c.toLowerCase() === needle) || '';
+}
+
+function jobLabel(job) {
+  const title = String(job?.title || '').trim() || 'Publish tender';
+  const who = job?.assigned_emp_name || job?.assigned_emp_id || '';
+  return who ? `${title} · ${who}` : title;
 }
 
 export default function PublishTenderForm({
@@ -41,6 +70,10 @@ export default function PublishTenderForm({
   const [pendingJobId, setPendingJobId] = useState('');
 
   const editingId = editTender?._id || editTender?.id || null;
+  const waitingIds = useMemo(
+    () => awaitingJobs.map((j) => String(j._id)).filter(Boolean),
+    [awaitingJobs],
+  );
 
   useEffect(() => {
     if (!editTender) return;
@@ -49,8 +82,8 @@ export default function PublishTenderForm({
       title: editTender.title || '',
       department: editTender.department || '',
       last_date: lastDateValue(editTender.last_date),
-      district: editTender.district || '',
-      category: editTender.category || 'Product',
+      district: matchDistrict(editTender.district) || editTender.district || '',
+      category: matchCategory(editTender.category) || 'Product',
       supply_details: editTender.supply_details || '',
     });
     setPdfBase64('');
@@ -58,33 +91,49 @@ export default function PublishTenderForm({
   }, [editingId]);
 
   useEffect(() => {
-    if (pendingJobId) return;
-    if (awaitingJobs[0]?._id) setPendingJobId(awaitingJobs[0]._id);
-  }, [awaitingJobs, pendingJobId]);
+    setPendingJobId((current) => {
+      if (current && waitingIds.includes(String(current))) return current;
+      return waitingIds[0] || '';
+    });
+  }, [waitingIds]);
 
-  const analyze = async (base64Data) => {
+  const resolveJobId = () => {
+    if (pendingJobId && waitingIds.includes(String(pendingJobId))) return pendingJobId;
+    return waitingIds[0] || '';
+  };
+
+  const analyze = async (file) => {
     setAnalyzing(true);
     toast.info('AI is reading the document. Please wait...', { duration: 3000 });
     try {
+      const payload = new FormData();
+      payload.append('file', file);
+      payload.append('saveToDraft', 'false');
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfBase64: base64Data, saveToDraft: false }),
+        headers: staffHeaders(),
+        body: payload,
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error('AI Analysis failed. You may need to enter manually.');
+        toast.error(body.error || `AI analysis failed (${res.status}). Enter details manually.`);
         return;
       }
-      const { data } = await res.json();
-      if (!data) return;
+      const data = body.data || {};
       setForm((prev) => ({
         ...prev,
-        bid_no: data.bid_no !== 'N/A' ? data.bid_no : prev.bid_no,
-        title: data.title !== 'N/A' ? data.title : prev.title,
-        department: data.department !== 'N/A' ? data.department : prev.department,
-        last_date: data.last_date !== 'N/A' ? data.last_date : prev.last_date,
-        supply_details: `EMD: ${data.emd_amount}\nTurnover Req: ${data.turnover_req}\nMandatory Docs: ${(data.mandatory_docs || []).join(', ')}`,
+        bid_no: data.bid_no || prev.bid_no,
+        title: data.title || prev.title,
+        department: data.department || prev.department,
+        last_date: lastDateValue(data.last_date) || prev.last_date,
+        district: matchDistrict(data.district) || prev.district,
+        category: matchCategory(data.category) || prev.category,
+        supply_details: [
+          data.emd_amount ? `EMD: ${data.emd_amount}` : '',
+          data.turnover_req ? `Turnover Req: ${data.turnover_req}` : '',
+          (data.mandatory_docs || []).length ? `Mandatory Docs: ${data.mandatory_docs.join(', ')}` : '',
+        ].filter(Boolean).join('\n') || prev.supply_details,
       }));
       toast.success('AI Successfully auto-filled the tender details!');
     } catch {
@@ -98,15 +147,17 @@ export default function PublishTenderForm({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (file.type !== 'application/pdf') return toast.error('Please upload a PDF file');
-    if (file.size > 3 * 1024 * 1024) return toast.error('PDF file is too large! Please upload under 3MB.');
+    if (file.type !== 'application/pdf' && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
+      return toast.error('Please upload a PDF file');
+    }
+    if (file.size > PDF_MAX_BYTES) return toast.error('PDF file is too large! Please upload under 3MB.');
     const reader = new FileReader();
     reader.onload = () => {
       const base64Str = reader.result?.toString().split(',')[1] || '';
       setPdfBase64(base64Str);
       setPdfName(file.name);
       toast.success('PDF Loaded. Starting AI Analysis...');
-      analyze(base64Str);
+      analyze(file);
     };
     reader.readAsDataURL(file);
   };
@@ -120,8 +171,13 @@ export default function PublishTenderForm({
 
   const submit = async (e) => {
     e.preventDefault();
+    if (publishing || analyzing) return;
     if (!form.title || !form.department || !form.last_date || !form.bid_no) {
       return toast.error('Please fill all required fields');
+    }
+    const jobId = editingId ? '' : resolveJobId();
+    if (!editingId && !jobId) {
+      return toast.error('Create or select an AWAITING_PUBLISH job first.');
     }
     setPublishing(true);
     try {
@@ -140,14 +196,19 @@ export default function PublishTenderForm({
       const published = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(published.error || 'Failed to save tender');
       if (!editingId) {
-        const jobId = pendingJobId || awaitingJobs[0]?._id;
         const tenderId = published.id || published.tender?._id || published.tender_id;
         if (jobId && tenderId) {
-          await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tender_id: tenderId, bid_no: form.bid_no }),
-          });
+          try {
+            await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tender_id: tenderId, bid_no: form.bid_no }),
+            });
+          } catch (attachErr) {
+            setPendingJobId('');
+            onPublished?.(published);
+            throw new Error(`Tender published, but it was not attached to the workflow job: ${attachErr.message}`);
+          }
         }
       }
       toast.success(editingId ? 'Tender updated successfully!' : 'Tender published successfully!');
@@ -180,6 +241,21 @@ export default function PublishTenderForm({
       </CardHeader>
       <CardContent className="pt-5">
         <form onSubmit={submit} className="space-y-4">
+          {!editingId && (
+            <div>
+              <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Attach to publish job *</Label>
+              <Select value={pendingJobId || undefined} onValueChange={setPendingJobId} disabled={!awaitingJobs.length}>
+                <SelectTrigger className="bg-white h-10">
+                  <SelectValue placeholder={awaitingJobs.length ? 'Select a waiting job' : 'No jobs waiting to publish'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {awaitingJobs.map((job) => (
+                    <SelectItem key={String(job._id)} value={String(job._id)}>{jobLabel(job)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
             <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="bg-white h-10" />
@@ -202,8 +278,7 @@ export default function PublishTenderForm({
               <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
                 <SelectTrigger className="bg-white h-10"><SelectValue placeholder="Product" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Product">Product</SelectItem>
-                  <SelectItem value="Service">Service</SelectItem>
+                  {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -242,7 +317,7 @@ export default function PublishTenderForm({
               )}
             </div>
           </div>
-          <Button type="submit" disabled={publishing || analyzing || (!editingId && (!pendingJobId || awaitingJobs.length === 0))} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+          <Button type="submit" disabled={publishing || analyzing || (!editingId && (!resolveJobId() || awaitingJobs.length === 0))} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
             {publishing ? (editingId ? 'Updating...' : 'Publishing...') : (editingId ? 'Save Changes' : 'Publish')}
           </Button>
         </form>
