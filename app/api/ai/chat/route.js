@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { generateContent } from '@/lib/gemini';
+import { generateContent, publicAiError } from '@/lib/gemini';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import { searchCopilotKnowledge, isUsableCopilotText } from '@/lib/gem-copilot-knowledge';
 import { findTenderByAnyId, suggestSimilarTenders } from '@/lib/tender-lookup';
@@ -421,10 +421,8 @@ export async function POST(request) {
       model = result.model;
     } catch (aiError) {
       console.error('[ai/chat] Gemini call failed:', aiError?.message || aiError);
-      return NextResponse.json(
-        { error: `The AI service did not respond: ${aiError?.message || 'unknown error'}` },
-        { status: aiError?.status || 502 }
-      );
+      const safe = publicAiError(aiError);
+      return NextResponse.json({ error: safe.message }, { status: safe.status });
     }
 
     const savedConversationId = await appendTurn(db, {

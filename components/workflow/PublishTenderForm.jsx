@@ -65,7 +65,7 @@ export default function PublishTenderForm({
 
   const editingId = editTender?._id || editTender?.id || null;
   const waitingIds = useMemo(
-    () => awaitingJobs.map((j) => String(j._id)).filter(Boolean),
+    () => awaitingJobs.map((j) => String(j._id || j.id || '')).filter(Boolean),
     [awaitingJobs],
   );
 
@@ -111,7 +111,11 @@ export default function PublishTenderForm({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(body.error || `AI analysis failed (${res.status}). Enter details manually.`);
+        const fallback = res.status === 429
+          ? 'AI limit reached. Please wait a moment and try again, or fill the form manually.'
+          : 'AI analysis failed. Enter details manually.';
+        const msg = String(body.error || fallback);
+        toast.error(msg.length > 180 ? fallback : msg, { duration: 6000 });
         return;
       }
       const data = body.data || {};
@@ -131,7 +135,7 @@ export default function PublishTenderForm({
       }));
       toast.success('AI Successfully auto-filled the tender details!');
     } catch {
-      toast.error('Network error during AI analysis.');
+      toast.error('Network error during AI analysis. Enter details manually.', { duration: 6000 });
     } finally {
       setAnalyzing(false);
     }
@@ -165,14 +169,11 @@ export default function PublishTenderForm({
 
   const submit = async (e) => {
     e.preventDefault();
-    if (publishing || analyzing) return;
+    if (publishing) return;
     if (!form.title || !form.department || !form.last_date || !form.bid_no) {
       return toast.error('Please fill all required fields');
     }
     const jobId = editingId ? '' : resolveJobId();
-    if (!editingId && !jobId) {
-      return toast.error('Create a publish job first.');
-    }
     setPublishing(true);
     try {
       const url = editingId ? `/api/tenders/${editingId}` : '/api/tenders';
@@ -298,7 +299,7 @@ export default function PublishTenderForm({
               )}
             </div>
           </div>
-          <Button type="submit" disabled={publishing || analyzing || (!editingId && (!resolveJobId() || awaitingJobs.length === 0))} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+          <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
             {publishing ? (editingId ? 'Updating...' : 'Publishing...') : (editingId ? 'Save Changes' : 'Publish')}
           </Button>
         </form>

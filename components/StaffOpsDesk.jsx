@@ -31,7 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { workflowFetch, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
+import { workflowFetch, fetchWorkflowQueue, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
 import { workflowDocActions } from '@/components/workflow/jobDocActions';
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { BrandMark } from '@/components/BrandLogo';
@@ -140,11 +140,11 @@ export default function StaffOpsDesk({ desk }) {
         tasks.clients = fetch('/api/users/approved?directory=1', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json());
       }
       if (want.has('team')) tasks.team = workflowFetch('/api/employees');
-      if (want.has('internal')) tasks.internal = workflowFetch('/api/workflow/queue?board=internal');
-      if (want.has('submitted')) tasks.submitted = workflowFetch('/api/workflow/queue?board=submitted');
-      if (want.has('parked')) tasks.parked = workflowFetch('/api/workflow/queue?board=parked');
-      if (want.has('suggestions')) tasks.suggestions = workflowFetch('/api/workflow/queue?board=suggestions');
-      if (want.has('awaiting')) tasks.awaiting = workflowFetch('/api/workflow/queue?board=awaiting_publish');
+      if (want.has('internal')) tasks.internal = fetchWorkflowQueue('internal');
+      if (want.has('submitted')) tasks.submitted = fetchWorkflowQueue('submitted');
+      if (want.has('parked')) tasks.parked = fetchWorkflowQueue('parked');
+      if (want.has('suggestions')) tasks.suggestions = fetchWorkflowQueue('suggestions');
+      if (want.has('awaiting')) tasks.awaiting = fetchWorkflowQueue('awaiting_publish');
       if (want.has('officers')) {
         tasks.officers = fetch('/api/gov-officers', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()).catch(() => ({ officers: [] }));
       }

@@ -5,7 +5,7 @@ import { findTenderByAnyId, suggestSimilarTenders } from '@/lib/tender-lookup';
 import { extractTenderLinks } from '@/lib/tender-links';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import { fetchDocumentWithFallback } from '@/lib/remote-document';
-import { generateContent } from '@/lib/gemini';
+import { generateContent, publicAiError } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -141,10 +141,8 @@ export async function POST(request) {
       markdown = result.text.trim();
     } catch (aiError) {
       console.error('[tender-deep-dive] Gemini call failed:', aiError?.message || aiError);
-      return NextResponse.json(
-        { error: `The AI service could not read the documents: ${aiError?.message || 'unknown error'}` },
-        { status: aiError?.status || 502 }
-      );
+      const safe = publicAiError(aiError);
+      return NextResponse.json({ error: safe.message }, { status: safe.status });
     }
 
     if (!markdown) {

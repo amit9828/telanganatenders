@@ -32,6 +32,37 @@ export async function workflowFetch(url, options = {}) {
   return data;
 }
 
+const QUEUE_PAGE_SIZE = 100;
+const QUEUE_MAX_PAGES = 25;
+
+export async function fetchWorkflowQueue(board = 'all', { limit = QUEUE_PAGE_SIZE } = {}) {
+  const qs = (page) => {
+    const params = new URLSearchParams();
+    if (board && board !== 'all') params.set('board', board);
+    params.set('page', String(page));
+    params.set('limit', String(limit));
+    return `/api/workflow/queue?${params.toString()}`;
+  };
+  const first = await workflowFetch(qs(1));
+  const jobs = [...(first.jobs || [])];
+  const reportedPages = Math.max(1, Number(first.totalPages) || 1);
+  const totalPages = Math.min(QUEUE_MAX_PAGES, reportedPages);
+  if (totalPages > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, i) => workflowFetch(qs(i + 2)))
+    );
+    for (const page of rest) jobs.push(...(page.jobs || []));
+  }
+  return {
+    jobs,
+    page: 1,
+    limit,
+    total: first.total ?? jobs.length,
+    totalPages: reportedPages,
+    hasMore: reportedPages > QUEUE_MAX_PAGES,
+  };
+}
+
 export function staffPdfHref(tenderId, { email, role = 'employee' } = {}) {
   let resolved = email;
   if (!resolved && typeof window !== 'undefined') {
