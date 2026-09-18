@@ -10,6 +10,7 @@ import {
   titleKeywords,
 } from '@/lib/historical-l1';
 import { getGeminiApiKey } from '@/lib/env';
+import { publicAiError } from '@/lib/gemini';
 import { DESIGNATIONS, resolveActorRole } from '@/lib/staff-auth';
 
 export const runtime = 'nodejs';
@@ -333,10 +334,8 @@ export async function POST(request) {
       prediction = parseAIJson(result.response.text());
     } catch (aiError) {
       console.error('[predict-l1] Gemini call failed:', aiError?.message || aiError);
-      return NextResponse.json(
-        { error: `The AI service did not respond: ${aiError?.message || 'unknown error'}` },
-        { status: 502 }
-      );
+      const safe = publicAiError(aiError);
+      return NextResponse.json({ error: safe.message }, { status: safe.status });
     }
 
     if (!prediction) {

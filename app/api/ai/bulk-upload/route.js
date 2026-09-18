@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { uploadTenderPDF, isR2Configured, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import { EXTRACTION_PROMPT, parseAIJson, normaliseExtraction } from '@/lib/ai-extraction';
 import { getGeminiApiKey } from '@/lib/env';
+import { publicAiError } from '@/lib/gemini';
 
 // The AI call is the slow part, so keep this on the Node runtime with the longest
 // duration the Vercel Hobby plan allows. Files are processed with bounded
@@ -53,7 +54,7 @@ async function processFile(file, { db, model, uploadedBy }) {
     extracted = parseAIJson(result.response.text());
   } catch (aiError) {
     console.error(`[bulk-upload] Gemini failed for ${fileName}:`, aiError?.message || aiError);
-    return { fileName, status: 'failed', error: `AI extraction failed: ${aiError?.message || 'unknown error'}` };
+    return { fileName, status: 'failed', error: publicAiError(aiError).message };
   }
 
   if (!extracted) {

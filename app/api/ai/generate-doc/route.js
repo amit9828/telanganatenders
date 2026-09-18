@@ -6,7 +6,7 @@ import { sanitizeGeneratedHtml } from '@/lib/html-sanitize';
 import { findTenderByAnyId } from '@/lib/tender-lookup';
 import { fetchStationeryBuffer, isPubliclyServableUrl } from '@/lib/cloudflare-r2';
 import { bufferToDataUrl, wrapWithStationery } from '@/lib/stationery-html';
-import { generateContent } from '@/lib/gemini';
+import { generateContent, publicAiError } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -127,10 +127,8 @@ export async function POST(request) {
       rawHtml = result.text;
     } catch (aiError) {
       console.error('[generate-doc] Gemini call failed:', aiError?.message || aiError);
-      return NextResponse.json(
-        { error: `The AI service did not respond: ${aiError?.message || 'unknown error'}` },
-        { status: aiError?.status || 502 }
-      );
+      const safe = publicAiError(aiError);
+      return NextResponse.json({ error: safe.message }, { status: safe.status });
     }
 
     // Models wrap HTML in markdown fences despite instructions not to.

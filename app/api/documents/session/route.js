@@ -24,7 +24,7 @@ import { ObjectId } from 'mongodb';
 import { requireDashboardStaff } from '@/lib/staff-auth';
 import { findTenderByAnyId, suggestSimilarTenders } from '@/lib/tender-lookup';
 import { parseAIJson } from '@/lib/ai-extraction';
-import { generateContent } from '@/lib/gemini';
+import { generateContent, publicAiError } from '@/lib/gemini';
 import { DOC_TYPES, findDocType, PACKAGE_100X_TYPES } from '@/lib/document-templates';
 import { LETTERHEAD_COLLECTION } from '@/lib/letterhead-compose';
 import { LANGUAGES, languageContract, resolveAnswerLanguage } from '@/lib/language';
@@ -379,10 +379,8 @@ export async function POST(request) {
       parsed = parseAIJson(result.text);
     } catch (aiError) {
       console.error('[documents/session] Gemini call failed:', aiError?.message || aiError);
-      return NextResponse.json(
-        { error: `The AI service did not respond: ${aiError?.message || 'unknown error'}` },
-        { status: aiError?.status || 502 },
-      );
+      const safe = publicAiError(aiError);
+      return NextResponse.json({ error: safe.message }, { status: safe.status });
     }
 
     if (!parsed) {

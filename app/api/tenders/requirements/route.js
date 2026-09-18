@@ -17,7 +17,7 @@ import { findTenderByAnyId, rememberBidNoAlias, suggestSimilarTenders } from '@/
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
 import { searchCopilotKnowledge } from '@/lib/gem-copilot-knowledge';
 import { parseAIJson } from '@/lib/ai-extraction';
-import { generateContent } from '@/lib/gemini';
+import { generateContent, publicAiError } from '@/lib/gemini';
 import { DOC_TYPES, findDocType } from '@/lib/document-templates';
 
 export const runtime = 'nodejs';
@@ -221,10 +221,8 @@ export async function POST(request) {
       parsed = parseAIJson(result.text);
     } catch (aiError) {
       console.error('[tenders/requirements] Gemini call failed:', aiError?.message || aiError);
-      return NextResponse.json(
-        { error: `The AI could not read the bid document: ${aiError?.message || 'unknown error'}` },
-        { status: aiError?.status || 502 },
-      );
+      const safe = publicAiError(aiError);
+      return NextResponse.json({ error: safe.message }, { status: safe.status });
     }
 
     if (!parsed) {

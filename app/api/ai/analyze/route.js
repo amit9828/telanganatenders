@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { generateContent } from '@/lib/gemini';
+import { generateContent, publicAiError } from '@/lib/gemini';
 import { EXTRACTION_PROMPT, parseAIJson, normaliseExtraction } from '@/lib/ai-extraction';
 import { isValidPDFBuffer } from '@/lib/cloudflare-r2';
 
@@ -106,7 +106,8 @@ export async function POST(request) {
       responseText = result.text;
     } catch (aiError) {
       console.error('Gemini API Error:', aiError);
-      return json({ error: `AI Error: ${aiError.message}` }, aiError?.status || 500);
+      const safe = publicAiError(aiError);
+      return json({ error: safe.message }, safe.status);
     }
 
     const parsedData = parseAIJson(responseText);
