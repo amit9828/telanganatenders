@@ -21,17 +21,20 @@ export async function GET(request) {
   if (!from) return json({ error: 'Staff chat requires an Employee ID.' }, 401);
 
   const db = await getDb();
-  await ensureUniqueEmpIds(db);
-  const team = await db.collection('employees').find({
-    deleted: { $ne: true },
-    active: { $ne: false },
-  }).project({
-    emp_id: 1,
-    name: 1,
-    email: 1,
-    designation: 1,
-    role: 1,
-  }).sort({ name: 1 }).toArray();
+  if (!global.__ttChatRoster || Date.now() - global.__ttChatRoster.at > 60_000) {
+    await ensureUniqueEmpIds(db);
+    const team = await db.collection('employees').find({
+      deleted: { $ne: true },
+      active: { $ne: false },
+    }).project({
+      emp_id: 1,
+      name: 1,
+      email: 1,
+      designation: 1,
+      role: 1,
+    }).sort({ name: 1 }).toArray();
+    global.__ttChatRoster = { at: Date.now(), team };
+  }
 
-  return json({ me: from, team });
+  return json({ me: from, team: global.__ttChatRoster.team });
 }

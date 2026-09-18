@@ -23,7 +23,7 @@ export default function SuggestClientControls({
     const tenderId = tender?._id?.$oid || tender?._id || tender?.id || '';
     setBusy(true);
     try {
-      await workflowFetch('/api/workflow/jobs', {
+      const data = await workflowFetch('/api/workflow/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -36,7 +36,7 @@ export default function SuggestClientControls({
       });
       toast.success(isSuggest ? 'Parked on Suggestion Bar.' : 'Forwarded to GM Suggestion Bar.');
       setEmail('');
-      onDone?.();
+      onDone?.(data?.job);
     } catch (err) {
       toast.error(err.message);
     } finally {

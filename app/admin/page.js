@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react'; 
+import { useCallback, useEffect, useRef, useState } from 'react'; 
 import { useSession } from 'next-auth/react'; 
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
@@ -23,6 +23,15 @@ import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
+import {
+  applyJobToBoard,
+  belongsOnInternal,
+  belongsOnLiveQueue,
+  belongsOnSubmitted,
+  dropJob,
+  setListIfChanged,
+  upsertJob,
+} from '@/lib/job-board-state';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
@@ -179,6 +188,26 @@ export default function AdminPage() {
   const [wfInternal, setWfInternal] = useState([]);
   const [wfSubmitted, setWfSubmitted] = useState([]);
   const [wfArchive, setWfArchive] = useState([]);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const patchJob = useCallback((job) => {
+    if (!job) return;
+    setWfJobs((prev) => applyJobToBoard(prev, job, (row) => belongsOnLiveQueue(row) || belongsOnInternal(row) || belongsOnSubmitted(row)));
+    setWfInternal((prev) => applyJobToBoard(prev, job, belongsOnInternal));
+    setWfSubmitted((prev) => applyJobToBoard(prev, job, belongsOnSubmitted));
+  }, []);
+  const removeJob = useCallback((id) => {
+    setWfJobs((prev) => dropJob(prev, id));
+    setWfInternal((prev) => dropJob(prev, id));
+    setWfSubmitted((prev) => dropJob(prev, id));
+    setWfArchive((prev) => dropJob(prev, id));
+  }, []);
+  const archiveJob = useCallback((job) => {
+    if (!job) return;
+    removeJob(job._id);
+    setWfArchive((prev) => upsertJob(prev, { ...job, archive_reason: job.archive_reason || 'Lost' }));
+  }, [removeJob]);
 
   // 🚀 AI Matchmaker & Competitor Intel
   const [bidMatches, setBidMatches] = useState([]);
@@ -213,18 +242,16 @@ export default function AdminPage() {
   // 🚀 FIX: Admin Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     if (token || isMdSession) {
-      refresh();
-      // 🚀 FIX: Poll every 60s (not 10s) and only while this tab is visible, so we
-      // stop hammering the database when the admin is on a different browser tab.
+      refresh(activeTab);
       const interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
-          refresh();
+          refresh(activeTabRef.current);
         }
       }, 60000);
       return () => clearInterval(interval);
     }
     // eslint-disable-next-line
-  }, [token, isMdSession]);
+  }, [token, isMdSession, activeTab]);
 
   // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
@@ -242,7 +269,7 @@ export default function AdminPage() {
   // filter accidentally hiding admin data, a network blip, a non-JSON error page)
   // used to throw inside Promise.all and take the ENTIRE dashboard down to zeros.
   // safeFetch isolates each request so a single failure never crashes the rest.
-  const refresh = async () => {
+  const refresh = async (tab = activeTabRef.current) => {
     const headers = {};
     if (token) headers.Authorization = `Bearer ${token}`;
     const safeFetch = async (url) => {
@@ -255,92 +282,91 @@ export default function AdminPage() {
       }
     };
 
+    const want = new Set();
+    if (tab === 'reports') ['stats', 'clients', 'employees', 'dispatches', 'tenders'].forEach((k) => want.add(k));
+    else if (tab === 'finance') ['ledger', 'payments', 'clients'].forEach((k) => want.add(k));
+    else if (tab === 'clients') ['pending', 'clients'].forEach((k) => want.add(k));
+    else if (tab === 'matchmaker') want.add('matches');
+    else if (tab === 'internal') ['employees', 'wfInternal'].forEach((k) => want.add(k));
+    else if (tab === 'submitted') ['employees', 'wfSubmitted'].forEach((k) => want.add(k));
+    else if (tab === 'archive') want.add('wfArchive');
+    else if (tab === 'publisher') want.add('tenders');
+    else if (tab === 'team') want.add('employees');
+    else if (tab === 'tickets' || tab === 'client-queries') ['tickets', 'guests'].forEach((k) => want.add(k));
+    else if (tab === 'live-scraped') { refreshLiveFeed(token, { silent: true }); return; }
+    if (want.size === 0) return;
+
     try {
-      // 🚀 FIX: Pass role=admin so the tenders endpoint bypasses the "hide expired
-      // tenders" filter that's meant only for the public site.
-      const [tRes, sRes, tkRes, uRes, aRes, dispRes, empRes, ledgerRes, guestQRes, finReqRes, matchRes] = await Promise.all([
-        safeFetch(`/api/tenders?role=admin&t=${Date.now()}`),
-        safeFetch(`/api/admin/stats?t=${Date.now()}`),
-        safeFetch(`/api/tickets?role=admin&t=${Date.now()}`),
-        safeFetch(`/api/users/pending?t=${Date.now()}`),
-        safeFetch(`/api/users/approved?t=${Date.now()}`),
-        safeFetch(`/api/dispatches?t=${Date.now()}`),
-        safeFetch(`/api/employees?t=${Date.now()}`),
-        safeFetch(`/api/finance/ledger?t=${Date.now()}`),
-        safeFetch(`/api/guest-queries?t=${Date.now()}`),
-        safeFetch(`/api/payments/requests?t=${Date.now()}`),
-        safeFetch(`/api/bid-matches?t=${Date.now()}`),
-      ]);
+      const stamp = Date.now();
+      const tasks = {};
+      if (want.has('tenders')) tasks.tenders = safeFetch(`/api/tenders?role=admin&limit=200&t=${stamp}`);
+      if (want.has('stats')) tasks.stats = safeFetch(`/api/admin/stats?t=${stamp}`);
+      if (want.has('tickets')) tasks.tickets = safeFetch(`/api/tickets?role=admin&t=${stamp}`);
+      if (want.has('pending')) tasks.pending = safeFetch(`/api/users/pending?t=${stamp}`);
+      if (want.has('clients')) tasks.clients = safeFetch(`/api/users/approved?t=${stamp}`);
+      if (want.has('dispatches')) tasks.dispatches = safeFetch(`/api/dispatches?t=${stamp}`);
+      if (want.has('employees')) tasks.employees = safeFetch(`/api/employees?t=${stamp}`);
+      if (want.has('ledger')) tasks.ledger = safeFetch(`/api/finance/ledger?t=${stamp}`);
+      if (want.has('guests')) tasks.guests = safeFetch(`/api/guest-queries?t=${stamp}`);
+      if (want.has('payments')) tasks.payments = safeFetch(`/api/payments/requests?t=${stamp}`);
+      if (want.has('matches')) tasks.matches = safeFetch(`/api/bid-matches?t=${stamp}`);
+      if (want.has('wfInternal')) tasks.wfInternal = workflowFetch(`/api/workflow/queue?board=internal&t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfSubmitted')) tasks.wfSubmitted = workflowFetch(`/api/workflow/queue?board=submitted&t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfArchive')) tasks.wfArchive = workflowFetch(`/api/workflow/archive?t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
 
-      if (tRes.status === 401) return logout();
+      const keys = Object.keys(tasks);
+      const results = await Promise.all(keys.map((k) => tasks[k]));
+      const got = Object.fromEntries(keys.map((k, i) => [k, results[i]]));
 
-      if (tRes.ok) setTenders(tRes.data.tenders || []);
-      if (sRes.ok) setStats(sRes.data || {});
-      if (tkRes.ok) setTickets(tkRes.data.tickets || []);
-      if (guestQRes.ok) setGuestQueries(guestQRes.data.queries || guestQRes.data['guest-queries'] || []);
-      if (uRes.ok) setPendingUsers(uRes.data.users || []);
-      if (aRes.ok) setApprovedClients(aRes.data.users || []);
-      if (dispRes.ok) setDispatches(dispRes.data.dispatches || []);
-      if (empRes.ok) setTeamMembers(empRes.data.team || []);
-      if (ledgerRes.ok) setLedgerTxns(ledgerRes.data.transactions || []);
-      if (finReqRes.ok) {
-        setFinancialRequests((finReqRes.data.requests || []).filter(r => r.status !== 'SUCCESS' && r.status !== 'PAID'));
+      if (got.tenders?.status === 401) return logout();
+      if (got.tenders?.ok) setListIfChanged(setTenders, got.tenders.data.tenders || []);
+      if (got.stats?.ok) setStats(got.stats.data || {});
+      if (got.tickets?.ok) setListIfChanged(setTickets, got.tickets.data.tickets || []);
+      if (got.guests?.ok) setListIfChanged(setGuestQueries, got.guests.data.queries || got.guests.data['guest-queries'] || []);
+      if (got.pending?.ok) setListIfChanged(setPendingUsers, got.pending.data.users || []);
+      if (got.clients?.ok) {
+        const users = got.clients.data.users || [];
+        setListIfChanged(setApprovedClients, users);
+        setClientReports(users.map((c) => {
+          const wonBids = (c.bids || []).filter((b) => b.status === 'Won').length || c.stats?.won || 0;
+          const participated = (c.bids || []).length || c.stats?.participated || 0;
+          return {
+            id: c.email, name: c.company_name || c.name || 'Unknown',
+            total: participated, won: wonBids, lost: participated - wonBids,
+          };
+        }));
       }
-      if (matchRes.ok) {
-        setBidMatches(matchRes.data.matches || []);
-        setMatchSummary(matchRes.data.summary || { total: 0, new: 0, jv: 0 });
+      if (got.dispatches?.ok) setListIfChanged(setDispatches, got.dispatches.data.dispatches || []);
+      if (got.employees?.ok) setListIfChanged(setTeamMembers, got.employees.data.team || []);
+      if (got.ledger?.ok) {
+        setListIfChanged(setLedgerTxns, got.ledger.data.transactions || []);
+        setSuccessfulPaymentsLog(got.ledger.data.online_payments || []);
+        setLedgerBalance(got.ledger.data.balance || 0);
+        setBreakdown(got.ledger.data.breakdown || { offline: 0, online: 0 });
       }
-      try {
-        const [internalQ, submittedQ, allQ, archiveQ] = await Promise.all([
-          workflowFetch(`/api/workflow/queue?board=internal&t=${Date.now()}`),
-          workflowFetch(`/api/workflow/queue?board=submitted&t=${Date.now()}`),
-          workflowFetch(`/api/workflow/queue?t=${Date.now()}`),
-          workflowFetch(`/api/workflow/archive?t=${Date.now()}`).catch(() => ({ jobs: [] })),
-        ]);
-        setWfInternal(internalQ.jobs || []);
-        setWfSubmitted(submittedQ.jobs || []);
-        setWfJobs(allQ.jobs || []);
-        setWfArchive(archiveQ.jobs || []);
-      } catch (err) {
-        console.error('Workflow queue sync failed', err);
+      if (got.payments?.ok) {
+        setFinancialRequests((got.payments.data.requests || []).filter((r) => r.status !== 'SUCCESS' && r.status !== 'PAID'));
       }
+      if (got.matches?.ok) {
+        setBidMatches(got.matches.data.matches || []);
+        setMatchSummary(got.matches.data.summary || { total: 0, new: 0, jv: 0 });
+      }
+      if (got.wfInternal?.ok) setListIfChanged(setWfInternal, got.wfInternal.data.jobs || []);
+      if (got.wfSubmitted?.ok) setListIfChanged(setWfSubmitted, got.wfSubmitted.data.jobs || []);
+      if (got.wfArchive?.ok) setListIfChanged(setWfArchive, got.wfArchive.data.jobs || []);
 
-      // Soft-refresh the live scraped feed without blocking the rest of the dashboard.
-      refreshLiveFeed(token, { silent: true });
-
-      const approvedUsers = aRes.ok ? (aRes.data.users || []) : [];
-
-      // 🚀 FIX: this list used to be built from `client.payments`, a field the users
-      // collection never had — Cashfree payments live in their own `payments`
-      // collection — so "Successful Online Payments" was permanently empty even after
-      // a client had paid. The ledger endpoint now projects those payments, names
-      // already resolved, so read them straight from there.
-      if (ledgerRes.ok) {
-        setSuccessfulPaymentsLog(ledgerRes.data.online_payments || []);
-        // Net Balance previously added /api/admin/stats revenue on top of the ledger
-        // balance. Now that the ledger view already includes online credits, taking
-        // its own balance/breakdown is what keeps the total and the line items agreeing.
-        setLedgerBalance(ledgerRes.data.balance || 0);
-        setBreakdown(ledgerRes.data.breakdown || { offline: 0, online: 0 });
+      if (got.employees?.ok && got.dispatches?.ok) {
+        const teamList = got.employees.data.team || [];
+        const dispatchList = got.dispatches.data.dispatches || [];
+        setEmployeeReports(teamList.map((e) => {
+          const completedTasks = dispatchList.filter((d) => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
+          const assignedTasks = dispatchList.filter((d) => d.target_id === e.emp_id).length || 1;
+          const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20);
+          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
+        }));
       }
 
-      setClientReports(approvedUsers.map(c => {
-         const wonBids = (c.bids || []).filter(b => b.status === 'Won').length || c.stats?.won || 0;
-         const participated = (c.bids || []).length || c.stats?.participated || 0;
-         return {
-             id: c.email, name: c.company_name || c.name || 'Unknown',
-             total: participated, won: wonBids, lost: participated - wonBids
-         };
-      }));
-
-      const teamList = empRes.ok ? (empRes.data.team || []) : [];
-      const dispatchList = dispRes.ok ? (dispRes.data.dispatches || []) : [];
-      setEmployeeReports(teamList.map(e => {
-         const completedTasks = dispatchList.filter(d => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
-         const assignedTasks = dispatchList.filter(d => d.target_id === e.emp_id).length || 1;
-         const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20); 
-         return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
-      }));
+      if (tab === 'reports') refreshLiveFeed(token, { silent: true });
     } catch (err) { console.error('Refresh failed:', err); }
   };
 
@@ -1659,7 +1685,7 @@ export default function AdminPage() {
   </div>
 </TabsContent>
           <TabsContent value="team" className="mt-4">
-            <TeamDirectoryPanel actorDesk="md" team={teamMembers} onRefresh={refresh} impersonate={openStaffDesk} />
+            <TeamDirectoryPanel actorDesk="md" team={teamMembers} onRefresh={() => refresh('team')} impersonate={openStaffDesk} />
           </TabsContent>
 
           <TabsContent value="internal" className="mt-4 space-y-6">
@@ -1667,7 +1693,7 @@ export default function AdminPage() {
               actorDesk="md"
               tls={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL)}
               members={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER)}
-              onCreated={refresh}
+              onCreated={patchJob}
             />
             <InternalTrackingBoard
               desk="md"
@@ -1675,17 +1701,16 @@ export default function AdminPage() {
               tls={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_TL)}
               members={teamMembers.filter((t) => staffRoleOf(t) === DESIGNATIONS.DOC_TEAM_MEMBER)}
               team={teamMembers}
-              onRefresh={refresh}
-              chatSelfId="MD"
+              onPatchJob={patchJob}
+              onRemoveJob={removeJob}
               actorEmpId=""
-              chatRoster={teamMembers}
             />
           </TabsContent>
           <TabsContent value="submitted" className="mt-4">
-            <SubmittedTrackingBoard jobs={wfSubmitted} onRefresh={refresh} canDelete chatSelfId="MD" chatRoster={teamMembers} />
+            <SubmittedTrackingBoard jobs={wfSubmitted} onPatchJob={patchJob} onRemoveJob={removeJob} onArchiveJob={archiveJob} canDelete />
           </TabsContent>
           <TabsContent value="archive" className="mt-4">
-            <ArchiveBoard jobs={wfArchive} canDelete onRefresh={refresh} />
+            <ArchiveBoard jobs={wfArchive} canDelete onRemoveJob={removeJob} />
           </TabsContent>
           <TabsContent value="alerts" className="mt-4"><OpsAlerts roster={teamMembers} /></TabsContent>
           <TabsContent value="client-queries" className="mt-4">
@@ -2369,7 +2394,7 @@ export default function AdminPage() {
                          <Button size="sm" onClick={() => handleViewPDF(t._id || t.id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0">
                             <FileText className="w-3 h-3 mr-1.5"/> View PDF
                          </Button>
-                         <SuggestClientControls tender={t} clients={approvedClients} onDone={refresh} />
+                         <SuggestClientControls tender={t} clients={approvedClients} onDone={patchJob} />
                          <div className="bg-emerald-50/50 p-1.5 rounded-md border border-emerald-100 flex flex-1 flex-col sm:flex-row gap-2 items-center w-full">
                             <div className="flex items-center gap-1 w-full sm:w-auto text-emerald-800 text-[10px] uppercase font-bold tracking-wider px-1"><TrendingDown className="w-4 h-4" /> L1 Intel</div>
                             <Input placeholder="Price (₹)" type="number" className="h-8 text-xs bg-white w-full sm:w-24 border-emerald-200 focus-visible:ring-emerald-500" value={l1Data[t._id || t.id]?.price || t.l1_price || ''} onChange={e => setL1Data(prev => ({...prev, [t._id || t.id]: {...(prev[t._id || t.id] || {}), price: e.target.value}}))}/>

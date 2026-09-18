@@ -1,5 +1,6 @@
 'use client';
 
+import { memo, useState } from 'react';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
@@ -14,35 +15,53 @@ const DROPDOWN_STAGES = [
   TRACKING_LABELS.LOST,
 ];
 
-export default function SubmittedTrackingBoard({
+function SubmittedTrackingBoard({
   jobs = [],
   actorEmpId = '',
   onRefresh,
+  onPatchJob,
+  onRemoveJob,
+  onArchiveJob,
   canDelete = false,
 }) {
+  const [busyId, setBusyId] = useState('');
+
   const update = async (job, tracking_status) => {
+    const snapshot = job;
+    setBusyId(job._id);
+    if (tracking_status === 'Lost') onRemoveJob?.(job._id);
+    else onPatchJob?.({ ...job, tracking_status, display_status: tracking_status, status: tracking_status === 'Won' ? 'WON' : job.status });
     try {
-      await workflowFetch(`/api/workflow/jobs/${job._id}/tracking`, {
+      const data = await workflowFetch(`/api/workflow/jobs/${job._id}/tracking`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tracking_status }),
       });
       toast.success(tracking_status === 'Lost' ? 'Moved to archive.' : `Updated to ${tracking_status}`);
-      onRefresh?.();
+      if (data?.archived) onArchiveJob?.({ ...job, archive_reason: 'Lost' });
+      else if (data?.job) onPatchJob?.(data.job);
     } catch (e) {
+      onPatchJob?.(snapshot);
       toast.error(e.message);
+    } finally {
+      setBusyId('');
     }
   };
 
   const deleteCard = async (job) => {
     const name = job.bid_no || job.title || 'this card';
     if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+    const snapshot = job;
+    setBusyId(job._id);
+    onRemoveJob?.(job._id);
     try {
       await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
       toast.success('Card deleted.');
-      onRefresh?.();
     } catch (e) {
+      onPatchJob?.(snapshot);
       toast.error(e.message);
+    } finally {
+      setBusyId('');
     }
   };
 
@@ -54,8 +73,9 @@ export default function SubmittedTrackingBoard({
         {jobs.map((job) => {
           const stage = normalizeTrackingStatus(job.tracking_status);
           const canEdit = Boolean(actorEmpId) && String(job.assigned_emp_id || '') === String(actorEmpId);
+          const cardBusy = busyId === job._id;
           return (
-            <div key={job._id} className="space-y-2">
+            <div key={job._id} className={`space-y-2 ${cardBusy ? 'opacity-70' : ''}`}>
               <CompactTenderCard
                 job={{ ...job, display_status: stage || job.display_status || 'Submitted' }}
                 actions={[
@@ -64,7 +84,7 @@ export default function SubmittedTrackingBoard({
                 ].filter(Boolean)}
               />
               {canEdit ? (
-                <Select value={stage || undefined} onValueChange={(v) => update(job, v)}>
+                <Select value={stage || undefined} onValueChange={(v) => update(job, v)} disabled={cardBusy}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Set tracking status" /></SelectTrigger>
                   <SelectContent>
                     {DROPDOWN_STAGES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -82,3 +102,5 @@ export default function SubmittedTrackingBoard({
     </div>
   );
 }
+
+export default memo(SubmittedTrackingBoard);

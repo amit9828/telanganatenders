@@ -18,7 +18,7 @@ function clientLabel(job) {
   return job.parked_client_name || job.parked_client_email || 'Unassigned client';
 }
 
-export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
+export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJob }) {
   const [busyId, setBusyId] = useState('');
   const [sowByJob, setSowByJob] = useState({});
 
@@ -64,7 +64,8 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
         delete next[job._id];
         return next;
       });
-      onRefresh?.();
+      if (data.job) onPatchJob?.(data.job);
+      else onRefresh?.();
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -106,7 +107,8 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
         delete next[job._id];
         return next;
       });
-      onRefresh?.();
+      if (data.job) onPatchJob?.(data.job);
+      else onRefresh?.();
     } catch (err) {
       toast.error(err.message);
     } finally {

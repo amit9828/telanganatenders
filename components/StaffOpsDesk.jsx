@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
@@ -37,6 +37,15 @@ import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { DESIGNATIONS, resolveStaffDesignation } from '@/lib/designations';
+import {
+  applyJobToBoard,
+  belongsOnInternal,
+  belongsOnLiveQueue,
+  belongsOnSubmitted,
+  dropJob,
+  setListIfChanged,
+  upsertJob,
+} from '@/lib/job-board-state';
 import {
   Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2
 } from 'lucide-react';
@@ -77,35 +86,104 @@ export default function StaffOpsDesk({ desk }) {
   const selfId = selfFromTeam?.emp_id || jwtEmpId || '';
   const isGm = desk === 'gm';
   const isTl = desk === 'tl';
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const teamRef = useRef(team);
+  teamRef.current = team;
 
-  const load = async () => {
+  const patchJob = useCallback((job) => {
+    if (!job) return;
+    setJobs((prev) => applyJobToBoard(prev, job, belongsOnLiveQueue));
+    setInternalJobs((prev) => applyJobToBoard(prev, job, belongsOnInternal));
+    setSubmittedJobs((prev) => applyJobToBoard(prev, job, belongsOnSubmitted));
+  }, []);
+
+  const removeJob = useCallback((id) => {
+    setJobs((prev) => dropJob(prev, id));
+    setInternalJobs((prev) => dropJob(prev, id));
+    setSubmittedJobs((prev) => dropJob(prev, id));
+    setArchivedJobs((prev) => dropJob(prev, id));
+  }, []);
+
+  const archiveJob = useCallback((job) => {
+    if (!job) return;
+    removeJob(job._id);
+    setArchivedJobs((prev) => upsertJob(prev, { ...job, archive_reason: job.archive_reason || 'Lost' }));
+  }, [removeJob]);
+
+  const load = useCallback(async (tab = activeTabRef.current) => {
+    const want = new Set();
+    if (tab === 'live' || tab === 'publisher' || tab === 'bid-support') {
+      want.add('tenders');
+      want.add('clients');
+    }
+    if (tab === 'publisher') want.add('awaiting');
+    if (tab === 'suggestion-bar') {
+      want.add('parked');
+      want.add('suggestions');
+      want.add('clients');
+    }
+    if (tab === 'internal') want.add('internal');
+    if (tab === 'submitted') want.add('submitted');
+    if (tab === 'archive') want.add('archive');
+    if (tab === 'officers') want.add('officers');
+    if (tab === 'clients') want.add('clients');
+    if (tab === 'team' || tab === 'chat' || !teamRef.current.length) want.add('team');
+    if (want.size === 0 && !teamRef.current.length) want.add('team');
+
     try {
-      const [q, internalQ, submittedQ, t, c, e, o, archivedQ] = await Promise.all([
-        workflowFetch('/api/workflow/queue'),
-        workflowFetch('/api/workflow/queue?board=internal'),
-        workflowFetch('/api/workflow/queue?board=submitted'),
-        fetch('/api/tenders', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()),
-        fetch('/api/users/approved', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()),
-        workflowFetch('/api/employees'),
-        isGm
-          ? fetch('/api/gov-officers', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()).catch(() => ({ officers: [] }))
-          : Promise.resolve({ officers: [] }),
-        isGm
-          ? workflowFetch('/api/workflow/archive').catch(() => ({ jobs: [] }))
-          : Promise.resolve({ jobs: [] }),
-      ]);
-      setJobs(q.jobs || []);
-      setInternalJobs(internalQ.jobs || []);
-      setSubmittedJobs(submittedQ.jobs || []);
-      setTenders(t.tenders || []);
-      setClients(c.users || []);
-      setTeam(e.team || []);
-      setOfficers(o.officers || []);
-      setArchivedJobs(archivedQ.jobs || []);
+      const tasks = {};
+      if (want.has('tenders')) {
+        tasks.tenders = fetch('/api/tenders?limit=100', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json());
+      }
+      if (want.has('clients')) {
+        tasks.clients = fetch('/api/users/approved?directory=1', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json());
+      }
+      if (want.has('team')) tasks.team = workflowFetch('/api/employees');
+      if (want.has('internal')) tasks.internal = workflowFetch('/api/workflow/queue?board=internal');
+      if (want.has('submitted')) tasks.submitted = workflowFetch('/api/workflow/queue?board=submitted');
+      if (want.has('parked')) tasks.parked = workflowFetch('/api/workflow/queue?board=parked');
+      if (want.has('suggestions')) tasks.suggestions = workflowFetch('/api/workflow/queue?board=suggestions');
+      if (want.has('awaiting')) tasks.awaiting = workflowFetch('/api/workflow/queue?board=awaiting_publish');
+      if (want.has('officers')) {
+        tasks.officers = fetch('/api/gov-officers', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json()).catch(() => ({ officers: [] }));
+      }
+      if (want.has('archive')) {
+        tasks.archive = workflowFetch('/api/workflow/archive').catch(() => ({ jobs: [] }));
+      }
+      const entries = Object.entries(tasks);
+      const results = await Promise.all(entries.map(([, p]) => p));
+      const got = Object.fromEntries(entries.map(([k], i) => [k, results[i]]));
+      if (got.tenders) setListIfChanged(setTenders, got.tenders.tenders || []);
+      if (got.clients) setListIfChanged(setClients, got.clients.users || []);
+      if (got.team) setListIfChanged(setTeam, got.team.team || []);
+      if (got.internal) setListIfChanged(setInternalJobs, got.internal.jobs || []);
+      if (got.submitted) setListIfChanged(setSubmittedJobs, got.submitted.jobs || []);
+      if (got.officers) setListIfChanged(setOfficers, got.officers.officers || []);
+      if (got.archive) setListIfChanged(setArchivedJobs, got.archive.jobs || []);
+      if (got.parked || got.suggestions || got.awaiting) {
+        setJobs((prev) => {
+          let next = prev;
+          if (got.parked || got.suggestions) {
+            next = [
+              ...(got.parked?.jobs || []),
+              ...(got.suggestions?.jobs || []),
+              ...prev.filter((j) => j.status === 'AWAITING_PUBLISH'),
+            ];
+          }
+          if (got.awaiting) {
+            next = [
+              ...next.filter((j) => j.status !== 'AWAITING_PUBLISH'),
+              ...(got.awaiting.jobs || []),
+            ];
+          }
+          return next;
+        });
+      }
     } catch (err) {
       toast.error(err.message);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -115,12 +193,12 @@ export default function StaffOpsDesk({ desk }) {
 
   useEffect(() => {
     if (status !== 'authenticated' && status !== 'unauthenticated' && !localEmpEmail) return undefined;
-    load();
+    load(activeTab);
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') load();
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') load(activeTabRef.current);
     }, 60000);
     return () => clearInterval(interval);
-  }, [status]);
+  }, [status, activeTab, load, localEmpEmail]);
 
   const parkedJobs = jobs.filter((j) => j.status === 'LIVE' && j.parked_client_email);
   const pendingClientJobs = jobs.filter((j) => j.status === 'AWAITING_CLIENT');
@@ -191,7 +269,7 @@ export default function StaffOpsDesk({ desk }) {
       if (!res.ok) throw new Error('Failed to save officer');
       toast.success('Govt Officer added to Central Directory!');
       setOfficerForm({ name: '', department: '', designation: '', phone: '', state: '', district: '', address: '', pincode: '', notes: '' });
-      load();
+      load('officers');
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -217,7 +295,7 @@ export default function StaffOpsDesk({ desk }) {
       if (!res.ok) throw new Error(data.error || 'Failed to delete tender.');
       toast.success('Tender deleted successfully.');
       if (String(editTender?._id || editTender?.id || '') === String(id)) setEditTender(null);
-      load();
+      setTenders((prev) => prev.filter((row) => String(row._id || row.id) !== String(id)));
     } catch (err) {
       toast.error(err.message || 'Network error');
     }
@@ -262,7 +340,7 @@ export default function StaffOpsDesk({ desk }) {
                       <SuggestClientControls
                         tender={t}
                         clients={clients}
-                        onDone={load}
+                        onDone={patchJob}
                         compact
                         variant="suggest"
                       />
@@ -272,7 +350,7 @@ export default function StaffOpsDesk({ desk }) {
               )}
               {isGm && (
                 <TabsContent value="suggestion-bar">
-                  <SuggestionBar jobs={parkedJobs} pdfEmail={staffEmail} onRefresh={load} />
+                  <SuggestionBar jobs={parkedJobs} pdfEmail={staffEmail} onPatchJob={patchJob} />
                   {pendingClientJobs.length > 0 && (
                     <div className="mt-6">
                       <h3 className="text-sm font-black text-[#0A2647] uppercase tracking-wide mb-3">Pending client approval</h3>
@@ -297,15 +375,19 @@ export default function StaffOpsDesk({ desk }) {
                         actorDesk="tl"
                         actorEmpId={selfId}
                         members={members}
-                        onCreated={load}
+                        onCreated={patchJob}
                       />
                       <PublishTenderForm
                         awaitingJobs={awaitingPublish}
                         editTender={editTender}
                         onCancelEdit={() => setEditTender(null)}
-                        onPublished={() => {
+                        onPublished={(published) => {
                           setEditTender(null);
-                          load();
+                          if (published?.job) patchJob(published.job);
+                          const tender = published?.tender || (published?.id ? { ...published, _id: published.id } : null);
+                          if (tender?._id || tender?.id) {
+                            setTenders((prev) => upsertJob(prev, tender));
+                          }
                         }}
                       />
                     </div>
@@ -337,23 +419,28 @@ export default function StaffOpsDesk({ desk }) {
                   tls={tls}
                   members={members}
                   team={team}
-                  onRefresh={load}
-                  chatSelfId={selfId}
+                  onPatchJob={patchJob}
+                  onRemoveJob={removeJob}
                   actorEmpId={selfId}
-                  chatRoster={team}
                 />
               </TabsContent>
               <TabsContent value="submitted">
-                <SubmittedTrackingBoard jobs={submitted} onRefresh={load} chatSelfId={selfId} chatRoster={team} />
+                <SubmittedTrackingBoard
+                  jobs={submitted}
+                  onPatchJob={patchJob}
+                  onRemoveJob={removeJob}
+                  onArchiveJob={archiveJob}
+                  actorEmpId={selfId}
+                />
               </TabsContent>
               {isGm && (
                 <TabsContent value="bid-support">
-                  <ClientBidSupportPanel tenders={tenders} pdfEmail={staffEmail} onSuggested={load} />
+                  <ClientBidSupportPanel tenders={tenders} pdfEmail={staffEmail} onSuggested={patchJob} />
                 </TabsContent>
               )}
               {isGm && (
                 <TabsContent value="archive">
-                  <ArchiveBoard jobs={archivedJobs} />
+                  <ArchiveBoard jobs={archivedJobs} onRemoveJob={removeJob} />
                 </TabsContent>
               )}
               {isGm && (
@@ -514,7 +601,7 @@ export default function StaffOpsDesk({ desk }) {
                 </TabsContent>
               )}
               <TabsContent value="team">
-                <TeamDirectoryPanel actorDesk={desk} team={team} onRefresh={load} impersonate={openStaffDesk} actorEmpId={selfId} />
+                <TeamDirectoryPanel actorDesk={desk} team={team} onRefresh={() => load('team')} impersonate={openStaffDesk} actorEmpId={selfId} />
               </TabsContent>
               <TabsContent value="alerts"><OpsAlerts roster={team} /></TabsContent>
               <TabsContent value="chat" className="w-full overflow-hidden"><StaffChat selfId={selfId} roster={team} /></TabsContent>

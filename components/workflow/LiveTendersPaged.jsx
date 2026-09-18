@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,7 @@ function fmtDate(value) {
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
 }
 
-export default function LiveTendersPaged({
+function LiveTendersPaged({
   tenders = [],
   pageSize = 10,
   renderActions,
@@ -113,3 +113,5 @@ export default function LiveTendersPaged({
     </Card>
   );
 }
+
+export default memo(LiveTendersPaged);

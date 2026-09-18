@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,7 +22,17 @@ const STATUS_LABEL = {
   AWAITING_RECEIPT: 'Awaiting Receipt',
 };
 
-export default function InternalTrackingBoard({ desk, tls = [], members = [], team = [], onRefresh, jobs = [], actorEmpId = '' }) {
+function InternalTrackingBoard({
+  desk,
+  tls = [],
+  members = [],
+  team = [],
+  onRefresh,
+  onPatchJob,
+  onRemoveJob,
+  jobs = [],
+  actorEmpId = '',
+}) {
   const [checklistJob, setChecklistJob] = useState(null);
   const [checklistFile, setChecklistFile] = useState(null);
   const [tlId, setTlId] = useState('');
@@ -34,7 +44,30 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   const [bounceMode, setBounceMode] = useState('');
   const [bounceSlots, setBounceSlots] = useState([]);
   const [bounceNote, setBounceNote] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState('');
+
+  const applyResult = (job, data) => {
+    if (data?.job) onPatchJob?.(data.job);
+    else if (data?.archived) onRemoveJob?.(job._id);
+  };
+
+  const run = async (job, fn, { optimistic, remove } = {}) => {
+    const snapshot = job;
+    setBusyId(job._id);
+    if (remove) onRemoveJob?.(job._id);
+    else if (optimistic) onPatchJob?.({ ...job, ...optimistic });
+    try {
+      const data = await fn();
+      applyResult(job, data);
+      return data;
+    } catch (e) {
+      if (remove || optimistic) onPatchJob?.(snapshot);
+      toast.error(e.message);
+      return null;
+    } finally {
+      setBusyId('');
+    }
+  };
 
   const openFile = (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file'));
   const makerTeamKeys = [makerJob?.team_id, makerJob?.routed_tl_emp_id, desk === 'tl' ? actorEmpId : '']
@@ -42,60 +75,62 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
     .filter(Boolean);
   const makerOptions = members.filter((m) => makerTeamKeys.includes(String(m.team_id || '').trim()));
 
-  const run = async (fn) => {
-    setBusy(true);
-    try {
-      await fn();
-      onRefresh?.();
-    } catch (e) {
-      toast.error(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const submitChecklist = async () => {
     if (!checklistFile) return toast.error('Upload the checklist PDF. Typed items are not allowed.');
     if (!tlId) return toast.error('Select a Team Lead.');
+    const job = checklistJob;
     const form = new FormData();
     form.append('checklist', checklistFile);
     form.append('routed_tl_emp_id', tlId);
-    await workflowFetch(`/api/workflow/jobs/${checklistJob._id}/checklist`, { method: 'PUT', body: form });
+    const data = await run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/checklist`, { method: 'PUT', body: form }), {
+      optimistic: { status: 'TL_ASSIGN', routed_tl_emp_id: tlId },
+    });
+    if (!data) return;
     toast.success('Checklist uploaded and routed to TL.');
     setChecklistJob(null);
     setChecklistFile(null);
     setTlId('');
-    onRefresh?.();
   };
 
   const deleteCard = (job) => {
     const name = job.bid_no || job.title || 'this card';
     if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
-    return run(async () => {
+    return run(job, async () => {
       await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
       toast.success('Card deleted.');
-    });
+      return { archived: true };
+    }, { remove: true });
   };
 
   const assignMaker = async () => {
     if (!makerId) return toast.error('Select an employee in your team.');
-    await workflowFetch(`/api/workflow/jobs/${makerJob._id}/advance`, {
+    const job = makerJob;
+    const member = makerOptions.find((m) => m.emp_id === makerId);
+    const data = await run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'assign_maker', assigned_emp_id: makerId }),
+    }), {
+      optimistic: {
+        status: 'MAKER_PREP',
+        assigned_emp_id: makerId,
+        assigned_emp_name: member?.name || makerId,
+      },
     });
+    if (!data) return;
     toast.success('Employee assigned.');
     setMakerJob(null);
-    onRefresh?.();
   };
 
   const confirmReceipt = async () => {
     if (!receiptFile) return toast.error('Submission Receipt PDF is required.');
+    const job = receiptJob;
     const form = new FormData();
     form.append('action', 'confirm_receipt');
     form.append('receipt', receiptFile);
     form.append('kind', 'receipt');
-    await workflowFetch(`/api/workflow/jobs/${receiptJob._id}/advance`, { method: 'POST', body: form });
+    const data = await run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, { method: 'POST', body: form }));
+    if (!data) return;
     toast.success('Drive pack uploaded. Status is Submitted.');
     setReceiptJob(null);
     setReceiptFile(null);
@@ -122,28 +157,30 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
   const submitBounce = async () => {
     const note = bounceNote.trim();
     if (!note) return toast.error('A bounce note is required.');
+    const job = bounceJob;
     if (bounceMode === 'tl') {
-      if ((bounceJob.prep_files || []).length && bounceSlots.length === 0) {
+      if ((job.prep_files || []).length && bounceSlots.length === 0) {
         return toast.error('Select at least one file to bounce.');
       }
-      await workflowFetch(`/api/workflow/jobs/${bounceJob._id}/advance`, {
+      const data = await run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'bounce', slots: bounceSlots, note }),
-      });
+      }), { optimistic: { status: 'MAKER_PREP', bounce_note: note, bounced_slots: bounceSlots } });
+      if (!data) return;
       toast.success('Bounced to employee.');
     } else {
-      await workflowFetch(`/api/workflow/jobs/${bounceJob._id}/advance`, {
+      const data = await run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'gm_bounce', note }),
-      });
+      }), { optimistic: { status: 'TL_QC', bounce_note: note } });
+      if (!data) return;
       toast.success('Bounced to TL.');
     }
     setBounceJob(null);
     setBounceNote('');
     setBounceSlots([]);
-    onRefresh?.();
   };
 
   return (
@@ -152,79 +189,92 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
       {jobs.length === 0 && <p className="text-sm text-slate-400">No jobs in the internal pipeline.</p>}
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {jobs.map((job) => {
+          const cardBusy = busyId === job._id;
           const actions = [
             ...workflowDocActions(job, openFile),
           ];
           if (desk === 'md' && job.status === 'MD_CHECKLIST') {
-            actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', onClick: () => setChecklistJob(job) });
+            actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', disabled: cardBusy, onClick: () => setChecklistJob(job) });
           }
           if ((desk === 'tl' || desk === 'md') && job.status === 'TL_ASSIGN') {
-            actions.push({ label: 'Assign employee', variant: 'default', onClick: () => { setMakerId(''); setMakerJob(job); } });
+            actions.push({ label: 'Assign employee', variant: 'default', disabled: cardBusy, onClick: () => { setMakerId(''); setMakerJob(job); } });
           }
           if (desk === 'employee' && job.status === 'MAKER_PREP') {
             actions.push({
-              label: 'Send to TL',
+              label: cardBusy ? 'Sending…' : 'Send to TL',
               variant: 'default',
-              disabled: (job.prep_files || []).length < 2,
+              disabled: cardBusy || (job.prep_files || []).length < 2,
               onClick: () => {
                 if ((job.prep_files || []).length < 2) return toast.error('Upload at least 2 files before sending to TL.');
-                return run(() => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+                return run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ action: 'send_tl' }),
-                }));
+                }), { optimistic: { status: 'TL_QC' } });
               },
             });
           }
           if (desk === 'tl' && job.status === 'TL_QC') {
             actions.push({
-              label: 'Pass to GM',
+              label: cardBusy ? 'Sending…' : 'Pass to GM',
               variant: 'default',
-              onClick: () => run(() => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+              disabled: cardBusy,
+              onClick: () => run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'send_gm' }),
-              })),
+              }), { optimistic: { status: 'GM_QC' } }),
             });
             actions.push({
               label: 'Bounce',
+              disabled: cardBusy,
               onClick: () => openTlBounce(job),
             });
           }
           if (desk === 'gm' && job.status === 'GM_QC') {
             actions.push({
-              label: 'Send to MD',
+              label: cardBusy ? 'Sending…' : 'Send to MD',
               variant: 'default',
-              onClick: () => run(() => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+              disabled: cardBusy,
+              onClick: () => run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'send_md' }),
-              })),
+              }), { optimistic: { status: 'MD_SUBMIT' } }),
             });
             actions.push({
               label: 'Bounce',
+              disabled: cardBusy,
               onClick: () => openGmBounce(job),
             });
           }
           if (desk === 'md' && job.status === 'MD_SUBMIT') {
             actions.push({
-              label: 'Submit Tender',
+              label: cardBusy ? 'Submitting…' : 'Submit Tender',
               variant: 'default',
-              onClick: () => run(async () => {
-                await workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+              disabled: cardBusy,
+              onClick: () => run(job, async () => {
+                const data = await workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ action: 'submit_tender' }),
                 });
-                setReceiptJob(job);
-              }),
+                setReceiptJob(data?.job || { ...job, status: 'AWAITING_RECEIPT' });
+                return data;
+              }, { optimistic: { status: 'AWAITING_RECEIPT' } }),
             });
           }
           if (desk === 'md' && job.status === 'AWAITING_RECEIPT') {
-            actions.push({ label: 'Receipt + Drive', icon: 'upload', variant: 'default', onClick: () => setReceiptJob(job) });
+            actions.push({
+              label: cardBusy ? 'Uploading pack…' : 'Receipt + Drive',
+              icon: 'upload',
+              variant: 'default',
+              disabled: cardBusy,
+              onClick: () => setReceiptJob(job),
+            });
           }
           if (desk === 'md') {
             const del = mdDeleteCardAction(job, deleteCard);
-            if (del) actions.push(del);
+            if (del) actions.push({ ...del, disabled: cardBusy || del.disabled });
           }
           return (
-            <div key={job._id}>
+            <div key={job._id} className={cardBusy ? 'opacity-70 pointer-events-none' : ''}>
               <CompactTenderCard
                 job={{ ...job, display_status: STATUS_LABEL[job.status] || job.status }}
                 actions={actions}
@@ -257,33 +307,36 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                       })}
                     </ul>
                   )}
-                  <label className={`flex items-center justify-center h-9 rounded-md border border-dashed border-emerald-300 bg-emerald-50 text-[11px] font-bold text-emerald-800 cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className={`flex items-center justify-center h-9 rounded-md border border-dashed border-emerald-300 bg-emerald-50 text-[11px] font-bold text-emerald-800 cursor-pointer ${cardBusy ? 'opacity-50 pointer-events-none' : ''}`}>
                     Add files
                     <input
                       type="file"
                       multiple
                       accept="application/pdf"
                       className="sr-only"
-                      disabled={busy}
+                      disabled={cardBusy}
                       onChange={async (e) => {
                         const files = Array.from(e.target.files || []);
                         e.target.value = '';
                         if (!files.length) return;
-                        setBusy(true);
+                        setBusyId(job._id);
                         try {
+                          let latest = job;
                           for (const file of files) {
                             const form = new FormData();
                             form.append('file', file);
                             form.append('slot', `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
                             form.append('kind', 'final');
-                            await workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
+                            const data = await workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
+                            if (data?.job) latest = data.job;
                           }
+                          onPatchJob?.(latest);
                           toast.success(`${files.length} file${files.length === 1 ? '' : 's'} stored.`);
-                          onRefresh?.();
                         } catch (err) {
                           toast.error(err.message);
+                          onRefresh?.();
                         } finally {
-                          setBusy(false);
+                          setBusyId('');
                         }
                       }}
                     />
@@ -314,7 +367,7 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => run(submitChecklist)} disabled={busy}>Route</Button>
+            <Button onClick={submitChecklist} disabled={busyId === checklistJob?._id}>Route</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -332,17 +385,23 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
                   </SelectContent>
                 </Select>
               )}
-          <DialogFooter><Button onClick={() => run(assignMaker)} disabled={busy}>Assign</Button></DialogFooter>
+          <DialogFooter><Button onClick={assignMaker} disabled={busyId === makerJob?._id}>Assign</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!receiptJob} onOpenChange={() => setReceiptJob(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Submission receipt + Drive pack</DialogTitle></DialogHeader>
-          <p className="text-sm text-slate-600">Upload the GeM submission receipt. Confirm packs SOW, checklist, employee finals, and receipt into a Drive child folder named [Tender Number] - [Tender Title]. The job stays unsubmitted if Drive fails.</p>
+          <p className="text-sm text-slate-600">
+            {busyId === receiptJob?._id
+              ? 'Uploading the Drive pack for this card only. Other jobs stay clickable.'
+              : 'Upload the GeM submission receipt. Confirm packs SOW, checklist, employee finals, and receipt into a Drive child folder named [Tender Number] - [Tender Title]. The job stays unsubmitted if Drive fails.'}
+          </p>
           <Input type="file" accept="application/pdf" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} />
           <DialogFooter>
-            <Button onClick={() => run(confirmReceipt)} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">Confirm & push to Drive</Button>
+            <Button onClick={confirmReceipt} disabled={busyId === receiptJob?._id} className="bg-emerald-600 hover:bg-emerald-700">
+              {busyId === receiptJob?._id ? 'Uploading pack…' : 'Confirm & push to Drive'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -388,10 +447,12 @@ export default function InternalTrackingBoard({ desk, tls = [], members = [], te
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBounceJob(null)}>Cancel</Button>
-            <Button onClick={() => run(submitBounce)} disabled={busy} className="bg-red-600 hover:bg-red-700">Bounce</Button>
+            <Button onClick={submitBounce} disabled={busyId === bounceJob?._id} className="bg-red-600 hover:bg-red-700">Bounce</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+
+export default memo(InternalTrackingBoard);

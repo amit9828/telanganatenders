@@ -102,7 +102,7 @@ export default function ClientBidSupportPanel({ tenders = [], pdfEmail = '', onS
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to park on Suggestion Bar.');
       toast.success('Parked on Suggestion Bar for this client.');
-      onSuggested?.();
+      if (data.job) onSuggested?.(data.job);
     } catch (err) {
       toast.error(err.message);
       load();

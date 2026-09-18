@@ -21,9 +21,9 @@ export default function SuggestSowModal({ open, onOpenChange, job, clients = [],
       const form = new FormData();
       form.append('client_email', clientEmail);
       form.append('sow', file);
-      await workflowFetch(`/api/workflow/jobs/${job._id}/suggest`, { method: 'POST', body: form });
+      const data = await workflowFetch(`/api/workflow/jobs/${job._id}/suggest`, { method: 'POST', body: form });
       toast.success('SOW sent. Client will see Pending Approval.');
-      onDone?.();
+      onDone?.(data?.job);
       onOpenChange(false);
       setClientEmail('');
       setFile(null);

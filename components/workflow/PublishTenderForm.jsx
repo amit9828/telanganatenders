@@ -50,12 +50,6 @@ function matchCategory(value) {
   return CATEGORIES.find((c) => c.toLowerCase() === needle) || '';
 }
 
-function jobLabel(job) {
-  const title = String(job?.title || '').trim() || 'Publish tender';
-  const who = job?.assigned_emp_name || job?.assigned_emp_id || '';
-  return who ? `${title} · ${who}` : title;
-}
-
 export default function PublishTenderForm({
   awaitingJobs = [],
   onPublished,
@@ -177,7 +171,7 @@ export default function PublishTenderForm({
     }
     const jobId = editingId ? '' : resolveJobId();
     if (!editingId && !jobId) {
-      return toast.error('Create or select an AWAITING_PUBLISH job first.');
+      return toast.error('Create a publish job first.');
     }
     setPublishing(true);
     try {
@@ -195,15 +189,17 @@ export default function PublishTenderForm({
       });
       const published = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(published.error || 'Failed to save tender');
+      let attachJob = null;
       if (!editingId) {
         const tenderId = published.id || published.tender?._id || published.tender_id;
         if (jobId && tenderId) {
           try {
-            await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
+            const attached = await workflowFetch(`/api/workflow/jobs/${jobId}/publish-attach`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ tender_id: tenderId, bid_no: form.bid_no }),
             });
+            attachJob = attached?.job || null;
           } catch (attachErr) {
             setPendingJobId('');
             onPublished?.(published);
@@ -214,7 +210,7 @@ export default function PublishTenderForm({
       toast.success(editingId ? 'Tender updated successfully!' : 'Tender published successfully!');
       reset();
       onCancelEdit?.();
-      onPublished?.(published);
+      onPublished?.({ ...published, job: attachJob });
     } catch (err) {
       toast.error(err.message || 'Network error');
     } finally {
@@ -241,21 +237,6 @@ export default function PublishTenderForm({
       </CardHeader>
       <CardContent className="pt-5">
         <form onSubmit={submit} className="space-y-4">
-          {!editingId && (
-            <div>
-              <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Attach to publish job *</Label>
-              <Select value={pendingJobId || undefined} onValueChange={setPendingJobId} disabled={!awaitingJobs.length}>
-                <SelectTrigger className="bg-white h-10">
-                  <SelectValue placeholder={awaitingJobs.length ? 'Select a waiting job' : 'No jobs waiting to publish'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {awaitingJobs.map((job) => (
-                    <SelectItem key={String(job._id)} value={String(job._id)}>{jobLabel(job)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <div>
             <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Document Title (Work) *</Label>
             <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="bg-white h-10" />

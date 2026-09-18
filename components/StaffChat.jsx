@@ -75,6 +75,22 @@ function ChatImage({ id, alt }) {
   return <img src={src} alt={alt || 'Image'} className="mt-1 max-h-52 rounded-lg object-cover w-full" />;
 }
 
+function latestStamp(rows) {
+  let max = '';
+  for (const row of rows || []) {
+    const iso = row?.created_at ? new Date(row.created_at).toISOString() : '';
+    if (iso > max) max = iso;
+  }
+  return max;
+}
+
+function mergeMessages(prev, incoming) {
+  if (!incoming?.length) return prev;
+  const map = new Map((prev || []).map((row) => [String(row._id), row]));
+  for (const row of incoming) map.set(String(row._id), row);
+  return [...map.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+}
+
 function ContactList({ contacts, peer, query, onQuery, onSelect }) {
   const filtered = contacts.filter((c) => {
     const needle = query.trim().toLowerCase();
@@ -162,6 +178,9 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
   const cacheRef = useRef(new Map());
   const endRef = useRef(null);
   const typingTimer = useRef(null);
+  const inboxSinceRef = useRef('');
+  const threadSinceRef = useRef('');
+  const lastTypingPost = useRef(0);
 
   useEffect(() => {
     setMe(selfId);
@@ -241,21 +260,26 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
 
   const active = contacts.find((c) => c.id === peer) || list.find((r) => contactId(r) === peer);
 
-  const loadThread = useCallback(async (p, { silent = false } = {}) => {
+  const loadThread = useCallback(async (p, { silent = false, since } = {}) => {
     const target = p || peer;
     if (!target) return;
     try {
       const qs = new URLSearchParams();
       qs.set('peer', target);
       if (jobId) qs.set('job_id', jobId);
+      if (since) qs.set('since', since);
       const data = await workflowFetch(`/api/staff-chat?${qs.toString()}`);
       if (data.me) setMe(data.me);
-      const next = (data.messages || []).filter((m) =>
+      const incoming = (data.messages || []).filter((m) =>
         (m.from_emp_id === (data.me || me) && m.to_emp_id === target)
         || (m.from_emp_id === target && m.to_emp_id === (data.me || me))
       );
-      cacheRef.current.set(threadCacheKey(target, jobId), next);
-      setMessages(next);
+      setMessages((prev) => {
+        const next = data.incremental ? mergeMessages(prev, incoming) : incoming;
+        cacheRef.current.set(threadCacheKey(target, jobId), next);
+        threadSinceRef.current = latestStamp(next) || threadSinceRef.current || new Date().toISOString();
+        return next;
+      });
       setPeerReadAt(data.peer_read_at || null);
       setPeerTyping(Boolean(data.peer_typing));
       if (data.presence) setPresence((prev) => ({ ...prev, ...data.presence }));
@@ -264,11 +288,16 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
     }
   }, [peer, jobId, me]);
 
-  const loadInbox = useCallback(async () => {
+  const loadInbox = useCallback(async ({ since } = {}) => {
     try {
-      const data = await workflowFetch('/api/staff-chat');
+      const qs = since ? `?since=${encodeURIComponent(since)}` : '';
+      const data = await workflowFetch(`/api/staff-chat${qs}`);
       if (data.me) setMe(data.me);
-      setInbox(data.messages || []);
+      setInbox((prev) => {
+        const next = data.incremental ? mergeMessages(prev, data.messages || []) : (data.messages || []);
+        inboxSinceRef.current = latestStamp(next) || new Date().toISOString();
+        return next;
+      });
       if (data.reads) setReads(data.reads);
       if (data.presence) setPresence((prev) => ({ ...prev, ...data.presence }));
     } catch {
@@ -301,42 +330,19 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
 
   useEffect(() => {
     loadInbox();
+    threadSinceRef.current = '';
     if (peer) loadThread(peer, { silent: true });
   }, [loadInbox, loadThread, peer]);
 
   useEffect(() => {
     const id = setInterval(() => {
-      loadInbox();
+      loadInbox({ since: inboxSinceRef.current || undefined });
       if (peer) {
-        loadThread(peer, { silent: true });
-        markRead(peer);
+        loadThread(peer, { silent: true, since: threadSinceRef.current || undefined });
       }
-    }, 8000);
+    }, 5000);
     return () => clearInterval(id);
-  }, [loadInbox, loadThread, peer, markRead]);
-
-  useEffect(() => {
-    if (!peer || typeof EventSource === 'undefined') return undefined;
-    const es = new EventSource(`/api/staff-chat/stream?peer=${encodeURIComponent(peer)}`, { withCredentials: true });
-    const onState = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        if (data.me) setMe(data.me);
-        if (data.peer_read_at) setPeerReadAt(data.peer_read_at);
-        setPeerTyping(Boolean(data.peer_typing));
-        if (data.presence) setPresence((prev) => ({ ...prev, ...data.presence }));
-        if (data.changed) loadThread(peer, { silent: true });
-      } catch {
-        /* ignore */
-      }
-    };
-    es.addEventListener('state', onState);
-    es.onerror = () => {};
-    return () => {
-      es.removeEventListener('state', onState);
-      es.close();
-    };
-  }, [peer, loadThread]);
+  }, [loadInbox, loadThread, peer]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -344,6 +350,9 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
 
   const notifyTyping = (on) => {
     if (!peer) return;
+    const now = Date.now();
+    if (on && now - lastTypingPost.current < 2000) return;
+    lastTypingPost.current = now;
     workflowFetch('/api/staff-chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -394,7 +403,7 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
         fileId = payload.file_id || '';
         if (!fileId) throw new Error('Upload did not return a file id.');
       }
-      await workflowFetch('/api/staff-chat', {
+      const posted = await workflowFetch('/api/staff-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -407,8 +416,16 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
       setText('');
       setFile(null);
       notifyTyping(false);
+      if (posted?.message) {
+        setMessages((prev) => {
+          const next = mergeMessages(prev, [posted.message]);
+          cacheRef.current.set(threadCacheKey(peer, jobId), next);
+          threadSinceRef.current = latestStamp(next);
+          return next;
+        });
+        setInbox((prev) => mergeMessages(prev, [posted.message]));
+      }
       await markRead(peer);
-      await Promise.all([loadThread(peer, { silent: true }), loadInbox()]);
     } catch (e) {
       toast.error(e.message);
     } finally {

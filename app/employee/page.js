@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { BrandMark } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
@@ -14,6 +14,16 @@ import StaffChat from '@/components/StaffChat';
 import OpsAlerts from '@/components/OpsAlerts';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { liveTendersOnly } from '@/lib/tender-sort';
+import {
+  applyJobToBoard,
+  belongsOnInternal,
+  belongsOnSubmitted,
+  dropJob,
+  INTERNAL_BOARD_STATUSES,
+  sameStamps,
+  setListIfChanged,
+  SUBMITTED_BOARD_STATUSES,
+} from '@/lib/job-board-state';
 import { staffHeaders } from '@/components/workflow/api';
 import { consumeStaffBypass } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -41,9 +51,6 @@ const BORDER_COLORS = [
   'border-blue-500', 'border-purple-500', 'border-emerald-500', 
   'border-orange-500', 'border-indigo-500', 'border-rose-500'
 ];
-
-const INTERNAL_BOARD_STATUSES = ['MD_CHECKLIST', 'TL_ASSIGN', 'MAKER_PREP', 'TL_QC', 'GM_QC', 'MD_SUBMIT', 'AWAITING_RECEIPT'];
-const SUBMITTED_BOARD_STATUSES = ['SUBMITTED', 'WON'];
 
 export default function EmployeeDashboard() {
   const [isMounted, setIsMounted] = useState(false);
@@ -96,6 +103,20 @@ export default function EmployeeDashboard() {
   const [mdTaskFile, setMdTaskFile] = useState({});
   const [uploadingTask, setUploadingTask] = useState(false);
   const [wfJobs, setWfJobs] = useState([]);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const patchJob = useCallback((job) => {
+    if (!job) return;
+    setWfJobs((prev) => applyJobToBoard(prev, job, (row) => belongsOnInternal(row) || belongsOnSubmitted(row)));
+  }, []);
+  const removeJob = useCallback((id) => {
+    setWfJobs((prev) => dropJob(prev, id));
+  }, []);
+  const archiveJob = useCallback((job) => {
+    if (job?._id) removeJob(job._id);
+  }, [removeJob]);
+
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
@@ -113,63 +134,84 @@ export default function EmployeeDashboard() {
         body: JSON.stringify({ email: finalEmail, action: 'LOGIN', details: 'Employee started session on portal.' })
     }).catch(err => console.log('Attendance log failed', err));
 
-    const syncEmployeeData = () => {
-        fetchLiveOperationsData(finalEmail);
-    };
-    
-    syncEmployeeData(); // ఫస్ట్ టైమ్ కాల్
-    // 🚀 PERF FIX: Poll every 60s (not 10s) and only while this tab is visible —
-    // matches the same guard already used in Admin/Client dashboards, so an
-    // employee tab left open/minimized in the background stops silently
-    // generating 12 DB-touching requests every 10 seconds all day.
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        syncEmployeeData();
+        fetchLiveOperationsData(finalEmail, activeTabRef.current);
       }
     }, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  const fetchLiveOperationsData = async (userEmail) => {
-    try {
-      // 🚀 PERF FIX: All endpoints fire in a single Promise.all.
-      const [tasksRes, bidsRes, officersRes, clientsRes, tendersRes, ticketsRes, pendRes, guestRes, empRes, wfRes] = await Promise.all([
-        fetch(`/api/dispatches?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
-        fetch(`/api/bids?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
-        fetch(`/api/gov-officers?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
-        fetch(`/api/users/approved?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
-        fetch(`/api/tenders?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }), 
-        fetch(`/api/tickets?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
-        fetch(`/api/users/pending?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
-        fetch(`/api/guest-queries?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
-        fetch(`/api/employees?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() }),
-        fetch(`/api/workflow/queue?t=${Date.now()}`, { credentials: 'include', headers: staffHeaders() })
-      ]);
+  useEffect(() => {
+    if (!email) return undefined;
+    fetchLiveOperationsData(email, activeTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, activeTab]);
 
-      if (tasksRes.ok) {
-        const tData = await tasksRes.json();
-        const allDispatches = tData.dispatches || [];
-        setDispatches(allDispatches);
-        setMdTasks(allDispatches.filter(d => d.target_type === 'employee_task'));
-        setSuggestions(allDispatches.filter(d => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed' && d.client_reply !== 'Client Accepted the Tender'));
+  const fetchLiveOperationsData = async (userEmail, tab = activeTabRef.current) => {
+    try {
+      const want = new Set(['employees']);
+      if (tab === 'internal') { want.add('workflow'); want.add('dispatches'); }
+      else if (tab === 'submitted') { want.add('workflow'); want.add('bids'); }
+      else if (tab === 'clients') { want.add('clients'); want.add('officers'); }
+      else if (tab === 'publisher') want.add('tenders');
+      else if (tab === 'alerts') want.add('dispatches');
+      else if (tab === 'sla') { want.add('tickets'); want.add('guests'); }
+      else if (tab === 'chat') want.add('employees');
+
+      const stamp = Date.now();
+      const headers = staffHeaders();
+      const tasks = {};
+      if (want.has('dispatches')) tasks.dispatches = fetch(`/api/dispatches?t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('bids')) tasks.bids = fetch(`/api/bids?t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('officers')) tasks.officers = fetch(`/api/gov-officers?t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('clients')) tasks.clients = fetch(`/api/users/approved?t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('tenders')) tasks.tenders = fetch(`/api/tenders?limit=100&t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('tickets')) tasks.tickets = fetch(`/api/tickets?t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('guests')) tasks.guests = fetch(`/api/guest-queries?t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('employees')) tasks.employees = fetch(`/api/employees?t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('workflow')) {
+        const board = tab === 'submitted' ? 'submitted' : 'internal';
+        tasks.workflow = fetch(`/api/workflow/queue?board=${board}&t=${stamp}`, { credentials: 'include', headers });
       }
-      if (bidsRes.ok) { const bData = await bidsRes.json(); setBids(bData.bids || []); }
-      if (officersRes.ok) { const oData = await officersRes.json(); setOfficers(oData.officers || []); }
-      if (clientsRes.ok) { const cData = await clientsRes.json(); setApprovedClients(cData.users || []); }
-      if (tendersRes.ok) { const pData = await tendersRes.json(); setPublicTenders(pData.tenders || []); }
-      if (ticketsRes.ok) { const tkData = await ticketsRes.json(); setTickets(tkData.tickets || []); }
-      if (pendRes.ok) { const pendData = await pendRes.json(); setPendingUsers(pendData.users || []); }
-      if (guestRes.ok) { const gData = await guestRes.json(); setGuestQueries(gData.queries || gData['guest-queries'] || []); } 
-      if (empRes.ok) {
-        const eData = await empRes.json();
-        const team = eData.team || [];
-        setTeamMembers(team);
+
+      const keys = Object.keys(tasks);
+      const responses = await Promise.all(keys.map((k) => tasks[k]));
+      const got = {};
+      await Promise.all(keys.map(async (k, i) => {
+        const res = responses[i];
+        if (res?.ok) got[k] = await res.json();
+      }));
+
+      if (got.dispatches) {
+        const allDispatches = got.dispatches.dispatches || [];
+        setListIfChanged(setDispatches, allDispatches);
+        setMdTasks(allDispatches.filter((d) => d.target_type === 'employee_task'));
+        setSuggestions(allDispatches.filter((d) => d.subject === 'New Tender Suggestion from Officer' && d.status !== 'Completed' && d.client_reply !== 'Client Accepted the Tender'));
+      }
+      if (got.bids) setListIfChanged(setBids, got.bids.bids || []);
+      if (got.officers) setListIfChanged(setOfficers, got.officers.officers || []);
+      if (got.clients) setListIfChanged(setApprovedClients, got.clients.users || []);
+      if (got.tenders) setListIfChanged(setPublicTenders, got.tenders.tenders || []);
+      if (got.tickets) setListIfChanged(setTickets, got.tickets.tickets || []);
+      if (got.guests) setListIfChanged(setGuestQueries, got.guests.queries || got.guests['guest-queries'] || []);
+      if (got.employees) {
+        const team = got.employees.team || [];
+        setListIfChanged(setTeamMembers, team);
         const mine = team.find((t) => String(t.email || '').toLowerCase() === String(userEmail || '').toLowerCase());
         if (mine?.emp_id) {
           setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer' });
         }
       }
-      if (wfRes.ok) { const wData = await wfRes.json(); setWfJobs(wData.jobs || []); }
+      if (got.workflow) {
+        setWfJobs((prev) => {
+          const incoming = got.workflow.jobs || [];
+          const keep = prev.filter((j) => (tab === 'submitted' ? belongsOnInternal(j) : belongsOnSubmitted(j)));
+          const incomingIds = new Set(incoming.map((x) => String(x._id)));
+          const merged = [...incoming, ...keep.filter((j) => !incomingIds.has(String(j._id)))];
+          return sameStamps(prev, merged) ? prev : merged;
+        });
+      }
     } catch (err) { console.error("Employee Sync Error", err); } finally { setLoading(false); }
   };
 
@@ -188,7 +230,10 @@ export default function EmployeeDashboard() {
     if(!confirm("Are you sure you want to permanently delete this tender from the Live Portal?")) return;
     try {
       const res = await fetch(`/api/tenders/${id}`, { method: 'DELETE', credentials: 'include', headers: staffHeaders() });
-      if(res.ok) { toast.success("Tender deleted successfully."); fetchLiveOperationsData(email); }
+      if(res.ok) {
+        toast.success("Tender deleted successfully.");
+        setPublicTenders((prev) => prev.filter((row) => String(row._id || row.id) !== String(id)));
+      }
       else { toast.error("Failed to delete tender."); }
     } catch(e) { toast.error("Network error"); }
   };
@@ -730,9 +775,9 @@ return (
             <InternalTrackingBoard
               desk="employee"
               jobs={wfJobs.filter((j) => INTERNAL_BOARD_STATUSES.includes(j.status))}
-              onRefresh={() => fetchLiveOperationsData(email)}
-              chatSelfId={empData.id}
-              chatRoster={teamMembers}
+              onPatchJob={patchJob}
+              onRemoveJob={removeJob}
+              actorEmpId={empData.id}
             />
           </TabsContent>
 
@@ -740,9 +785,9 @@ return (
             <SubmittedTrackingBoard
               jobs={wfJobs.filter((j) => SUBMITTED_BOARD_STATUSES.includes(j.status))}
               actorEmpId={empData.id}
-              onRefresh={() => fetchLiveOperationsData(email)}
-              chatSelfId={empData.id}
-              chatRoster={teamMembers}
+              onPatchJob={patchJob}
+              onRemoveJob={removeJob}
+              onArchiveJob={archiveJob}
             />
             <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
