@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react'; 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; 
 import { useSession } from 'next-auth/react'; 
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
@@ -26,9 +26,10 @@ import { workflowFetch, fetchWorkflowQueue, openWorkflowFile } from '@/component
 import {
   applyJobToBoard,
   belongsOnInternal,
-  belongsOnLiveQueue,
   belongsOnSubmitted,
+  belongsOnSuggestions,
   dropJob,
+  INTERNAL_BOARD_STATUSES,
   setListIfChanged,
   upsertJob,
 } from '@/lib/job-board-state';
@@ -184,7 +185,7 @@ export default function AdminPage() {
   const [analyzingTender, setAnalyzingTender] = useState(false);
   const [bulkDragActive, setBulkDragActive] = useState(false);
   const [bulkFileCount, setBulkFileCount] = useState(0);
-  const [wfJobs, setWfJobs] = useState([]);
+  const [wfSuggestions, setWfSuggestions] = useState([]);
   const [wfInternal, setWfInternal] = useState([]);
   const [wfSubmitted, setWfSubmitted] = useState([]);
   const [wfArchive, setWfArchive] = useState([]);
@@ -193,12 +194,12 @@ export default function AdminPage() {
 
   const patchJob = useCallback((job) => {
     if (!job) return;
-    setWfJobs((prev) => applyJobToBoard(prev, job, (row) => belongsOnLiveQueue(row) || belongsOnInternal(row) || belongsOnSubmitted(row)));
+    setWfSuggestions((prev) => applyJobToBoard(prev, job, belongsOnSuggestions));
     setWfInternal((prev) => applyJobToBoard(prev, job, belongsOnInternal));
     setWfSubmitted((prev) => applyJobToBoard(prev, job, belongsOnSubmitted));
   }, []);
   const removeJob = useCallback((id) => {
-    setWfJobs((prev) => dropJob(prev, id));
+    setWfSuggestions((prev) => dropJob(prev, id));
     setWfInternal((prev) => dropJob(prev, id));
     setWfSubmitted((prev) => dropJob(prev, id));
     setWfArchive((prev) => dropJob(prev, id));
@@ -225,13 +226,17 @@ export default function AdminPage() {
   const [liveFeedToday, setLiveFeedToday] = useState('');
   const [liveFeedLoading, setLiveFeedLoading] = useState(false);
 
-  // 🚀 RBAC: MD-only "Team Activity" — every officer's suggestions + every live bid
-  // across the whole team, with attribution (GET /api/dispatches/suggestions,
-  // GET /api/bids/tracking). Lazy-loaded only when that tab opens, not part of the
-  // main polling refresh() below.
-  const [teamSuggestions, setTeamSuggestions] = useState([]);
-  const [teamTracking, setTeamTracking] = useState([]);
+  // MD Team Activity: parked + AWAITING_CLIENT vs internal pipeline (MD_CHECKLIST..AWAITING_RECEIPT).
   const [teamActivityLoading, setTeamActivityLoading] = useState(false);
+
+  const suggestionBoardJobs = useMemo(
+    () => wfSuggestions.filter(belongsOnSuggestions),
+    [wfSuggestions],
+  );
+  const masterLiveJobs = useMemo(
+    () => wfInternal.filter((job) => INTERNAL_BOARD_STATUSES.includes(job.status)),
+    [wfInternal],
+  );
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
@@ -288,6 +293,7 @@ export default function AdminPage() {
     else if (tab === 'clients') ['pending', 'clients'].forEach((k) => want.add(k));
     else if (tab === 'matchmaker') want.add('matches');
     else if (tab === 'internal') ['employees', 'wfInternal'].forEach((k) => want.add(k));
+    else if (tab === 'team-activity') ['wfInternal', 'wfParked', 'wfSuggestions'].forEach((k) => want.add(k));
     else if (tab === 'submitted') ['employees', 'wfSubmitted'].forEach((k) => want.add(k));
     else if (tab === 'archive') want.add('wfArchive');
     else if (tab === 'publisher') want.add('tenders');
@@ -311,6 +317,8 @@ export default function AdminPage() {
       if (want.has('payments')) tasks.payments = safeFetch(`/api/payments/requests?t=${stamp}`);
       if (want.has('matches')) tasks.matches = safeFetch(`/api/bid-matches?t=${stamp}`);
       if (want.has('wfInternal')) tasks.wfInternal = fetchWorkflowQueue('internal').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfParked')) tasks.wfParked = fetchWorkflowQueue('parked').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfSuggestions')) tasks.wfSuggestions = fetchWorkflowQueue('suggestions').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSubmitted')) tasks.wfSubmitted = fetchWorkflowQueue('submitted').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfArchive')) tasks.wfArchive = workflowFetch(`/api/workflow/archive?t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
 
@@ -351,7 +359,20 @@ export default function AdminPage() {
         setBidMatches(got.matches.data.matches || []);
         setMatchSummary(got.matches.data.summary || { total: 0, new: 0, jv: 0 });
       }
-      if (got.wfInternal?.ok) setListIfChanged(setWfInternal, got.wfInternal.data.jobs || []);
+      if (got.wfInternal?.ok) setListIfChanged(setWfInternal, (got.wfInternal.data.jobs || []).filter(belongsOnInternal));
+      if (got.wfParked?.ok || got.wfSuggestions?.ok) {
+        const parked = got.wfParked?.ok ? (got.wfParked.data.jobs || []) : [];
+        const waiting = got.wfSuggestions?.ok ? (got.wfSuggestions.data.jobs || []) : [];
+        const merged = [...parked, ...waiting].filter(belongsOnSuggestions);
+        const seen = new Set();
+        const unique = merged.filter((job) => {
+          const id = String(job._id || job.id || '');
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+        setListIfChanged(setWfSuggestions, unique);
+      }
       if (got.wfSubmitted?.ok) setListIfChanged(setWfSubmitted, got.wfSubmitted.data.jobs || []);
       if (got.wfArchive?.ok) setListIfChanged(setWfArchive, got.wfArchive.data.jobs || []);
 
@@ -398,24 +419,25 @@ export default function AdminPage() {
   // 🚀 RBAC: MD-only global attribution views — independent of the main refresh()
   // Promise.all so every employee's suggestions/tracking don't get pulled on every
   // 60s poll; only fetched when the "Team Activity" tab is actually open.
-  const fetchTeamActivity = async (authToken = token) => {
-    if (!authToken && !isMdSession) return;
+  const fetchTeamActivity = async () => {
+    if (!token && !isMdSession) return;
     setTeamActivityLoading(true);
     try {
-      const headers = {};
-      if (authToken) headers.Authorization = `Bearer ${authToken}`;
-      const [sugRes, trkRes] = await Promise.all([
-        fetch(`/api/dispatches/suggestions?t=${Date.now()}`, { credentials: 'include', headers }),
-        fetch(`/api/bids/tracking?t=${Date.now()}`, { credentials: 'include', headers }),
+      const [parked, waiting, internal] = await Promise.all([
+        fetchWorkflowQueue('parked').catch(() => ({ jobs: [] })),
+        fetchWorkflowQueue('suggestions').catch(() => ({ jobs: [] })),
+        fetchWorkflowQueue('internal').catch(() => ({ jobs: [] })),
       ]);
-      const sugData = await sugRes.json().catch(() => null);
-      const trkData = await trkRes.json().catch(() => null);
-
-      if (sugRes.ok) setTeamSuggestions(sugData?.suggestions || []);
-      else if (sugRes.status !== 401) toast.error(sugData?.error || 'Failed to load global suggestions.');
-
-      if (trkRes.ok) setTeamTracking(trkData?.tracking || []);
-      else if (trkRes.status !== 401) toast.error(trkData?.error || 'Failed to load live tracking.');
+      const merged = [...(parked.jobs || []), ...(waiting.jobs || [])].filter(belongsOnSuggestions);
+      const seen = new Set();
+      const unique = merged.filter((job) => {
+        const id = String(job._id || job.id || '');
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setListIfChanged(setWfSuggestions, unique);
+      setListIfChanged(setWfInternal, (internal.jobs || []).filter(belongsOnInternal));
     } catch (e) {
       console.error('Team activity refresh failed:', e);
       toast.error('Network error while loading team activity.');
@@ -1838,7 +1860,7 @@ export default function AdminPage() {
                 <CardHeader className="bg-blue-50/50 border-b pb-4 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Send className="w-5 h-5 text-blue-600"/> Global Suggestions</CardTitle>
-                    <CardDescription>Every tender suggestion every officer has sent to a client — who suggested it, and to whom.</CardDescription>
+                    <CardDescription>Waiting for client approval only — parked LIVE tenders and AWAITING_CLIENT. Approved jobs leave this table at MD_CHECKLIST.</CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => fetchTeamActivity()} disabled={teamActivityLoading}>
                     <RefreshCw className={`w-4 h-4 ${teamActivityLoading ? 'animate-spin' : ''}`} />
@@ -1847,26 +1869,31 @@ export default function AdminPage() {
                 <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
                   {teamActivityLoading ? (
                     <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading team suggestions...</p></div>
-                  ) : teamSuggestions.length === 0 ? (
-                    <div className="text-center py-12 text-slate-400"><Send className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No tender suggestions sent yet.</p></div>
+                  ) : suggestionBoardJobs.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400"><Send className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No tenders waiting for client approval.</p></div>
                   ) : (
                     <table className="premium-table text-sm text-left">
                       <thead>
-                        <tr><th>Client</th><th>Suggestion</th><th>Status</th><th>Employee</th><th>Date</th></tr>
+                        <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>Date</th></tr>
                       </thead>
                       <tbody>
-                        {teamSuggestions.map((s) => (
-                          <tr key={s._id}>
+                        {suggestionBoardJobs.map((job) => (
+                          <tr key={job._id || job.id}>
                             <td className="align-top">
-                              <p className="font-semibold text-slate-800 text-xs">{s.client_display_name}</p>
-                              <p className="text-[9px] text-slate-400 font-mono">{s.target_id}</p>
+                              <p className="font-semibold text-slate-800 text-xs">{job.parked_client_name || job.client_name || job.parked_client_email || job.client_email || '—'}</p>
+                              <p className="text-[9px] text-slate-400 font-mono">{job.parked_client_email || job.client_email || ''}</p>
                             </td>
-                            <td className="align-top text-xs text-slate-600 max-w-xs">{s.message}</td>
                             <td className="align-top">
-                              <Badge className={`text-[10px] border ${s.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>{s.status || 'Sent'}</Badge>
+                              <p className="font-semibold text-xs">{job.bid_no || 'PENDING'}</p>
+                              <p className="text-[10px] text-slate-500 line-clamp-1">{job.title}</p>
                             </td>
-                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{s.employee_name}</td>
-                            <td className="align-top text-[10px] text-slate-500 whitespace-nowrap">{s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}</td>
+                            <td className="align-top">
+                              <Badge className="text-[10px] border bg-amber-100 text-amber-800 border-amber-200">
+                                {job.status === 'AWAITING_CLIENT' ? 'AWAITING_CLIENT' : 'LIVE (parked)'}
+                              </Badge>
+                            </td>
+                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{job.suggested_by?.name || job.assigned_emp_name || job.created_by_tl || '—'}</td>
+                            <td className="align-top text-[10px] text-slate-500 whitespace-nowrap">{job.updated_at || job.created_at ? new Date(job.updated_at || job.created_at).toLocaleDateString() : '—'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1878,85 +1905,57 @@ export default function AdminPage() {
               <Card className="shadow-sm border-t-4 border-t-purple-600">
                 <CardHeader className="bg-purple-50/50 border-b pb-4">
                   <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Briefcase className="w-5 h-5 text-purple-600"/> Master Live Tracking</CardTitle>
-                  <CardDescription>Every bid currently in progress (not yet Won or Lost) across the whole team — who's working it.</CardDescription>
+                    <CardDescription>Internal operations only — MD_CHECKLIST through AWAITING_RECEIPT. SUBMITTED moves to Submitted Tracking; WON stays there; Lost goes to Archive.</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
                   {teamActivityLoading ? (
                     <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading live tracking...</p></div>
-                  ) : teamTracking.length === 0 && wfJobs.length === 0 ? (
-                    <div className="text-center py-12 text-slate-400"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No bids are currently being tracked.</p></div>
+                  ) : masterLiveJobs.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No jobs in the internal pipeline.</p></div>
                   ) : (
-                    <>
-                    {teamTracking.length > 0 && (
                     <table className="premium-table text-sm text-left">
                       <thead>
-                        <tr><th>Client</th><th>Bid Detail</th><th>Status</th><th>Employee</th><th className="text-right">Value</th></tr>
+                        <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th><th></th></tr>
                       </thead>
                       <tbody>
-                        {teamTracking.map((b) => (
-                          <tr key={b._id}>
+                        {masterLiveJobs.map((job) => (
+                          <tr key={job._id || job.id}>
+                            <td className="align-top text-xs font-semibold">{job.client_name || job.client_email || '—'}</td>
                             <td className="align-top">
-                              <p className="font-semibold text-slate-800 text-xs">{b.client_display_name}</p>
-                              <p className="text-[9px] text-slate-400 font-mono">{b.client_email}</p>
+                              <p className="font-semibold text-xs">{job.bid_no || 'PENDING'}</p>
+                              <p className="text-[10px] text-slate-500 line-clamp-1">{job.title}</p>
+                            </td>
+                            <td className="align-top"><Badge variant="outline" className="text-[10px]">{job.status}</Badge></td>
+                            <td className="align-top text-xs">{job.suggested_by?.name || job.assigned_emp_name || job.created_by_tl || 'MD'}</td>
+                            <td className="align-top">
+                              {job.sow ? (
+                                <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => openWorkflowFile(job._id, 'sow')}>View SOW</Button>
+                              ) : '—'}
                             </td>
                             <td className="align-top">
-                              <p className="font-semibold text-slate-800 text-xs">{b.bid_no || 'PENDING'}</p>
-                              <p className="text-[10px] text-slate-500">{b.description}</p>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-7 text-[10px]"
+                                onClick={async () => {
+                                  const name = job.bid_no || job.title || 'this card';
+                                  if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
+                                  try {
+                                    await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
+                                    toast.success('Card deleted.');
+                                    removeJob(job._id);
+                                  } catch (err) {
+                                    toast.error(err.message || 'Delete failed.');
+                                  }
+                                }}
+                              >
+                                Delete
+                              </Button>
                             </td>
-                            <td className="align-top"><Badge variant="outline" className="text-[10px]">{b.status}</Badge></td>
-                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{b.employee_name}</td>
-                            <td className="align-top text-right text-xs font-bold text-slate-600 whitespace-nowrap">{b.contract_value ? `₹${Number(b.contract_value).toLocaleString()}` : '—'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                    )}
-                    {wfJobs.length > 0 && (
-                      <table className="premium-table text-sm text-left mt-4">
-                        <thead>
-                          <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                          {wfJobs.map((job) => (
-                            <tr key={job._id}>
-                              <td className="align-top text-xs font-semibold">{job.client_name || job.client_email || '—'}</td>
-                              <td className="align-top">
-                                <p className="font-semibold text-xs">{job.bid_no || 'PENDING'}</p>
-                                <p className="text-[10px] text-slate-500 line-clamp-1">{job.title}</p>
-                              </td>
-                              <td className="align-top"><Badge variant="outline" className="text-[10px]">{job.status}</Badge></td>
-                              <td className="align-top text-xs">{job.suggested_by?.name || job.assigned_emp_name || job.created_by_tl || 'MD'}</td>
-                              <td className="align-top">
-                                {job.sow ? (
-                                  <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => openWorkflowFile(job._id, 'sow')}>View SOW</Button>
-                                ) : '—'}
-                              </td>
-                              <td className="align-top">
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  className="h-7 text-[10px]"
-                                  onClick={async () => {
-                                    const name = job.bid_no || job.title || 'this card';
-                                    if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
-                                    try {
-                                      await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
-                                      toast.success('Card deleted.');
-                                      refresh();
-                                    } catch (err) {
-                                      toast.error(err.message || 'Delete failed.');
-                                    }
-                                  }}
-                                >
-                                  Delete
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                    </>
                   )}
                 </CardContent>
               </Card>
