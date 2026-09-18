@@ -421,34 +421,46 @@ export default function AdminPage() {
       setPdfBase64(base64Str);
       setPdfName(file.name);
       toast.success(`PDF loaded: ${file.name}`);
-      handleAdminPdfAnalysis(file, base64Str);
+      handleAdminPdfAnalysis(file);
     };
     reader.readAsDataURL(file);
   };
 
-  const handleAdminPdfAnalysis = async (file, base64Data) => {
+  const handleAdminPdfAnalysis = async (file) => {
+    if (!file) return;
     setAnalyzingTender(true);
     toast.info('AI is reading the document. Please wait...', { duration: 3000 });
     try {
+      const payload = new FormData();
+      payload.append('file', file);
+      payload.append('saveToDraft', 'false');
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfBase64: base64Data, saveToDraft: false, fileName: file?.name })
+        credentials: 'include',
+        body: payload,
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error('AI Analysis failed. You may need to enter manually.');
+        toast.error(body.error || `AI analysis failed (${res.status}). Enter details manually.`);
         return;
       }
-      const { data } = await res.json();
-      if (!data) return;
+      const data = body.data || {};
+      const isoDate = String(data.last_date || '').match(/\d{4}-\d{2}-\d{2}/);
+      const category = ['Product', 'Service', 'Works'].find((c) => c.toLowerCase() === String(data.category || '').toLowerCase());
+      const district = DISTRICTS.find((d) => d.toLowerCase() === String(data.district || '').toLowerCase());
       setForm(prev => ({
         ...prev,
-        bid_no: data.bid_no && data.bid_no !== 'N/A' ? data.bid_no : prev.bid_no,
-        title: data.title && data.title !== 'N/A' ? data.title : prev.title,
-        department: data.department && data.department !== 'N/A' ? data.department : prev.department,
-        last_date: data.last_date && data.last_date !== 'N/A' ? data.last_date : prev.last_date,
-        district: data.district && DISTRICTS.includes(data.district) ? data.district : prev.district,
-        supply_details: prev.supply_details || `EMD: ${data.emd_amount}\nTurnover Req: ${data.turnover_req}\nMandatory Docs: ${(data.mandatory_docs || []).join(', ')}`
+        bid_no: data.bid_no || prev.bid_no,
+        title: data.title || prev.title,
+        department: data.department || prev.department,
+        last_date: isoDate ? isoDate[0] : (data.last_date || prev.last_date),
+        district: district || prev.district,
+        category: category || prev.category,
+        supply_details: prev.supply_details || [
+          data.emd_amount ? `EMD: ${data.emd_amount}` : '',
+          data.turnover_req ? `Turnover Req: ${data.turnover_req}` : '',
+          (data.mandatory_docs || []).length ? `Mandatory Docs: ${data.mandatory_docs.join(', ')}` : '',
+        ].filter(Boolean).join('\n')
       }));
       toast.success('AI Successfully auto-filled the tender details!');
     } catch (err) {
