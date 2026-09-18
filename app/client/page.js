@@ -670,16 +670,30 @@ export default function ClientDashboard() {
   const handleCustomTenderSubmit = async (e) => { 
     e.preventDefault(); 
     if(!customTenderForm.link_or_id || !customTenderForm.description) return toast.error("Please fill all details");
+    if (customTenderForm.file && customTenderForm.file.size > VAULT_MAX_UPLOAD_BYTES) {
+      return toast.error(
+        `${customTenderForm.file.name} is ${(customTenderForm.file.size / 1024 / 1024).toFixed(1)}MB. The limit is ${VAULT_MAX_UPLOAD_BYTES / 1024 / 1024}MB — please compress or split the file.`
+      );
+    }
     try {
+      const form = new FormData();
+      form.append('client_email', email);
+      form.append('client_id', clientId || '');
+      form.append('link_or_id', customTenderForm.link_or_id);
+      form.append('description', customTenderForm.description);
+      if (customTenderForm.file) form.append('file', customTenderForm.file);
       const res = await fetch('/api/client-requests', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_email: email, client_id: clientId, link_or_id: customTenderForm.link_or_id, description: customTenderForm.description })
+        method: 'POST',
+        credentials: 'include',
+        headers: clientHeaders(),
+        body: form,
       });
+      const data = await res.json().catch(() => ({}));
       if(res.ok) {
         toast.success("Custom tender request submitted successfully to Operations Team!"); 
         setCustomTenderForm({ link_or_id: '', description: '', file: null }); 
         fetchClientData(email); 
-      } else { toast.error("Failed to submit request."); }
+      } else { toast.error(data.error || "Failed to submit request."); }
     } catch(err) { toast.error("Network Error."); }
   };
   
@@ -1843,7 +1857,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           <div className="flex flex-col items-center pointer-events-none">
                              <FileUp className="w-8 h-8 text-blue-500 mb-2" />
                              <span className="text-sm font-semibold text-[#0A2647]">{customTenderForm.file ? customTenderForm.file.name : "Click here to upload PDF/ZIP"}</span>
-                             <span className="text-[10px] text-slate-500 mt-1">Max file size 10MB</span>
+                             <span className="text-[10px] text-slate-500 mt-1">Max file size {VAULT_MAX_UPLOAD_BYTES / 1024 / 1024}MB</span>
                           </div>
                        </div>
                     </div>
@@ -1872,17 +1886,21 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                                  </div>
                               )}
 
-                              {/* 🚀 FIX: Employee's attached document (base64 or R2/Drive URL) synced from Dispatches */}
-                              {(req.file_base64 || req.file_url) && (
-                                 <Button size="sm" variant="outline" onClick={() => {
-                                     if (req.file_url) {
-                                        window.open(req.file_url, '_blank');
-                                     } else if (req.file_base64) {
-                                        const byteCharacters = atob(req.file_base64);
-                                        const byteNumbers = new Array(byteCharacters.length);
-                                        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                        const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
-                                        window.open(URL.createObjectURL(blob), '_blank');
+                              {(req.has_file || req.file_base64 || req.file_url) && (
+                                 <Button size="sm" variant="outline" onClick={async () => {
+                                     try {
+                                       const res = await fetch(`/api/client-requests/${req._id}/file`, {
+                                         credentials: 'include',
+                                         headers: clientHeaders(),
+                                       });
+                                       if (!res.ok) {
+                                         const data = await res.json().catch(() => ({}));
+                                         throw new Error(data.error || 'Could not open document.');
+                                       }
+                                       const blob = await res.blob();
+                                       window.open(URL.createObjectURL(blob), '_blank');
+                                     } catch (err) {
+                                       toast.error(err.message);
                                      }
                                  }} className="mt-2 h-7 text-[10px] text-blue-600 border-blue-200 bg-white w-fit">
                                     <FileText className="w-3 h-3 mr-1"/> View Attached Document

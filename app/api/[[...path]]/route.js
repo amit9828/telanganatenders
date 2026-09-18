@@ -24,6 +24,15 @@ import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isM
 import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
 import { brandFieldsFromForm, brandFieldsFromJson, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
+import { allocateEmpId, ensureUniqueEmpIds } from '@/lib/emp-id';
+import {
+  publicClientRequest,
+  persistClientRequestFile,
+  fetchClientRequestFileBuffer,
+  asRequestObjectId,
+  PENDING_REQUEST_STATUS,
+} from '@/lib/client-requests';
+import { parkClientBidSupport } from '@/lib/workflow-api';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const runtime = 'nodejs';
@@ -686,6 +695,25 @@ async function handleGET(request, { params }, attempt = 1) {
       console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${users.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
       return json({ users });
     }
+    if (pathArray.length === 3 && pathArray[0] === 'client-requests' && pathArray[2] === 'file') {
+      const oid = asRequestObjectId(pathArray[1]);
+      if (!oid) return json({ error: 'Invalid Request ID' }, 400);
+      const actor = await resolveActorRole(request);
+      const canStaff = actor.role === 'MD' || isGmActor(actor);
+      const clientEmail = canStaff ? null : await resolveClientEmail(request);
+      const doc = await db.collection('client_requests').findOne({ _id: oid });
+      if (!doc) return documentError(request, { status: 404, code: 'REQUEST_NOT_FOUND', message: 'This request no longer exists.' });
+      if (!canStaff) {
+        const owner = String(doc.client_email || '').toLowerCase();
+        if (!clientEmail || clientEmail !== owner) return json({ error: 'Not allowed.' }, 403);
+      }
+      const buffer = await fetchClientRequestFileBuffer(doc);
+      if (!buffer?.length) {
+        return documentError(request, { status: 404, code: 'FILE_SOURCE_MISSING', message: 'No document is attached to this request.' });
+      }
+      const fileName = doc.file_name || 'attachment.pdf';
+      return streamBase64Document(request, buffer.toString('base64'), fileName);
+    }
     if (path === 'client-requests' || path === 'api/client-requests') {
       const email = String(searchParams.get('email') || '').trim().toLowerCase();
       const actor = await resolveActorRole(request);
@@ -699,9 +727,15 @@ async function handleGET(request, { params }, attempt = 1) {
         query.client_email = email;
       } else if (!canStaffList) {
         return json({ error: 'Only GM can view bid support requests.' }, 403);
+      } else {
+        query.status = PENDING_REQUEST_STATUS;
       }
-      const requests = await db.collection('client_requests').find(query).sort({ created_at: -1 }).toArray();
-      return json({ requests });
+      const requests = await db.collection('client_requests')
+        .find(query)
+        .project({ file_base64: 0, document_base64: 0 })
+        .sort({ created_at: -1 })
+        .toArray();
+      return json({ requests: requests.map(publicClientRequest) });
     }
 
     if (pathArray.length === 3 && pathArray[0] === 'dispatches' && pathArray[2] === 'file') {
@@ -979,7 +1013,11 @@ async function handleGET(request, { params }, attempt = 1) {
           .find({ email: email.toLowerCase(), status: 'SUCCESS' })
           .sort({ paid_at: -1 })
           .toArray(),
-        db.collection('client_requests').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray(),
+        db.collection('client_requests')
+          .find({ client_email: email.toLowerCase() })
+          .project({ file_base64: 0, document_base64: 0 })
+          .sort({ created_at: -1 })
+          .toArray(),
         db.collection('bids').find({ client_email: email.toLowerCase() }).sort({ created_at: -1 }).toArray(),
         db.collection('dispatches').find({
           target_type: 'client_alert',
@@ -1038,7 +1076,7 @@ async function handleGET(request, { params }, attempt = 1) {
         action_alerts: action_alerts || [],
         emd_ledger: user.emd_ledger || [],
         tender_workspaces: user.tender_workspaces || [],
-        custom_requests: custom_requests || [],
+        custom_requests: (custom_requests || []).map(publicClientRequest),
         active_bids: active_bids || [],
         officer_queries: user.officer_queries || [],
         // 👆 (పైన ఉండే కోడ్: "api/me" కి సంబంధించిన చివర భాగం ఇది)
@@ -1234,6 +1272,33 @@ export async function PUT(request, { params }) {
            { $set: { status, reply, updated_at: new Date() } }
         );
         return json({ success: true, message: 'Request Updated' });
+     }
+
+     if (path === 'client-requests/suggest' || path === 'api/client-requests/suggest') {
+        const actor = await resolveActorRole(request);
+        if (!isGmActor(actor)) return json({ error: 'Only GM can suggest bid support requests.' }, 403);
+        const { req_id, reply } = body;
+        if (!ObjectId.isValid(req_id)) return json({ error: 'Invalid Request ID' }, 400);
+        const reqData = await db.collection('client_requests').findOne({ _id: new ObjectId(req_id) });
+        if (!reqData) return json({ error: 'Request not found.' }, 404);
+        const parked = await parkClientBidSupport(db, actor, reqData);
+        if (parked.error) return json({ error: parked.error }, parked.status || 400);
+        await db.collection('client_requests').updateOne(
+           { _id: reqData._id },
+           {
+             $set: {
+               status: 'Suggested',
+               reply: reply || 'Parked on Suggestion Bar',
+               suggested_job_id: String(parked.job?._id || ''),
+               updated_at: new Date(),
+             },
+           }
+        );
+        return json({
+          success: true,
+          message: 'Parked on Suggestion Bar',
+          job: parked.job ? { _id: String(parked.job._id) } : null,
+        });
      }
 
      if (path === 'client-requests/assign' || path === 'api/client-requests/assign') {
@@ -1686,6 +1751,61 @@ export async function POST(request, { params }) {
       return await handleCashfreeWebhook(db, request, rawBody);
     }
 
+    if (path === 'client-requests' || path === 'api/client-requests') {
+      const contentType = request.headers.get('content-type') || '';
+      let client_email = '';
+      let client_id = '';
+      let link_or_id = '';
+      let description = '';
+      let file = null;
+
+      if (contentType.includes('multipart/form-data')) {
+        const form = await request.formData();
+        client_email = String(form.get('client_email') || '').trim();
+        client_id = String(form.get('client_id') || '').trim();
+        link_or_id = String(form.get('link_or_id') || '').trim();
+        description = String(form.get('description') || '').trim();
+        file = form.get('file');
+      } else {
+        const payload = await request.json().catch(() => ({}));
+        client_email = String(payload.client_email || '').trim();
+        client_id = String(payload.client_id || '').trim();
+        link_or_id = String(payload.link_or_id || '').trim();
+        description = String(payload.description || '').trim();
+      }
+
+      if (!client_email || !link_or_id || !description) {
+        return json({ error: 'Please fill tender reference and description.' }, 400);
+      }
+
+      const result = await db.collection('client_requests').insertOne({
+        client_email: client_email.toLowerCase(),
+        client_id: client_id || null,
+        link_or_id,
+        description,
+        status: PENDING_REQUEST_STATUS,
+        reply: '',
+        has_file: false,
+        created_at: new Date(),
+      });
+
+      if (file && typeof file.arrayBuffer === 'function' && file.size > 0) {
+        const stored = await persistClientRequestFile(file, result.insertedId);
+        if (stored.error) {
+          await db.collection('client_requests').deleteOne({ _id: result.insertedId });
+          return json({ error: stored.error }, 400);
+        }
+        if (Object.keys(stored.fields).length) {
+          await db.collection('client_requests').updateOne(
+            { _id: result.insertedId },
+            { $set: stored.fields }
+          );
+        }
+      }
+
+      return json({ success: true, id: result.insertedId, has_file: Boolean(file && file.size > 0) });
+    }
+
     if (path === 'settings' || path === 'api/settings') {
       const contentType = request.headers.get('content-type') || '';
       const existing = await db.collection('settings').findOne({ id: 'brand' }) || {};
@@ -1929,15 +2049,6 @@ export async function POST(request, { params }) {
     // NOTE: DELETE /api/ai/drafts is handled by the dedicated app/api/ai/drafts/route.js
     // (see matching note above the removed GET duplicate).
     
-    if (path === 'client-requests' || path === 'api/client-requests') {
-       const { client_email, client_id, link_or_id, description } = body;
-       const result = await db.collection('client_requests').insertOne({
-          client_email: client_email.toLowerCase(), client_id, link_or_id, description,
-          status: 'Pending Officer Review', reply: '', created_at: new Date()
-       });
-       return json({ success: true, id: result.insertedId });
-    }
-
     if (path === 'dispatches' || path === 'api/dispatches') {
        const { target_type, target_id, subject, message } = body;
        // 🚀 RBAC: 'client_alert' is an officer suggesting a tender to a client
@@ -2116,8 +2227,8 @@ export async function POST(request, { params }) {
           }
         }
 
-        const count = await db.collection('employees').countDocuments();
-        const newEmpId = `EMP-${1000 + count + 1}`;
+        await ensureUniqueEmpIds(db);
+        const newEmpId = await allocateEmpId(db);
         if (designation === DESIGNATIONS.DOC_TEAM_TL) teamId = newEmpId;
 
         const newEmployee = { 

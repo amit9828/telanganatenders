@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Clock, FileText, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { staffHeaders, staffPdfHref } from '@/components/workflow/api';
+import { staffHeaders, staffPdfHref, openWorkflowFile } from '@/components/workflow/api';
 
 function fmtDate(value) {
   if (!value) return '—';
@@ -33,8 +33,17 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh }) {
     return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
   }, [jobs]);
 
-  const openPdf = (job) => {
-    const tenderId = job.tender_id;
+  const openPdf = async (job) => {
+    const tenderId = String(job.tender_id || '');
+    const isCustom = tenderId.startsWith('client-req:') || !/^[a-f0-9]{24}$/i.test(tenderId);
+    if (isCustom) {
+      try {
+        await openWorkflowFile(job._id, 'tender');
+      } catch (err) {
+        toast.error(err.message || 'No tender PDF is attached to this card.');
+      }
+      return;
+    }
     if (!tenderId) return toast.error('No tender PDF is attached to this card.');
     window.location.assign(staffPdfHref(tenderId, { email: pdfEmail, role: 'employee' }));
   };
