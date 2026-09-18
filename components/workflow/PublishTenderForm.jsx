@@ -65,7 +65,7 @@ export default function PublishTenderForm({
 
   const editingId = editTender?._id || editTender?.id || null;
   const waitingIds = useMemo(
-    () => awaitingJobs.map((j) => String(j._id)).filter(Boolean),
+    () => awaitingJobs.map((j) => String(j._id || j.id || '')).filter(Boolean),
     [awaitingJobs],
   );
 
@@ -174,9 +174,6 @@ export default function PublishTenderForm({
       return toast.error('Please fill all required fields');
     }
     const jobId = editingId ? '' : resolveJobId();
-    if (!editingId && !jobId) {
-      return toast.error('Create a publish job first.');
-    }
     setPublishing(true);
     try {
       const url = editingId ? `/api/tenders/${editingId}` : '/api/tenders';
@@ -302,7 +299,7 @@ export default function PublishTenderForm({
               )}
             </div>
           </div>
-          <Button type="submit" disabled={publishing || (!editingId && (!resolveJobId() || awaitingJobs.length === 0))} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
+          <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
             {publishing ? (editingId ? 'Updating...' : 'Publishing...') : (editingId ? 'Save Changes' : 'Publish')}
           </Button>
         </form>
