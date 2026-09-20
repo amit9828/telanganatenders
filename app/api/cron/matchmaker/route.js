@@ -4,6 +4,7 @@ import { isTelanganaOrAndhra } from '@/lib/regions';
 import { buildMatches, clientCapacity, explainEmptyRun, formatMatchDigest } from '@/lib/matchmaking';
 import { sendWhatsAppAlert } from '@/lib/whatsapp';
 import { DESIGNATIONS, resolveActorRole } from '@/lib/staff-auth';
+import { liveTenderQuery } from '@/lib/tender-expiry';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -27,12 +28,6 @@ async function isAuthorised(request) {
   if (adminToken && bearer === adminToken) return true;
   const actor = await resolveActorRole(request);
   return actor.role === 'MD' || actor.designation === DESIGNATIONS.GM;
-}
-
-function todayISO() {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return now.toISOString().slice(0, 10);
 }
 
 /** Sums each client's won-contract value in one aggregation instead of a query per client. */
@@ -59,19 +54,19 @@ async function loadCapacities(db) {
 
 async function runMatchmaker({ dryRun = false, fullScan = false } = {}) {
   const db = await getDb();
-  const today = todayISO();
-
   const since = new Date();
   since.setDate(since.getDate() - LOOKBACK_DAYS);
 
-  const tenderQuery = {
-    // Open only — a closed tender cannot be bid on.
-    last_date: { $gte: today },
-  };
+  const tenderQuery = liveTenderQuery();
   if (!fullScan) {
-    tenderQuery.$or = [
-      { created_at: { $gte: since } },
-      { created_at: { $exists: false } },
+    tenderQuery.$and = [
+      ...(tenderQuery.$and || []),
+      {
+        $or: [
+          { created_at: { $gte: since } },
+          { created_at: { $exists: false } },
+        ],
+      },
     ];
   }
 

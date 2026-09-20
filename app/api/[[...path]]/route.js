@@ -33,6 +33,7 @@ import {
   PENDING_REQUEST_STATUS,
 } from '@/lib/client-requests';
 import { parkClientBidSupport } from '@/lib/workflow-api';
+import { liveTenderQuery, archiveTenderQuery } from '@/lib/tender-expiry';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
 export const runtime = 'nodejs';
@@ -339,17 +340,12 @@ async function handleGET(request, { params }, attempt = 1) {
         query.$text = { $search: q };
       }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayIso = today.toISOString().slice(0, 10);
       const skipLiveFilter = role === 'admin' || scope === 'all';
       const isArchive = scope === 'archive';
       if (!skipLiveFilter) {
         query.$and = [
           ...(query.$and || []),
-          isArchive
-            ? { $or: [{ last_date: { $lt: today } }, { last_date: { $lt: todayIso } }] }
-            : { $or: [{ last_date: { $gte: today } }, { last_date: { $gte: todayIso } }] },
+          isArchive ? archiveTenderQuery() : liveTenderQuery(),
         ];
       }
       if (month && year && scope !== 'all') {
@@ -523,7 +519,7 @@ async function handleGET(request, { params }, attempt = 1) {
       // 🚀 PERF: `pdf_base64` can be several MB of BSON. Resolve the lightweight
       // metadata first and only pull the blob if we actually end up needing it.
       const metaProjection = {
-        projection: { pdf_url: 1, pdf_filename: 1, title: 1, file_url: 1, pdf_r2_key: 1 },
+        projection: { pdf_url: 1, pdf_filename: 1, title: 1, file_url: 1, pdf_r2_key: 1, payload_purged_at: 1 },
       };
       const idCandidates = [];
       if (ObjectId.isValid(tenderId)) {
@@ -645,8 +641,22 @@ async function handleGET(request, { params }, attempt = 1) {
         pdf_url_public: fileUrl ? isPubliclyServableUrl(fileUrl) : null,
         has_pdf_base64: typeof blobDoc?.pdf_base64 === 'string',
         has_pdf_r2_key: Boolean(tender.pdf_r2_key),
+        payload_purged: Boolean(tender.payload_purged_at),
         r2_configured: isR2Configured(),
       });
+      if (tender.payload_purged_at) {
+        return documentError(request, {
+          status: 404,
+          code: 'PDF_PURGED',
+          message: 'This tender document is no longer stored. Historical metadata is still available.',
+          details: {
+            payload_purged_at: tender.payload_purged_at,
+            has_pdf_url: Boolean(fileUrl),
+            has_pdf_base64: typeof blobDoc?.pdf_base64 === 'string',
+            has_pdf_r2_key: Boolean(tender.pdf_r2_key),
+          },
+        });
+      }
       return documentError(request, {
         status: 404,
         code: 'PDF_SOURCE_MISSING',

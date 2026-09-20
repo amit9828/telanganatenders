@@ -14,6 +14,7 @@ import {
   summariseBaseline,
   titleKeywords,
 } from '@/lib/historical-l1';
+import { liveTenderQuery } from '@/lib/tender-expiry';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,12 +22,6 @@ export const dynamic = 'force-dynamic';
 
 const MAX_TENDERS = 300;
 const SUGGESTED_MATCHES_COLLECTION = 'suggested_bid_matches';
-
-function todayISO() {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return now.toISOString().slice(0, 10);
-}
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -199,12 +194,11 @@ export async function POST(request) {
 
   try {
     const db = await getDb();
-    const today = todayISO();
 
     const [candidateTenders, clients, capacities] = await Promise.all([
       db.collection('tenders')
         .find(
-          { last_date: { $gte: today } },
+          liveTenderQuery(),
           {
             projection: {
               bid_no: 1, title: 1, department: 1, last_date: 1, district: 1,

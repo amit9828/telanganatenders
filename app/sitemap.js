@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db';
+import { liveTenderQuery } from '@/lib/tender-expiry';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -39,7 +40,7 @@ export default async function sitemap() {
     
     // Fetching latest 1000 tenders to keep sitemap fast and efficient
     const tenders = await db.collection('tenders')
-      .find({})
+      .find(liveTenderQuery())
       .project({ _id: 1, created_at: 1 })
       .sort({ _id: -1 })
       .limit(1000)
