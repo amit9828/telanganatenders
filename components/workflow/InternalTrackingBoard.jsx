@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,62 @@ const STATUS_LABEL = {
   MD_SUBMIT: 'Ready to Submit',
   AWAITING_RECEIPT: 'Awaiting Receipt',
 };
+
+const MD_TEAM_STATUSES = ['TL_ASSIGN', 'MAKER_PREP', 'TL_QC', 'GM_QC'];
+
+function jobId(job) {
+  return String(job?._id || job?.id || '');
+}
+
+function partitionInternalJobs(jobs = [], desk, actorEmpId = '') {
+  const list = Array.isArray(jobs) ? jobs : [];
+  const unused = (used) => {
+    const seen = new Set(used.map(jobId).filter(Boolean));
+    return list.filter((job) => {
+      const id = jobId(job);
+      return !id || !seen.has(id);
+    });
+  };
+
+  if (desk === 'md') {
+    const checklist = list.filter((job) => job.status === 'MD_CHECKLIST');
+    const ready = list.filter((job) => job.status === 'MD_SUBMIT' || job.status === 'AWAITING_RECEIPT');
+    const team = list.filter((job) => MD_TEAM_STATUSES.includes(job.status));
+    return [
+      { title: 'Waiting for MD Checklist', items: checklist },
+      { title: 'Ready to Submit', items: ready },
+      { title: 'Pending at Team Members', items: [...team, ...unused([...checklist, ...ready, ...team])] },
+    ];
+  }
+
+  if (desk === 'gm') {
+    const qc = list.filter((job) => job.status === 'GM_QC');
+    return [
+      { title: 'Waiting for GM QC', items: qc },
+      { title: 'Pending in Team', items: unused(qc) },
+    ];
+  }
+
+  if (desk === 'tl') {
+    const mine = list.filter((job) => job.status === 'TL_ASSIGN' || job.status === 'TL_QC');
+    return [
+      { title: 'Waiting for TL QC / Work Assigning', items: mine },
+      { title: 'Pending at Team Members', items: unused(mine) },
+    ];
+  }
+
+  if (desk === 'employee') {
+    const mine = list.filter((job) => (
+      job.status === 'MAKER_PREP' && String(job.assigned_emp_id || '') === String(actorEmpId || '')
+    ));
+    return [
+      { title: 'My Pending Tasks / Incomplete Document Prep', items: mine },
+      { title: 'Pending at Other Team Members', items: unused(mine) },
+    ];
+  }
+
+  return [{ title: 'All jobs', items: list }];
+}
 
 function InternalTrackingBoard({
   desk,
@@ -183,170 +239,183 @@ function InternalTrackingBoard({
     setBounceSlots([]);
   };
 
+  const sections = useMemo(() => partitionInternalJobs(jobs, desk, actorEmpId), [jobs, desk, actorEmpId]);
+
+  const renderJobCard = (job) => {
+    const cardBusy = busyId === job._id;
+    const actions = [
+      ...workflowDocActions(job, openFile),
+    ];
+    if (desk === 'md' && job.status === 'MD_CHECKLIST') {
+      actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', disabled: cardBusy, onClick: () => setChecklistJob(job) });
+    }
+    if ((desk === 'tl' || desk === 'md') && job.status === 'TL_ASSIGN') {
+      actions.push({ label: 'Assign employee', variant: 'default', disabled: cardBusy, onClick: () => { setMakerId(''); setMakerJob(job); } });
+    }
+    if (desk === 'employee' && job.status === 'MAKER_PREP') {
+      actions.push({
+        label: cardBusy ? 'Sending…' : 'Send to TL',
+        variant: 'default',
+        disabled: cardBusy || (job.prep_files || []).length < 2,
+        onClick: () => {
+          if ((job.prep_files || []).length < 2) return toast.error('Upload at least 2 files before sending to TL.');
+          return run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'send_tl' }),
+          }), { optimistic: { status: 'TL_QC' } });
+        },
+      });
+    }
+    if (desk === 'tl' && job.status === 'TL_QC') {
+      actions.push({
+        label: cardBusy ? 'Sending…' : 'Pass to GM',
+        variant: 'default',
+        disabled: cardBusy,
+        onClick: () => run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'send_gm' }),
+        }), { optimistic: { status: 'GM_QC' } }),
+      });
+      actions.push({
+        label: 'Bounce',
+        disabled: cardBusy,
+        onClick: () => openTlBounce(job),
+      });
+    }
+    if (desk === 'gm' && job.status === 'GM_QC') {
+      actions.push({
+        label: cardBusy ? 'Sending…' : 'Send to MD',
+        variant: 'default',
+        disabled: cardBusy,
+        onClick: () => run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'send_md' }),
+        }), { optimistic: { status: 'MD_SUBMIT' } }),
+      });
+      actions.push({
+        label: 'Bounce',
+        disabled: cardBusy,
+        onClick: () => openGmBounce(job),
+      });
+    }
+    if (desk === 'md' && job.status === 'MD_SUBMIT') {
+      actions.push({
+        label: cardBusy ? 'Submitting…' : 'Submit Tender',
+        variant: 'default',
+        disabled: cardBusy,
+        onClick: () => run(job, async () => {
+          const data = await workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'submit_tender' }),
+          });
+          setReceiptJob(data?.job || { ...job, status: 'AWAITING_RECEIPT' });
+          return data;
+        }, { optimistic: { status: 'AWAITING_RECEIPT' } }),
+      });
+    }
+    if (desk === 'md' && job.status === 'AWAITING_RECEIPT') {
+      actions.push({
+        label: cardBusy ? 'Uploading pack…' : 'Receipt + Drive',
+        icon: 'upload',
+        variant: 'default',
+        disabled: cardBusy,
+        onClick: () => setReceiptJob(job),
+      });
+    }
+    if (desk === 'md') {
+      const del = mdDeleteCardAction(job, deleteCard);
+      if (del) actions.push({ ...del, disabled: cardBusy || del.disabled });
+    }
+    return (
+      <div key={job._id} className={cardBusy ? 'opacity-70 pointer-events-none' : ''}>
+        <CompactTenderCard
+          job={{ ...job, display_status: STATUS_LABEL[job.status] || job.status }}
+          actions={actions}
+        />
+        {job.bounce_note && (job.status === 'MAKER_PREP' || job.status === 'TL_QC') && (
+          <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
+            Bounce note: {job.bounce_note}
+          </p>
+        )}
+        {desk === 'employee' && job.status === 'MAKER_PREP' && (
+          <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+            <p className="text-[11px] font-black text-[#0A2647] uppercase tracking-wide">Additional Documentations</p>
+            <p className="text-[10px] text-slate-500">
+              Upload at least 2 files before Send to TL. {(job.prep_files || []).length} stored.
+            </p>
+            {(job.prep_files || []).length > 0 && (
+              <ul className="space-y-1">
+                {(job.prep_files || []).map((f, i) => {
+                  const bounced = (job.bounced_slots || []).includes(f.slot);
+                  return (
+                  <li key={f.slot || i} className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className={`truncate min-w-0 ${bounced ? 'text-red-700 font-semibold' : ''}`}>
+                      {f.name || f.slot || `File ${i + 1}`}{bounced ? ' (bounced)' : ''}
+                    </span>
+                    <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => openFile(job, f.slot)}>
+                      View
+                    </Button>
+                  </li>
+                  );
+                })}
+              </ul>
+            )}
+            <label className={`flex items-center justify-center h-9 rounded-md border border-dashed border-emerald-300 bg-emerald-50 text-[11px] font-bold text-emerald-800 cursor-pointer ${cardBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+              Add files
+              <input
+                type="file"
+                multiple
+                accept="application/pdf"
+                className="sr-only"
+                disabled={cardBusy}
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files || []);
+                  e.target.value = '';
+                  if (!files.length) return;
+                  setBusyId(job._id);
+                  try {
+                    let latest = job;
+                    for (const file of files) {
+                      const form = new FormData();
+                      form.append('file', file);
+                      form.append('slot', `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+                      form.append('kind', 'final');
+                      const data = await workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
+                      if (data?.job) latest = data.job;
+                    }
+                    onPatchJob?.(latest);
+                    toast.success(`${files.length} file${files.length === 1 ? '' : 's'} stored.`);
+                  } catch (err) {
+                    toast.error(err.message);
+                    onRefresh?.();
+                  } finally {
+                    setBusyId('');
+                  }
+                }}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <h3 className="font-bold text-[#0A2647]">Internal tracking</h3>
       {jobs.length === 0 && <p className="text-sm text-slate-400">No jobs in the internal pipeline.</p>}
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {jobs.map((job) => {
-          const cardBusy = busyId === job._id;
-          const actions = [
-            ...workflowDocActions(job, openFile),
-          ];
-          if (desk === 'md' && job.status === 'MD_CHECKLIST') {
-            actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', disabled: cardBusy, onClick: () => setChecklistJob(job) });
-          }
-          if ((desk === 'tl' || desk === 'md') && job.status === 'TL_ASSIGN') {
-            actions.push({ label: 'Assign employee', variant: 'default', disabled: cardBusy, onClick: () => { setMakerId(''); setMakerJob(job); } });
-          }
-          if (desk === 'employee' && job.status === 'MAKER_PREP') {
-            actions.push({
-              label: cardBusy ? 'Sending…' : 'Send to TL',
-              variant: 'default',
-              disabled: cardBusy || (job.prep_files || []).length < 2,
-              onClick: () => {
-                if ((job.prep_files || []).length < 2) return toast.error('Upload at least 2 files before sending to TL.');
-                return run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'send_tl' }),
-                }), { optimistic: { status: 'TL_QC' } });
-              },
-            });
-          }
-          if (desk === 'tl' && job.status === 'TL_QC') {
-            actions.push({
-              label: cardBusy ? 'Sending…' : 'Pass to GM',
-              variant: 'default',
-              disabled: cardBusy,
-              onClick: () => run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'send_gm' }),
-              }), { optimistic: { status: 'GM_QC' } }),
-            });
-            actions.push({
-              label: 'Bounce',
-              disabled: cardBusy,
-              onClick: () => openTlBounce(job),
-            });
-          }
-          if (desk === 'gm' && job.status === 'GM_QC') {
-            actions.push({
-              label: cardBusy ? 'Sending…' : 'Send to MD',
-              variant: 'default',
-              disabled: cardBusy,
-              onClick: () => run(job, () => workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'send_md' }),
-              }), { optimistic: { status: 'MD_SUBMIT' } }),
-            });
-            actions.push({
-              label: 'Bounce',
-              disabled: cardBusy,
-              onClick: () => openGmBounce(job),
-            });
-          }
-          if (desk === 'md' && job.status === 'MD_SUBMIT') {
-            actions.push({
-              label: cardBusy ? 'Submitting…' : 'Submit Tender',
-              variant: 'default',
-              disabled: cardBusy,
-              onClick: () => run(job, async () => {
-                const data = await workflowFetch(`/api/workflow/jobs/${job._id}/advance`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'submit_tender' }),
-                });
-                setReceiptJob(data?.job || { ...job, status: 'AWAITING_RECEIPT' });
-                return data;
-              }, { optimistic: { status: 'AWAITING_RECEIPT' } }),
-            });
-          }
-          if (desk === 'md' && job.status === 'AWAITING_RECEIPT') {
-            actions.push({
-              label: cardBusy ? 'Uploading pack…' : 'Receipt + Drive',
-              icon: 'upload',
-              variant: 'default',
-              disabled: cardBusy,
-              onClick: () => setReceiptJob(job),
-            });
-          }
-          if (desk === 'md') {
-            const del = mdDeleteCardAction(job, deleteCard);
-            if (del) actions.push({ ...del, disabled: cardBusy || del.disabled });
-          }
-          return (
-            <div key={job._id} className={cardBusy ? 'opacity-70 pointer-events-none' : ''}>
-              <CompactTenderCard
-                job={{ ...job, display_status: STATUS_LABEL[job.status] || job.status }}
-                actions={actions}
-              />
-              {job.bounce_note && (job.status === 'MAKER_PREP' || job.status === 'TL_QC') && (
-                <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
-                  Bounce note: {job.bounce_note}
-                </p>
-              )}
-              {desk === 'employee' && job.status === 'MAKER_PREP' && (
-                <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 space-y-2">
-                  <p className="text-[11px] font-black text-[#0A2647] uppercase tracking-wide">Additional Documentations</p>
-                  <p className="text-[10px] text-slate-500">
-                    Upload at least 2 files before Send to TL. {(job.prep_files || []).length} stored.
-                  </p>
-                  {(job.prep_files || []).length > 0 && (
-                    <ul className="space-y-1">
-                      {(job.prep_files || []).map((f, i) => {
-                        const bounced = (job.bounced_slots || []).includes(f.slot);
-                        return (
-                        <li key={f.slot || i} className="flex items-center justify-between gap-2 text-[11px]">
-                          <span className={`truncate min-w-0 ${bounced ? 'text-red-700 font-semibold' : ''}`}>
-                            {f.name || f.slot || `File ${i + 1}`}{bounced ? ' (bounced)' : ''}
-                          </span>
-                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => openFile(job, f.slot)}>
-                            View
-                          </Button>
-                        </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                  <label className={`flex items-center justify-center h-9 rounded-md border border-dashed border-emerald-300 bg-emerald-50 text-[11px] font-bold text-emerald-800 cursor-pointer ${cardBusy ? 'opacity-50 pointer-events-none' : ''}`}>
-                    Add files
-                    <input
-                      type="file"
-                      multiple
-                      accept="application/pdf"
-                      className="sr-only"
-                      disabled={cardBusy}
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files || []);
-                        e.target.value = '';
-                        if (!files.length) return;
-                        setBusyId(job._id);
-                        try {
-                          let latest = job;
-                          for (const file of files) {
-                            const form = new FormData();
-                            form.append('file', file);
-                            form.append('slot', `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-                            form.append('kind', 'final');
-                            const data = await workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
-                            if (data?.job) latest = data.job;
-                          }
-                          onPatchJob?.(latest);
-                          toast.success(`${files.length} file${files.length === 1 ? '' : 's'} stored.`);
-                        } catch (err) {
-                          toast.error(err.message);
-                          onRefresh?.();
-                        } finally {
-                          setBusyId('');
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              )}
+      {sections.map((section) => (
+        <div key={section.title} className="space-y-2">
+          <h4 className="text-sm font-semibold text-[#0A2647]">{section.title}</h4>
+          {section.items.length === 0 ? (
+            <p className="text-sm text-slate-400">None right now</p>
+          ) : (
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {section.items.map(renderJobCard)}
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      ))}
 
       <Dialog open={!!checklistJob} onOpenChange={() => setChecklistJob(null)}>
         <DialogContent>
