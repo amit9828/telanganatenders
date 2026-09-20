@@ -25,7 +25,7 @@ import {
   SUBMITTED_BOARD_STATUSES,
 } from '@/lib/job-board-state';
 import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
-import { consumeStaffBypass } from '@/lib/tab-handoff';
+import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, ClipboardList, AlertCircle, Contact, Loader2,
-  Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot
+  Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot, LogIn
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -1177,6 +1177,9 @@ return (
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
                                 ) : null}
+                                <Button size="sm" onClick={() => openClientBypass(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9">
+                                   <LogIn className="w-4 h-4 mr-2" /> Login as Client
+                                </Button>
                              </div>
                           </div>
                        )})}

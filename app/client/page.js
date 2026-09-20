@@ -25,9 +25,32 @@ import {
   Handshake, Landmark, Gavel, ScrollText
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
-import CompactTenderCard from '@/components/workflow/CompactTenderCard';
+import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
 import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
 import { openClientWorkflowFile } from '@/components/workflow/api';
+import { belongsOnInternal, INTERNAL_BOARD_STATUSES } from '@/lib/job-board-state';
+
+function isClientSubmittedTrackingJob(job) {
+  if (!job || job.status === 'WON') return false;
+  if (job.status === 'SUBMITTED') return true;
+  const display = String(job.display_status || '');
+  return display === 'Submitted'
+    || display === 'Technical Evaluation'
+    || display === 'Financial Evaluation'
+    || display === 'Technical evaluation'
+    || display === 'Financial evaluation';
+}
+
+function uniqueClientTrackingJobs(jobs) {
+  const seen = new Set();
+  return (Array.isArray(jobs) ? jobs : []).filter((job) => {
+    if (!belongsOnInternal(job) && !isClientSubmittedTrackingJob(job)) return false;
+    const id = String(job._id || '');
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
 
 const DEFAULT_VAULT_DOCS = [
   { id: 'aadhaar', name: 'Aadhaar Card', status: 'missing', file: null },
@@ -1096,8 +1119,34 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
     );
   }
 
-  const activeBids = userData?.active_bids || [];
   const customRequests = userData?.custom_requests || [];
+  const trackingJobs = uniqueClientTrackingJobs(workflowJobs);
+
+  const clientWorkflowDocActions = (job) => {
+    const actions = [];
+    if (job?.sow) {
+      actions.push({
+        label: 'View SOW',
+        icon: 'eye',
+        onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)),
+      });
+    }
+    if (job?.tender_id || job?.tender_pdf) {
+      actions.push({
+        label: 'View Tender PDF',
+        icon: 'file',
+        onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)),
+      });
+    }
+    if (job?.receipt) {
+      actions.push({
+        label: 'Receipt',
+        icon: 'download',
+        onClick: () => openClientWorkflowFile(job._id, 'receipt').catch((err) => toast.error(err.message)),
+      });
+    }
+    return actions;
+  };
   const criticalAlerts = userData?.action_alerts?.filter(a => a?.subject && !a.subject.includes('Suggestion') && a.status !== 'Completed') || [];
   
   // 🚀 FIX: Automatically filter out payments that match a SUCCESS status in the main payments array
@@ -1652,8 +1701,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           key={job._id}
                           job={job}
                           actions={[
-                            { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
-                            { label: 'View Tender PDF', icon: 'file', onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)) },
+                            ...clientWorkflowDocActions(job),
                             { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
                             { label: 'Reject', onClick: () => handleRejectWorkflowJob(job) },
                           ]}
@@ -1675,82 +1723,21 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Activity className="w-5 h-5 text-blue-600"/> Tenders Tracking</CardTitle>
               </CardHeader>
               <CardContent className="p-5">
-                 <div className="grid sm:grid-cols-2 gap-3 mb-6">
-                   {workflowJobs.filter(j => j.display_status === 'In Progress' || ['MD_CHECKLIST','TL_ASSIGN','MAKER_PREP','TL_QC','GM_QC','MD_SUBMIT','AWAITING_RECEIPT'].includes(j.status)).map((job) => (
-                     <CompactTenderCard
-                       key={job._id}
-                       job={{ ...job, display_status: 'In Progress' }}
-                       actions={[
-                         { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
-                         { label: 'View Tender PDF', icon: 'file', onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)) },
-                       ]}
-                     />
-                   ))}
-                   {workflowJobs.filter(j => j.status === 'SUBMITTED' || j.display_status === 'Submitted' || j.display_status === 'Technical Evaluation' || j.display_status === 'Financial Evaluation').map((job) => (
-                     <CompactTenderCard
-                       key={job._id}
-                       job={job}
-                       actions={[
-                         { label: 'View SOW', icon: 'eye', onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)) },
-                         { label: 'View Tender PDF', icon: 'file', onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)) },
-                         job.receipt && { label: 'Receipt', icon: 'download', onClick: () => openClientWorkflowFile(job._id, 'receipt').catch((err) => toast.error(err.message)) },
-                       ].filter(Boolean)}
-                     />
-                   ))}
-                 </div>
-                 {activeBids.length === 0 ? (
+                 {trackingJobs.length === 0 ? (
                     <div className="text-center py-6 text-slate-400">
                       <p className="text-sm font-semibold">No active bids in progress.</p>
                     </div>
                  ) : (
-                    activeBids.map((bid, i) => {
-                       let barW = 'w-[10%]';
-                       let s1 = 'bg-blue-500 text-white'; let s1Icon = <CheckCircle2 className="w-4 h-4"/>;
-                       let s2 = 'bg-slate-100 text-slate-300'; let s2Icon = <Clock className="w-4 h-4"/>;
-                       let s3 = 'bg-slate-100 text-slate-300'; let s3Icon = <Clock className="w-4 h-4"/>;
-                       let s4 = 'bg-slate-100 text-slate-300'; let s4Icon = <Trophy className="w-4 h-4"/>;
-
-                       if (['Documents Asking', 'Documents Preparing', 'Client Approved'].includes(bid.status)) {
-                          barW = 'w-[30%]'; s2 = 'bg-amber-500 text-white animate-pulse';
-                       } else if (['Bid Participated', 'Technical Evaluation', 'Financial Evaluation'].includes(bid.status)) {
-                          barW = 'w-[70%]'; s2 = 'bg-blue-500 text-white'; s2Icon = <CheckCircle2 className="w-4 h-4"/>; s3 = 'bg-amber-500 text-white animate-pulse';
-                       } else if (bid.status === 'Won' || bid.status === 'Lost') {
-                          barW = 'w-[100%]'; s2 = 'bg-blue-500 text-white'; s2Icon = <CheckCircle2 className="w-4 h-4"/>; s3 = 'bg-blue-500 text-white'; s3Icon = <CheckCircle2 className="w-4 h-4"/>; s4 = bid.status === 'Won' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white';
-                       }
-
-                       return (
-                       <div key={i} className="mb-4 border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col gap-6">
-                          <div>
-                            <div className="flex justify-between items-start">
-                               <Badge variant="outline" className="text-[10px] mb-2 font-mono bg-slate-50">{bid.bid_no}</Badge>
-                               <Badge className="bg-slate-100 text-slate-700 border-0">{bid.status}</Badge>
-                            </div>
-                            <p className="font-bold text-[#0A2647] text-base leading-tight">{bid.description || bid.title}</p>
-                          </div>
-                          <div className="relative mt-2 px-2 sm:px-6">
-                             <div className="absolute top-3 left-8 right-8 h-1.5 bg-slate-100 rounded-full z-0"></div>
-                             <div className={`absolute top-3 left-8 h-1.5 bg-blue-500 rounded-full z-0 transition-all duration-1000 ${barW}`}></div>
-                             <div className="relative z-10 flex justify-between">
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white ${s1}`}>{s1Icon}</div>
-                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Doc Prep</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white transition-colors duration-500 ${s2}`}>{s2Icon}</div>
-                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Submitted</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white transition-colors duration-500 ${s3}`}>{s3Icon}</div>
-                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Evaluating</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-2">
-                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow ring-4 ring-white transition-colors duration-500 ${s4}`}>{s4Icon}</div>
-                                   <span className="text-[10px] font-bold text-slate-600 uppercase">Result</span>
-                                </div>
-                             </div>
-                          </div>
-                       </div>
-                    )})
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {trackingJobs.map((job) => (
+                        <CompactTenderCard
+                          key={job._id}
+                          job={INTERNAL_BOARD_STATUSES.includes(job.status) ? { ...job, display_status: 'In Progress' } : job}
+                          progress={<TrackingProgressBar job={job} />}
+                          actions={clientWorkflowDocActions(job)}
+                        />
+                      ))}
+                    </div>
                  )}
               </CardContent>
             </Card>
