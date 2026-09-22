@@ -241,6 +241,14 @@ function InternalTrackingBoard({
 
   const sections = useMemo(() => partitionInternalJobs(jobs, desk, actorEmpId), [jobs, desk, actorEmpId]);
 
+  const uploadPrepFile = async (job, file, slot) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('slot', slot);
+    form.append('kind', 'final');
+    return workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
+  };
+
   const renderJobCard = (job) => {
     const cardBusy = busyId === job._id;
     const actions = [
@@ -352,9 +360,38 @@ function InternalTrackingBoard({
                     <span className={`truncate min-w-0 ${bounced ? 'text-red-700 font-semibold' : ''}`}>
                       {f.name || f.slot || `File ${i + 1}`}{bounced ? ' (bounced)' : ''}
                     </span>
-                    <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => openFile(job, f.slot)}>
-                      View
-                    </Button>
+                    <span className="flex items-center shrink-0">
+                      {bounced && (
+                        <label className={`h-6 px-2 inline-flex items-center text-[10px] font-semibold text-red-700 cursor-pointer ${cardBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+                          Replace
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            className="sr-only"
+                            disabled={cardBusy}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!file || !f.slot) return;
+                              setBusyId(job._id);
+                              try {
+                                const data = await uploadPrepFile(job, file, f.slot);
+                                if (data?.job) onPatchJob?.(data.job);
+                                toast.success('Replaced the bounced file.');
+                              } catch (err) {
+                                toast.error(err.message);
+                                onRefresh?.();
+                              } finally {
+                                setBusyId('');
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => openFile(job, f.slot)}>
+                        View
+                      </Button>
+                    </span>
                   </li>
                   );
                 })}
@@ -376,11 +413,10 @@ function InternalTrackingBoard({
                   try {
                     let latest = job;
                     for (const file of files) {
-                      const form = new FormData();
-                      form.append('file', file);
-                      form.append('slot', `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-                      form.append('kind', 'final');
-                      const data = await workflowFetch(`/api/workflow/jobs/${job._id}/files`, { method: 'POST', body: form });
+                      const bouncedIds = new Set((latest.bounced_slots || []).map(String));
+                      const nextBounced = (latest.prep_files || []).find((row) => bouncedIds.has(String(row.slot)));
+                      const slot = nextBounced?.slot || `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                      const data = await uploadPrepFile(latest, file, slot);
                       if (data?.job) latest = data.job;
                     }
                     onPatchJob?.(latest);
