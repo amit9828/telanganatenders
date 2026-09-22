@@ -28,7 +28,9 @@ import { formatINR } from '@/lib/format';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
 import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
 import { openClientWorkflowFile } from '@/components/workflow/api';
-import { belongsOnInternal, INTERNAL_BOARD_STATUSES } from '@/lib/job-board-state';
+import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
+import { belongsOnInternal } from '@/lib/job-board-state';
+import { CLIENT_TRACKING_ORDER, clientTrackingStage } from '@/lib/tracking-status';
 
 function isClientSubmittedTrackingJob(job) {
   if (!job || job.status === 'WON') return false;
@@ -38,7 +40,8 @@ function isClientSubmittedTrackingJob(job) {
     || display === 'Technical Evaluation'
     || display === 'Financial Evaluation'
     || display === 'Technical evaluation'
-    || display === 'Financial evaluation';
+    || display === 'Financial evaluation'
+    || display === 'Bid Awarded';
 }
 
 function uniqueClientTrackingJobs(jobs) {
@@ -895,6 +898,17 @@ export default function ClientDashboard() {
     window.location.href = '/';
   };
 
+  useWorkflowStream((event) => {
+    if (!event?.jobId) return;
+    setWorkflowJobs((prev) => {
+      if (event.archived) return prev.filter((job) => String(job._id) !== String(event.jobId));
+      const found = prev.find((job) => String(job._id) === String(event.jobId));
+      if (!found) return prev;
+      const merged = mergeTrackingEvent(found, event);
+      return prev.map((job) => (job === found ? merged : job));
+    });
+  }, { audience: 'client', enabled: Boolean(email) });
+
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
   if (userData && (userData.onboarding_complete || localOnboardComplete) && !userData.is_approved && !session?.user?.is_bypass) {
@@ -1729,14 +1743,18 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                     </div>
                  ) : (
                     <div className="grid sm:grid-cols-2 gap-3">
-                      {trackingJobs.map((job) => (
+                      {trackingJobs.map((job) => {
+                        const stageLabel = clientTrackingStage(job);
+                        return (
                         <CompactTenderCard
                           key={job._id}
-                          job={INTERNAL_BOARD_STATUSES.includes(job.status) ? { ...job, display_status: 'In Progress' } : job}
-                          progress={<TrackingProgressBar job={job} />}
-                          actions={clientWorkflowDocActions(job)}
+                          job={stageLabel ? { ...job, display_status: stageLabel } : job}
+                          showClientName={false}
+                          progress={<TrackingProgressBar job={job} stages={CLIENT_TRACKING_ORDER} activeLabel={stageLabel} />}
+                          actions={job.status === 'SUBMITTED' || job.status === 'WON' ? [] : clientWorkflowDocActions(job)}
                         />
-                      ))}
+                        );
+                      })}
                     </div>
                  )}
               </CardContent>

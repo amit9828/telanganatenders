@@ -12,6 +12,8 @@ import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
+import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
@@ -42,6 +44,7 @@ import {
   belongsOnInternal,
   belongsOnLiveQueue,
   belongsOnSubmitted,
+  belongsOnWinning,
   dropJob,
   setListIfChanged,
   upsertJob,
@@ -59,6 +62,7 @@ export default function StaffOpsDesk({ desk }) {
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
   const [submittedJobs, setSubmittedJobs] = useState([]);
+  const [winningJobs, setWinningJobs] = useState([]);
   const [archivedJobs, setArchivedJobs] = useState([]);
   const [tenders, setTenders] = useState([]);
   const [clients, setClients] = useState([]);
@@ -96,12 +100,14 @@ export default function StaffOpsDesk({ desk }) {
     setJobs((prev) => applyJobToBoard(prev, job, belongsOnLiveQueue));
     setInternalJobs((prev) => applyJobToBoard(prev, job, belongsOnInternal));
     setSubmittedJobs((prev) => applyJobToBoard(prev, job, belongsOnSubmitted));
+    setWinningJobs((prev) => applyJobToBoard(prev, job, belongsOnWinning));
   }, []);
 
   const removeJob = useCallback((id) => {
     setJobs((prev) => dropJob(prev, id));
     setInternalJobs((prev) => dropJob(prev, id));
     setSubmittedJobs((prev) => dropJob(prev, id));
+    setWinningJobs((prev) => dropJob(prev, id));
     setArchivedJobs((prev) => dropJob(prev, id));
   }, []);
 
@@ -124,7 +130,10 @@ export default function StaffOpsDesk({ desk }) {
       want.add('clients');
     }
     if (tab === 'internal') want.add('internal');
-    if (tab === 'submitted') want.add('submitted');
+    if (tab === 'submitted') {
+      want.add('submitted');
+      want.add('winning');
+    }
     if (tab === 'archive') want.add('archive');
     if (tab === 'officers') want.add('officers');
     if (tab === 'clients') want.add('clients');
@@ -142,6 +151,7 @@ export default function StaffOpsDesk({ desk }) {
       if (want.has('team')) tasks.team = workflowFetch('/api/employees');
       if (want.has('internal')) tasks.internal = fetchWorkflowQueue('internal');
       if (want.has('submitted')) tasks.submitted = fetchWorkflowQueue('submitted');
+      if (want.has('winning')) tasks.winning = fetchWorkflowQueue('winning');
       if (want.has('parked')) tasks.parked = fetchWorkflowQueue('parked');
       if (want.has('suggestions')) tasks.suggestions = fetchWorkflowQueue('suggestions');
       if (want.has('awaiting')) tasks.awaiting = fetchWorkflowQueue('awaiting_publish');
@@ -159,6 +169,7 @@ export default function StaffOpsDesk({ desk }) {
       if (got.team) setListIfChanged(setTeam, got.team.team || []);
       if (got.internal) setListIfChanged(setInternalJobs, got.internal.jobs || []);
       if (got.submitted) setListIfChanged(setSubmittedJobs, got.submitted.jobs || []);
+      if (got.winning) setListIfChanged(setWinningJobs, (got.winning.jobs || []).filter(belongsOnWinning));
       if (got.officers) setListIfChanged(setOfficers, got.officers.officers || []);
       if (got.archive) setListIfChanged(setArchivedJobs, got.archive.jobs || []);
       if (got.parked || got.suggestions || got.awaiting) {
@@ -305,6 +316,29 @@ export default function StaffOpsDesk({ desk }) {
     openClientBypass(targetEmail);
   };
 
+  const boardJobsRef = useRef({ jobs: [], internal: [], submitted: [], winning: [] });
+  boardJobsRef.current = {
+    jobs,
+    internal: internalJobs,
+    submitted: submittedJobs,
+    winning: winningJobs,
+  };
+  useWorkflowStream((event) => {
+    if (!event?.jobId) return;
+    if (event.archived) {
+      removeJob(event.jobId);
+      return;
+    }
+    const pools = boardJobsRef.current;
+    const found = [...pools.submitted, ...pools.winning, ...pools.internal, ...pools.jobs]
+      .find((job) => String(job._id) === String(event.jobId));
+    if (!found) {
+      if (activeTabRef.current === 'submitted') load('submitted');
+      return;
+    }
+    patchJob(mergeTrackingEvent(found, event));
+  }, { audience: 'staff', enabled: status === 'authenticated' || Boolean(localEmpEmail) });
+
   if (status === 'loading' && !localEmpEmail) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
   }
@@ -424,14 +458,15 @@ export default function StaffOpsDesk({ desk }) {
                   actorEmpId={selfId}
                 />
               </TabsContent>
-              <TabsContent value="submitted">
+              <TabsContent value="submitted" className="space-y-6">
                 <SubmittedTrackingBoard
                   jobs={submitted}
                   onPatchJob={patchJob}
                   onRemoveJob={removeJob}
                   onArchiveJob={archiveJob}
-                  actorEmpId={selfId}
+                  actorEmpId=""
                 />
+                <WinningBidsBoard jobs={winningJobs} showClientName />
               </TabsContent>
               {isGm && (
                 <TabsContent value="bid-support">

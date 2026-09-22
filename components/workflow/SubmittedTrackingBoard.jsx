@@ -1,47 +1,52 @@
 'use client';
 
 import { memo, useState } from 'react';
-import CompactTenderCard from '@/components/workflow/CompactTenderCard';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
-import { workflowDocActions, mdDeleteCardAction } from '@/components/workflow/jobDocActions';
-import { TRACKING_LABELS, normalizeTrackingStatus } from '@/lib/tracking-status';
-
-const DROPDOWN_STAGES = [
-  TRACKING_LABELS.TECHNICAL_EVALUATION,
-  TRACKING_LABELS.FINANCIAL_EVALUATION,
-  TRACKING_LABELS.WON,
-  TRACKING_LABELS.LOST,
-];
+import { workflowFetch } from '@/components/workflow/api';
+import { mdDeleteCardAction } from '@/components/workflow/jobDocActions';
+import { TRACKING_LABELS, currentTrackingStage, nextTrackingStage } from '@/lib/tracking-status';
 
 function SubmittedTrackingBoard({
   jobs = [],
   actorEmpId = '',
-  onRefresh,
   onPatchJob,
   onRemoveJob,
   onArchiveJob,
   canDelete = false,
 }) {
   const [busyId, setBusyId] = useState('');
+  const [confirm, setConfirm] = useState(null);
+  const [outcomeJob, setOutcomeJob] = useState(null);
 
-  const update = async (job, tracking_status) => {
-    const snapshot = job;
+  const commit = async (job, tracking_status) => {
     setBusyId(job._id);
-    if (tracking_status === 'Lost') onRemoveJob?.(job._id);
-    else onPatchJob?.({ ...job, tracking_status, display_status: tracking_status, status: tracking_status === 'Won' ? 'WON' : job.status });
     try {
       const data = await workflowFetch(`/api/workflow/jobs/${job._id}/tracking`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tracking_status }),
       });
-      toast.success(tracking_status === 'Lost' ? 'Moved to archive.' : `Updated to ${tracking_status}`);
-      if (data?.archived) onArchiveJob?.({ ...job, archive_reason: 'Lost' });
-      else if (data?.job) onPatchJob?.(data.job);
+      if (data?.archived) {
+        onRemoveJob?.(job._id);
+        onArchiveJob?.({ ...job, archive_reason: 'Lost' });
+        toast.success('Moved to archive.');
+      } else if (data?.job) {
+        onPatchJob?.(data.job);
+        toast.success(tracking_status === TRACKING_LABELS.WON ? 'Moved to winning bids.' : `Updated to ${tracking_status}`);
+      }
     } catch (e) {
-      onPatchJob?.(snapshot);
       toast.error(e.message);
     } finally {
       setBusyId('');
@@ -51,18 +56,27 @@ function SubmittedTrackingBoard({
   const deleteCard = async (job) => {
     const name = job.bid_no || job.title || 'this card';
     if (!window.confirm(`Delete ${name}? It is removed from every board. This cannot be undone.`)) return;
-    const snapshot = job;
     setBusyId(job._id);
-    onRemoveJob?.(job._id);
     try {
       await workflowFetch(`/api/workflow/jobs/${job._id}`, { method: 'DELETE' });
+      onRemoveJob?.(job._id);
       toast.success('Card deleted.');
     } catch (e) {
-      onPatchJob?.(snapshot);
       toast.error(e.message);
     } finally {
       setBusyId('');
     }
+  };
+
+  const acceptConfirm = () => {
+    const pending = confirm;
+    setConfirm(null);
+    if (!pending) return;
+    if (pending.target === 'result') {
+      setOutcomeJob(pending.job);
+      return;
+    }
+    commit(pending.job, pending.target);
   };
 
   return (
@@ -71,34 +85,92 @@ function SubmittedTrackingBoard({
       {jobs.length === 0 && <p className="text-sm text-slate-400">No submitted tenders.</p>}
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {jobs.map((job) => {
-          const stage = normalizeTrackingStatus(job.tracking_status);
+          const stage = currentTrackingStage(job) || TRACKING_LABELS.SUBMITTED;
           const canEdit = Boolean(actorEmpId) && String(job.assigned_emp_id || '') === String(actorEmpId);
+          const next = stage === TRACKING_LABELS.BID_AWARDED ? null : nextTrackingStage(stage);
           const cardBusy = busyId === job._id;
+          const driveLink = job.drive_bid_folder_link || '';
           return (
             <div key={job._id} className={`space-y-2 ${cardBusy ? 'opacity-70' : ''}`}>
               <CompactTenderCard
-                job={{ ...job, display_status: stage || job.display_status || 'Submitted' }}
+                job={{ ...job, display_status: stage }}
+                showClientName
+                progress={<TrackingProgressBar job={{ ...job, tracking_status: stage }} />}
                 actions={[
-                  ...workflowDocActions(job, (docJob, slot) => openWorkflowFile(docJob._id, slot).catch((err) => toast.error(err.message || 'Could not open file'))),
+                  driveLink && { label: 'Open Drive folder', icon: 'file', onClick: () => window.open(driveLink, '_blank', 'noopener,noreferrer') },
                   canDelete && mdDeleteCardAction(job, deleteCard),
                 ].filter(Boolean)}
               />
-              {canEdit ? (
-                <Select value={stage || undefined} onValueChange={(v) => update(job, v)} disabled={cardBusy}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Set tracking status" /></SelectTrigger>
-                  <SelectContent>
-                    {DROPDOWN_STAGES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              {canEdit && (next || stage === TRACKING_LABELS.BID_AWARDED) ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-full text-xs"
+                  disabled={cardBusy}
+                  onClick={() => setConfirm({
+                    job,
+                    target: stage === TRACKING_LABELS.BID_AWARDED ? 'result' : next,
+                  })}
+                >
+                  {stage === TRACKING_LABELS.BID_AWARDED ? 'Record result' : `Update to ${next}`}
+                </Button>
               ) : (
-                <p className="text-[11px] text-slate-500 px-1">
-                  {stage || job.display_status || 'Submitted'} · read-only
-                </p>
+                <p className="text-[11px] text-slate-500 px-1">{stage} · read-only</p>
               )}
             </div>
           );
         })}
       </div>
+
+      <AlertDialog open={Boolean(confirm)} onOpenChange={(open) => { if (!open) setConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update status?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to update the status?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={acceptConfirm}>Okay</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(outcomeJob)} onOpenChange={(open) => { if (!open) setOutcomeJob(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bid Awarded</AlertDialogTitle>
+            <AlertDialogDescription>
+              Select Win or Loss. Win moves the bid to Winning Bids. Loss moves it to the archive.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                const job = outcomeJob;
+                setOutcomeJob(null);
+                if (job) commit(job, TRACKING_LABELS.LOST);
+              }}
+            >
+              Loss
+            </AlertDialogAction>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => {
+                const job = outcomeJob;
+                setOutcomeJob(null);
+                if (job) commit(job, TRACKING_LABELS.WON);
+              }}
+            >
+              Win
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
