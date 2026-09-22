@@ -11,12 +11,19 @@ export default function WinningBidsBoard({
   showClientName = true,
   barStages,
   activeLabelFor,
+  actionsFor,
 }) {
   const won = (jobs || []).filter((job) => job.status === 'WON' || job.display_status === 'Won');
 
   const renderCard = (job, { showName, showDrive }) => {
     const driveLink = showDrive ? (job.drive_bid_folder_link || '') : '';
     const activeLabel = activeLabelFor ? activeLabelFor(job) : undefined;
+    const docActions = !showClientName && actionsFor ? actionsFor(job) : [];
+    const driveAction = driveLink ? [{
+      label: 'Open Drive folder',
+      icon: 'file',
+      onClick: () => window.open(driveLink, '_blank', 'noopener,noreferrer'),
+    }] : [];
     return (
       <CompactTenderCard
         key={job._id}
@@ -30,11 +37,7 @@ export default function WinningBidsBoard({
             activeLabel={activeLabel}
           />
         )}
-        actions={driveLink ? [{
-          label: 'Open Drive folder',
-          icon: 'file',
-          onClick: () => window.open(driveLink, '_blank', 'noopener,noreferrer'),
-        }] : []}
+        actions={[...docActions, ...driveAction]}
       />
     );
   };

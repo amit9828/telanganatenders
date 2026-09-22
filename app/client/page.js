@@ -1140,19 +1140,19 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
     const actions = [];
     if (job?.sow) {
       actions.push({
-        label: 'View SOW',
+        label: 'View SOW / Tender Guide',
         icon: 'eye',
         onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)),
       });
     }
     if (job?.tender_id || job?.tender_pdf) {
       actions.push({
-        label: 'View Tender PDF',
+        label: 'Tender File',
         icon: 'file',
         onClick: () => openClientWorkflowFile(job._id, 'tender').catch((err) => toast.error(err.message)),
       });
     }
-    if (job?.receipt) {
+    if (job?.receipt && (job.status === 'SUBMITTED' || job.status === 'WON')) {
       actions.push({
         label: 'Receipt',
         icon: 'download',
@@ -1617,7 +1617,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
           {/* TAB 3: WINNING BIDS LEDGER */}
           {/* ============================================================================== */}
           <TabsContent value="wins" className="space-y-6">
-            <ClientWinningBoard jobs={Array.isArray(workflowJobs) ? workflowJobs : []} />
+            <ClientWinningBoard jobs={Array.isArray(workflowJobs) ? workflowJobs : []} actionsFor={clientWorkflowDocActions} />
             <Card className="tender-shadow border-t-4 border-t-emerald-500">
               <CardHeader className="bg-emerald-50/50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg"><Trophy className="w-5 h-5 text-emerald-600"/> Successful Bid Allocations</CardTitle>
@@ -1751,7 +1751,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                           job={stageLabel ? { ...job, display_status: stageLabel } : job}
                           showClientName={false}
                           progress={<TrackingProgressBar job={job} stages={CLIENT_TRACKING_ORDER} activeLabel={stageLabel} />}
-                          actions={job.status === 'SUBMITTED' || job.status === 'WON' ? [] : clientWorkflowDocActions(job)}
+                          actions={clientWorkflowDocActions(job)}
                         />
                         );
                       })}
