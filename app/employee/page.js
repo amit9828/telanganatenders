@@ -8,6 +8,7 @@ import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import OperationsStoragePanel from '@/components/OperationsStoragePanel';
 import StaffChat from '@/components/StaffChat';
@@ -18,6 +19,7 @@ import {
   applyJobToBoard,
   belongsOnInternal,
   belongsOnSubmitted,
+  belongsOnWinning,
   dropJob,
   INTERNAL_BOARD_STATUSES,
   sameStamps,
@@ -25,6 +27,7 @@ import {
   SUBMITTED_BOARD_STATUSES,
 } from '@/lib/job-board-state';
 import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
+import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -103,15 +106,18 @@ export default function EmployeeDashboard() {
   const [mdTaskFile, setMdTaskFile] = useState({});
   const [uploadingTask, setUploadingTask] = useState(false);
   const [wfJobs, setWfJobs] = useState([]);
+  const [wfWinning, setWfWinning] = useState([]);
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
 
   const patchJob = useCallback((job) => {
     if (!job) return;
     setWfJobs((prev) => applyJobToBoard(prev, job, (row) => belongsOnInternal(row) || belongsOnSubmitted(row)));
+    setWfWinning((prev) => applyJobToBoard(prev, job, belongsOnWinning));
   }, []);
   const removeJob = useCallback((id) => {
     setWfJobs((prev) => dropJob(prev, id));
+    setWfWinning((prev) => dropJob(prev, id));
   }, []);
   const archiveJob = useCallback((job) => {
     if (job?._id) removeJob(job._id);
@@ -152,7 +158,7 @@ export default function EmployeeDashboard() {
     try {
       const want = new Set(['employees']);
       if (tab === 'internal') { want.add('workflow'); want.add('dispatches'); }
-      else if (tab === 'submitted') { want.add('workflow'); want.add('bids'); }
+      else if (tab === 'submitted') { want.add('workflow'); want.add('winning'); want.add('bids'); }
       else if (tab === 'clients') { want.add('clients'); want.add('officers'); }
       else if (tab === 'publisher') want.add('tenders');
       else if (tab === 'alerts') want.add('dispatches');
@@ -174,13 +180,14 @@ export default function EmployeeDashboard() {
         const board = tab === 'submitted' ? 'submitted' : 'internal';
         tasks.workflow = fetchWorkflowQueue(board);
       }
+      if (want.has('winning')) tasks.winning = fetchWorkflowQueue('winning');
 
       const keys = Object.keys(tasks);
       const responses = await Promise.all(keys.map((k) => tasks[k]));
       const got = {};
       await Promise.all(keys.map(async (k, i) => {
         const res = responses[i];
-        if (k === 'workflow') {
+        if (k === 'workflow' || k === 'winning') {
           got[k] = res;
           return;
         }
@@ -216,6 +223,7 @@ export default function EmployeeDashboard() {
           return sameStamps(prev, merged) ? prev : merged;
         });
       }
+      if (got.winning) setListIfChanged(setWfWinning, (got.winning.jobs || []).filter(belongsOnWinning));
     } catch (err) { console.error("Employee Sync Error", err); } finally { setLoading(false); }
   };
 
@@ -660,6 +668,25 @@ export default function EmployeeDashboard() {
     }).catch(err => console.log('Activity log failed', err));
   };
 
+  const jobsRef = useRef({ jobs: [], winning: [] });
+  jobsRef.current = { jobs: wfJobs, winning: wfWinning };
+  useWorkflowStream((event) => {
+    if (!event?.jobId) return;
+    if (event.archived) {
+      removeJob(event.jobId);
+      return;
+    }
+    const pools = jobsRef.current;
+    const found = [...pools.jobs, ...pools.winning].find((job) => String(job._id) === String(event.jobId));
+    if (found) {
+      patchJob(mergeTrackingEvent(found, event));
+      return;
+    }
+    if (event.status === 'WON' && activeTabRef.current === 'submitted') {
+      fetchLiveOperationsData(email, 'submitted');
+    }
+  }, { audience: 'staff', enabled: Boolean(email) });
+
   if (!isMounted) return null;
 
   const groupedBids = bids.reduce((acc, bid) => {
@@ -793,6 +820,7 @@ return (
               onRemoveJob={removeJob}
               onArchiveJob={archiveJob}
             />
+            <WinningBidsBoard jobs={wfWinning} showClientName />
             <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
               <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>

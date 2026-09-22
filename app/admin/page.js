@@ -12,6 +12,8 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
+import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
+import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import ArchiveBoard from '@/components/workflow/ArchiveBoard';
@@ -28,6 +30,7 @@ import {
   belongsOnInternal,
   belongsOnSubmitted,
   belongsOnSuggestions,
+  belongsOnWinning,
   dropJob,
   INTERNAL_BOARD_STATUSES,
   setListIfChanged,
@@ -188,6 +191,7 @@ export default function AdminPage() {
   const [wfSuggestions, setWfSuggestions] = useState([]);
   const [wfInternal, setWfInternal] = useState([]);
   const [wfSubmitted, setWfSubmitted] = useState([]);
+  const [wfWinning, setWfWinning] = useState([]);
   const [wfArchive, setWfArchive] = useState([]);
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
@@ -197,11 +201,13 @@ export default function AdminPage() {
     setWfSuggestions((prev) => applyJobToBoard(prev, job, belongsOnSuggestions));
     setWfInternal((prev) => applyJobToBoard(prev, job, belongsOnInternal));
     setWfSubmitted((prev) => applyJobToBoard(prev, job, belongsOnSubmitted));
+    setWfWinning((prev) => applyJobToBoard(prev, job, belongsOnWinning));
   }, []);
   const removeJob = useCallback((id) => {
     setWfSuggestions((prev) => dropJob(prev, id));
     setWfInternal((prev) => dropJob(prev, id));
     setWfSubmitted((prev) => dropJob(prev, id));
+    setWfWinning((prev) => dropJob(prev, id));
     setWfArchive((prev) => dropJob(prev, id));
   }, []);
   const archiveJob = useCallback((job) => {
@@ -294,7 +300,7 @@ export default function AdminPage() {
     else if (tab === 'matchmaker') want.add('matches');
     else if (tab === 'internal') ['employees', 'wfInternal'].forEach((k) => want.add(k));
     else if (tab === 'team-activity') ['wfInternal', 'wfParked', 'wfSuggestions'].forEach((k) => want.add(k));
-    else if (tab === 'submitted') ['employees', 'wfSubmitted'].forEach((k) => want.add(k));
+    else if (tab === 'submitted') ['employees', 'wfSubmitted', 'wfWinning'].forEach((k) => want.add(k));
     else if (tab === 'archive') want.add('wfArchive');
     else if (tab === 'publisher') want.add('tenders');
     else if (tab === 'team') want.add('employees');
@@ -320,6 +326,7 @@ export default function AdminPage() {
       if (want.has('wfParked')) tasks.wfParked = fetchWorkflowQueue('parked').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSuggestions')) tasks.wfSuggestions = fetchWorkflowQueue('suggestions').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSubmitted')) tasks.wfSubmitted = fetchWorkflowQueue('submitted').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfWinning')) tasks.wfWinning = fetchWorkflowQueue('winning').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfArchive')) tasks.wfArchive = workflowFetch(`/api/workflow/archive?t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
 
       const keys = Object.keys(tasks);
@@ -374,6 +381,7 @@ export default function AdminPage() {
         setListIfChanged(setWfSuggestions, unique);
       }
       if (got.wfSubmitted?.ok) setListIfChanged(setWfSubmitted, got.wfSubmitted.data.jobs || []);
+      if (got.wfWinning?.ok) setListIfChanged(setWfWinning, (got.wfWinning.data.jobs || []).filter(belongsOnWinning));
       if (got.wfArchive?.ok) setListIfChanged(setWfArchive, got.wfArchive.data.jobs || []);
 
       if (got.employees?.ok && got.dispatches?.ok) {
@@ -1098,6 +1106,29 @@ export default function AdminPage() {
     } catch(err) { toast.error("Network error"); }
   };
 
+  const boardJobsRef = useRef({ suggestions: [], internal: [], submitted: [], winning: [] });
+  boardJobsRef.current = {
+    suggestions: wfSuggestions,
+    internal: wfInternal,
+    submitted: wfSubmitted,
+    winning: wfWinning,
+  };
+  useWorkflowStream((event) => {
+    if (!event?.jobId) return;
+    if (event.archived) {
+      removeJob(event.jobId);
+      return;
+    }
+    const pools = boardJobsRef.current;
+    const found = [...pools.submitted, ...pools.winning, ...pools.internal, ...pools.suggestions]
+      .find((job) => String(job._id) === String(event.jobId));
+    if (!found) {
+      if (activeTabRef.current === 'submitted') refresh('submitted');
+      return;
+    }
+    patchJob(mergeTrackingEvent(found, event));
+  }, { audience: 'staff', enabled: Boolean(token || isMdSession) });
+
   // 🚀 FIX (guideline #20): a bare spinner blanks the whole screen and gives no
   // sense of what's about to load. This skeleton mirrors the real header/stat-card/
   // tab layout below, so the dashboard feels instant and never "pops" into place.
@@ -1732,8 +1763,9 @@ export default function AdminPage() {
               actorEmpId=""
             />
           </TabsContent>
-          <TabsContent value="submitted" className="mt-4">
+          <TabsContent value="submitted" className="mt-4 space-y-6">
             <SubmittedTrackingBoard jobs={wfSubmitted} onPatchJob={patchJob} onRemoveJob={removeJob} onArchiveJob={archiveJob} canDelete />
+            <WinningBidsBoard jobs={wfWinning} showClientName />
           </TabsContent>
           <TabsContent value="archive" className="mt-4">
             <ArchiveBoard jobs={wfArchive} canDelete onRemoveJob={removeJob} />

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
-import { google } from 'googleapis'; // 🚀 Google Drive Integration
 import { getDb, markHostUnhealthy, forceReconnect } from '@/lib/db';
 import {
   uploadTenderPDF,
@@ -21,7 +20,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
-import { createDriveFolder, ensureEntityDriveFolder } from '@/lib/drive';
+import { createDriveFolder, ensureEntityDriveFolder, isDriveConfigured, uploadDriveFile } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
 import { brandFieldsFromForm, brandFieldsFromJson, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
 import { allocateEmpId, ensureUniqueEmpIds } from '@/lib/emp-id';
@@ -1453,10 +1452,9 @@ export async function PUT(request, { params }) {
         );
 
         if (status === 'verified') {
-            if (user?.drive_folder_id && doc && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+            if (user?.drive_folder_id && doc && isDriveConfigured()) {
                try {
-                   // 🚀 The document body now lives in R2, so fetch it back for the Drive
-                   // copy; older records still carry it inline.
+                   // The document body lives in R2; older records still carry it inline.
                    let buffer = null;
                    if (doc.file_r2_key || doc.file_url) {
                        buffer = await fetchVaultDocumentBuffer({
@@ -1471,24 +1469,11 @@ export async function PUT(request, { params }) {
                    }
 
                    if (buffer && buffer.length > 0) {
-                       const auth = new google.auth.JWT(
-                           process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, null,
-                           process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-                           ['https://www.googleapis.com/auth/drive.file']
-                       );
-                       const drive = google.drive({ version: 'v3', auth });
-
-                       const stream = require('stream');
-                       const bufferStream = new stream.PassThrough();
-                       bufferStream.end(buffer);
-
-                       await drive.files.create({
-                           requestBody: { name: finalFileName, parents: [user.drive_folder_id] },
-                           media: {
-                               mimeType: sniffContentType(buffer, finalFileName) || 'application/pdf',
-                               body: bufferStream,
-                           },
-                           fields: 'id'
+                       await uploadDriveFile({
+                           buffer,
+                           fileName: finalFileName,
+                           mimeType: sniffContentType(buffer, finalFileName) || 'application/pdf',
+                           parentId: user.drive_folder_id,
                        });
                    } else {
                        console.warn('[vault/verify] no readable file body for Drive sync:', docId);
