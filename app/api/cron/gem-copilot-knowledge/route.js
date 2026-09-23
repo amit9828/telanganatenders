@@ -43,7 +43,7 @@ async function run(request) {
 
   try {
     const result = await syncGemCopilotKnowledge({
-      maxPdfsPerSource: 8,
+      batchSize: 6,
       discoveredLinks: discovered_links,
     });
     return NextResponse.json(result);

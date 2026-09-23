@@ -1,14 +1,9 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getDb } from '@/lib/db';
 import { requireStaff, resolveActorRole } from '@/lib/staff-auth';
-import { uploadCopilotKnowledge, isR2Configured, isValidPDFBuffer } from '@/lib/cloudflare-r2';
-import {
-  COPILOT_KNOWLEDGE_COLLECTION,
-  slugifyDocId,
-  upsertCopilotKnowledgeDoc,
-} from '@/lib/gem-copilot-knowledge';
-import { getGeminiApiKey } from '@/lib/env';
+import { isValidPDFBuffer } from '@/lib/cloudflare-r2';
+import { COPILOT_KNOWLEDGE_COLLECTION, slugifyDocId } from '@/lib/gem-copilot-knowledge';
+import { ingestCopilotPdf } from '@/lib/copilot-ingest';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -16,10 +11,6 @@ export const dynamic = 'force-dynamic';
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_FILES = 8;
-// 🚀 FIX (Timeout Prevention): up to MAX_FILES PDFs used to be extracted one at a
-// time inside maxDuration=60. A batch of 8 large PDFs could easily exceed that
-// budget on Vercel's Hobby plan cap. Mirrors the bounded worker pool already used
-// by app/api/ai/bulk-upload/route.js so a full batch fits inside the window.
 const CONCURRENCY = 3;
 
 async function runPool(items, worker) {
@@ -35,10 +26,6 @@ async function runPool(items, worker) {
   return results;
 }
 
-const EXTRACT_PROMPT =
-  'Extract the full readable text of this document. Preserve headings, clause numbers ' +
-  'and list structure. Do not summarise, do not add commentary, output the text only.';
-
 function guessCategory(fileName) {
   const hay = String(fileName || '').toLowerCase();
   if (/handbook/.test(hay)) return 'handbook';
@@ -52,36 +39,7 @@ function guessCategory(fileName) {
   return 'manual_training';
 }
 
-async function extractPdfText(buffer, model) {
-  const result = await model.generateContent([
-    EXTRACT_PROMPT,
-    { inlineData: { data: buffer.toString('base64'), mimeType: 'application/pdf' } },
-  ]);
-  return String(result.response.text() || '').trim();
-}
-
-// 🚀 FIX: extraction only "failed" the whole upload when Gemini *threw* — a call
-// that succeeded but returned almost nothing (blank/garbled scan, refusal, etc.)
-// fell through to a "[PDF stored in R2] <title>" placeholder and was still saved
-// as status: 'trained'. That placeholder then got fed to the Co-Pilot chat as if
-// it were real document content, producing "context text extractions are
-// empty/missing" replies. One retry covers a transient blip; if it still comes
-// back too short we now fail honestly instead of pretending it succeeded.
-async function extractPdfTextWithRetry(buffer, model, attempts = 2) {
-  let lastError = null;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const text = await extractPdfText(buffer, model);
-      if (text && text.length > 20) return { ok: true, text };
-      lastError = new Error('extraction returned too little text');
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  return { ok: false, error: lastError?.message || 'unknown error' };
-}
-
-async function trainOneFile(file, { db, model, uploadedBy, categoryOverride }) {
+async function trainOneFile(file, { db, uploadedBy, categoryOverride }) {
   const fileName = file?.name || 'document.pdf';
   if (typeof file?.arrayBuffer !== 'function') {
     return { fileName, status: 'failed', error: 'Not a readable file upload.' };
@@ -98,46 +56,55 @@ async function trainOneFile(file, { db, model, uploadedBy, categoryOverride }) {
   const title = fileName.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim() || fileName;
   const category = categoryOverride || guessCategory(fileName);
   const doc_id = `manual-${slugifyDocId(fileName)}`;
-  const r2Name = `${doc_id}-${Date.now()}.pdf`;
 
-  const uploaded = await uploadCopilotKnowledge(buffer, r2Name, 'application/pdf');
-  if (!uploaded?.key) {
-    return { fileName, status: 'failed', error: 'Upload to Cloudflare R2 failed.' };
-  }
-
-  const extraction = await extractPdfTextWithRetry(buffer, model);
-  if (!extraction.ok) {
-    console.warn('[copilot-upload] text extract failed after retry:', extraction.error);
-    return {
-      fileName,
-      status: 'failed',
-      error: `PDF stored, but text extraction failed: ${extraction.error}`,
-    };
-  }
-
-  const saved = await upsertCopilotKnowledgeDoc(db, {
+  const result = await ingestCopilotPdf(db, {
     doc_id,
     title,
     category,
     origin: 'manual_upload',
     uploaded_by: uploadedBy,
     original_filename: fileName,
-    source_url: uploaded.url || null,
-    r2_key: uploaded.key,
-    r2_url: uploaded.url,
-    content_type: 'application/pdf',
-    content_text: extraction.text.slice(0, 200000),
-    extraction_ok: true,
+    buffer,
+    contentType: 'application/pdf',
   });
+
+  if (result.skipped) {
+    return {
+      fileName,
+      status: 'trained',
+      doc_id: result.saved?.doc_id || doc_id,
+      title,
+      category,
+      chunks: result.embedded_chunks,
+    };
+  }
+
+  if (!result.extraction?.ok) {
+    return {
+      fileName,
+      status: 'failed',
+      doc_id: result.saved?.doc_id || doc_id,
+      error: result.extraction?.error || 'PDF stored, but text extraction failed.',
+    };
+  }
+  if (!result.embedded_chunks) {
+    return {
+      fileName,
+      status: 'failed',
+      doc_id: result.saved?.doc_id || doc_id,
+      error: result.embed_error || 'Text was saved, but embedding failed.',
+    };
+  }
 
   return {
     fileName,
     status: 'trained',
-    doc_id: saved.doc_id,
-    title: saved.title,
-    category: saved.category,
-    char_count: saved.char_count,
-    r2_key: saved.r2_key,
+    doc_id: result.saved.doc_id,
+    title: result.saved.title,
+    category: result.saved.category,
+    char_count: result.saved.char_count,
+    chunks: result.embedded_chunks,
+    r2_key: result.saved.r2_key,
   };
 }
 
@@ -154,6 +121,7 @@ export async function GET(request) {
       .project({
         doc_id: 1, title: 1, category: 1, original_filename: 1,
         char_count: 1, updated_at: 1, r2_key: 1,
+        extraction_ok: 1, extraction_error: 1, embedded_chunks: 1,
       })
       .toArray();
 
@@ -172,16 +140,6 @@ export async function POST(request) {
   const actor = await resolveActorRole(request);
   if (actor.role !== 'MD') {
     return NextResponse.json({ error: 'Only MD can train Co-Pilot.' }, { status: 403 });
-  }
-
-  const geminiApiKey = getGeminiApiKey();
-  if (!geminiApiKey) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on this server.' }, { status: 500 });
-  }
-  if (!isR2Configured()) {
-    return NextResponse.json({
-      error: 'Cloudflare R2 is not configured. Set CLOUDFLARE_R2_* env vars before training the Co-Pilot.',
-    }, { status: 503 });
   }
 
   let formData;
@@ -207,14 +165,10 @@ export async function POST(request) {
   const uploadedBy = actor.email || String(formData.get('uploadedBy') || 'MD Admin');
 
   const db = await getDb();
-  const genAI = new GoogleGenerativeAI(geminiApiKey);
-  // 🚀 FIX: gemini-1.5-flash is retired; gemini-3.6-flash is what this account's
-  // GEMINI_API_KEY is actually entitled to (verified live).
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
   const results = await runPool(files, async (file) => {
     try {
-      return await trainOneFile(file, { db, model, uploadedBy, categoryOverride });
+      return await trainOneFile(file, { db, uploadedBy, categoryOverride });
     } catch (err) {
       return {
         fileName: file?.name || 'document.pdf',

@@ -1,0 +1,33 @@
+name: GeM Copilot weekly harvest
+
+on:
+  schedule:
+    # Sunday 03:00 UTC, same window as the Vercel catalog cron.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Crawl GeM and drain the PDF queue
+        run: node scripts/gem-copilot-knowledge-scraper.js
+        env:
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          MONGO_URL: ${{ secrets.MONGO_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_R2_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_ENDPOINT }}
+          CLOUDFLARE_R2_BUCKET_NAME: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          CLOUDFLARE_R2_PUBLIC_URL: ${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}

@@ -11,7 +11,7 @@ const nextConfig = {
   },
   experimental: {
     // Remove if not using Server Components
-    serverComponentsExternalPackages: ['mongodb', 'googleapis'],
+    serverComponentsExternalPackages: ['mongodb', 'googleapis', 'unpdf'],
     // Playwright is a local-agent devDependency. NFT tracing it into every
     // serverless function blows past Vercel's size limit after a successful compile.
     outputFileTracingExcludes: {

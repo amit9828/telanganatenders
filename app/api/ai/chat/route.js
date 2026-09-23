@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { generateContent, publicAiError } from '@/lib/gemini';
 import { fetchTenderPDFBuffer, isValidPDFBuffer } from '@/lib/cloudflare-r2';
-import { searchCopilotKnowledge, isUsableCopilotText } from '@/lib/gem-copilot-knowledge';
 import { findTenderByAnyId, suggestSimilarTenders } from '@/lib/tender-lookup';
 import { appendTurn, listConversations, loadConversation, renderHistory } from '@/lib/copilot-memory';
 import { requireStaff } from '@/lib/staff-auth';
@@ -76,50 +75,25 @@ async function multiVectorSearch(db, queryVectors, options) {
   return { results, strategy };
 }
 
-/**
- * Prefer the Sunday-harvested `gem_copilot_knowledge` store (local memory + R2)
- * before spending Atlas vector / live embedding quota.
- */
-async function retrieveCopilotMemory(db, query, limit) {
-  try {
-    const docs = await searchCopilotKnowledge(db, query, { limit });
-    if (!docs.length) return null;
-
-    const results = docs
-      // 🚀 FIX: searchCopilotKnowledge already excludes extraction_ok:false docs,
-      // but this is a defense-in-depth belt-and-suspenders check — a doc with no
-      // usable text (legacy record predating the extraction_ok flag, etc.) must
-      // never be handed to Gemini as "context", or it reports empty/missing
-      // extractions instead of correctly falling through to the vector KB below.
-      .filter((d) => isUsableCopilotText(d.content_text))
-      .map((d) => ({
-        text: String(d.content_text || '').slice(0, 6000),
-        document_title: d.title || 'GeM Co-Pilot knowledge',
-        source_url: d.r2_url || d.source_url || null,
-        score: Number(d.score || 1),
-        type: 'copilot_memory',
-      }));
-
-    if (!results.length) return null;
-
-    return { results, strategy: 'gem_copilot_knowledge' };
-  } catch (err) {
-    console.warn('[ai/chat] gem_copilot_knowledge lookup failed:', err?.message || err);
-    return null;
-  }
-}
-
-/** Portal-wide GeM rules, policies and GTC — not specific to any one bid. */
+/** Portal-wide GeM rules. Answers come from retrieved chunks, not the stored PDF blob. */
 async function retrieveGemKnowledge(db, query, queryVectors, limit = TOP_K) {
-  const memory = await retrieveCopilotMemory(db, query, limit);
-  if (memory?.results?.length) return memory;
+  let vectors = queryVectors;
+  if (!vectors) {
+    try {
+      vectors = await buildQueryVectors(query, null);
+    } catch (err) {
+      console.warn('[ai/chat] query embedding failed:', err?.message || err);
+      vectors = [];
+    }
+  }
 
-  const vectors = queryVectors || (await buildQueryVectors(query, null));
-  // Over-fetch, then drop bid-scoped chunks: a clause from someone else's tender is not a
-  // GeM rule. Filtering here rather than in the query keeps rule chunks written before
-  // `bid_no` existed (where the field is absent, not null) retrievable.
-  const { results, strategy } = await multiVectorSearch(db, vectors, { limit: limit * 3 });
-  return { results: results.filter((r) => !r.bid_no).slice(0, limit), strategy };
+  if (vectors?.length) {
+    const searched = await multiVectorSearch(db, vectors, { limit: limit * 3 });
+    const results = searched.results.filter((r) => !r.bid_no).slice(0, limit);
+    if (results.length) return { results, strategy: searched.strategy || 'vector' };
+  }
+
+  return { results: [], strategy: null };
 }
 
 /** Everything this consultancy has read out of one bid's own document set. */
@@ -391,16 +365,14 @@ export async function POST(request) {
         });
       }
 
-      const contextLabel = strategy === 'gem_copilot_knowledge'
-        ? 'cached GeM Co-Pilot knowledge (local memory)'
-        : 'GeM knowledge base';
+      const contextLabel = 'GeM knowledge base';
 
       const cited = buildCitedContext([
         { label: contextLabel, type: 'gem_rule', chunks: results },
       ]);
       sources = cited.sources.map((s) => ({
         ...s,
-        type: results[0]?.type === 'copilot_memory' ? 'copilot_memory' : 'gem_rule',
+        type: 'gem_rule',
       }));
 
       parts.push(

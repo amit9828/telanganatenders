@@ -28,7 +28,10 @@ export default function CopilotTrainDropzone() {
 
   const load = async () => {
     try {
-      const res = await fetch(`/api/ai/copilot-upload?t=${Date.now()}`, { headers: staffHeaders() });
+      const res = await fetch(`/api/ai/copilot-upload?t=${Date.now()}`, {
+        credentials: 'include',
+        headers: staffHeaders(),
+      });
       const data = await res.json().catch(() => null);
       if (res.ok) {
         setDocs(data.docs || []);
@@ -61,6 +64,7 @@ export default function CopilotTrainDropzone() {
     try {
       const res = await fetch('/api/ai/copilot-upload', {
         method: 'POST',
+        credentials: 'include',
         headers: staffHeaders(),
         body: form,
       });
@@ -97,8 +101,8 @@ export default function CopilotTrainDropzone() {
           <BookOpen className="w-5 h-5 text-violet-600" /> Co-Pilot Manual Training
         </CardTitle>
         <CardDescription>
-          Drop GFR rules, special circulars or custom manuals. Each PDF is stored in
-          gem_copilot_knowledge and becomes searchable in employee Co-Pilot chat immediately.
+          Drop GFR rules, special circulars or custom manuals. Each PDF is stored,
+          chunked, and embedded so Co-Pilot chat can retrieve the matching passage.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-5 space-y-4">
@@ -173,10 +177,13 @@ export default function CopilotTrainDropzone() {
                   <p className="font-semibold text-slate-800 truncate">{d.title}</p>
                   <p className="text-[11px] text-slate-500 truncate">
                     {d.category} · {d.original_filename || d.doc_id}
+                    {d.extraction_ok === false && d.extraction_error ? ` · ${d.extraction_error}` : ''}
                   </p>
                 </div>
-                <p className="text-[11px] text-slate-400 shrink-0 tabular-nums">
-                  {(d.char_count || 0).toLocaleString('en-IN')} chars
+                <p className="text-[11px] text-slate-400 shrink-0 tabular-nums text-right">
+                  {d.extraction_ok === false
+                    ? <span className="text-red-600">Not readable</span>
+                    : <>{(d.char_count || 0).toLocaleString('en-IN')} chars<br />{d.embedded_chunks || 0} chunks</>}
                 </p>
               </div>
             ))}
