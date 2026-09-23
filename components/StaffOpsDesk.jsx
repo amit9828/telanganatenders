@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
 import { workflowDocActions } from '@/components/workflow/jobDocActions';
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
+import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import { DESIGNATIONS, resolveStaffDesignation } from '@/lib/designations';
@@ -92,6 +93,7 @@ export default function StaffOpsDesk({ desk }) {
   const isTl = desk === 'tl';
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
+  useStaffPresence(activeTab, { enabled: Boolean(staffEmail) });
   const teamRef = useRef(team);
   teamRef.current = team;
 

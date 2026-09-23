@@ -29,6 +29,10 @@ export async function workflowFetch(url, options = {}) {
     err.data = data;
     throw err;
   }
+  const method = String(options.method || 'GET').toUpperCase();
+  if (typeof window !== 'undefined' && method !== 'GET' && method !== 'HEAD') {
+    window.dispatchEvent(new Event('tt-staff-activity'));
+  }
   return data;
 }
 
