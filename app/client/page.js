@@ -142,7 +142,7 @@ export default function ClientDashboard() {
 
   // --- Real-time Stats, Vault & Wins State ---
   const [vaultDocs, setVaultDocs] = useState(DEFAULT_VAULT_DOCS);
-  const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
+  const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, suggested: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
   const [workflowJobs, setWorkflowJobs] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
@@ -1290,7 +1290,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
            <Card onClick={() => handleCardClick('dashboard', 'recommended-section')} className="border-0 ring-1 ring-slate-200/80 bg-white cursor-pointer premium-hover hover:ring-blue-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
-                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recommended</p>
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Pending Recommendations</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
@@ -1309,11 +1309,11 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                  <p className="text-2xl font-black text-blue-700">{publicTenders.length}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('wins', '')} className="border-0 ring-1 ring-emerald-500/40 bg-emerald-50/80 cursor-pointer premium-hover hover:ring-emerald-500">
+           <Card className="border-0 ring-1 ring-slate-200/80 bg-white">
               <CardContent className="p-4 flex flex-col items-center text-center">
-                 <Trophy className="w-5 h-5 text-emerald-600 mb-2"/>
-                 <p className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Tenders Won</p>
-                 <p className="text-2xl font-black text-emerald-700">{clientStats.won}</p>
+                 <BellRing className="w-5 h-5 text-slate-500 mb-2"/>
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Suggested Tenders</p>
+                 <p className="text-2xl font-black text-[#0A2647]">{clientStats.suggested}</p>
               </CardContent>
            </Card>
            <Card onClick={() => handleCardClick('finance', '')} className="border-0 ring-1 ring-emerald-400 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white col-span-2 lg:col-span-1 cursor-pointer premium-hover hover:ring-emerald-300">
@@ -1723,6 +1723,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                         <CompactTenderCard
                           key={job._id}
                           job={job}
+                          urgentDeadline
                           actions={[
                             ...clientWorkflowDocActions(job),
                             { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },

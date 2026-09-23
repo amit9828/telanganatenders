@@ -11,6 +11,24 @@ function fmtDate(value) {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
 }
 
+function deadlineUrgency(value, now = new Date()) {
+  const parsed = new Date(value);
+  if (!value || Number.isNaN(parsed.getTime())) return null;
+  const end = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 23, 59, 59, 999);
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startDeadline = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  const calendarDays = Math.round((startDeadline.getTime() - startToday.getTime()) / 86400000);
+  if (now.getTime() > end.getTime()) return { text: 'Ended', urgent: true };
+  if (calendarDays <= 0) {
+    const hours = Math.max(1, Math.ceil((end.getTime() - now.getTime()) / 3600000));
+    return { text: `Last ${hours} ${hours === 1 ? 'hour' : 'hours'}`, urgent: true };
+  }
+  if (calendarDays === 1) return { text: 'Last 1 day', urgent: true };
+  if (calendarDays === 2) return { text: 'Last 2 days', urgent: true };
+  if (calendarDays === 3) return { text: 'Last 3 days', urgent: true };
+  return { text: `Ends: ${parsed.toLocaleDateString()}`, urgent: false };
+}
+
 function relativeUpdateLabel(value) {
   if (!value) return null;
   const d = new Date(value);
@@ -72,9 +90,10 @@ export function TrackingProgressBar({ job, stages = TRACKING_ORDER, activeLabel 
   );
 }
 
-export default function CompactTenderCard({ job, actions = [], progress = null, showClientName = false, showWinBadge = false }) {
+export default function CompactTenderCard({ job, actions = [], progress = null, showClientName = false, showWinBadge = false, urgentDeadline = false }) {
   const clientName = job.client_name || job.company_name || '';
   const updatedLabel = relativeUpdateLabel(job.updated_at || job.archived_at);
+  const deadline = urgentDeadline ? deadlineUrgency(job.last_date || job.tender_date) : null;
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col gap-2 min-h-[132px]">
       {updatedLabel ? (
@@ -96,7 +115,11 @@ export default function CompactTenderCard({ job, actions = [], progress = null, 
           )}
         </div>
       </div>
-      <p className="text-[11px] text-slate-500">Tender date: {fmtDate(job.tender_date || job.last_date)}</p>
+      {deadline ? (
+        <p className={`text-[11px] ${deadline.urgent ? 'font-bold text-red-600' : 'text-slate-500'}`}>{deadline.text}</p>
+      ) : (
+        <p className="text-[11px] text-slate-500">Tender date: {fmtDate(job.tender_date || job.last_date)}</p>
+      )}
       {progress}
       {actions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">

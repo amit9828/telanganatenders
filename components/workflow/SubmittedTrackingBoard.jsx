@@ -3,6 +3,7 @@
 import { memo, useState } from 'react';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,14 +30,15 @@ function SubmittedTrackingBoard({
   const [busyId, setBusyId] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [outcomeJob, setOutcomeJob] = useState(null);
+  const [l1Price, setL1Price] = useState('');
 
-  const commit = async (job, tracking_status) => {
+  const commit = async (job, tracking_status, extra = {}) => {
     setBusyId(job._id);
     try {
       const data = await workflowFetch(`/api/workflow/jobs/${job._id}/tracking`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tracking_status }),
+        body: JSON.stringify({ tracking_status, ...extra }),
       });
       if (data?.archived) {
         onRemoveJob?.(job._id);
@@ -138,14 +140,22 @@ function SubmittedTrackingBoard({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={Boolean(outcomeJob)} onOpenChange={(open) => { if (!open) setOutcomeJob(null); }}>
+      <AlertDialog open={Boolean(outcomeJob)} onOpenChange={(open) => { if (!open) { setOutcomeJob(null); setL1Price(''); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Bid Awarded</AlertDialogTitle>
             <AlertDialogDescription>
-              Select Win or Loss. Win moves the bid to Winning Bids. Loss moves it to the archive.
+              Select Win or Loss. Win moves the bid to Winning Bids and needs the L1 price. Loss moves it to the archive.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <Input
+            type="number"
+            min="1"
+            inputMode="decimal"
+            placeholder="L1 Price (winning bid amount)"
+            value={l1Price}
+            onChange={(e) => setL1Price(e.target.value)}
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -153,6 +163,7 @@ function SubmittedTrackingBoard({
               onClick={() => {
                 const job = outcomeJob;
                 setOutcomeJob(null);
+                setL1Price('');
                 if (job) commit(job, TRACKING_LABELS.LOST);
               }}
             >
@@ -160,10 +171,14 @@ function SubmittedTrackingBoard({
             </AlertDialogAction>
             <AlertDialogAction
               className="bg-emerald-600 hover:bg-emerald-700"
+              disabled={!(Number(l1Price) > 0)}
               onClick={() => {
+                const price = Number(l1Price);
+                if (!(price > 0)) return;
                 const job = outcomeJob;
                 setOutcomeJob(null);
-                if (job) commit(job, TRACKING_LABELS.WON);
+                setL1Price('');
+                if (job) commit(job, TRACKING_LABELS.WON, { l1_price: price });
               }}
             >
               Win
