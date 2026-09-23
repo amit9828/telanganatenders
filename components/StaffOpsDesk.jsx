@@ -395,6 +395,7 @@ export default function StaffOpsDesk({ desk }) {
                           <CompactTenderCard
                             key={j._id}
                             job={{ ...j, display_status: 'Pending Approval' }}
+                            showClientName
                             actions={workflowDocActions(j, (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
                           />
                         ))}

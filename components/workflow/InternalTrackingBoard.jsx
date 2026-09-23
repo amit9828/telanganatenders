@@ -338,6 +338,7 @@ function InternalTrackingBoard({
       <div key={job._id} className={cardBusy ? 'opacity-70 pointer-events-none' : ''}>
         <CompactTenderCard
           job={{ ...job, display_status: STATUS_LABEL[job.status] || job.status }}
+          showClientName
           actions={actions}
         />
         {job.bounce_note && (job.status === 'MAKER_PREP' || job.status === 'TL_QC') && (

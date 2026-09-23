@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { load } from '@cashfreepayments/cashfree-js'; 
@@ -96,6 +97,8 @@ export default function ClientDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [publicTenders, setPublicTenders] = useState([]);
   const [liveTenderSearch, setLiveTenderSearch] = useState('');
+  const [quotationJob, setQuotationJob] = useState(null);
+  const [quotationFile, setQuotationFile] = useState(null);
   const [buying, setBuying] = useState(false);
   const [alertReplyText, setAlertReplyText] = useState({}); 
 
@@ -142,7 +145,7 @@ export default function ClientDashboard() {
 
   // --- Real-time Stats, Vault & Wins State ---
   const [vaultDocs, setVaultDocs] = useState(DEFAULT_VAULT_DOCS);
-  const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
+  const [clientStats, setClientStats] = useState({ recommended: 0, participated: 0, suggested: 0, ongoing: 0, won: 0, lost: 0, revenue: 0 });
   const [wonBids, setWonBids] = useState([]);
   const [workflowJobs, setWorkflowJobs] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
@@ -832,7 +835,7 @@ export default function ClientDashboard() {
      } catch (e) { toast.error("Network error"); }
   };
 
-  const handleAcceptWorkflowJob = async (job) => {
+  const approveWorkflowJob = async (job) => {
     try {
       const res = await fetch(`/api/workflow/jobs/${job._id}/client-approve`, {
         method: 'POST',
@@ -843,6 +846,41 @@ export default function ClientDashboard() {
       if (!res.ok) throw new Error(data.error || 'Approve failed');
       toast.success('Approved. Status is now In Progress.');
       fetchClientData(email);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleAcceptWorkflowJob = async (job) => {
+    if (job.quotation_required && !job.quotation?.name) {
+      setQuotationFile(null);
+      setQuotationJob(job);
+      return;
+    }
+    await approveWorkflowJob(job);
+  };
+
+  const uploadQuotationAndApprove = async () => {
+    const job = quotationJob;
+    if (!job) return;
+    if (!quotationFile) {
+      toast.error('Please upload the required quotation to proceed.');
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append('quotation', quotationFile);
+      const res = await fetch(`/api/workflow/jobs/${job._id}/quotation`, {
+        method: 'POST',
+        headers: clientHeaders(),
+        credentials: 'include',
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      setQuotationJob(null);
+      setQuotationFile(null);
+      await approveWorkflowJob(job);
     } catch (e) {
       toast.error(e.message);
     }
@@ -1290,7 +1328,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
            <Card onClick={() => handleCardClick('dashboard', 'recommended-section')} className="border-0 ring-1 ring-slate-200/80 bg-white cursor-pointer premium-hover hover:ring-blue-300">
               <CardContent className="p-4 flex flex-col items-center text-center">
                  <Target className="w-5 h-5 text-blue-500 mb-2"/>
-                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recommended</p>
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Pending Recommendations</p>
                  <p className="text-2xl font-black text-[#0A2647]">{clientStats.recommended}</p>
               </CardContent>
            </Card>
@@ -1309,11 +1347,11 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                  <p className="text-2xl font-black text-blue-700">{publicTenders.length}</p>
               </CardContent>
            </Card>
-           <Card onClick={() => handleCardClick('wins', '')} className="border-0 ring-1 ring-emerald-500/40 bg-emerald-50/80 cursor-pointer premium-hover hover:ring-emerald-500">
+           <Card className="border-0 ring-1 ring-slate-200/80 bg-white">
               <CardContent className="p-4 flex flex-col items-center text-center">
-                 <Trophy className="w-5 h-5 text-emerald-600 mb-2"/>
-                 <p className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Tenders Won</p>
-                 <p className="text-2xl font-black text-emerald-700">{clientStats.won}</p>
+                 <BellRing className="w-5 h-5 text-slate-500 mb-2"/>
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Suggested Tenders</p>
+                 <p className="text-2xl font-black text-[#0A2647]">{clientStats.suggested}</p>
               </CardContent>
            </Card>
            <Card onClick={() => handleCardClick('finance', '')} className="border-0 ring-1 ring-emerald-400 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white col-span-2 lg:col-span-1 cursor-pointer premium-hover hover:ring-emerald-300">
@@ -1723,6 +1761,7 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                         <CompactTenderCard
                           key={job._id}
                           job={job}
+                          urgentDeadline
                           actions={[
                             ...clientWorkflowDocActions(job),
                             { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
@@ -1739,6 +1778,25 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                  )}
               </CardContent>
             </Card>
+
+            <Dialog open={Boolean(quotationJob)} onOpenChange={(open) => { if (!open) { setQuotationJob(null); setQuotationFile(null); } }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Quotation required</DialogTitle>
+                  <DialogDescription>Please upload the required quotation to proceed.</DialogDescription>
+                </DialogHeader>
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="block w-full text-sm"
+                  onChange={(e) => setQuotationFile(e.target.files?.[0] || null)}
+                />
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setQuotationJob(null); setQuotationFile(null); }}>Cancel</Button>
+                  <Button className="bg-[#0A2647] hover:bg-[#144272]" onClick={uploadQuotationAndApprove}>Upload and continue</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Visual Stepper Logic UI */}
             <Card id="tracking-section" className={`tender-shadow transition-all duration-500 ${highlightedSection === 'tracking-section' ? 'ring-4 ring-blue-500 transform scale-[1.01]' : ''}`}>

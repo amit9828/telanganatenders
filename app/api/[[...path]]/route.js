@@ -32,6 +32,7 @@ import {
   PENDING_REQUEST_STATUS,
 } from '@/lib/client-requests';
 import { parkClientBidSupport } from '@/lib/workflow-api';
+import { jobsCol, CLIENT_VISIBLE_STATUSES, JOB_STATUS } from '@/lib/workflow';
 import { liveTenderQuery, archiveTenderQuery } from '@/lib/tender-expiry';
 
 // 🚀 STRICT RULES: భవిష్యత్తులో ఎప్పుడూ డేటా కాష్ (Cache) అవ్వకుండా కఠినమైన సెట్టింగ్స్
@@ -1024,7 +1025,7 @@ async function handleGET(request, { params }, attempt = 1) {
         ? user.purchases.map(id => { try { return new ObjectId(id); } catch (e) { return id; } })
         : null;
 
-      const [tendersData, payments, custom_requests, active_bids, action_alerts] = await Promise.all([
+      const [tendersData, payments, custom_requests, active_bids, action_alerts, clientJobs] = await Promise.all([
         purchaseObjectIds
           ? db.collection('tenders')
               .find({ _id: { $in: purchaseObjectIds } })
@@ -1048,6 +1049,10 @@ async function handleGET(request, { params }, attempt = 1) {
             { target_id: user.email },
           ],
         }).sort({ created_at: -1 }).toArray(),
+        jobsCol(db).find(
+          { client_email: email },
+          { projection: { status: 1, l1_price: 1 } },
+        ).toArray(),
       ]);
 
       const unlocked_tenders = tendersData.map(t => ({
@@ -1057,21 +1062,28 @@ async function handleGET(request, { params }, attempt = 1) {
         district: t.district
       }));
 
-       // 🚀 FIX: Calculate Contract Values and add to Total Revenue
-       const won_bids = active_bids.filter(b => b.status === 'Won');
-       const won_contracts_value = won_bids.reduce((sum, b) => {
-           const val = Number(String(b.contract_value || '0').replace(/[^0-9.-]+/g,""));
-           return sum + val;
+       const rupee = (value) => {
+         const n = Number(String(value ?? '').replace(/[^0-9.-]+/g, ''));
+         return Number.isFinite(n) && n > 0 ? n : 0;
+       };
+       const participatedStatuses = CLIENT_VISIBLE_STATUSES.filter((status) => status !== JOB_STATUS.AWAITING_CLIENT);
+       const wonJobs = clientJobs.filter((job) => job.status === JOB_STATUS.WON);
+       const bidsByJob = new Map(active_bids.map((bid) => [String(bid.workflow_job_id || ''), bid]));
+       const revenue = wonJobs.reduce((sum, job) => {
+         const direct = rupee(job.l1_price);
+         if (direct) return sum + direct;
+         const bid = bidsByJob.get(String(job._id));
+         return sum + (rupee(bid?.l1_price) || rupee(bid?.contract_value));
        }, 0);
-       const total_revenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + won_contracts_value;
 
        const calculatedStats = {
-          recommended: action_alerts.filter(a => a?.subject?.includes('Suggestion') && a.status !== 'Completed').length,
-          participated: active_bids.length,
+          recommended: clientJobs.filter((job) => job.status === JOB_STATUS.AWAITING_CLIENT).length,
+          participated: clientJobs.filter((job) => participatedStatuses.includes(job.status)).length,
+          suggested: action_alerts.filter((alert) => /suggestion/i.test(String(alert?.subject || ''))).length,
           ongoing: active_bids.filter(b => b.status !== 'Won' && b.status !== 'Lost').length,
-          won: won_bids.length,
+          won: wonJobs.length,
           lost: active_bids.filter(b => b.status === 'Lost').length,
-          revenue: total_revenue
+          revenue,
        };
       
       return json({
