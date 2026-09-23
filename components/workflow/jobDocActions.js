@@ -7,6 +7,9 @@ export function workflowDocActions(job, openFile) {
   if (job.sow) {
     actions.push({ label: 'View SOW', icon: 'eye', onClick: () => openFile(job, 'sow') });
   }
+  if (job.quotation) {
+    actions.push({ label: 'View Quotation', icon: 'eye', onClick: () => openFile(job, 'quotation') });
+  }
   if (job.checklist_file) {
     actions.push({ label: 'Checklist', onClick: () => openFile(job, 'checklist') });
   }

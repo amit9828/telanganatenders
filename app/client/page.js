@@ -1192,6 +1192,13 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
         onClick: () => openClientWorkflowFile(job._id, 'sow').catch((err) => toast.error(err.message)),
       });
     }
+    if (job?.quotation) {
+      actions.push({
+        label: 'View Quotation',
+        icon: 'eye',
+        onClick: () => openClientWorkflowFile(job._id, 'quotation').catch((err) => toast.error(err.message)),
+      });
+    }
     if (job?.tender_id || job?.tender_pdf) {
       actions.push({
         label: 'Tender File',
