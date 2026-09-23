@@ -145,7 +145,7 @@ export default function StaffOpsDesk({ desk }) {
     try {
       const tasks = {};
       if (want.has('tenders')) {
-        tasks.tenders = fetch('/api/tenders?limit=100', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json());
+        tasks.tenders = fetch('/api/tenders', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json());
       }
       if (want.has('clients')) {
         tasks.clients = fetch('/api/users/approved?directory=1', { credentials: 'include', headers: staffHeaders() }).then((r) => r.json());
