@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Clock, FileText, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { staffHeaders, staffPdfHref, openWorkflowFile } from '@/components/workflow/api';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 function fmtDate(value) {
   if (!value) return '—';
@@ -21,6 +22,7 @@ function clientLabel(job) {
 export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJob }) {
   const [busyId, setBusyId] = useState('');
   const [sowByJob, setSowByJob] = useState({});
+  const [quoteJob, setQuoteJob] = useState(null);
 
   const groups = useMemo(() => {
     const map = new Map();
@@ -73,9 +75,20 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
     }
   };
 
-  const forwardToClient = async (job) => {
+  const askQuotation = (job) => {
     const jobId = String(job._id?.$oid || job._id || '');
     const file = sowByJob[job._id] || sowByJob[jobId];
+    if (!file) {
+      toast.error('Choose a SOW PDF first.');
+      return;
+    }
+    setQuoteJob(job);
+  };
+
+  const forwardToClient = async (job, quotationRequired) => {
+    const jobId = String(job._id?.$oid || job._id || '');
+    const file = sowByJob[job._id] || sowByJob[jobId];
+    setQuoteJob(null);
     if (!file) {
       toast.error('Choose a SOW PDF first.');
       return;
@@ -93,6 +106,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
         form.append('client_id', String(job.parked_client_id || job.client_id));
       }
       form.append('sow', file);
+      form.append('quotation_required', quotationRequired ? 'true' : 'false');
       const res = await fetch(`/api/workflow/jobs/${encodeURIComponent(jobId)}/suggest`, {
         method: 'POST',
         credentials: 'include',
@@ -117,6 +131,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
   };
 
   return (
+    <>
     <Card className="tender-shadow">
       <CardHeader>
         <CardTitle className="text-[#0A2647] text-lg">Suggestion Bar</CardTitle>
@@ -198,7 +213,7 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
                         size="sm"
                         className="h-8 text-[10px] w-full bg-emerald-600 hover:bg-emerald-700"
                         disabled={busyId === job._id}
-                        onClick={() => forwardToClient(job)}
+                        onClick={() => askQuotation(job)}
                       >
                         {busyId === job._id ? 'Sending…' : 'Send to Client'}
                       </Button>
@@ -211,5 +226,18 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
         ))}
       </CardContent>
     </Card>
+    <Dialog open={Boolean(quoteJob)} onOpenChange={(open) => { if (!open) setQuoteJob(null); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Quotation</DialogTitle>
+          <DialogDescription>Is a Quotation Required from the client? (Yes/No)</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => quoteJob && forwardToClient(quoteJob, false)}>No</Button>
+          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => quoteJob && forwardToClient(quoteJob, true)}>Yes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

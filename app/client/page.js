@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { load } from '@cashfreepayments/cashfree-js'; 
@@ -96,6 +97,8 @@ export default function ClientDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [publicTenders, setPublicTenders] = useState([]);
   const [liveTenderSearch, setLiveTenderSearch] = useState('');
+  const [quotationJob, setQuotationJob] = useState(null);
+  const [quotationFile, setQuotationFile] = useState(null);
   const [buying, setBuying] = useState(false);
   const [alertReplyText, setAlertReplyText] = useState({}); 
 
@@ -832,7 +835,7 @@ export default function ClientDashboard() {
      } catch (e) { toast.error("Network error"); }
   };
 
-  const handleAcceptWorkflowJob = async (job) => {
+  const approveWorkflowJob = async (job) => {
     try {
       const res = await fetch(`/api/workflow/jobs/${job._id}/client-approve`, {
         method: 'POST',
@@ -843,6 +846,41 @@ export default function ClientDashboard() {
       if (!res.ok) throw new Error(data.error || 'Approve failed');
       toast.success('Approved. Status is now In Progress.');
       fetchClientData(email);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleAcceptWorkflowJob = async (job) => {
+    if (job.quotation_required && !job.quotation?.name) {
+      setQuotationFile(null);
+      setQuotationJob(job);
+      return;
+    }
+    await approveWorkflowJob(job);
+  };
+
+  const uploadQuotationAndApprove = async () => {
+    const job = quotationJob;
+    if (!job) return;
+    if (!quotationFile) {
+      toast.error('Please upload the required quotation to proceed.');
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append('quotation', quotationFile);
+      const res = await fetch(`/api/workflow/jobs/${job._id}/quotation`, {
+        method: 'POST',
+        headers: clientHeaders(),
+        credentials: 'include',
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      setQuotationJob(null);
+      setQuotationFile(null);
+      await approveWorkflowJob(job);
     } catch (e) {
       toast.error(e.message);
     }
@@ -1740,6 +1778,25 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                  )}
               </CardContent>
             </Card>
+
+            <Dialog open={Boolean(quotationJob)} onOpenChange={(open) => { if (!open) { setQuotationJob(null); setQuotationFile(null); } }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Quotation required</DialogTitle>
+                  <DialogDescription>Please upload the required quotation to proceed.</DialogDescription>
+                </DialogHeader>
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="block w-full text-sm"
+                  onChange={(e) => setQuotationFile(e.target.files?.[0] || null)}
+                />
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setQuotationJob(null); setQuotationFile(null); }}>Cancel</Button>
+                  <Button className="bg-[#0A2647] hover:bg-[#144272]" onClick={uploadQuotationAndApprove}>Upload and continue</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Visual Stepper Logic UI */}
             <Card id="tracking-section" className={`tender-shadow transition-all duration-500 ${highlightedSection === 'tracking-section' ? 'ring-4 ring-blue-500 transform scale-[1.01]' : ''}`}>

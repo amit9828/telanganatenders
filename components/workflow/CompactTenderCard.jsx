@@ -91,7 +91,7 @@ export function TrackingProgressBar({ job, stages = TRACKING_ORDER, activeLabel 
 }
 
 export default function CompactTenderCard({ job, actions = [], progress = null, showClientName = false, showWinBadge = false, urgentDeadline = false }) {
-  const clientName = job.client_name || job.company_name || '';
+  const clientName = job.client_name || job.company_name || job.client_email || '';
   const updatedLabel = relativeUpdateLabel(job.updated_at || job.archived_at);
   const deadline = urgentDeadline ? deadlineUrgency(job.last_date || job.tender_date) : null;
   return (
@@ -102,7 +102,7 @@ export default function CompactTenderCard({ job, actions = [], progress = null, 
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           {showClientName && clientName ? (
-            <p className="text-[11px] font-semibold text-slate-700 truncate">{clientName}</p>
+            <p className="text-xs font-black text-[#0A2647] truncate">{clientName}</p>
           ) : null}
           <p className="text-[10px] font-mono font-bold text-slate-500 tracking-wide">{job.bid_no || 'No bid no'}</p>
           <h4 className="text-sm font-bold text-[#0A2647] leading-tight line-clamp-2">{job.title || 'Untitled tender'}</h4>
