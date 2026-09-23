@@ -7,7 +7,7 @@ import {
   VECTOR_COLLECTION,
 } from '@/lib/gem-embeddings';
 import { ingestDocumentVectors } from '@/lib/rag-ingest';
-import { generateContent } from '@/lib/gemini';
+import { ingestCopilotPdf } from '@/lib/copilot-ingest';
 import { getGeminiApiKey } from '@/lib/env';
 import { purgeExpiredChatObjects } from '@/lib/chat-purge';
 
@@ -34,34 +34,38 @@ async function fetchWithTimeout(url) {
   }
 }
 
-// PDFs need real text extraction. Rather than add a PDF parsing dependency (most of which
-// misbehave under serverless bundling), hand the bytes to Gemini, which reads PDFs
-// natively and returns clean prose.
-async function extractPdfText(buffer) {
-  const { text } = await generateContent({
-    tier: 'flash',
-    parts: [
-      'Extract the full readable text of this document. Preserve headings, clause numbers ' +
-      'and list structure. Do not summarise, do not add commentary, output the text only.',
-      { inlineData: { data: buffer.toString('base64'), mimeType: 'application/pdf' } },
-    ],
-  });
-  return text;
-}
-
-async function loadRemoteSource(source) {
+async function loadRemoteHtml(source) {
   const res = await fetchWithTimeout(source.url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-  if (source.type === 'pdf') {
-    const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
-      throw new Error('Response was not a PDF (likely an HTML error or login page).');
-    }
-    return normaliseWhitespace(await extractPdfText(buffer));
-  }
-
   return normaliseWhitespace(htmlToText(await res.text()));
+}
+
+/** Same local-extract then embed path as a manual upload. */
+async function ingestRemotePdf(db, source) {
+  const res = await fetchWithTimeout(source.url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    throw new Error('Response was not a PDF (likely an HTML error or login page).');
+  }
+  const result = await ingestCopilotPdf(db, {
+    doc_id: source.id,
+    title: source.title,
+    category: 'terms',
+    origin: 'daily_sync',
+    source_url: source.url,
+    buffer,
+    contentType: 'application/pdf',
+  });
+  if (!result.skipped && !result.extraction?.ok) {
+    throw new Error(result.extraction?.error || 'PDF text extraction failed');
+  }
+  if (!result.skipped && !result.embedded_chunks) {
+    throw new Error(result.embed_error || 'embedding produced no chunks');
+  }
+  // Chunks written before this path used the bare source id.
+  await db.collection(VECTOR_COLLECTION).deleteMany({ document_id: source.id });
+  return result;
 }
 
 async function runSync() {
@@ -71,7 +75,7 @@ async function runSync() {
   const indexResult = await ensureVectorIndex(db);
 
   if (!getGeminiApiKey()) {
-    console.warn('[gem-sync] GEMINI_API_KEY missing — remote PDF sources will fail; seed documents still sync.');
+    console.warn('[gem-sync] GEMINI_API_KEY missing — text PDFs still sync locally; scans and embeddings will fail.');
   }
 
   const results = [];
@@ -95,7 +99,18 @@ async function runSync() {
   // 2. Live GeM sources. A single unreachable or JS-rendered page must not abort the run.
   for (const source of REMOTE_SOURCES) {
     try {
-      const text = await loadRemoteSource(source);
+      if (source.type === 'pdf') {
+        const result = await ingestRemotePdf(db, source);
+        results.push({
+          id: source.id,
+          title: source.title,
+          origin: 'remote',
+          status: result.skipped ? 'skipped' : 'synced',
+          chunks: result.embedded_chunks,
+        });
+        continue;
+      }
+      const text = await loadRemoteHtml(source);
       if (text.length < MIN_USEFUL_TEXT_CHARS) {
         results.push({
           id: source.id,

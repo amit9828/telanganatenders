@@ -82,17 +82,10 @@ async function tryCronSync(links) {
   const base = process.env.NEXTAUTH_URL || process.env.APP_URL || 'http://localhost:3000';
   const secret = process.env.CRON_SECRET || process.env.ADMIN_TOKEN || '';
   const url = `${base.replace(/\/$/, '')}/api/cron/gem-copilot-knowledge`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
-  try {
-    const probe = await fetch(base.replace(/\/$/, ''), { method: 'HEAD', signal: controller.signal }).catch(() => null);
-    if (!probe) {
-      log(`Next.js not reachable at ${base} — using direct Mongo/R2 sync`);
-      return null;
-    }
-  } finally {
-    clearTimeout(timer);
+  const probe = await fetch(base.replace(/\/$/, ''), { method: 'HEAD', signal: AbortSignal.timeout(4000) }).catch(() => null);
+  if (!probe) {
+    log(`Next.js not reachable at ${base} — using direct Mongo/R2 sync`);
+    return null;
   }
 
   log(`triggering server sync ${url}`);
@@ -120,19 +113,28 @@ async function tryCronSync(links) {
     console.warn('[copilot-scraper] Playwright harvest skipped:', err?.message || err);
   }
 
-  // Prefer direct sync (works without `npm run dev`). Cron is optional when Next is up.
-  let result = await tryCronSync(links).catch((e) => {
-    console.warn('[copilot-scraper] cron POST failed:', e?.message || e);
-    return null;
-  });
-
-  if (!result?.ok) {
-    log('Running direct sync into gem_copilot_knowledge…');
-    result = await syncGemCopilotKnowledge({
-      maxPdfsPerSource: 10,
-      discoveredLinks: links,
-    });
-    log(`direct sync: ${JSON.stringify(result.stats)}`);
+  let useDirect = false;
+  let result = null;
+  for (let batch = 0; batch < 20; batch += 1) {
+    const payload = batch === 0 ? links : [];
+    if (!useDirect) {
+      result = await tryCronSync(payload).catch((e) => {
+        console.warn('[copilot-scraper] cron POST failed:', e?.message || e);
+        return null;
+      });
+      if (!result?.ok) useDirect = true;
+    }
+    if (useDirect) {
+      log('Running direct sync into gem_copilot_knowledge…');
+      result = await syncGemCopilotKnowledge({
+        batchSize: 6,
+        discoveredLinks: payload,
+      });
+      log(`direct sync: ${JSON.stringify(result.stats)}`);
+    }
+    const remaining = result?.stats?.queue_remaining || 0;
+    log(`batch ${batch + 1}: ${remaining} PDF(s) still queued`);
+    if (!result?.ok || remaining <= 0) break;
   }
 
   if (!result?.ok) {
