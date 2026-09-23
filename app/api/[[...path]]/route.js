@@ -360,21 +360,29 @@ async function handleGET(request, { params }, attempt = 1) {
         }
       }
 
-      const limit = Math.min(300, Math.max(1, Number(searchParams.get('limit') || searchParams.get('pageSize')) || 100));
-      const page = Math.max(1, Number(searchParams.get('page')) || 1);
-      const skip = (page - 1) * limit;
+      const explicitLimit = searchParams.get('limit') || searchParams.get('pageSize');
+      const total = await db.collection('tenders').countDocuments(query);
 
       const __tendersQueryStart = Date.now();
-      const tenders = await db.collection('tenders')
+      let cursor = db.collection('tenders')
         .find(query)
         .project({ pdf_base64: 0 })
-        .sort({ last_date: 1 })
-        .skip(skip)
-        .limit(limit)
-        .toArray();
-      console.log(`🔍 [tenders] DB find().toArray() took ${Date.now() - __tendersQueryStart}ms | returned ${tenders.length} docs`);
+        .sort({ last_date: 1 });
+
+      let limit = null;
+      let page = 1;
+      // Live lists with no page size return every match. Archive, and any caller
+      // that asks for a page, keep the previous 100 default and 300 ceiling.
+      if (explicitLimit || isArchive) {
+        limit = Math.min(300, Math.max(1, Number(explicitLimit) || 100));
+        page = Math.max(1, Number(searchParams.get('page')) || 1);
+        cursor = cursor.skip((page - 1) * limit).limit(limit);
+      }
+
+      const tenders = await cursor.toArray();
+      console.log(`🔍 [tenders] DB find().toArray() took ${Date.now() - __tendersQueryStart}ms | returned ${tenders.length} of ${total}`);
       console.log(`🔍 [tenders] EXIT | TOTAL ${Date.now() - __reqStart}ms`);
-      return json({ tenders, page, limit });
+      return json({ tenders, page, limit: limit ?? tenders.length, total });
     }
 
     // 🚀 FIX: Fetch Vault Document Instantly Without Lag

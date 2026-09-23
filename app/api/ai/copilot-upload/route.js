@@ -26,6 +26,14 @@ async function runPool(items, worker) {
   return results;
 }
 
+function quotaMessage(message) {
+  const text = String(message || '');
+  if (/\b429\b|RESOURCE_EXHAUSTED|quota is exhausted/i.test(text)) {
+    return 'Gemini embedding quota is exhausted. Wait a minute and upload the PDF again.';
+  }
+  return text;
+}
+
 function guessCategory(fileName) {
   const hay = String(fileName || '').toLowerCase();
   if (/handbook/.test(hay)) return 'handbook';
@@ -92,7 +100,7 @@ async function trainOneFile(file, { db, uploadedBy, categoryOverride }) {
       fileName,
       status: 'failed',
       doc_id: result.saved?.doc_id || doc_id,
-      error: result.embed_error || 'Text was saved, but embedding failed.',
+      error: quotaMessage(result.embed_error) || 'Text was saved, but embedding failed.',
     };
   }
 
@@ -173,7 +181,7 @@ export async function POST(request) {
       return {
         fileName: file?.name || 'document.pdf',
         status: 'failed',
-        error: err?.message || 'Unexpected server error.',
+        error: quotaMessage(err?.message) || 'Unexpected server error.',
       };
     }
   });

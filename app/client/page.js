@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import { liveTendersOnly } from '@/lib/tender-sort';
@@ -22,7 +22,7 @@ import {
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
   IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature,
-  Handshake, Landmark, Gavel, ScrollText
+  Handshake, Landmark, Gavel, ScrollText, Search
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
@@ -95,6 +95,7 @@ export default function ClientDashboard() {
   const [clientId, setClientId] = useState('');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [publicTenders, setPublicTenders] = useState([]);
+  const [liveTenderSearch, setLiveTenderSearch] = useState('');
   const [buying, setBuying] = useState(false);
   const [alertReplyText, setAlertReplyText] = useState({}); 
 
@@ -897,6 +898,14 @@ export default function ClientDashboard() {
     await signOut({ redirect: false });
     window.location.href = '/';
   };
+
+  const visibleLiveTenders = useMemo(() => {
+    const needle = liveTenderSearch.trim().toLowerCase();
+    if (!needle) return publicTenders;
+    return publicTenders.filter((t) =>
+      [t.bid_no, t.title, t.department, t.district].some((v) => String(v || '').toLowerCase().includes(needle))
+    );
+  }, [publicTenders, liveTenderSearch]);
 
   useWorkflowStream((event) => {
     if (!event?.jobId) return;
@@ -1852,12 +1861,23 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
           {/* ============================================================================== */}
           <TabsContent value="live_tenders" className="space-y-6">
             <Card className="tender-shadow">
-              <CardHeader className="bg-slate-50 border-b">
+              <CardHeader className="bg-slate-50 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                 <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Public Procurement Tenders</CardTitle>
+                <div className="relative w-full sm:w-[240px]">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    placeholder="Search bid or title..."
+                    value={liveTenderSearch}
+                    onChange={(e) => setLiveTenderSearch(e.target.value)}
+                    className="pl-9 h-9 text-xs"
+                  />
+                </div>
               </CardHeader>
               <CardContent className="p-4 space-y-4 max-h-[750px] overflow-y-auto">
-                 {/* 🚀 FIX: Live Tenders UI with "Request MD to Bid" Option */}
-                 {publicTenders.map((t) => (
+                 {visibleLiveTenders.length === 0 && (
+                   <p className="text-sm text-slate-400 text-center py-8">No matching tenders found.</p>
+                 )}
+                 {visibleLiveTenders.map((t) => (
                    <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
                      <div className="flex items-start justify-between gap-3">
                        <div className="flex-1 min-w-0">

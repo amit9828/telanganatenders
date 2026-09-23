@@ -174,7 +174,7 @@ export default function EmployeeDashboard() {
       if (want.has('bids')) tasks.bids = fetch(`/api/bids?t=${stamp}`, { credentials: 'include', headers });
       if (want.has('officers')) tasks.officers = fetch(`/api/gov-officers?t=${stamp}`, { credentials: 'include', headers });
       if (want.has('clients')) tasks.clients = fetch(`/api/users/approved?t=${stamp}`, { credentials: 'include', headers });
-      if (want.has('tenders')) tasks.tenders = fetch(`/api/tenders?limit=100&t=${stamp}`, { credentials: 'include', headers });
+      if (want.has('tenders')) tasks.tenders = fetch(`/api/tenders?t=${stamp}`, { credentials: 'include', headers });
       if (want.has('tickets')) tasks.tickets = fetch(`/api/tickets?t=${stamp}`, { credentials: 'include', headers });
       if (want.has('guests')) tasks.guests = fetch(`/api/guest-queries?t=${stamp}`, { credentials: 'include', headers });
       if (want.has('employees')) tasks.employees = fetch(`/api/employees?t=${stamp}`, { credentials: 'include', headers });
