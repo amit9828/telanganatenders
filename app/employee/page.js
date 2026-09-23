@@ -29,6 +29,7 @@ import {
 import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
 import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
+import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -109,6 +110,7 @@ export default function EmployeeDashboard() {
   const [wfWinning, setWfWinning] = useState([]);
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
+  useStaffPresence(activeTab, { enabled: Boolean(email) });
 
   const patchJob = useCallback((job) => {
     if (!job) return;

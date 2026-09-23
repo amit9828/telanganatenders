@@ -36,6 +36,8 @@ import {
   setListIfChanged,
   upsertJob,
 } from '@/lib/job-board-state';
+import MasterReports from '@/components/reports/MasterReports';
+import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
@@ -130,6 +132,7 @@ export default function AdminPage() {
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reports');
+  useStaffPresence(activeTab, { enabled: Boolean(token || isMdSession) });
 
   // --- CORE DATA STATES ---
   const [tenders, setTenders] = useState([]);
@@ -140,11 +143,6 @@ export default function AdminPage() {
   const [l1Data, setL1Data] = useState({}); 
   const [pendingUsers, setPendingUsers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
-
-  // Reports Filter & Real Data Arrays
-  const [timeRange, setTimeRange] = useState('monthly'); 
-  const [clientReports, setClientReports] = useState([]);
-  const [employeeReports, setEmployeeReports] = useState([]);
 
   // Team & Credentials
   const [officerForm, setOfficerForm] = useState({ name: '', email: '', password: '', role: 'employee' });
@@ -294,7 +292,7 @@ export default function AdminPage() {
     };
 
     const want = new Set();
-    if (tab === 'reports') ['stats', 'clients', 'employees', 'dispatches', 'tenders'].forEach((k) => want.add(k));
+    if (tab === 'reports') ['tenders', 'pending', 'clients', 'ledger'].forEach((k) => want.add(k));
     else if (tab === 'finance') ['ledger', 'payments', 'clients'].forEach((k) => want.add(k));
     else if (tab === 'clients') ['pending', 'clients'].forEach((k) => want.add(k));
     else if (tab === 'matchmaker') want.add('matches');
@@ -340,16 +338,7 @@ export default function AdminPage() {
       if (got.guests?.ok) setListIfChanged(setGuestQueries, got.guests.data.queries || got.guests.data['guest-queries'] || []);
       if (got.pending?.ok) setListIfChanged(setPendingUsers, got.pending.data.users || []);
       if (got.clients?.ok) {
-        const users = got.clients.data.users || [];
-        setListIfChanged(setApprovedClients, users);
-        setClientReports(users.map((c) => {
-          const wonBids = (c.bids || []).filter((b) => b.status === 'Won').length || c.stats?.won || 0;
-          const participated = (c.bids || []).length || c.stats?.participated || 0;
-          return {
-            id: c.email, name: c.company_name || c.name || 'Unknown',
-            total: participated, won: wonBids, lost: participated - wonBids,
-          };
-        }));
+        setListIfChanged(setApprovedClients, got.clients.data.users || []);
       }
       if (got.dispatches?.ok) setListIfChanged(setDispatches, got.dispatches.data.dispatches || []);
       if (got.employees?.ok) setListIfChanged(setTeamMembers, got.employees.data.team || []);
@@ -383,17 +372,6 @@ export default function AdminPage() {
       if (got.wfSubmitted?.ok) setListIfChanged(setWfSubmitted, got.wfSubmitted.data.jobs || []);
       if (got.wfWinning?.ok) setListIfChanged(setWfWinning, (got.wfWinning.data.jobs || []).filter(belongsOnWinning));
       if (got.wfArchive?.ok) setListIfChanged(setWfArchive, got.wfArchive.data.jobs || []);
-
-      if (got.employees?.ok && got.dispatches?.ok) {
-        const teamList = got.employees.data.team || [];
-        const dispatchList = got.dispatches.data.dispatches || [];
-        setEmployeeReports(teamList.map((e) => {
-          const completedTasks = dispatchList.filter((d) => d.target_id === e.emp_id && d.status === 'Completed').length || 0;
-          const assignedTasks = dispatchList.filter((d) => d.target_id === e.emp_id).length || 1;
-          const effScore = Math.min(100, Math.round((completedTasks / assignedTasks) * 100) + 20);
-          return { id: e.emp_id, name: e.name, role: e.role, login: 'Active', efficiency: effScore };
-        }));
-      }
 
       if (tab === 'reports') refreshLiveFeed(token, { silent: true });
     } catch (err) { console.error('Refresh failed:', err); }
@@ -1223,78 +1201,14 @@ export default function AdminPage() {
 
           {/* ==================== 1. MASTER REPORTS ==================== */}
           <TabsContent value="reports" className="space-y-4">
-            <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
-               <h2 className="font-bold text-[#0A2647] flex items-center gap-2"><Activity className="w-5 h-5 text-blue-600"/> Consultancy Performance</h2>
-               <div className="bg-slate-100 p-1 rounded-lg flex gap-1">
-                  <Button size="sm" variant={timeRange === 'daily' ? 'default' : 'ghost'} onClick={()=>setTimeRange('daily')} className={`h-7 text-xs ${timeRange === 'daily' ? 'bg-[#0A2647] text-white' : ''}`}>Daily</Button>
-                  <Button size="sm" variant={timeRange === 'weekly' ? 'default' : 'ghost'} onClick={()=>setTimeRange('weekly')} className={`h-7 text-xs ${timeRange === 'weekly' ? 'bg-[#0A2647] text-white' : ''}`}>Weekly</Button>
-                  <Button size="sm" variant={timeRange === 'monthly' ? 'default' : 'ghost'} onClick={()=>setTimeRange('monthly')} className={`h-7 text-xs ${timeRange === 'monthly' ? 'bg-[#0A2647] text-white' : ''}`}>Monthly</Button>
-               </div>
-            </div>
-            
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div onClick={() => setActiveTab('team-activity')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Users className="w-4 h-4 text-blue-500" />} label="Team Activity" value={dispatches.filter(d => d.target_type === 'client_alert' && d.status !== 'Completed' && !String(d.status || '').includes('Force Closed')).length} accent={true} />
-              </div>
-              <div onClick={() => setActiveTab('publisher')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Globe className="w-4 h-4 text-blue-500" />} label="Live Tenders" value={tenders.length} />
-              </div>
-              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Total Clients" value={approvedClients.length} />
-              </div>
-              <div onClick={() => setActiveTab('clients')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<UserPlus className="w-4 h-4 text-orange-500" />} label="Pending Appr." value={pendingUsers.length} accent={pendingUsers.length > 0} />
-              </div>
-              <div onClick={() => setActiveTab('finance')} className="cursor-pointer transition hover:scale-[1.01]">
-                 <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${ledgerBalance.toLocaleString()}`} />
-              </div>
-            </div>
-
-            <div className="grid lg:grid-cols-2 gap-6">
-               <Card className="border-0 ring-1 ring-slate-200/80">
-                  <CardHeader className="bg-slate-50/80 border-b border-slate-200/80 pb-3 rounded-t-xl"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Clock className="w-4 h-4 text-slate-500"/> Workforce Efficiency & Logs</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                    {employeeReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No active employees found.</p> : (
-                      <table className="premium-table text-sm text-left">
-                         <thead>
-                            <tr><th>Employee</th><th>Status</th><th>Efficiency</th></tr>
-                         </thead>
-                         <tbody>
-                            {employeeReports.map(emp => (
-                               <tr key={emp.id}>
-                                  <td><p className="font-bold text-[#0A2647]">{emp.name}</p><p className="text-[9px] text-slate-400">{emp.id} • {emp.role}</p></td>
-                                  <td className="font-semibold text-emerald-700">{emp.login}</td>
-                                  <td><div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden"><div className={`h-full transition-all duration-300 ${emp.efficiency >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{width: `${emp.efficiency}%`}}></div></div><span className="font-bold text-xs">{emp.efficiency}%</span></td>
-                               </tr>
-                            ))}
-                         </tbody>
-                      </table>
-                    )}
-                  </CardContent>
-               </Card>
-               <Card className="border-0 ring-1 ring-slate-200/80">
-                  <CardHeader className="bg-slate-50/80 border-b border-slate-200/80 pb-3 rounded-t-xl"><CardTitle className="text-sm text-[#0A2647] flex items-center gap-2"><Target className="w-4 h-4 text-slate-500"/> Consultancy Funnel (Business Conversion)</CardTitle></CardHeader>
-                  <CardContent className="pt-4 space-y-4 max-h-[300px] overflow-y-auto">
-                    {clientReports.length === 0 ? <p className="text-center text-sm text-slate-400 py-6">No verified clients yet.</p> : (
-                      <table className="premium-table text-sm text-left">
-                         <thead>
-                            <tr><th>Client</th><th>Applied</th><th className="text-emerald-600">Won</th><th className="text-red-600">Lost</th></tr>
-                         </thead>
-                         <tbody>
-                            {clientReports.map(cr => (
-                               <tr key={cr.id}>
-                                  <td><p className="font-bold text-[#0A2647]">{cr.name}</p><p className="text-[9px] text-slate-400">{cr.id}</p></td>
-                                  <td className="font-bold text-slate-700">{cr.total}</td>
-                                  <td className="font-black text-emerald-600">{cr.won}</td>
-                                  <td className="font-bold text-red-500">{cr.lost}</td>
-                               </tr>
-                            ))}
-                         </tbody>
-                      </table>
-                    )}
-                  </CardContent>
-               </Card>
-            </div>
+            <MasterReports
+              active={activeTab === 'reports'}
+              onOpenTab={setActiveTab}
+              liveTenders={tenders.length}
+              clients={approvedClients.length}
+              pending={pendingUsers.length}
+              balance={ledgerBalance}
+            />
           </TabsContent>
 
           {/* ==================== 2. CLIENT CRM & VAULT VERIFICATION ==================== */}
