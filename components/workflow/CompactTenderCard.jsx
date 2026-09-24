@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FileText, Upload, Download, Eye, Trash2, CheckCircle2 } from 'lucide-react';
 import { TRACKING_LABELS, TRACKING_ORDER, currentTrackingStage } from '@/lib/tracking-status';
-import { deadlineUrgency } from '@/lib/tender-deadline';
+import { jobDeadline } from '@/lib/tender-deadline';
 
 function fmtDate(value) {
   if (!value) return '—';
@@ -76,7 +76,7 @@ export function TrackingProgressBar({ job, stages = TRACKING_ORDER, activeLabel 
 export default function CompactTenderCard({ job, actions = [], progress = null, showClientName = false, showWinBadge = false }) {
   const clientName = job.client_name || job.company_name || job.client_email || '';
   const updatedLabel = relativeUpdateLabel(job.updated_at || job.archived_at);
-  const deadline = deadlineUrgency(job.last_date || job.tender_date);
+  const deadline = jobDeadline(job);
   const urgent = Boolean(deadline?.urgent);
   return (
     <div className={`rounded-xl border p-3 shadow-sm flex flex-col gap-2 min-h-[132px] ${urgent ? 'bg-red-50 border-red-400' : 'bg-white border-slate-200'}`}>

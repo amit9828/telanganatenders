@@ -24,7 +24,7 @@ import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations'
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
-import { currentHandler, deadlineUrgency } from '@/lib/tender-deadline';
+import { currentHandler, jobDeadline } from '@/lib/tender-deadline';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile } from '@/components/workflow/api';
 import {
   applyJobToBoard,
@@ -1825,7 +1825,7 @@ export default function AdminPage() {
                       </thead>
                       <tbody>
                         {suggestionBoardJobs.map((job) => {
-                          const deadline = deadlineUrgency(job.last_date || job.tender_date);
+                          const deadline = jobDeadline(job);
                           return (
                           <tr key={job._id || job.id} className={deadline?.urgent ? 'bg-red-50' : undefined}>
                             <td className="align-top">
@@ -1870,7 +1870,7 @@ export default function AdminPage() {
                       </thead>
                       <tbody>
                         {masterLiveJobs.map((job) => {
-                          const deadline = deadlineUrgency(job.last_date || job.tender_date);
+                          const deadline = jobDeadline(job);
                           return (
                           <tr key={job._id || job.id} className={deadline?.urgent ? 'bg-red-50' : undefined}>
                             <td className="align-top text-xs font-semibold">{job.client_name || job.client_email || '—'}</td>
