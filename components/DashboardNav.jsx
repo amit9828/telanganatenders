@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
+import { workflowFetch } from '@/components/workflow/api';
 
 // Module accent map from the Enterprise UI/UX Blueprint (section C) — keep every
 // dashboard nav item mapped to the same fixed color per feature area instead of
@@ -20,7 +21,15 @@ const ACTIVE_COLOR_CLASS = {
   violet: 'bg-violet-700 text-white',
 };
 
-function NavGroups({ groups, activeTab, onChange, onNavigate }) {
+function openAlertCount(alerts) {
+  return (alerts || []).filter((alert) => alert.status !== 'OK').length;
+}
+
+function isWorkAlertsItem(item) {
+  return item.value === 'ops-alerts' || (item.value === 'alerts' && item.label === 'Alerts');
+}
+
+function NavGroups({ groups, activeTab, onChange, onNavigate, alertCount = 0 }) {
   return (
     <div className="space-y-4">
       {groups.map((group) => (
@@ -42,6 +51,9 @@ function NavGroups({ groups, activeTab, onChange, onNavigate }) {
                 >
                   {Icon && <Icon className="w-4 h-4 shrink-0" />}
                   <span className="flex-1 truncate">{item.label}</span>
+                  {isWorkAlertsItem(item) && alertCount > 0 && (
+                    <span className="bg-red-500 text-white rounded-full px-2 py-0.5 text-xs font-bold shrink-0">{alertCount}</span>
+                  )}
                   {!!item.badge && (
                     <Badge className={cn('h-5 min-w-5 justify-center px-1.5 text-[10px] shrink-0', isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700')}>
                       {item.badge}
@@ -67,12 +79,37 @@ function NavGroups({ groups, activeTab, onChange, onNavigate }) {
  */
 export default function DashboardNav({ groups, activeTab, onChange, title = 'Menu' }) {
   const [open, setOpen] = useState(false);
+  const [alertCount, setAlertCount] = useState(0);
   const activeItem = groups.flatMap((g) => g.items).find((i) => i.value === activeTab);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await workflowFetch('/api/ops-alerts');
+        if (!cancelled) setAlertCount(openAlertCount(data.alerts));
+      } catch {
+        // Keep the last count when the list cannot be loaded.
+      }
+    };
+    const onChanged = (event) => {
+      const count = event?.detail?.count;
+      if (typeof count === 'number') setAlertCount(count);
+    };
+    load();
+    window.addEventListener('focus', load);
+    window.addEventListener('ops-alerts-changed', onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', load);
+      window.removeEventListener('ops-alerts-changed', onChanged);
+    };
+  }, []);
 
   return (
     <>
       <aside className="hidden lg:block w-60 shrink-0 sticky top-[76px] self-start max-h-[calc(100vh-96px)] overflow-y-auto glass-panel rounded-xl tender-shadow border border-slate-200/80 p-3">
-        <NavGroups groups={groups} activeTab={activeTab} onChange={onChange} />
+        <NavGroups groups={groups} activeTab={activeTab} onChange={onChange} alertCount={alertCount} />
       </aside>
 
       <div className="lg:hidden sticky top-0 z-30 -mx-3 sm:-mx-4 px-3 sm:px-4 py-2 mb-1 glass-panel border-b border-slate-200/80 w-[calc(100%+1.5rem)] sm:w-[calc(100%+2rem)]">
@@ -89,7 +126,7 @@ export default function DashboardNav({ groups, activeTab, onChange, title = 'Men
             <SheetHeader className="mb-3">
               <SheetTitle className="text-[#0A2647]">{title}</SheetTitle>
             </SheetHeader>
-            <NavGroups groups={groups} activeTab={activeTab} onChange={onChange} onNavigate={() => setOpen(false)} />
+            <NavGroups groups={groups} activeTab={activeTab} onChange={onChange} onNavigate={() => setOpen(false)} alertCount={alertCount} />
           </SheetContent>
         </Sheet>
       </div>
