@@ -1768,7 +1768,6 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                         <CompactTenderCard
                           key={job._id}
                           job={job}
-                          urgentDeadline
                           actions={[
                             ...clientWorkflowDocActions(job),
                             { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
