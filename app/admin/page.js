@@ -24,6 +24,7 @@ import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations'
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
 import { liveTendersOnly } from '@/lib/tender-sort';
+import { currentHandler, deadlineUrgency } from '@/lib/tender-deadline';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile } from '@/components/workflow/api';
 import {
   applyJobToBoard,
@@ -1820,11 +1821,13 @@ export default function AdminPage() {
                   ) : (
                     <table className="premium-table text-sm text-left">
                       <thead>
-                        <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>Date</th></tr>
+                        <tr><th>Client</th><th>Bid</th><th>Status</th><th>Last date</th><th>Current handler</th><th>Date</th></tr>
                       </thead>
                       <tbody>
-                        {suggestionBoardJobs.map((job) => (
-                          <tr key={job._id || job.id}>
+                        {suggestionBoardJobs.map((job) => {
+                          const deadline = deadlineUrgency(job.last_date || job.tender_date);
+                          return (
+                          <tr key={job._id || job.id} className={deadline?.urgent ? 'bg-red-50' : undefined}>
                             <td className="align-top">
                               <p className="font-semibold text-slate-800 text-xs">{job.parked_client_name || job.client_name || job.parked_client_email || job.client_email || '—'}</p>
                               <p className="text-[9px] text-slate-400 font-mono">{job.parked_client_email || job.client_email || ''}</p>
@@ -1838,10 +1841,12 @@ export default function AdminPage() {
                                 {job.status === 'AWAITING_CLIENT' ? 'AWAITING_CLIENT' : 'LIVE (parked)'}
                               </Badge>
                             </td>
-                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{job.suggested_by?.name || job.assigned_emp_name || job.created_by_tl || '—'}</td>
+                            <td className={`align-top text-xs whitespace-nowrap ${deadline?.urgent ? 'font-bold text-red-600' : 'text-slate-600'}`}>{deadline?.text || '—'}</td>
+                            <td className="align-top text-xs font-semibold text-slate-700 whitespace-nowrap">{currentHandler(job)}</td>
                             <td className="align-top text-[10px] text-slate-500 whitespace-nowrap">{job.updated_at || job.created_at ? new Date(job.updated_at || job.created_at).toLocaleDateString() : '—'}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
@@ -1861,18 +1866,21 @@ export default function AdminPage() {
                   ) : (
                     <table className="premium-table text-sm text-left">
                       <thead>
-                        <tr><th>Client</th><th>Bid</th><th>Status</th><th>Employee</th><th>SOW</th><th></th></tr>
+                        <tr><th>Client</th><th>Bid</th><th>Status</th><th>Last date</th><th>Current handler</th><th>SOW</th><th></th></tr>
                       </thead>
                       <tbody>
-                        {masterLiveJobs.map((job) => (
-                          <tr key={job._id || job.id}>
+                        {masterLiveJobs.map((job) => {
+                          const deadline = deadlineUrgency(job.last_date || job.tender_date);
+                          return (
+                          <tr key={job._id || job.id} className={deadline?.urgent ? 'bg-red-50' : undefined}>
                             <td className="align-top text-xs font-semibold">{job.client_name || job.client_email || '—'}</td>
                             <td className="align-top">
                               <p className="font-semibold text-xs">{job.bid_no || 'PENDING'}</p>
                               <p className="text-[10px] text-slate-500 line-clamp-1">{job.title}</p>
                             </td>
                             <td className="align-top"><Badge variant="outline" className="text-[10px]">{job.status}</Badge></td>
-                            <td className="align-top text-xs">{job.suggested_by?.name || job.assigned_emp_name || job.created_by_tl || 'MD'}</td>
+                            <td className={`align-top text-xs whitespace-nowrap ${deadline?.urgent ? 'font-bold text-red-600' : 'text-slate-600'}`}>{deadline?.text || '—'}</td>
+                            <td className="align-top text-xs">{currentHandler(job)}</td>
                             <td className="align-top">
                               {job.sow ? (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => openWorkflowFile(job._id, 'sow')}>View SOW</Button>
@@ -1899,7 +1907,8 @@ export default function AdminPage() {
                               </Button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
