@@ -19,6 +19,20 @@ import { workflowFetch } from '@/components/workflow/api';
 import { mdDeleteCardAction } from '@/components/workflow/jobDocActions';
 import { TRACKING_LABELS, currentTrackingStage, nextTrackingStage } from '@/lib/tracking-status';
 
+function clientGroupName(job) {
+  return job.client_name || job.company_name || job.client_email || 'Unknown client';
+}
+
+function clientSections(jobs) {
+  const groups = new Map();
+  jobs.forEach((job) => {
+    const name = clientGroupName(job);
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(job);
+  });
+  return [...groups.keys()].sort((a, b) => a.localeCompare(b)).map((name) => [name, groups.get(name)]);
+}
+
 function SubmittedTrackingBoard({
   jobs = [],
   actorEmpId = '',
@@ -85,45 +99,53 @@ function SubmittedTrackingBoard({
     <div className="space-y-3">
       <h3 className="font-bold text-[#0A2647]">Submitted tracking</h3>
       {jobs.length === 0 && <p className="text-sm text-slate-400">No submitted tenders.</p>}
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {jobs.map((job) => {
-          const stage = currentTrackingStage(job) || TRACKING_LABELS.SUBMITTED;
-          const canEdit = Boolean(actorEmpId) && String(job.assigned_emp_id || '') === String(actorEmpId);
-          const next = stage === TRACKING_LABELS.BID_AWARDED ? null : nextTrackingStage(stage);
-          const cardBusy = busyId === job._id;
-          const driveLink = job.drive_bid_folder_link || '';
-          return (
-            <div key={job._id} className={`space-y-2 ${cardBusy ? 'opacity-70' : ''}`}>
-              <CompactTenderCard
-                job={{ ...job, display_status: stage }}
-                showClientName
-                progress={<TrackingProgressBar job={{ ...job, tracking_status: stage }} />}
-                actions={[
-                  driveLink && { label: 'Open Drive folder', icon: 'file', onClick: () => window.open(driveLink, '_blank', 'noopener,noreferrer') },
-                  canDelete && mdDeleteCardAction(job, deleteCard),
-                ].filter(Boolean)}
-              />
-              {canEdit && (next || stage === TRACKING_LABELS.BID_AWARDED) ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 w-full text-xs"
-                  disabled={cardBusy}
-                  onClick={() => setConfirm({
-                    job,
-                    target: stage === TRACKING_LABELS.BID_AWARDED ? 'result' : next,
-                  })}
-                >
-                  {stage === TRACKING_LABELS.BID_AWARDED ? 'Record result' : `Update to ${next}`}
-                </Button>
-              ) : (
-                <p className="text-[11px] text-slate-500 px-1">{stage} · read-only</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {jobs.length > 0 && (
+        <div className="space-y-5">
+          {clientSections(jobs).map(([name, clientJobs]) => (
+            <section key={name} className="space-y-2">
+              <h4 className="text-sm font-bold text-[#0A2647] border-b border-slate-200 pb-1">{name}</h4>
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {clientJobs.map((job) => {
+                  const stage = currentTrackingStage(job) || TRACKING_LABELS.SUBMITTED;
+                  const canEdit = Boolean(actorEmpId) && String(job.assigned_emp_id || '') === String(actorEmpId);
+                  const next = stage === TRACKING_LABELS.BID_AWARDED ? null : nextTrackingStage(stage);
+                  const cardBusy = busyId === job._id;
+                  const driveLink = job.drive_bid_folder_link || '';
+                  return (
+                    <div key={job._id} className={`space-y-2 ${cardBusy ? 'opacity-70' : ''}`}>
+                      <CompactTenderCard
+                        job={{ ...job, display_status: stage }}
+                        progress={<TrackingProgressBar job={{ ...job, tracking_status: stage }} />}
+                        actions={[
+                          driveLink && { label: 'Open Drive folder', icon: 'file', onClick: () => window.open(driveLink, '_blank', 'noopener,noreferrer') },
+                          canDelete && mdDeleteCardAction(job, deleteCard),
+                        ].filter(Boolean)}
+                      />
+                      {canEdit && (next || stage === TRACKING_LABELS.BID_AWARDED) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 w-full text-xs"
+                          disabled={cardBusy}
+                          onClick={() => setConfirm({
+                            job,
+                            target: stage === TRACKING_LABELS.BID_AWARDED ? 'result' : next,
+                          })}
+                        >
+                          {stage === TRACKING_LABELS.BID_AWARDED ? 'Record result' : `Update to ${next}`}
+                        </Button>
+                      ) : (
+                        <p className="text-[11px] text-slate-500 px-1">{stage} · read-only</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
 
       <AlertDialog open={Boolean(confirm)} onOpenChange={(open) => { if (!open) setConfirm(null); }}>
         <AlertDialogContent>
