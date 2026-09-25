@@ -42,6 +42,9 @@ function PaymentStatusContent() {
       setDestination(target);
       if (data.success) {
         sessionStorage.removeItem('tt_pending_plan');
+        sessionStorage.removeItem('tt_pending_bid_count');
+        sessionStorage.removeItem('tt_pending_plans');
+        sessionStorage.removeItem('tt_pending_tender');
         setStatus('success');
         setTimeout(() => router.push(target), 3000);
       } else {
