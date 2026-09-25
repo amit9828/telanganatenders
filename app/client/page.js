@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
-import BillingGate from '@/components/BillingGate';
+import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
+import ViewUnlockModal from '@/components/ViewUnlockModal';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { consumeClientBypass, clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -94,6 +95,7 @@ export default function ClientDashboard() {
 
   // --- Core State ---
   const [userData, setUserData] = useState(null);
+  const [viewTender, setViewTender] = useState(null);
   const [clientId, setClientId] = useState('');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [publicTenders, setPublicTenders] = useState([]);
@@ -1380,6 +1382,20 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
            </Card>
         </div>
 
+        <ViewUnlockModal
+          open={Boolean(viewTender)}
+          tenderTitle={viewTender?.title}
+          onClose={() => setViewTender(null)}
+          onChoose={(planKey) => {
+            const tender = viewTender;
+            setViewTender(null);
+            startCashfreeCheckout({
+              planId: planKey,
+              tenderId: planKey === 'view_single' ? String(tender?._id || tender?.id || '') : undefined,
+            }).catch((err) => toast.error(err.message));
+          }}
+        />
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
           {/* Order per Enterprise UI/UX Blueprint (section A): the two most frequent
               client actions — checking their dashboard and browsing live tenders — come
@@ -1975,7 +1991,7 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
                      </div>
                      
                      <div className="border-t border-slate-100 pt-3 mt-2 flex flex-col sm:flex-row items-center gap-2">
-                        <Button size="sm" onClick={() => handleViewPDF(t._id)} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0 w-full sm:w-auto">
+                        <Button size="sm" onClick={() => (userData?.discovery_masked ? setViewTender(t) : handleViewPDF(t._id))} variant="outline" className="h-8 text-xs text-blue-600 border-blue-200 shadow-sm shrink-0 w-full sm:w-auto">
                            <FileText className="w-3 h-3 mr-1.5"/> View PDF Document
                         </Button>
                         <Button size="sm" onClick={() => requestBidSupportForTender(t)} className="bg-[#0A2647] hover:bg-[#144272] h-8 text-xs flex-1 w-full shadow-sm text-white">

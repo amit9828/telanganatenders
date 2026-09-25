@@ -17,28 +17,52 @@ export async function POST(request) {
   if (!email) return json({ error: 'Sign in with Google before checkout.' }, 401);
   const body = await request.json().catch(() => ({}));
   const db = await getDb();
-  const check = await assertPurchasable(db, body.plan_id);
-  if (check.error) return json({ error: check.error }, check.status);
-  const money = orderAmount(check.item);
+  const ids = (Array.isArray(body.plan_ids) && body.plan_ids.length ? body.plan_ids : [body.plan_id])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+  if (!ids.length || ids.every((id) => id === 'udyam')) {
+    return json({ error: 'Udyam is included with a registration combo and cannot be bought alone.' }, 400);
+  }
+  let base = 0;
+  const names = [];
+  let includesUdyam = false;
+  let primary = null;
+  let bidCount = null;
+  for (const id of ids) {
+    const check = await assertPurchasable(db, id);
+    if (check.error) return json({ error: check.error }, check.status);
+    primary = primary || check.item;
+    names.push(check.item.name);
+    if (comboIncludesUdyam(id) || ['vendor_assessment', 'oem_panel_approval', 'product_catalogs'].includes(id)) includesUdyam = true;
+    if (id === 'custom_bids_10') {
+      bidCount = Math.max(1, Math.floor(Number(body.bid_count) || 1));
+      base += ((Number(check.item.base_price) || 0) / 10) * bidCount;
+    } else {
+      base += Number(check.item.base_price) || 0;
+    }
+  }
+  const money = orderAmount({ base_price: base });
   const orderId = `order_${Date.now()}`;
   const draft = pendingOrderDoc({
     orderId,
     email,
-    planId: check.item.service_key,
-    basePrice: check.item.base_price,
+    planId: primary.service_key,
+    basePrice: base,
   });
+  draft.plan_ids = ids;
+  draft.bid_count = bidCount;
   draft.tender_id = body.tender_id || null;
-  draft.includes_udyam = comboIncludesUdyam(check.item.service_key);
+  draft.includes_udyam = includesUdyam;
   draft.return_to = '/client?step=agreement';
   await db.collection('payments').insertOne(draft);
 
-    const cashfree = await createCashfreeOrder(db, {
+  const cashfree = await createCashfreeOrder(db, {
     email,
     plan: 'single',
     customAmount: money.total_amount,
     tenderId: body.tender_id || null,
     return_to: '/client?step=agreement',
-    reason: check.item.name,
+    reason: names.join(', '),
     order_id: orderId,
   });
   const payload = await cashfree.json();
@@ -52,6 +76,6 @@ export async function POST(request) {
     subtotal: money.subtotal,
     gst_amount: money.gst_amount,
     total_amount: money.total_amount,
-    includes_udyam: draft.includes_udyam,
+    includes_udyam: includesUdyam,
   });
 }

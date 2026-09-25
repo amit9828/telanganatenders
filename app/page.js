@@ -23,6 +23,8 @@ import { deskPathForDesignation } from '@/lib/designations';
 import { numberedPageList } from '@/components/workflow/api';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { rememberRealClientIdent, rememberRealStaffIdent } from '@/lib/tab-handoff';
+import GrowthPartnerPricing from '@/components/GrowthPartnerPricing';
+import ViewUnlockModal from '@/components/ViewUnlockModal';
 
 const PLANS = [
   { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
@@ -101,6 +103,7 @@ export default function App() {
   const [guestPayForm, setGuestPayForm] = useState({ name: '', phone: '' });
   
   const [pendingTender, setPendingTender] = useState(null);
+  const [viewOffer, setViewOffer] = useState(false);
   const [pdfData, setPdfData] = useState(null);
   const [buying, setBuying] = useState(false);
   
@@ -415,7 +418,7 @@ export default function App() {
     const userMail = email || (typeof window !== 'undefined' ? localStorage.getItem('guest_email') : null);
     if (!userMail) {
        setPendingTender(t);
-       setPaywallModal(true);
+       setViewOffer(true);
        return;
     }
 
@@ -446,7 +449,7 @@ export default function App() {
           if (viewer && !viewer.closed) viewer.close();
           toast.dismiss(toastId);
           setPendingTender(t);
-          setPaywallModal(true);
+          setViewOffer(true);
        }
     } catch (e) {
        if (viewer && !viewer.closed) viewer.close();
@@ -488,6 +491,25 @@ export default function App() {
       
       await cashfree.checkout(checkoutOptions);
     } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
+  };
+
+  const chooseCatalogPlan = (intent) => {
+    const serviceKey = intent?.planId || intent;
+    const planIds = intent?.planIds;
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('tt_pending_plan', serviceKey);
+      if (intent?.bidCount) sessionStorage.setItem('tt_pending_bid_count', String(intent.bidCount));
+      else sessionStorage.removeItem('tt_pending_bid_count');
+      if (planIds?.length) sessionStorage.setItem('tt_pending_plans', JSON.stringify(planIds));
+      else sessionStorage.removeItem('tt_pending_plans');
+      if (intent?.tenderId) sessionStorage.setItem('tt_pending_tender', intent.tenderId);
+    }
+    if (!email) {
+      toast.info('Please sign in to subscribe securely');
+      handleSubscribeLogin();
+      return;
+    }
+    window.location.href = '/client?step=billing';
   };
 
   const buyPlan = (planId) => {
@@ -1003,6 +1025,20 @@ export default function App() {
            </div>
         </div>
       </section>
+
+      <GrowthPartnerPricing onSubscribe={chooseCatalogPlan} />
+      <ViewUnlockModal
+        open={viewOffer}
+        tenderTitle={pendingTender?.title}
+        onClose={() => setViewOffer(false)}
+        onChoose={(planKey) => {
+          setViewOffer(false);
+          chooseCatalogPlan({
+            planId: planKey,
+            tenderId: planKey === 'view_single' ? String(pendingTender?._id || pendingTender?.id || '') : undefined,
+          });
+        }}
+      />
 
       {/* 🚀 DYNAMIC LEADERS PORTAL */}
       {brandSettings.leaders && brandSettings.leaders.length > 0 && (

@@ -10,12 +10,21 @@ function json(data, status = 200) {
   return NextResponse.json(data, { status });
 }
 
+const PUBLIC_PRICE = { service_key: 1, name: 1, base_price: 1, category: 1, bid_credits: 1, _id: 0 };
+
 export async function GET(request) {
   const actor = await resolveActorRole(request);
   const email = await resolveClientEmail(request);
-  if (!actor.role && !email) return json({ error: 'Please sign in.' }, 401);
   const db = await getDb();
   await seedPricingMaster(db);
+  const signedIn = Boolean(actor.role || email);
+  if (!signedIn) {
+    const items = await db.collection(PRICING_COLLECTION).find(
+      { is_active: { $ne: false }, individually_purchasable: { $ne: false } },
+      { projection: PUBLIC_PRICE },
+    ).sort({ category: 1, name: 1 }).toArray();
+    return json({ items, canEdit: false });
+  }
   const items = await db.collection(PRICING_COLLECTION).find({}).sort({ category: 1, name: 1 }).toArray();
   return json({
     items,
