@@ -14,6 +14,7 @@ const GROUPS = [
   { id: 'payg', title: 'Pay-as-you-go packs' },
   { id: 'payment_tracking', title: 'Payment tracking' },
   { id: 'ondemand', title: 'On-demand services' },
+  { id: 'compliance', title: 'Third-party and compliance' },
 ];
 
 function authHeaders(token) {

@@ -1937,10 +1937,26 @@ export async function POST(request, { params }) {
       return json({ success: true, client_id: existing.client_id || null, email: existing.email });
     }
 
-    // 🚀 FIX: Guest Queries POST Route
     if (path === 'guest-queries' || path === 'api/guest-queries') {
-       const result = await db.collection('guest_queries').insertOne({ ...body, created_at: new Date() });
-       return json({ success: true, id: result.insertedId });
+      const enterpriseName = String(body.enterprise_name || '').trim();
+      const name = String(body.name || '').trim();
+      const phone = String(body.phone || '').trim();
+      const area = String(body.area || '').trim();
+      if (!enterpriseName || !name || !phone || !area) {
+        return json({ error: 'Enterprise name, name, phone, and area are required.' }, 400);
+      }
+      const result = await db.collection('guest_queries').insertOne({
+        enterprise_name: enterpriseName,
+        name,
+        phone,
+        area,
+        query: String(body.query || '').trim(),
+        services: Array.isArray(body.services) ? body.services : [],
+        source: body.source || 'public',
+        status: 'open',
+        created_at: new Date(),
+      });
+      return json({ success: true, id: result.insertedId });
     }
 
     if (path === 'subscription/cancel' || path === 'api/subscription/cancel') {
