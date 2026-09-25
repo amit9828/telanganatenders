@@ -10,6 +10,8 @@ import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
+import PricingMasterPanel from '@/components/PricingMasterPanel';
+import ThirdPartyLeadsPanel from '@/components/ThirdPartyLeadsPanel';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
@@ -1171,6 +1173,8 @@ export default function AdminPage() {
       { value: 'tickets', label: 'Helpdesk', icon: MessageSquare, color: 'navy', badge: activeTickets.length },
     ] },
     { id: 'setup', label: 'Setup', items: [
+      { value: 'pricing', label: 'PricingMaster', icon: IndianRupee, color: 'emerald' },
+      { value: 'leads', label: 'Third-party leads', icon: Users, color: 'purple' },
       { value: 'settings', label: 'Setup', icon: ShieldCheck, color: 'navy' },
     ] },
   ];
@@ -2501,6 +2505,14 @@ export default function AdminPage() {
                  </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="pricing" className="mt-4">
+            <PricingMasterPanel token={token} canEdit />
+          </TabsContent>
+
+          <TabsContent value="leads" className="mt-4">
+            <ThirdPartyLeadsPanel token={token} />
           </TabsContent>
 
           <TabsContent value="settings" className="mt-4">

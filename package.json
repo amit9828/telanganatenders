@@ -11,7 +11,9 @@
         "gem:agent": "node scripts/gem-agent-server.js",
         "gem:watch": "node scripts/gem-local-agent.js",
         "gem:copilot-kb": "node scripts/gem-copilot-knowledge-scraper.js",
-        "gem:copilot-kb:fix": "node scripts/fix-copilot-knowledge-extraction.js"
+        "gem:copilot-kb:fix": "node scripts/fix-copilot-knowledge-extraction.js",
+        "billing:seed": "node scripts/seed-pricing-master.js",
+        "billing:lock": "node scripts/billing-live-lock.js"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1121.0",

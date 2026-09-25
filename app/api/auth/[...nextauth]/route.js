@@ -151,6 +151,9 @@ const handler = NextAuth({
             image: user.image || '',
             provider: 'google',
             created_at: new Date(),
+            subscription: { status: 'none', planType: null, expires_at: null, paywall: false, enforced_at: null },
+            bid_balance: 0,
+            agreement_signed: false,
           });
         } else if (!existing.name || !existing.image) {
           // Backfill missing profile picture or name

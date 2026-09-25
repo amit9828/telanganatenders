@@ -15,12 +15,7 @@ export function loadLocalEnv() {
       if (eq < 1) continue;
       const key = line.slice(0, eq).trim();
       let value = line.slice(eq + 1).trim();
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
+      value = value.replace(/^["']+|["']+$/g, '').trim();
       if (process.env[key] == null || process.env[key] === '') process.env[key] = value;
     }
   }
