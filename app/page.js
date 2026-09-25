@@ -23,6 +23,7 @@ import { deskPathForDesignation } from '@/lib/designations';
 import { numberedPageList } from '@/components/workflow/api';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { rememberRealClientIdent, rememberRealStaffIdent } from '@/lib/tab-handoff';
+import HomePricingTable from '@/components/HomePricingTable';
 
 const PLANS = [
   { id: 'single', name: 'Single Document', price: 10, desc: 'Unlock only the PDF you clicked on', mode: 'oneoff', perks: ['Instant 1 PDF unlock', 'Email-watermarked download', 'No account required'], cta: 'Pay ₹10 for this PDF' },
@@ -488,6 +489,16 @@ export default function App() {
       
       await cashfree.checkout(checkoutOptions);
     } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
+  };
+
+  const chooseCatalogPlan = (serviceKey) => {
+    if (typeof window !== 'undefined') sessionStorage.setItem('tt_pending_plan', serviceKey);
+    if (!email) {
+      toast.info('Please sign in to subscribe securely');
+      handleSubscribeLogin();
+      return;
+    }
+    window.location.href = `/client?step=billing&plan=${encodeURIComponent(serviceKey)}`;
   };
 
   const buyPlan = (planId) => {
@@ -1003,6 +1014,8 @@ export default function App() {
            </div>
         </div>
       </section>
+
+      <HomePricingTable onSelect={chooseCatalogPlan} />
 
       {/* 🚀 DYNAMIC LEADERS PORTAL */}
       {brandSettings.leaders && brandSettings.leaders.length > 0 && (
