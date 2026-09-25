@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
+import PricingMasterPanel from '@/components/PricingMasterPanel';
 import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
@@ -51,7 +52,7 @@ import {
   upsertJob,
 } from '@/lib/job-board-state';
 import {
-  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2
+  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2, IndianRupee
 } from 'lucide-react';
 
 export default function StaffOpsDesk({ desk }) {
@@ -247,6 +248,7 @@ export default function StaffOpsDesk({ desk }) {
         ] },
         { id: 'team', label: 'Team', items: [
           { value: 'team', label: 'Team Directory', icon: UserCog, color: 'blue' },
+          { value: 'pricing', label: 'Pricing', icon: IndianRupee, color: 'emerald' },
           { value: 'alerts', label: 'Alerts', icon: BellRing, color: 'navy' },
           { value: 'chat', label: 'Chat', icon: MessageSquare, color: 'navy' },
         ] },
@@ -366,6 +368,11 @@ export default function StaffOpsDesk({ desk }) {
           <DashboardNav groups={groups} activeTab={activeTab} onChange={setActiveTab} title={isGm ? 'GM' : 'TL'} />
           <div className="flex-1 min-w-0">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
+              {isGm && (
+                <TabsContent value="pricing">
+                  <PricingMasterPanel canEdit={false} />
+                </TabsContent>
+              )}
               {isGm && (
                 <TabsContent value="live">
                   <LiveTendersPaged

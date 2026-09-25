@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
+import BillingGate from '@/components/BillingGate';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { consumeClientBypass, clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -162,8 +163,9 @@ export default function ClientDashboard() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools'];
+    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store'];
     if (requested && allowed.includes(requested)) setActiveTab(requested);
+    if (new URLSearchParams(window.location.search).get('step') === 'billing') setActiveTab('store');
   }, []);
 
   useEffect(() => {
@@ -958,7 +960,15 @@ export default function ClientDashboard() {
 
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
-  if (userData && (userData.onboarding_complete || localOnboardComplete) && !userData.is_approved && !session?.user?.is_bypass) {
+  if (userData?.subscription?.status === 'none' && !userData.billing_paid && !session?.user?.is_bypass) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 py-10">
+        <BillingGate />
+      </div>
+    );
+  }
+
+  if (userData && (userData.onboarding_complete || localOnboardComplete) && !userData.is_approved && userData.subscription?.status !== 'none' && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
         <Card className="max-w-md w-full shadow-2xl border-t-8 border-t-amber-500 bg-white">
@@ -989,7 +999,7 @@ export default function ClientDashboard() {
     );
   }
 
-if (userData && (userData.onboarding_complete || localOnboardComplete) && userData.is_approved && !userData.agreement_signed && !session?.user?.is_bypass) {
+if (userData && (userData.billing_paid || ((userData.onboarding_complete || localOnboardComplete) && userData.is_approved)) && !userData.agreement_signed && !session?.user?.is_bypass) {
       return (
         <div className="min-h-screen flex flex-col items-center bg-slate-100 p-4 sm:py-10">
           <Card className="max-w-4xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white print:border-none print:shadow-none mx-auto">
@@ -1394,6 +1404,9 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
             <TabsTrigger value="profile" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Building2 className="w-4 h-4 mr-2 hidden sm:block"/> Client Profile
             </TabsTrigger>
+            <TabsTrigger value="store" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              Service store
+            </TabsTrigger>
             {/* 🚀 RBAC: "Bid Tools" hidden exclusively for real clients — still fully
                 present in the DOM/functional for MD/employee staff-preview sessions,
                 and its TabsContent below is untouched (nothing deleted). */}
@@ -1407,6 +1420,10 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
           {/* ============================================================================== */}
           {/* TAB 1: DYNAMIC BUSINESS PROFILE */}
           {/* ============================================================================== */}
+          <TabsContent value="store" className="space-y-6">
+            <BillingGate />
+          </TabsContent>
+
           <TabsContent value="profile" className="space-y-6">
              <Card className="tender-shadow border-t-4 border-t-blue-600">
                 <CardHeader className="bg-slate-50 border-b pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -1948,7 +1965,8 @@ if (userData && (userData.onboarding_complete || localOnboardComplete) && userDa
                          <div className="flex items-center gap-2 mb-2">
                            <Badge className="bg-[#0A2647]">{t.district}</Badge>
                            {t.category && <Badge variant="outline" className="text-[10px]">{t.category}</Badge>}
-                           {t.bid_no && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
+                           {t.bid_no && !userData?.discovery_masked && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200">Bid: {t.bid_no}</Badge>}
+                           {userData?.discovery_masked && <Badge variant="outline" className="text-[10px]">Bid number hidden</Badge>}
                            <span className="text-[10px] text-red-600 font-bold flex items-center bg-red-50 px-1.5 py-0.5 rounded"><Clock className="w-3 h-3 mr-1"/> Ends: {t.last_date && !isNaN(new Date(t.last_date)) ? new Date(t.last_date).toLocaleDateString() : 'N/A'}</span>
                          </div>
                          <p className="font-bold text-[#0A2647] text-base leading-tight line-clamp-2">{t.title}</p>

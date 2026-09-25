@@ -19,7 +19,10 @@ export default function OpsAlerts({ roster = [] }) {
   const load = async () => {
     try {
       const data = await workflowFetch('/api/ops-alerts');
-      setAlerts(data.alerts || []);
+      const list = data.alerts || [];
+      setAlerts(list);
+      const count = list.filter((alert) => alert.status !== 'OK').length;
+      window.dispatchEvent(new CustomEvent('ops-alerts-changed', { detail: { count } }));
     } catch (e) {
       toast.error(e.message);
     }

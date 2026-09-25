@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { getDb, markHostUnhealthy, forceReconnect } from '@/lib/db';
+import { canParticipate, canViewTender } from '@/lib/billing-access';
 import {
   uploadTenderPDF,
   fetchTenderPDFBuffer,
@@ -499,24 +500,11 @@ async function handleGET(request, { params }, attempt = 1) {
 
       const user = await db.collection('users').findOne(
         { email: email.toLowerCase() },
-        { projection: { subscription: 1, purchases: 1 } }
+        { projection: { subscription: 1, view_unlocks: 1 } }
       );
-      
-      let hasSubscription = false;
-      const now = new Date();
-      if (user?.subscription?.status === 'active' && user?.subscription?.expires_at) {
-          const expiry = new Date(user.subscription.expires_at);
-          if (expiry > now) hasSubscription = true;
-      }
-      
-      const hasBoughtSingle = user?.purchases?.includes(tenderId);
 
-      // 🚀 FIX: Give free access to Clients as well
-      if (role === 'client' || role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL) {
-          hasSubscription = true; 
-      }
-
-      if (!hasSubscription && !hasBoughtSingle) {
+      const staff = role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL;
+      if (!staff && !canViewTender(user, tenderId)) {
         return documentError(request, {
           status: 402,
           code: 'PAYMENT_REQUIRED',
@@ -718,8 +706,9 @@ async function handleGET(request, { params }, attempt = 1) {
            : { password: 0, 'vault_docs.file_base64': 0 })
          .sort({ created_at: -1 })
          .toArray();
-      console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${users.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
-      return json({ users });
+      const eligible = directory ? users : users.filter((user) => canParticipate(user));
+      console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${eligible.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
+      return json({ users: eligible });
     }
     if (pathArray.length === 3 && pathArray[0] === 'client-requests' && pathArray[2] === 'file') {
       const oid = asRequestObjectId(pathArray[1]);
@@ -1094,6 +1083,12 @@ async function handleGET(request, { params }, attempt = 1) {
         auto_renew: user.auto_renew !== false,
         onboarding_complete: user.onboarding_complete || false,
         is_approved: user.is_approved || false,
+        agreement_signed: user.agreement_signed || false,
+        billing_paid: user.billing_paid === true,
+        subscription: user.subscription || null,
+        bid_balance: Number(user.bid_balance) || 0,
+        view_unlocks: Array.isArray(user.view_unlocks) ? user.view_unlocks : [],
+        discovery_masked: !(user.subscription?.view_source === 'pricing_master' && user.subscription?.view_until && new Date(user.subscription.view_until) > new Date()),
         profile: {
           company_type: user.company_type || '',
           has_gst: user.has_gst || false,

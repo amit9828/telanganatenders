@@ -119,7 +119,7 @@ export default function App() {
   const [clientRegForm, setClientRegForm] = useState({ name: '', phone: '', enterprise: '' });
   const [submittingClientReg, setSubmittingClientReg] = useState(false);
 
-  const [queryForm, setQueryForm] = useState({ name: '', phone: '', query: '' });
+  const [queryForm, setQueryForm] = useState({ name: '', phone: '', enterprise_name: '', area: '', query: '' });
   const [submittingLead, setSubmittingLead] = useState(false);
 
   const [policyModal, setPolicyModal] = useState(null);
@@ -245,7 +245,7 @@ export default function App() {
     if (status === 'authenticated' && userData !== null && !loadingUser) {
       if (intent === 'client') {
         if (typeof window !== 'undefined') {
-          window.location.href = '/client'; 
+          window.location.href = sessionStorage.getItem('tt_pending_plan') ? '/client?step=billing' : '/client'; 
           localStorage.removeItem('tt_intent');
           setIntent(''); 
         }
@@ -407,7 +407,7 @@ export default function App() {
     try {
       await fetch('/api/guest-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(queryForm) });
       toast.success("Query submitted successfully! Our team will contact you shortly.");
-      setQueryForm({ name: '', phone: '', query: '' });
+      setQueryForm({ name: '', phone: '', enterprise_name: '', area: '', query: '' });
     } catch (e) { toast.error("Failed to submit query. Try again."); } finally { setSubmittingLead(false); }
   };
 
@@ -430,10 +430,12 @@ export default function App() {
        const res = await fetch(`/api/me?email=${encodeURIComponent(userMail)}`);
        const d = await res.json();
        
-       let hasAccess = false;
-       if (d.subscription && d.subscription.status === 'active') hasAccess = true;
        const tenderId = String(t._id || t.id);
-       if (Array.isArray(d.unlocked_tenders) && d.unlocked_tenders.some((u) => String(u.id || u._id) === tenderId)) hasAccess = true;
+       const sub = d.subscription || {};
+       const viewUntil = sub.view_until ? new Date(sub.view_until) : null;
+       const viewWindow = sub.view_source === 'pricing_master' && viewUntil && viewUntil > new Date();
+       const unlocked = Array.isArray(d.view_unlocks) && d.view_unlocks.some((row) => String(row.tender_id) === tenderId);
+       const hasAccess = viewWindow || unlocked;
 
        if (hasAccess) {
           toast.success('Access Granted!', { id: toastId });
@@ -489,6 +491,8 @@ export default function App() {
   };
 
   const buyPlan = (planId) => {
+    const catalogKey = planId === 'month' ? 'view_month' : planId === 'year' ? 'view_year' : planId === 'single' ? 'view_single' : planId;
+    if (typeof window !== 'undefined') sessionStorage.setItem('tt_pending_plan', catalogKey);
     if (planId === 'single') {
        if (email) executePayment('single', email); 
        else { setPaywallModal(false); setGuestPayModal(true); } 
@@ -688,10 +692,10 @@ export default function App() {
                <span className="text-[10px] md:text-xs font-black text-[#0A2647] uppercase mt-1 tracking-wide">Bidding Service</span>
             </div>
 
-            {subscription && subscription.status === 'active' ? (
+            {subscription?.planType === 'UNLIMITED' && subscription?.status === 'active' ? (
               <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-white text-[10px] sm:text-xs">
                 <CheckCircle2 className="w-3 h-3 mr-1" />
-                {subscription.plan === 'year' ? 'Pro' : 'Monthly'}
+                Participate
               </Badge>
             ) : null}
 
@@ -950,7 +954,9 @@ export default function App() {
               <p className="text-xs text-slate-300 mb-4 font-medium">Drop your query, and our MD's office will get back to you directly.</p>
               <form onSubmit={handleGuestQuery} className="flex flex-col gap-3 w-full">
                 <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Full Name</Label><Input required placeholder="E.g., John Doe" value={queryForm.name} onChange={e => setQueryForm({...queryForm, name: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10 w-full" /></div>
+                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Enterprise Name</Label><Input required placeholder="Company name" value={queryForm.enterprise_name} onChange={e => setQueryForm({...queryForm, enterprise_name: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10 w-full" /></div>
                 <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Phone Number</Label><Input required type="tel" placeholder="+91" value={queryForm.phone} onChange={e => setQueryForm({...queryForm, phone: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10 w-full" /></div>
+                <div><Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Area</Label><Input required placeholder="City or district" value={queryForm.area} onChange={e => setQueryForm({...queryForm, area: e.target.value})} className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 h-10 w-full" /></div>
                 <div>
                   <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Your Query</Label>
                   <textarea required placeholder="What do you need help with?" value={queryForm.query} onChange={e => setQueryForm({...queryForm, query: e.target.value})} className="flex w-full rounded-md bg-white/10 border border-white/20 px-3 py-2 text-white placeholder:text-slate-400 resize-none h-20 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
