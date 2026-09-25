@@ -33,9 +33,9 @@ export async function POST(request) {
     if (check.error) return json({ error: check.error }, check.status);
     primary = primary || check.item;
     names.push(check.item.name);
-    if (comboIncludesUdyam(id)) includesUdyam = true;
+    if (comboIncludesUdyam(id) || ['vendor_assessment', 'oem_panel_approval', 'product_catalogs'].includes(id)) includesUdyam = true;
     if (id === 'custom_bids_10') {
-      bidCount = Math.min(10, Math.max(1, Number(body.bid_count) || 10));
+      bidCount = Math.max(1, Math.floor(Number(body.bid_count) || 1));
       base += ((Number(check.item.base_price) || 0) / 10) * bidCount;
     } else {
       base += Number(check.item.base_price) || 0;
