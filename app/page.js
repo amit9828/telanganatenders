@@ -59,13 +59,6 @@ export default function App() {
     return '';
   });
 
-  const [onboardForm, setOnboardForm] = useState({
-    client_name: '', company_name: '', phone: '', company_type: 'Proprietor (Individual)', service: '', 
-    has_gst: false, has_esi: false, has_epf: false, has_iso: false, has_bank: false, has_pan: false, 
-    has_aadhar: false, has_dsc: false, has_ifsc: false, has_fssai: false, has_cer: false, has_turnover: false, has_annual_returns: false, has_msme: false
-  });
-  const [submittingOnboard, setSubmittingOnboard] = useState(false);
-
   // Search & Filters
   const [uiYear, setUiYear] = useState(today.getFullYear());
   const [uiMonth, setUiMonth] = useState(today.getMonth() + 1);
@@ -244,14 +237,14 @@ export default function App() {
     }
   }, [session, status]);
 
-  // 🚀 FIX: Redirect ONLY when user explicitly clicks Login button (intent === 'client')
   useEffect(() => {
     if (status === 'authenticated' && userData !== null && !loadingUser) {
-      if (intent === 'client') {
+      if (intent === 'subscribe' || intent === 'client') {
         if (typeof window !== 'undefined') {
-          window.location.href = sessionStorage.getItem('tt_pending_plan') ? '/client?step=billing' : '/client'; 
+          const pending = sessionStorage.getItem('tt_pending_plan');
+          window.location.href = (intent === 'subscribe' || pending) ? '/client?step=billing' : '/client';
           localStorage.removeItem('tt_intent');
-          setIntent(''); 
+          setIntent('');
         }
       }
     }
@@ -398,7 +391,7 @@ export default function App() {
     setSubmittingClientReg(true);
     try {
       await fetch('/api/client-prereg', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clientRegForm) });
-      toast.success("Details saved! Redirecting to secure profile setup...");
+      toast.success('Details saved. Continuing to sign in.');
       setClientRegForm({ name: '', phone: '', enterprise: '' });
       setTimeout(() => { handleClientLogin(); }, 1500);
     } catch (err) { toast.error("Failed to register. Try again."); } finally { setSubmittingClientReg(false); }
@@ -487,7 +480,7 @@ export default function App() {
       const cashfree = await load({ mode: "production" });
       const checkoutOptions = {
         paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
-        returnUrl: "https://www.tgtenders.in/payment-status?order_id={order_id}",
+        returnUrl: `${window.location.origin}/payment-status?order_id={order_id}`,
       };
       
       await cashfree.checkout(checkoutOptions);
@@ -537,31 +530,6 @@ export default function App() {
     executePayment('single', dummyEmail, guestPayForm.phone);
   };
 
-  const submitOnboarding = async (e) => {
-    e.preventDefault();
-    if(!onboardForm.client_name || !onboardForm.company_name || !onboardForm.phone || !onboardForm.service) return toast.error('Please fill required fields');
-    setSubmittingOnboard(true);
-    try {
-      await fetch('/api/users/profile', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email, client_name: onboardForm.client_name, company_name: onboardForm.company_name, phone: onboardForm.phone, 
-          company_type: onboardForm.company_type, service_category: onboardForm.service, 
-          documents: { 
-            has_gst: onboardForm.has_gst, has_esi: onboardForm.has_esi, has_epf: onboardForm.has_epf, has_iso: onboardForm.has_iso,
-            has_bank: onboardForm.has_bank, has_pan: onboardForm.has_pan, has_aadhar: onboardForm.has_aadhar, has_dsc: onboardForm.has_dsc,
-            has_ifsc: onboardForm.has_ifsc, has_fssai: onboardForm.has_fssai, has_cer: onboardForm.has_cer, 
-            has_turnover: onboardForm.has_turnover, has_annual_returns: onboardForm.has_annual_returns, has_msme: onboardForm.has_msme
-          }, 
-          status: 'pending'
-        })
-      });
-      toast.success('Profile created successfully! Sent for MD Approval.');
-      setUserData(prev => ({ ...prev, onboarding_complete: true, is_approved: false }));
-    } catch (err) { toast.error('Error submitting profile'); }
-    setSubmittingOnboard(false);
-  };
-
   // 🚀 FIXED: 3D ANIMATED SPINNER LOADER
   if (status === 'authenticated' && loadingUser) {
     return (
@@ -582,77 +550,13 @@ export default function App() {
     );
   }
 
-  // VERIFICATION LOCKOUT TRAP
-  if (status === 'authenticated' && intent === 'client') {
-     if (userData && !userData.onboarding_complete) {
-        return (
-          <div className="min-h-screen bg-slate-50 p-4 py-10 w-full overflow-x-hidden">
-            <Card className="max-w-3xl mx-auto shadow-2xl">
-              <CardHeader className="border-b bg-white text-center pb-6">
-                 <UserCog className="w-10 h-10 mx-auto text-blue-600 mb-2" />
-                 <CardTitle className="text-2xl text-[#0A2647]">Complete Your Business Profile</CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 bg-slate-50/50">
-                 <form onSubmit={submitOnboarding}>
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div><Label>Client Name *</Label><Input required value={onboardForm.client_name} onChange={e => setOnboardForm({...onboardForm, client_name: e.target.value})} className="mt-1"/></div>
-                      <div><Label>Contact Number *</Label><Input required type="tel" value={onboardForm.phone} onChange={e => setOnboardForm({...onboardForm, phone: e.target.value})} className="mt-1"/></div>
-                      <div className="sm:col-span-2"><Label>Company / Firm Name *</Label><Input required value={onboardForm.company_name} onChange={e => setOnboardForm({...onboardForm, company_name: e.target.value})} className="mt-1"/></div>
-                      <div>
-                        <Label>Company Type *</Label>
-                        <select required className="w-full border rounded-md p-2 mt-1 bg-white text-sm" value={onboardForm.company_type} onChange={e => setOnboardForm({...onboardForm, company_type: e.target.value})}>
-                          <option value="Proprietor (Individual)">Proprietor (Individual)</option>
-                          <option value="Partnership">Partnership</option>
-                          <option value="Private Limited">Private Limited</option>
-                          <option value="Public Limited">Public Limited</option>
-                          <option value="LLP">LLP</option>
-                        </select>
-                      </div>
-                      <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
-                    </div>
-                    <div className="border-t pt-5 mt-4">
-                      <Label className="text-[#0A2647] font-semibold block mb-1">Do you have these basic documents?</Label>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_pan} onChange={e => setOnboardForm({...onboardForm, has_pan: e.target.checked})} /> PAN Card</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_gst} onChange={e => setOnboardForm({...onboardForm, has_gst: e.target.checked})} /> GST Certificate</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_bank} onChange={e => setOnboardForm({...onboardForm, has_bank: e.target.checked})} /> Bank Account</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_ifsc} onChange={e => setOnboardForm({...onboardForm, has_ifsc: e.target.checked})} /> IFSC Details</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_aadhar} onChange={e => setOnboardForm({...onboardForm, has_aadhar: e.target.checked})} /> Aadhar</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_esi} onChange={e => setOnboardForm({...onboardForm, has_esi: e.target.checked})} /> ESI Registration</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_epf} onChange={e => setOnboardForm({...onboardForm, has_epf: e.target.checked})} /> EPF Registration</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_iso} onChange={e => setOnboardForm({...onboardForm, has_iso: e.target.checked})} /> ISO Certificate</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_msme} onChange={e => setOnboardForm({...onboardForm, has_msme: e.target.checked})} /> MSME (Udyam)</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_dsc} onChange={e => setOnboardForm({...onboardForm, has_dsc: e.target.checked})} /> DSC Class 3</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_fssai} onChange={e => setOnboardForm({...onboardForm, has_fssai: e.target.checked})} /> FSSAI</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_cer} onChange={e => setOnboardForm({...onboardForm, has_cer: e.target.checked})} /> CER</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.</label>
-                        <label className="flex items-center gap-2 text-sm bg-white p-2 border rounded cursor-pointer hover:border-[#16a34a]"><input type="checkbox" className="accent-[#16a34a]" checked={onboardForm.has_annual_returns} onChange={e => setOnboardForm({...onboardForm, has_annual_returns: e.target.checked})} /> Annual Returns</label>
-                      </div>
-                    </div>
-                    <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 text-base mt-6 shadow-sm">
-                      {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Portal'}
-                    </Button>
-                 </form>
-              </CardContent>
-            </Card>
-          </div>
-        );
-    } else if (userData && !userData.is_approved) {
-        return (
-          <div className="min-h-screen bg-[#0A2647] flex items-center justify-center p-4 w-full overflow-x-hidden">
-            <Card className="max-w-md w-full bg-white text-center p-8 rounded-xl shadow-2xl">
-              <ShieldCheck className="w-12 h-12 text-amber-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-extrabold text-[#0A2647] mb-4">Account Under Verification</h2>
-              <p className="text-slate-700 text-sm mb-6">Your registration is successful. Dashboard access is locked pending <strong className="text-red-600">MD Approval</strong>.</p>
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-8">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
-                <a href="tel:+916304486770" className="text-2xl font-black text-blue-600 hover:text-blue-800 hover:underline">+91 6304486770</a>
-              </div>
-              <Button onClick={performHardSignOut} variant="ghost" className="text-slate-500 hover:text-slate-800 font-semibold px-2"><LogOut className="w-4 h-4 mr-2" /> Log Out</Button>
-            </Card>
-          </div>
-        );
-    } 
+  if (status === 'authenticated' && userData && (intent === 'client' || intent === 'subscribe')) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-[#0A2647] mb-3" />
+        <p className="text-[#0A2647] font-bold">Continuing to the next step...</p>
+      </div>
+    );
   }
 
  // ==============================================================================

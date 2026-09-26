@@ -73,7 +73,7 @@ export async function POST(request) {
     return_to: '/client?step=agreement',
     reason: names.join(', '),
     order_id: orderId,
-  });
+  }, request);
   const payload = await cashfree.json();
   if (!cashfree.ok) {
     await db.collection('payments').updateOne({ order_id: orderId }, { $set: { status: 'FAILED', updated_at: new Date() } });

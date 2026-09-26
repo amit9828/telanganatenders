@@ -21,6 +21,41 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
+import { isMdSessionCookie, mdSessionValue } from '@/lib/desk-cookie';
+
+async function leadershipCaller(request) {
+  const actor = await resolveActorRole(request);
+  if (actor.role === 'MD' || isGmActor(actor)) return { ok: true, actor };
+  const fromJar = request.cookies?.get?.('tt_md_session')?.value;
+  let raw = fromJar || '';
+  if (!raw) {
+    const header = String(request.headers.get('cookie') || '');
+    const part = header.split(';').map((s) => s.trim()).find((s) => s.startsWith('tt_md_session='));
+    if (part) {
+      try { raw = decodeURIComponent(part.slice('tt_md_session='.length)); }
+      catch { raw = part.slice('tt_md_session='.length); }
+    }
+  }
+  if (raw && await isMdSessionCookie(raw)) {
+    return { ok: true, actor: { role: 'MD', empId: null, email: null, name: 'Managing Director', designation: null, teamId: null } };
+  }
+  return { ok: false, actor };
+}
+
+async function mdDeskResponse() {
+  const res = NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
+  const value = await mdSessionValue();
+  if (value) {
+    res.cookies.set('tt_md_session', value, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60 * 12,
+    });
+  }
+  return res;
+}
 import { createDriveFolder, ensureEntityDriveFolder, isDriveConfigured, uploadDriveFile } from '@/lib/drive';
 import { findExistingClient, clientIdentFromRequest } from '@/lib/clients';
 import { brandFieldsFromForm, brandFieldsFromJson, sanitizeSettingsForBrowser } from '@/lib/brand-settings';
@@ -333,6 +368,8 @@ async function handleGET(request, { params }, attempt = 1) {
       const scope = searchParams.get('scope');
       const q = searchParams.get('q');
       const role = searchParams.get('role');
+      const browse = await leadershipCaller(request);
+      const staffBrowse = browse.ok || browse.actor?.role === 'EMPLOYEE' || Boolean(browse.actor?.empId);
 
       let query = {};
       if (district && district !== 'all') query.district = district;
@@ -341,7 +378,7 @@ async function handleGET(request, { params }, attempt = 1) {
         query.$text = { $search: q };
       }
 
-      const skipLiveFilter = role === 'admin' || scope === 'all';
+      const skipLiveFilter = (role === 'admin' && staffBrowse) || scope === 'all';
       const isArchive = scope === 'archive';
       if (!skipLiveFilter) {
         query.$and = [
@@ -389,9 +426,12 @@ async function handleGET(request, { params }, attempt = 1) {
 
     // 🚀 FIX: Fetch Vault Document Instantly Without Lag
     if (path === 'vault/document' || path === 'api/vault/document') {
-      const email = searchParams.get('email');
       const docId = searchParams.get('docId');
-      if (!email || !docId) return json({ error: 'Missing email or docId' }, 400);
+      const lead = await leadershipCaller(request);
+      const sessionEmail = await resolveClientEmail(request);
+      const requested = String(searchParams.get('email') || '').trim().toLowerCase();
+      const email = lead.ok ? (requested || sessionEmail) : sessionEmail;
+      if (!email || !docId) return json({ error: 'Sign in required.' }, 401);
 
       const user = await db.collection('users').findOne(
         { email: email.toLowerCase() },
@@ -486,24 +526,26 @@ async function handleGET(request, { params }, attempt = 1) {
 
     if (pathArray.length === 3 && (pathArray[0] === 'tenders' || pathArray[0] === 'api') && pathArray[2] === 'pdf') {
       const tenderId = pathArray[1];
-      const email = searchParams.get('email');
-      const role = searchParams.get('role');
-      const format = searchParams.get('format'); 
+      const format = searchParams.get('format');
+      const lead = await leadershipCaller(request);
+      const staff = lead.ok || lead.actor?.role === 'EMPLOYEE' || Boolean(lead.actor?.empId);
+      const sessionEmail = await resolveClientEmail(request);
 
-      if (!email) {
+      if (!staff && !sessionEmail) {
         return documentError(request, {
-          status: 400,
+          status: 401,
           code: 'EMAIL_REQUIRED',
           message: 'You are not signed in. Please log in again and reopen the tender.',
         });
       }
 
-      const user = await db.collection('users').findOne(
-        { email: email.toLowerCase() },
-        { projection: { subscription: 1, view_unlocks: 1 } }
-      );
+      const user = sessionEmail
+        ? await db.collection('users').findOne(
+            { email: sessionEmail },
+            { projection: { subscription: 1, view_unlocks: 1, bid_balance: 1, bid_expiry: 1 } }
+          )
+        : null;
 
-      const staff = role === 'employee' || role === 'admin' || email === 'employee@tgtenders.in' || email === process.env.ADMIN_EMAIL;
       if (!staff && !canViewTender(user, tenderId)) {
         return documentError(request, {
           status: 402,
@@ -667,10 +709,17 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (path === 'tickets' || path === 'api/tickets') {
+      const lead = await leadershipCaller(request);
+      const sessionEmail = await resolveClientEmail(request);
       const email = searchParams.get('email');
-      const role = searchParams.get('role');
       let query = {};
-      if (email && role !== 'admin') query.client_email = email.toLowerCase();
+      if (lead.ok) {
+        if (email) query.client_email = email.toLowerCase();
+      } else if (sessionEmail) {
+        query.client_email = sessionEmail;
+      } else {
+        return json({ error: 'Sign in required.' }, 401);
+      }
       
       const tickets = await db.collection('tickets').find(query).sort({ created_at: -1 }).toArray();
       return json({ tickets });
@@ -678,11 +727,15 @@ async function handleGET(request, { params }, attempt = 1) {
 
     // 🚀 FIX: Fetch Guest Queries Database
     if (path === 'guest-queries' || path === 'api/guest-queries') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Only MD or GM can view leads.' }, 403);
       const queries = await db.collection('guest_queries').find({}).sort({ created_at: -1 }).toArray();
       return json({ queries });
     }
 
     if (path === 'users/pending' || path === 'api/users/pending') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Only MD or GM can view clients.' }, 403);
       const users = await db.collection('users')
          .find({ is_approved: { $ne: true }, onboarding_complete: true })
          .project({ "vault_docs.file_base64": 0 }) // 🚀 FIX: Block heavy PDF loads
@@ -697,18 +750,19 @@ async function handleGET(request, { params }, attempt = 1) {
     // to live here — removed to avoid the two copies drifting apart again.
     
     if (path === 'users/approved' || path === 'api/users/approved') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Only MD or GM can view clients.' }, 403);
       const __t = Date.now();
       const directory = searchParams.get('directory') === '1';
       const users = await db.collection('users')
-         .find({ is_approved: true })
+         .find({ billing_paid: true, onboarding_complete: true })
          .project(directory
-           ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1 }
+           ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1 }
            : { password: 0, 'vault_docs.file_base64': 0 })
          .sort({ created_at: -1 })
          .toArray();
-      const eligible = directory ? users : users.filter((user) => canParticipate(user));
-      console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${eligible.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
-      return json({ users: eligible });
+      console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${users.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
+      return json({ users });
     }
     if (pathArray.length === 3 && pathArray[0] === 'client-requests' && pathArray[2] === 'file') {
       const oid = asRequestObjectId(pathArray[1]);
@@ -992,8 +1046,11 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (path === 'me' || path === 'api/me') {
-      const ident = clientIdentFromRequest(request) || searchParams.get('email') || '';
-      if (!ident) return json({ error: 'Client identity required' }, 400);
+      const lead = await leadershipCaller(request);
+      const sessionEmail = await resolveClientEmail(request);
+      const requested = String(searchParams.get('email') || '').trim();
+      const ident = lead.ok && requested ? requested : sessionEmail;
+      if (!ident) return json({ error: 'Sign in required.' }, 401);
 
       const found = await findExistingClient(db, ident);
       if (!found) return json({ error: 'Client not found' }, 404);
@@ -1862,7 +1919,7 @@ export async function POST(request, { params }) {
       const cleanAdminPassword = String(process.env.ADMIN_PASSWORD || '').trim();
 
       if (cleanEmail === cleanAdminEmail && cleanPassword === cleanAdminPassword) {
-        return NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
+        return mdDeskResponse();
       }
 
       const identifier = cleanEmail.toLowerCase();
@@ -1876,7 +1933,7 @@ export async function POST(request, { params }) {
         active: { $ne: false },
       });
       if (mdEmployee && isMdEmployee(mdEmployee)) {
-        return NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
+        return mdDeskResponse();
       }
 
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
@@ -2311,7 +2368,7 @@ export async function POST(request, { params }) {
 
     if (path === 'payment/order' || path === 'api/payment/order') {
       // 🚀 Extracted to app/api/payments/route.js (Cashfree Order Creation)
-      return await createCashfreeOrder(db, body);
+      return await createCashfreeOrder(db, body, request);
     }
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       // 🚀 Extracted to app/api/payments/route.js (Cashfree Verification)

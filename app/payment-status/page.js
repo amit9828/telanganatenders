@@ -18,11 +18,12 @@ function PaymentStatusContent() {
   // The order carries where it started; ?next= is the fallback for links built by hand.
   const fallbackNext = safePath(searchParams.get('next'));
   const [status, setStatus] = useState('verifying');
-  const [destination, setDestination] = useState(fallbackNext || '/');
+  const billingReturn = '/client?step=billing';
+  const [destination, setDestination] = useState(fallbackNext || billingReturn);
 
   useEffect(() => {
     if (!order_id) {
-      router.push('/');
+      router.push(billingReturn);
       return;
     }
 
@@ -48,13 +49,15 @@ function PaymentStatusContent() {
         setStatus('success');
         setTimeout(() => router.push(target), 3000);
       } else {
+        setDestination(billingReturn);
         setStatus('failed');
-        setTimeout(() => router.push(target), 4000);
+        setTimeout(() => router.push(billingReturn), 4000);
       }
     })
     .catch(() => {
+      setDestination(billingReturn);
       setStatus('failed');
-      setTimeout(() => router.push(fallbackNext || '/'), 4000);
+      setTimeout(() => router.push(billingReturn), 4000);
     });
 
   }, [order_id, router, fallbackNext]);
@@ -89,7 +92,14 @@ function PaymentStatusContent() {
           <div className="flex flex-col items-center">
             <XCircle className="w-20 h-20 text-red-500 mb-4" />
             <h2 className="text-3xl font-bold text-red-500">Payment Failed</h2>
-            <p className="text-slate-600 mt-3">We could not verify your payment. Taking you back...</p>
+            <p className="text-slate-600 mt-3">We could not verify your payment. Taking you back to checkout...</p>
+            <button
+              type="button"
+              onClick={() => router.push(billingReturn)}
+              className="mt-5 text-sm font-semibold text-[#0A2647] underline underline-offset-4"
+            >
+              Go back to checkout
+            </button>
           </div>
         )}
       </div>

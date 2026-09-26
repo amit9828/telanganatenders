@@ -262,8 +262,14 @@ export default function GrowthPartnerPricing({ onSubscribe, access }) {
               <div><Label>Name</Label><Input required value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} /></div>
               <div><Label>Phone Number</Label><Input required value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} /></div>
               <div><Label>Area</Label><Input required value={lead.area} onChange={(e) => setLead({ ...lead, area: e.target.value })} /></div>
-              <Button type="submit" className="w-full bg-emerald-600" disabled={sending}>{sending ? 'Sending…' : 'Submit'}</Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setLeadOpen(false)}>Go Back</Button>
+                <Button type="submit" className="flex-1 bg-emerald-600" disabled={sending}>{sending ? 'Sending…' : 'Submit'}</Button>
+              </div>
             </form>
+          )}
+          {sent && (
+            <Button type="button" variant="outline" onClick={() => setLeadOpen(false)}>Go Back</Button>
           )}
         </DialogContent>
       </Dialog>

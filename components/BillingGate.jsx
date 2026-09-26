@@ -57,7 +57,7 @@ export async function startCashfreeCheckout(intent) {
   return data;
 }
 
-export default function BillingGate({ user }) {
+export default function BillingGate({ user, onBack }) {
   const [resume] = useState(readIntent);
   const [summary, setSummary] = useState(null);
   const [paying, setPaying] = useState(false);
@@ -81,6 +81,11 @@ export default function BillingGate({ user }) {
 
   return (
     <>
+      {onBack && (
+        <div className="w-full max-w-[95%] lg:max-w-[1400px] mx-auto px-2 sm:px-4 pt-4">
+          <Button type="button" variant="outline" onClick={onBack}>Go Back</Button>
+        </div>
+      )}
       <GrowthPartnerPricing
         access={access}
         onSubscribe={(intent) => {
@@ -98,13 +103,16 @@ export default function BillingGate({ user }) {
               <div className="flex justify-between gap-3"><span>Actual base price</span><span className="font-bold">{rupee(summary.subtotal)}</span></div>
               <div className="flex justify-between gap-3"><span>18% GST</span><span className="font-bold">{rupee(summary.gst_amount)}</span></div>
               <div className="flex justify-between gap-3 border-t pt-2 text-base"><span className="font-black text-[#0A2647]">Final total</span><span className="font-black text-[#0A2647]">{rupee(summary.total_amount)}</span></div>
-              <Button className="w-full bg-emerald-600 mt-3" disabled={paying} onClick={() => {
+              <div className="flex flex-col sm:flex-row gap-2 mt-3">
+              <Button type="button" variant="outline" className="sm:w-auto" onClick={() => setSummary(null)}>Go Back</Button>
+              <Button className="flex-1 bg-emerald-600" disabled={paying} onClick={() => {
                 setPaying(true);
                 openCashfreeSession(summary).catch((err) => {
                   toast.error(err.message);
                   setPaying(false);
                 });
               }}>{paying ? 'Opening payment…' : 'Pay'}</Button>
+              </div>
             </div>
           )}
         </DialogContent>
