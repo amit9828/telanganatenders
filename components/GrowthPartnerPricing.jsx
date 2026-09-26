@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Check, Loader2, Phone } from 'lucide-react';
+import { Check, Phone } from 'lucide-react';
 import { toast } from 'sonner';
+import { PRICING_DEFAULTS } from '@/lib/billing-schema';
 
 const PAYG_FEATURES = ['Base Tender Perks', 'Reverse Auction Strategy', 'Tech Evaluation & Doc Help', 'Tracking up to Bid Won', 'Legal Support'];
 const UNLIMITED_FEATURES = ['Unlimited Bids', 'Unlimited Service Catalogs (Free)', 'Unlimited Product Catalogs (Free)', 'Unlimited Tech Evaluations (Free)', 'Unlimited Lead Search & Participation', 'Legal Support', 'MSME Samadhan', 'JV Structuring & Payment Tracking'];
@@ -66,16 +67,18 @@ function FeatureList({ items, light = false }) {
   );
 }
 
-function PriceChecks({ rows, picked, onToggle, priceOf }) {
+const INITIAL_ITEMS = PRICING_DEFAULTS.map(({ service_key, name, base_price }) => ({ service_key, name, base_price }));
+
+function PriceChecks({ rows, picked, onToggle, priceOf, dense = false }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+    <div className={dense ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-3'}>
       {rows.map((row) => (
-        <label key={row.key} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 min-w-0">
-          <span className="flex items-center gap-2 text-sm font-semibold text-[#0A2647] min-w-0">
-            <input type="checkbox" checked={picked.includes(row.key)} onChange={() => onToggle(row.key)} className="accent-emerald-600 shrink-0" />
-            <span className="break-words">{row.label}</span>
+        <label key={row.key} className="flex w-full items-start gap-4 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <span className="flex flex-1 items-start gap-2 min-w-0 text-sm font-semibold text-[#0A2647]">
+            <input type="checkbox" checked={picked.includes(row.key)} onChange={() => onToggle(row.key)} className="accent-emerald-600 shrink-0 mt-0.5" />
+            <span className="flex-1 min-w-0 break-words leading-snug">{row.label}</span>
           </span>
-          <span className="text-sm font-black text-emerald-700 shrink-0">{rupee(priceOf(row.key))}</span>
+          <span className="shrink-0 whitespace-nowrap text-right min-w-[4.5rem] text-sm font-black text-emerald-700">{rupee(priceOf(row.key))}</span>
         </label>
       ))}
     </div>
@@ -83,8 +86,7 @@ function PriceChecks({ rows, picked, onToggle, priceOf }) {
 }
 
 export default function GrowthPartnerPricing({ onSubscribe }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState(INITIAL_ITEMS);
   const [bids, setBids] = useState(1);
   const [trackKey, setTrackKey] = useState('track_1m');
   const [registration, setRegistration] = useState([]);
@@ -97,11 +99,14 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
   const [sent, setSent] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     fetch('/api/pricing-master', { credentials: 'include' })
       .then((res) => res.json())
-      .then((data) => setItems(Array.isArray(data.items) ? data.items : []))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
+      .then((data) => {
+        if (!cancelled && Array.isArray(data.items) && data.items.length) setItems(data.items);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   const priceOf = (key) => Number(items.find((item) => item.service_key === key)?.base_price) || 0;
@@ -158,10 +163,8 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
           <p className="mt-3 text-slate-500 text-base sm:text-lg">Select a plan that fits your business needs. Upgrade anytime.</p>
         </div>
 
-        {loading ? <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-[#0A2647]" /></div> : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 items-stretch">
-              <article className="rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 items-stretch">
+              <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Core subscription</p>
                 <h3 className="text-2xl font-black text-[#0A2647] mt-2">Pay-As-You-Go</h3>
                 <p className="text-sm text-slate-500 mt-1">For single or selective bids.</p>
@@ -172,7 +175,7 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
                 <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: 'custom_bids_10', bidCount: bids })}>Subscribe</Button>
               </article>
 
-              <article className="rounded-3xl bg-[#0A2647] text-white shadow-2xl hover:-translate-y-1 transition p-5 sm:p-6 flex flex-col ring-4 ring-emerald-400 relative min-w-0 md:col-span-2 lg:col-span-1">
+              <article className="w-full max-w-full rounded-3xl bg-[#0A2647] text-white shadow-2xl hover:-translate-y-1 transition p-5 sm:p-6 flex flex-col border-4 border-emerald-400 relative min-w-0">
                 <span className="absolute -top-3 left-6 bg-emerald-500 text-[#0A2647] text-xs font-black px-3 py-1 rounded-full">RECOMMENDED</span>
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-300">Core subscription</p>
                 <h3 className="text-2xl font-black mt-2">Unlimited Monthly</h3>
@@ -182,7 +185,7 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
                 <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.({ planId: 'saas_unlimited' })}>Subscribe</Button>
               </article>
 
-              <article className="rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
+              <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Core subscription</p>
                 <h3 className="text-2xl font-black text-[#0A2647] mt-2">Payment Tracking</h3>
                 <p className="text-sm text-slate-500 mt-1">We take the responsibility to credit payments to your accounts.</p>
@@ -199,7 +202,7 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
             <div className="mt-10 rounded-3xl bg-white border border-slate-200 shadow-xl p-5 sm:p-8">
               <h3 className="text-2xl font-black text-[#0A2647]">Registration & Setup Services</h3>
               <p className="text-slate-500 mt-2">Start your business journey with our seamless registration services.</p>
-              <div className="mt-6"><PriceChecks rows={REGISTRATION} picked={registration} onToggle={toggle(setRegistration)} priceOf={priceOf} /></div>
+              <div className="mt-6"><PriceChecks dense rows={REGISTRATION} picked={registration} onToggle={toggle(setRegistration)} priceOf={priceOf} /></div>
               <p className="mt-4 text-sm font-semibold text-emerald-700">Select any of the above services and get Udyam Registration FREE!</p>
               <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-lg font-black text-[#0A2647]">Total {rupee(regTotal)}</p>
@@ -238,8 +241,6 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
                 ))}
               </div>
             </div>
-          </>
-        )}
       </div>
 
       <Dialog open={leadOpen} onOpenChange={setLeadOpen}>
