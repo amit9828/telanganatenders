@@ -11,20 +11,47 @@ function json(data, status = 200) {
 }
 
 const PUBLIC_PRICE = { service_key: 1, name: 1, base_price: 1, category: 1, bid_credits: 1, _id: 0 };
+const PUBLIC_CATALOG_TTL_MS = 60_000;
+
+let catalogSeeded = false;
+let publicCatalog = null;
+let publicCatalogAt = 0;
+
+function publicCatalogFresh() {
+  return Array.isArray(publicCatalog) && Date.now() - publicCatalogAt < PUBLIC_CATALOG_TTL_MS;
+}
+
+async function ensureCatalogSeeded(db) {
+  if (catalogSeeded) return;
+  await seedPricingMaster(db);
+  catalogSeeded = true;
+}
+
+async function loadPublicCatalog(db) {
+  if (publicCatalogFresh()) return publicCatalog;
+  await ensureCatalogSeeded(db);
+  const items = await db.collection(PRICING_COLLECTION).find(
+    { is_active: { $ne: false }, individually_purchasable: { $ne: false } },
+    { projection: PUBLIC_PRICE },
+  ).sort({ category: 1, name: 1 }).toArray();
+  publicCatalog = items;
+  publicCatalogAt = Date.now();
+  return items;
+}
 
 export async function GET(request) {
   const actor = await resolveActorRole(request);
   const email = await resolveClientEmail(request);
-  const db = await getDb();
-  await seedPricingMaster(db);
   const signedIn = Boolean(actor.role || email);
+  if (!signedIn && publicCatalogFresh()) {
+    return json({ items: publicCatalog, canEdit: false });
+  }
+  const db = await getDb();
   if (!signedIn) {
-    const items = await db.collection(PRICING_COLLECTION).find(
-      { is_active: { $ne: false }, individually_purchasable: { $ne: false } },
-      { projection: PUBLIC_PRICE },
-    ).sort({ category: 1, name: 1 }).toArray();
+    const items = await loadPublicCatalog(db);
     return json({ items, canEdit: false });
   }
+  await ensureCatalogSeeded(db);
   const items = await db.collection(PRICING_COLLECTION).find({}).sort({ category: 1, name: 1 }).toArray();
   return json({
     items,
@@ -55,6 +82,8 @@ export async function PUT(request) {
       { $set: { base_price: basePrice, is_active: row.is_active !== false, updated_at: now } },
     );
   }
+  publicCatalog = null;
+  publicCatalogAt = 0;
   const items = await col.find({}).sort({ category: 1, name: 1 }).toArray();
   return json({ items, canEdit: true });
 }

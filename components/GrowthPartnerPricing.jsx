@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Check, Loader2, Phone } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Check, Phone } from 'lucide-react';
+import { toast } from 'sonner';
+import { PRICING_DEFAULTS } from '@/lib/billing-schema';
 
 const PAYG_FEATURES = ['Base Tender Perks', 'Reverse Auction Strategy', 'Tech Evaluation & Doc Help', 'Tracking up to Bid Won', 'Legal Support'];
 const UNLIMITED_FEATURES = ['Unlimited Bids', 'Unlimited Service Catalogs (Free)', 'Unlimited Product Catalogs (Free)', 'Unlimited Tech Evaluations (Free)', 'Unlimited Lead Search & Participation', 'Legal Support', 'MSME Samadhan', 'JV Structuring & Payment Tracking'];
@@ -17,13 +21,29 @@ const TRACK_OPTIONS = [
 const REGISTRATION = [
   { key: 'gem_account', label: 'GeM Account Creation' },
   { key: 'gst_combo', label: 'GST Registration' },
-  { key: 'esi_epf_combo', label: 'ESI & EPF (Combo)' },
+  { key: 'esi_epf_combo', label: 'ESI & EPF' },
   { key: 'vendor_assessment', label: 'Vendor Assessment' },
   { key: 'oem_panel_approval', label: 'OEM Panel Approval' },
   { key: 'product_catalogs', label: 'Product Catalog' },
 ];
-const COMPANY_TYPES = ['Private Limited', 'LLP', 'LTP'];
-const CERTIFICATIONS = ['FSSAI', 'ISO', 'IEC', 'DSC', 'Trade License', 'NIC', 'Startup India'];
+const THIRD_PARTY = [
+  { key: 'inc_llp', label: 'Company Incorporation (LLP)' },
+  { key: 'inc_pvt', label: 'Company Incorporation (Private Limited)' },
+  { key: 'inc_ltd', label: 'Company Incorporation (LTD)' },
+  { key: 'labor_license', label: 'Labor License' },
+  { key: 'shop_establishment', label: 'Shop Establishment Registration' },
+  { key: 'fssai', label: 'FSSAI' },
+  { key: 'iso_certificate', label: 'ISO Certificate' },
+  { key: 'iec', label: 'IEC' },
+  { key: 'dsc', label: 'DSC' },
+  { key: 'trade_license', label: 'Trade License' },
+  { key: 'startup_india', label: 'Startup India (DPIIT Recognition)' },
+];
+const CORE_SERVICES = [
+  { key: 'gem_support', label: 'GeM Support' },
+  { key: 'technical_clarifications', label: 'Clarification on Technical Disqualify' },
+  { key: 'account_recovery', label: 'Unblocking of GeM accounts' },
+];
 const LEADERS = [
   { name: 'B. Esak', phone: '+91 6304486770' },
   { name: 'M. Laxmi Narasimha', phone: '+91 9100029185' },
@@ -38,151 +58,210 @@ function FeatureList({ items, light = false }) {
   return (
     <ul className={`space-y-2 text-sm ${light ? 'text-slate-100' : 'text-slate-600'}`}>
       {items.map((item) => (
-        <li key={item} className="flex gap-2"><Check className={`w-4 h-4 shrink-0 mt-0.5 ${light ? 'text-emerald-300' : 'text-emerald-600'}`} /> {item}</li>
+        <li key={item} className="flex gap-2">
+          <Check className={`w-4 h-4 shrink-0 mt-0.5 ${light ? 'text-emerald-300' : 'text-emerald-600'}`} />
+          <span>{item}</span>
+        </li>
       ))}
     </ul>
   );
 }
 
+const INITIAL_ITEMS = PRICING_DEFAULTS.map(({ service_key, name, base_price }) => ({ service_key, name, base_price }));
+
+function PriceChecks({ rows, picked, onToggle, priceOf, dense = false }) {
+  return (
+    <div className={dense ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-3'}>
+      {rows.map((row) => (
+        <label key={row.key} className="flex w-full items-start gap-4 min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <span className="flex flex-1 items-start gap-2 min-w-0 text-sm font-semibold text-[#0A2647]">
+            <input type="checkbox" checked={picked.includes(row.key)} onChange={() => onToggle(row.key)} className="accent-emerald-600 shrink-0 mt-0.5" />
+            <span className="flex-1 min-w-0 break-words leading-snug">{row.label}</span>
+          </span>
+          <span className="shrink-0 whitespace-nowrap text-right min-w-[4.5rem] text-sm font-black text-emerald-700">{rupee(priceOf(row.key))}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export default function GrowthPartnerPricing({ onSubscribe }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState(INITIAL_ITEMS);
   const [bids, setBids] = useState(1);
   const [trackKey, setTrackKey] = useState('track_1m');
-  const [picked, setPicked] = useState([]);
-  const [callOpen, setCallOpen] = useState(false);
+  const [registration, setRegistration] = useState([]);
+  const [thirdParty, setThirdParty] = useState([]);
+  const [core, setCore] = useState([]);
+  const [leadOpen, setLeadOpen] = useState(false);
+  const [leadGroup, setLeadGroup] = useState('third');
+  const [lead, setLead] = useState({ enterprise_name: '', name: '', phone: '', area: '' });
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     fetch('/api/pricing-master', { credentials: 'include' })
       .then((res) => res.json())
-      .then((data) => setItems(Array.isArray(data.items) ? data.items : []))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
+      .then((data) => {
+        if (!cancelled && Array.isArray(data.items) && data.items.length) setItems(data.items);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   const priceOf = (key) => Number(items.find((item) => item.service_key === key)?.base_price) || 0;
-  const paygUnit = priceOf('custom_bids_10') / 10;
-  const paygTotal = Math.round(paygUnit * bids * 100) / 100;
-  const trackPrice = priceOf(trackKey);
-  const unlimited = priceOf('saas_unlimited');
-  const regTotal = useMemo(
-    () => picked.reduce((sum, key) => sum + priceOf(key), 0),
-    [picked, items],
-  );
+  const sumKeys = (keys) => keys.reduce((sum, key) => sum + priceOf(key), 0);
+  const paygTotal = Math.round((priceOf('custom_bids_10') / 10) * bids * 100) / 100;
+  const regTotal = useMemo(() => sumKeys(registration), [registration, items]);
+  const thirdTotal = useMemo(() => sumKeys(thirdParty), [thirdParty, items]);
+  const coreTotal = useMemo(() => sumKeys(core), [core, items]);
 
-  const toggle = (key) => setPicked((prev) => (prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key]));
+  const toggle = (setter) => (key) => setter((prev) => (prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key]));
   const setBidCount = (value) => {
     const next = Math.floor(Number(value));
     setBids(Number.isFinite(next) && next >= 1 ? next : 1);
   };
+  const labelsFor = (rows, keys) => rows.filter((row) => keys.includes(row.key)).map((row) => row.label);
+
+  const openLead = (group) => {
+    setLeadGroup(group);
+    setSent(false);
+    setLeadOpen(true);
+  };
+
+  const submitLead = async (e) => {
+    e.preventDefault();
+    const selected = leadGroup === 'core' ? labelsFor(CORE_SERVICES, core) : labelsFor(THIRD_PARTY, thirdParty);
+    setSending(true);
+    try {
+      const res = await fetch('/api/guest-queries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...lead,
+          query: selected.join(', '),
+          services: selected,
+          source: leadGroup === 'core' ? 'core_services' : 'third_party',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not send your request.');
+      setSent(true);
+      toast.success('Request Submitted. We will directly call you.');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
-    <section className="bg-slate-50 py-16 w-full">
-      <div className="container mx-auto px-4 max-w-6xl">
-        <div className="text-center mb-12">
+    <section className="bg-slate-50 py-12 sm:py-16 w-full">
+      <div className="w-full max-w-[95%] lg:max-w-[1400px] mx-auto px-2 sm:px-4">
+        <div className="text-center mb-10">
           <h2 className="text-3xl md:text-5xl font-black text-[#0A2647] tracking-tight">Choose Your Growth Partner</h2>
-          <p className="mt-3 text-slate-500 text-lg">Select a plan that fits your business needs. Upgrade anytime.</p>
+          <p className="mt-3 text-slate-500 text-base sm:text-lg">Select a plan that fits your business needs. Upgrade anytime.</p>
         </div>
-        {loading ? <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-[#0A2647]" /></div> : (
-          <>
-            <div className="grid lg:grid-cols-3 gap-6 items-stretch">
-              <article className="rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-6 flex flex-col">
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 items-stretch">
+              <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Core subscription</p>
                 <h3 className="text-2xl font-black text-[#0A2647] mt-2">Pay-As-You-Go</h3>
                 <p className="text-sm text-slate-500 mt-1">For single or selective bids.</p>
                 <p className="text-4xl font-black text-[#0A2647] mt-5">{rupee(paygTotal)}</p>
                 <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor="bid-count">Number of bids</label>
-                <input id="bid-count" type="number" min="1" value={bids} onChange={(e) => setBidCount(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
+                <input id="bid-count" type="number" min="1" inputMode="numeric" value={bids} onChange={(e) => setBidCount(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
                 <div className="mt-5 flex-1"><FeatureList items={PAYG_FEATURES} /></div>
-                <Button className="mt-6 bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: 'custom_bids_10', bidCount: bids })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: 'custom_bids_10', bidCount: bids })}>Subscribe</Button>
               </article>
 
-              <article className="rounded-3xl bg-[#0A2647] text-white shadow-2xl hover:-translate-y-1 transition p-6 flex flex-col ring-4 ring-emerald-400 relative">
+              <article className="w-full max-w-full rounded-3xl bg-[#0A2647] text-white shadow-2xl hover:-translate-y-1 transition p-5 sm:p-6 flex flex-col border-4 border-emerald-400 relative min-w-0">
                 <span className="absolute -top-3 left-6 bg-emerald-500 text-[#0A2647] text-xs font-black px-3 py-1 rounded-full">RECOMMENDED</span>
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-300">Core subscription</p>
                 <h3 className="text-2xl font-black mt-2">Unlimited Monthly</h3>
                 <p className="text-sm text-slate-300 mt-1">Full-service bidding for active businesses.</p>
-                <p className="text-4xl font-black mt-5">{rupee(unlimited)}</p>
+                <p className="text-4xl font-black mt-5">{rupee(priceOf('saas_unlimited'))}</p>
                 <div className="mt-5 flex-1"><FeatureList items={UNLIMITED_FEATURES} light /></div>
-                <Button className="mt-6 bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.({ planId: 'saas_unlimited' })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.({ planId: 'saas_unlimited' })}>Subscribe</Button>
               </article>
 
-              <article className="rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-6 flex flex-col">
+              <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Core subscription</p>
                 <h3 className="text-2xl font-black text-[#0A2647] mt-2">Payment Tracking</h3>
                 <p className="text-sm text-slate-500 mt-1">We take the responsibility to credit payments to your accounts.</p>
-                <p className="text-4xl font-black text-[#0A2647] mt-5">{rupee(trackPrice)}</p>
-                <label className="mt-4 text-sm font-semibold text-slate-700">Duration</label>
-                <select value={trackKey} onChange={(e) => setTrackKey(e.target.value)} className="mt-2 h-10 rounded-lg border border-slate-200 px-3 text-sm">
+                <p className="text-4xl font-black text-[#0A2647] mt-5">{rupee(priceOf(trackKey))}</p>
+                <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor="track-duration">Duration</label>
+                <select id="track-duration" value={trackKey} onChange={(e) => setTrackKey(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm">
                   {TRACK_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
                 </select>
                 <div className="mt-5 flex-1"><FeatureList items={TRACK_FEATURES} /></div>
-                <Button className="mt-6 bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: trackKey })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: trackKey })}>Subscribe</Button>
               </article>
             </div>
 
-            <div className="mt-14 rounded-3xl bg-white border border-slate-200 shadow-xl p-8">
+            <div className="mt-10 rounded-3xl bg-white border border-slate-200 shadow-xl p-5 sm:p-8">
               <h3 className="text-2xl font-black text-[#0A2647]">Registration & Setup Services</h3>
               <p className="text-slate-500 mt-2">Start your business journey with our seamless registration services.</p>
-              <div className="grid sm:grid-cols-2 gap-3 mt-6">
-                {REGISTRATION.map((row) => (
-                  <label key={row.key} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <span className="flex items-center gap-2 text-sm font-semibold text-[#0A2647]">
-                      <input type="checkbox" checked={picked.includes(row.key)} onChange={() => toggle(row.key)} className="accent-emerald-600" />
-                      {row.label}
-                    </span>
-                    <span className="text-sm font-black text-emerald-700">{rupee(priceOf(row.key))}</span>
-                  </label>
+              <div className="mt-6"><PriceChecks dense rows={REGISTRATION} picked={registration} onToggle={toggle(setRegistration)} priceOf={priceOf} /></div>
+              <p className="mt-4 text-sm font-semibold text-emerald-700">Select any of the above services and get Udyam Registration FREE!</p>
+              <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-lg font-black text-[#0A2647]">Total {rupee(regTotal)}</p>
+                <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!registration.length} onClick={() => onSubscribe?.({ planId: registration[0], planIds: registration })}>Proceed to Checkout</Button>
+              </div>
+            </div>
+
+            <div className="mt-8 grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="rounded-3xl bg-white border border-slate-200 shadow-xl p-5 sm:p-8 min-w-0">
+                <h3 className="text-2xl font-black text-[#0A2647]">Third-Party & Compliance</h3>
+                <p className="text-slate-500 mt-2 text-sm">Each item is priced on its own. Our team confirms the work and calls you.</p>
+                <div className="mt-6"><PriceChecks rows={THIRD_PARTY} picked={thirdParty} onToggle={toggle(setThirdParty)} priceOf={priceOf} /></div>
+                <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <p className="text-lg font-black text-[#0A2647]">Total {rupee(thirdTotal)}</p>
+                  <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!thirdParty.length} onClick={() => openLead('third')}>Request Service</Button>
+                </div>
+              </div>
+              <div className="rounded-3xl bg-white border border-slate-200 shadow-xl p-5 sm:p-8 min-w-0">
+                <h3 className="text-2xl font-black text-[#0A2647]">Our Core Services</h3>
+                <div className="mt-6"><PriceChecks rows={CORE_SERVICES} picked={core} onToggle={toggle(setCore)} priceOf={priceOf} /></div>
+                <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <p className="text-lg font-black text-[#0A2647]">Total {rupee(coreTotal)}</p>
+                  <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!core.length} onClick={() => openLead('core')}>Request Service</Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 rounded-3xl bg-[#0A2647] text-white shadow-xl p-5 sm:p-8">
+              <p className="text-lg font-bold">For custom requirements or direct support, call our Leadership:</p>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {LEADERS.map((person) => (
+                  <a key={person.phone} href={`tel:${person.phone.replace(/\s/g, '')}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 px-4 py-3 hover:bg-white/15">
+                    <span className="font-bold">{person.name}</span>
+                    <span className="flex items-center gap-2 font-black text-emerald-300"><Phone className="w-4 h-4" /> {person.phone}</span>
+                  </a>
                 ))}
               </div>
-              <p className="mt-4 text-sm font-semibold text-emerald-700">Select any of the above services and get Udyam Registration FREE!</p>
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-lg font-black text-[#0A2647]">Total {rupee(regTotal)}</p>
-                <Button className="bg-[#0A2647] hover:bg-emerald-600" disabled={!picked.length} onClick={() => onSubscribe?.({ planId: picked[0], planIds: picked })}>Proceed to Checkout</Button>
-              </div>
             </div>
-
-            <div className="mt-8 grid lg:grid-cols-2 gap-6">
-              <div className="rounded-3xl bg-white border border-slate-200 shadow-xl p-8">
-                <h3 className="text-2xl font-black text-[#0A2647]">Third-Party & Compliance</h3>
-                <p className="text-slate-500 mt-2 text-sm">Prices are assigned by our management team for your requirement.</p>
-                <p className="mt-5 text-xs font-bold uppercase tracking-widest text-emerald-600">Company registrations</p>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {COMPANY_TYPES.map((item) => <span key={item} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-[#0A2647]">{item}</span>)}
-                </div>
-                <p className="mt-5 text-xs font-bold uppercase tracking-widest text-emerald-600">Certifications</p>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {CERTIFICATIONS.map((item) => <span key={item} className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-800">{item}</span>)}
-                </div>
-              </div>
-              <div className="rounded-3xl bg-white border border-slate-200 shadow-xl p-8">
-                <h3 className="text-2xl font-black text-[#0A2647]">Our Core Services</h3>
-                <div className="mt-5 space-y-3">
-                  <div className="rounded-2xl border border-slate-200 px-4 py-3 font-semibold text-[#0A2647]">GeM Support</div>
-                  <button type="button" onClick={() => setCallOpen(true)} className="w-full text-left rounded-2xl border border-slate-200 px-4 py-3 font-semibold text-[#0A2647] hover:border-emerald-500">Technical Support</button>
-                  <div className="rounded-2xl border border-slate-200 px-4 py-3 font-semibold text-[#0A2647]">Account Unblocking</div>
-                </div>
-                <Button className="mt-6 bg-[#0A2647] hover:bg-emerald-600" onClick={() => setCallOpen(true)}>Request a Call</Button>
-              </div>
-            </div>
-          </>
-        )}
       </div>
 
-      <Dialog open={callOpen} onOpenChange={setCallOpen}>
-        <DialogContent className="max-w-md">
+      <Dialog open={leadOpen} onOpenChange={setLeadOpen}>
+        <DialogContent className="max-w-md w-[calc(100%-1.5rem)]">
           <DialogHeader>
-            <DialogTitle className="text-[#0A2647]">Talk to leadership</DialogTitle>
-            <DialogDescription>For custom requirements, directly contact our Leadership team:</DialogDescription>
+            <DialogTitle className="text-[#0A2647]">Request Service</DialogTitle>
+            <DialogDescription>
+              {sent ? 'Request Submitted. We will directly call you.' : 'Tell us how to reach you. This goes to the MD lead queue.'}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            {LEADERS.map((person) => (
-              <a key={person.phone} href={`tel:${person.phone.replace(/\s/g, '')}`} className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 hover:border-emerald-500">
-                <span className="font-bold text-[#0A2647]">{person.name}</span>
-                <span className="flex items-center gap-2 font-black text-emerald-700"><Phone className="w-4 h-4" /> {person.phone}</span>
-              </a>
-            ))}
-          </div>
+          {sent ? (
+            <p className="text-emerald-700 font-bold">Request Submitted. We will directly call you.</p>
+          ) : (
+            <form onSubmit={submitLead} className="space-y-3">
+              <div><Label>Enterprise Name</Label><Input required value={lead.enterprise_name} onChange={(e) => setLead({ ...lead, enterprise_name: e.target.value })} /></div>
+              <div><Label>Name</Label><Input required value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} /></div>
+              <div><Label>Phone Number</Label><Input required value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} /></div>
+              <div><Label>Area</Label><Input required value={lead.area} onChange={(e) => setLead({ ...lead, area: e.target.value })} /></div>
+              <Button type="submit" className="w-full bg-emerald-600" disabled={sending}>{sending ? 'Sending…' : 'Submit'}</Button>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </section>
