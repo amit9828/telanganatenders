@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'crypto';
 import { getDb, markHostUnhealthy, forceReconnect } from '@/lib/db';
-import { canParticipate, canViewTender } from '@/lib/billing-access';
+import { canParticipate, canViewTender, hasCorePlanView } from '@/lib/billing-access';
 import {
   uploadTenderPDF,
   fetchTenderPDFBuffer,
@@ -1087,8 +1087,10 @@ async function handleGET(request, { params }, attempt = 1) {
         billing_paid: user.billing_paid === true,
         subscription: user.subscription || null,
         bid_balance: Number(user.bid_balance) || 0,
+        bid_expiry: user.bid_expiry || null,
+        purchased_services: Array.isArray(user.purchased_services) ? user.purchased_services : [],
         view_unlocks: Array.isArray(user.view_unlocks) ? user.view_unlocks : [],
-        discovery_masked: !(user.subscription?.view_source === 'pricing_master' && user.subscription?.view_until && new Date(user.subscription.view_until) > new Date()),
+        discovery_masked: !(hasCorePlanView(user) || (user.subscription?.view_source === 'pricing_master' && user.subscription?.view_until && new Date(user.subscription.view_until) > new Date())),
         profile: {
           company_type: user.company_type || '',
           has_gst: user.has_gst || false,

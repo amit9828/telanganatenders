@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
+import ClientBillingPanel from '@/components/ClientBillingPanel';
 import ViewUnlockModal from '@/components/ViewUnlockModal';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { consumeClientBypass, clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
@@ -165,7 +166,7 @@ export default function ClientDashboard() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store'];
+    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store', 'billing'];
     if (requested && allowed.includes(requested)) setActiveTab(requested);
     if (new URLSearchParams(window.location.search).get('step') === 'billing') setActiveTab('store');
   }, []);
@@ -965,7 +966,7 @@ export default function ClientDashboard() {
   if (userData?.subscription?.status === 'none' && !userData.billing_paid && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
-        <BillingGate />
+        <BillingGate user={userData} />
       </div>
     );
   }
@@ -1423,6 +1424,9 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
             <TabsTrigger value="store" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               Service store
             </TabsTrigger>
+            <TabsTrigger value="billing" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              Billing & Payments
+            </TabsTrigger>
             {/* 🚀 RBAC: "Bid Tools" hidden exclusively for real clients — still fully
                 present in the DOM/functional for MD/employee staff-preview sessions,
                 and its TabsContent below is untouched (nothing deleted). */}
@@ -1437,7 +1441,11 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
           {/* TAB 1: DYNAMIC BUSINESS PROFILE */}
           {/* ============================================================================== */}
           <TabsContent value="store" className="space-y-6">
-            <BillingGate />
+            <BillingGate user={userData} />
+          </TabsContent>
+
+          <TabsContent value="billing" className="space-y-6">
+            <ClientBillingPanel user={userData} onUpgrade={() => setActiveTab('store')} />
           </TabsContent>
 
           <TabsContent value="profile" className="space-y-6">

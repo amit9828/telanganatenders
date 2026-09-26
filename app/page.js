@@ -24,6 +24,7 @@ import { numberedPageList } from '@/components/workflow/api';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { rememberRealClientIdent, rememberRealStaffIdent } from '@/lib/tab-handoff';
 import GrowthPartnerPricing from '@/components/GrowthPartnerPricing';
+import { hasCorePlanView } from '@/lib/billing-access';
 import ViewUnlockModal from '@/components/ViewUnlockModal';
 
 const PLANS = [
@@ -438,7 +439,7 @@ export default function App() {
        const viewUntil = sub.view_until ? new Date(sub.view_until) : null;
        const viewWindow = sub.view_source === 'pricing_master' && viewUntil && viewUntil > new Date();
        const unlocked = Array.isArray(d.view_unlocks) && d.view_unlocks.some((row) => String(row.tender_id) === tenderId);
-       const hasAccess = viewWindow || unlocked;
+       const hasAccess = viewWindow || unlocked || hasCorePlanView(d);
 
        if (hasAccess) {
           toast.success('Access Granted!', { id: toastId });

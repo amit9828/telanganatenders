@@ -1,8 +1,9 @@
+import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { resolveClientEmail } from '@/lib/staff-auth';
 import { createCashfreeOrder } from '@/lib/payments';
-import { assertPurchasable, comboIncludesUdyam, orderAmount } from '@/lib/billing-access';
+import { assertPurchasable, comboIncludesUdyam, orderAmount, unlimitedActive } from '@/lib/billing-access';
 import { pendingOrderDoc } from '@/lib/billing-schema';
 
 export const runtime = 'nodejs';
@@ -41,8 +42,16 @@ export async function POST(request) {
       base += Number(check.item.base_price) || 0;
     }
   }
+  if (ids.includes('custom_bids_10')) {
+    const buyer = await db.collection('users').findOne({ email: String(email).toLowerCase() });
+    if (unlimitedActive(buyer)) {
+      return json({ error: 'Unlimited already includes bids.' }, 400);
+    }
+  }
+  if (!(base > 0)) return json({ error: 'This service is not priced yet.' }, 400);
   const money = orderAmount({ base_price: base });
-  const orderId = `order_${Date.now()}`;
+  if (!(money.total_amount >= 1)) return json({ error: 'This service is not priced yet.' }, 400);
+  const orderId = `order_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
   const draft = pendingOrderDoc({
     orderId,
     email,
