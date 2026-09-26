@@ -273,7 +273,6 @@ export default function App() {
       }
       if (searchQ.trim()) {
         params.set('q', searchQ.trim());
-        params.set('scope', 'all'); 
       }
       const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
       const d = await r.json(); 

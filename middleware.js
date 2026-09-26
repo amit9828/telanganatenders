@@ -58,6 +58,11 @@ export async function middleware(req) {
     return NextResponse.next();
   }
 
+  if (pathname === '/account' || pathname.startsWith('/account/')) {
+    if (!authed) return home(req);
+    return NextResponse.next();
+  }
+
   return NextResponse.next();
 }
 
@@ -75,5 +80,7 @@ export const config = {
     '/tl/:path*',
     '/employee',
     '/employee/:path*',
+    '/account',
+    '/account/:path*',
   ],
 };
