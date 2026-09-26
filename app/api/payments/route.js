@@ -43,7 +43,7 @@ export async function POST(request) {
     const body = await request.json().catch(() => null);
     if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
-    if (action === 'order') return await createCashfreeOrder(db, body);
+    if (action === 'order') return await createCashfreeOrder(db, body, request);
     if (action === 'verify') return await verifyCashfreeOrder(db, body);
 
     return json({ error: 'Unknown payment action', action }, 404);

@@ -439,6 +439,7 @@ export default function AdminPage() {
     if (typeof window !== 'undefined') {
       localStorage.clear();
       sessionStorage.clear();
+      document.cookie = 'tt_md_session=; Path=/; Max-Age=0; SameSite=Lax';
       window.location.href = '/';
     }
   };
@@ -1346,12 +1347,12 @@ export default function AdminPage() {
 
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6 w-full">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
-                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Briefcase className="w-5 h-5 text-blue-600" /> Active Verified Clients</CardTitle>
-                 <CardDescription>Directory of all approved enterprise clients, their stats, and direct portal/drive access.</CardDescription>
+                 <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Briefcase className="w-5 h-5 text-blue-600" /> Active Clients</CardTitle>
+                 <CardDescription>Clients who have paid and completed their business profile.</CardDescription>
               </CardHeader>
               <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
                  {approvedClients.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400"><Users className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-semibold">No active verified clients found.</p></div>
+                    <div className="text-center py-8 text-slate-400"><Users className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-semibold">No paid clients with a complete profile yet.</p></div>
                  ) : (
                     <div className="grid xl:grid-cols-2 gap-4">
                        {approvedClients.map(client => {

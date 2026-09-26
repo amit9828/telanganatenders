@@ -35,7 +35,7 @@ export async function POST(request) {
       return json({ error: "Invalid plan. Subscriptions must be 'month' or 'year'." }, 400);
     }
 
-    return await createCashfreeOrder(db, body);
+    return await createCashfreeOrder(db, body, request);
   } catch (error) {
     console.error('Subscription create error:', error);
     return json({ error: 'Server Error' }, 500);

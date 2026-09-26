@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
+import ClientBillingPanel from '@/components/ClientBillingPanel';
 import ViewUnlockModal from '@/components/ViewUnlockModal';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { consumeClientBypass, clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
@@ -25,7 +26,7 @@ import {
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
   IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature,
-  Handshake, Landmark, Gavel, ScrollText, Search
+  Handshake, Landmark, Gavel, ScrollText, Search, ArrowLeft
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
@@ -165,7 +166,7 @@ export default function ClientDashboard() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store'];
+    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store', 'billing'];
     if (requested && allowed.includes(requested)) setActiveTab(requested);
     if (new URLSearchParams(window.location.search).get('step') === 'billing') setActiveTab('store');
   }, []);
@@ -930,7 +931,7 @@ export default function ClientDashboard() {
       if (!r1.ok) { setBuying(false); return toast.error(d1.error || 'Failed to initialize payment'); }
       
       const cashfree = await load({ mode: "production" });
-      const checkoutOptions = { paymentSessionId: d1.payment_session_id, returnUrl: `https://www.tgtenders.in/payment-status?order_id={order_id}` };
+      const checkoutOptions = { paymentSessionId: d1.payment_session_id, returnUrl: `${window.location.origin}/payment-status?order_id={order_id}` };
       await cashfree.checkout(checkoutOptions);
     } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
   };
@@ -962,46 +963,27 @@ export default function ClientDashboard() {
 
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
+  const gateStep = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('step') : '';
+  const backToBilling = () => { window.location.href = '/client?step=billing'; };
+  const backToAgreement = () => { window.location.href = '/client?step=agreement'; };
+
+  if (userData && !session?.user?.is_bypass && gateStep === 'billing' && !userData.agreement_signed) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 py-10">
+        <BillingGate user={userData} onBack={() => { window.location.href = '/'; }} />
+      </div>
+    );
+  }
+
   if (userData?.subscription?.status === 'none' && !userData.billing_paid && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10">
-        <BillingGate />
+        <BillingGate user={userData} onBack={() => { window.location.href = '/'; }} />
       </div>
     );
   }
 
-  if (userData && (userData.onboarding_complete || localOnboardComplete) && !userData.is_approved && userData.subscription?.status !== 'none' && !session?.user?.is_bypass) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
-        <Card className="max-w-md w-full shadow-2xl border-t-8 border-t-amber-500 bg-white">
-           <CardHeader className="text-center pb-2 border-b">
-             <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 ring-4 ring-amber-50">
-                <ShieldAlert className="w-8 h-8 text-amber-600" />
-             </div>
-             <CardTitle className="text-2xl font-black text-[#0A2647]">Account Under Verification</CardTitle>
-             <CardDescription className="text-sm mt-2">Welcome to Enterprise Portal.</CardDescription>
-           </CardHeader>
-           <CardContent className="pt-6">
-             <p className="text-center text-slate-600 text-sm font-medium mb-6">
-                Your registration was successful. As part of our strict MNC compliance, your dashboard access is currently locked pending <strong className="text-slate-800">MD Approval</strong>.
-             </p>
-             <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 text-center flex flex-col items-center gap-3 shadow-inner">
-                <PhoneCall className="w-8 h-8 text-blue-600 animate-pulse" />
-                <div>
-                   <p className="text-xs text-blue-800 font-bold uppercase tracking-wider mb-1">For Immediate Approval Call MD:</p>
-                   <p className="text-3xl font-black text-[#0A2647] tracking-wider">+91 6304486770</p>
-                </div>
-             </div>
-             <div className="mt-8 flex justify-between items-center">
-                <Button variant="ghost" onClick={handleSignOut} className="text-slate-500 hover:text-slate-700">Log Out</Button>
-             </div>
-           </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-if (userData && (userData.billing_paid || ((userData.onboarding_complete || localOnboardComplete) && userData.is_approved)) && !userData.agreement_signed && !session?.user?.is_bypass) {
+if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.billing_paid && (gateStep === 'agreement' || !userData.agreement_signed)) {
       return (
         <div className="min-h-screen flex flex-col items-center bg-slate-100 p-4 sm:py-10">
           <Card className="max-w-4xl w-full shadow-2xl border-t-8 border-t-emerald-600 bg-white print:border-none print:shadow-none mx-auto">
@@ -1065,18 +1047,26 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
                 </div>
                 
                 <div className="print:hidden mt-10 pt-6 border-t border-slate-200">
+                   {userData.agreement_signed ? (
+                     <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                       <Button type="button" variant="outline" onClick={backToBilling} className="h-12 px-8"><ArrowLeft className="w-4 h-4 mr-2" /> Go Back</Button>
+                       <Button type="button" onClick={() => { window.location.href = '/client'; }} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10">Continue to profile</Button>
+                     </div>
+                   ) : (
                    <form onSubmit={handleSignAgreement} className="flex flex-col items-center gap-5">
                       <label className="flex items-center gap-3 cursor-pointer bg-emerald-50 p-4 rounded-xl border border-emerald-200 w-full sm:w-auto shadow-sm hover:shadow-md transition">
                          <input type="checkbox" required className="w-6 h-6 accent-emerald-600 cursor-pointer" />
                          <span className="font-bold text-emerald-900 text-sm">I have read, understood, and legally accept the terms of this B2B Agreement.</span>
                       </label>
                       <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto mt-2">
+                         <Button type="button" variant="outline" onClick={backToBilling} className="h-12 px-8"><ArrowLeft className="w-4 h-4 mr-2" /> Go Back</Button>
                          <Button type="submit" disabled={submittingAgreement} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 px-10 shadow-lg w-full">
                             {submittingAgreement ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <PenTool className="w-5 h-5 mr-2"/>}
                             {submittingAgreement ? 'Generating Record...' : 'Sign Agreement & Enter Profile'}
                          </Button>
                       </div>
                    </form>
+                   )}
                 </div>
              </CardContent>
           </Card>
@@ -1084,7 +1074,7 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
       );
   }
 
-  if (userData && (!userData.onboarding_complete && !localOnboardComplete) && !session?.user?.is_bypass) {
+  if (userData && userData.agreement_signed && (!userData.onboarding_complete && !localOnboardComplete) && !session?.user?.is_bypass) {
     return (
       <div className="min-h-screen bg-slate-50 p-4 py-10 w-full overflow-x-hidden">
         <Card className="max-w-3xl mx-auto shadow-2xl border-t-8 border-t-blue-600">
@@ -1126,10 +1116,13 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
                     <label className="flex items-center gap-2 text-sm bg-white p-2.5 border rounded-lg cursor-pointer hover:border-[#16a34a] shadow-sm"><input type="checkbox" className="w-4 h-4 accent-[#16a34a]" checked={onboardForm.has_turnover} onChange={e => setOnboardForm({...onboardForm, has_turnover: e.target.checked})} /> Turnover Cert.</label>
                   </div>
                 </div>
-                <Button type="submit" disabled={submittingOnboard} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-14 text-lg font-bold mt-8 shadow-md">
-                  {submittingOnboard ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <CheckCircle2 className="w-5 h-5 mr-2"/>}
-                  {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Dashboard'}
-                </Button>
+                <div className="flex flex-col sm:flex-row gap-3 mt-8">
+                  <Button type="button" variant="outline" onClick={backToAgreement} className="h-14 px-8"><ArrowLeft className="w-4 h-4 mr-2" /> Go Back</Button>
+                  <Button type="submit" disabled={submittingOnboard} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-14 text-lg font-bold shadow-md">
+                    {submittingOnboard ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <CheckCircle2 className="w-5 h-5 mr-2"/>}
+                    {submittingOnboard ? 'Creating Profile...' : 'Save Profile & Enter Dashboard'}
+                  </Button>
+                </div>
              </form>
           </CardContent>
         </Card>
@@ -1140,7 +1133,7 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
   const queries = userData?.officer_queries || [];
   const activeLockingQuery = queries.find(q => !q.reply_submitted);
 
-  if (userData && userData.is_approved && userData.agreement_signed && (userData.onboarding_complete || localOnboardComplete) && activeLockingQuery && !session?.user?.is_bypass) {
+  if (userData && userData.agreement_signed && (userData.onboarding_complete || localOnboardComplete) && activeLockingQuery && !session?.user?.is_bypass) {
     const q = activeLockingQuery; 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0A2647] p-4 bg-[url('/grid-pattern.svg')]">
@@ -1423,6 +1416,9 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
             <TabsTrigger value="store" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               Service store
             </TabsTrigger>
+            <TabsTrigger value="billing" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              Billing & Payments
+            </TabsTrigger>
             {/* 🚀 RBAC: "Bid Tools" hidden exclusively for real clients — still fully
                 present in the DOM/functional for MD/employee staff-preview sessions,
                 and its TabsContent below is untouched (nothing deleted). */}
@@ -1437,7 +1433,11 @@ if (userData && (userData.billing_paid || ((userData.onboarding_complete || loca
           {/* TAB 1: DYNAMIC BUSINESS PROFILE */}
           {/* ============================================================================== */}
           <TabsContent value="store" className="space-y-6">
-            <BillingGate />
+            <BillingGate user={userData} />
+          </TabsContent>
+
+          <TabsContent value="billing" className="space-y-6">
+            <ClientBillingPanel user={userData} onUpgrade={() => setActiveTab('store')} />
           </TabsContent>
 
           <TabsContent value="profile" className="space-y-6">

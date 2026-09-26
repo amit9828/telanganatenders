@@ -9,8 +9,8 @@ import { Check, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { PRICING_DEFAULTS } from '@/lib/billing-schema';
 
-const PAYG_FEATURES = ['Base Tender Perks', 'Reverse Auction Strategy', 'Tech Evaluation & Doc Help', 'Tracking up to Bid Won', 'Legal Support'];
-const UNLIMITED_FEATURES = ['Unlimited Bids', 'Unlimited Service Catalogs (Free)', 'Unlimited Product Catalogs (Free)', 'Unlimited Tech Evaluations (Free)', 'Unlimited Lead Search & Participation', 'Legal Support', 'MSME Samadhan', 'JV Structuring & Payment Tracking'];
+export const PAYG_FEATURES = ['Base Tender Perks', 'Reverse Auction Strategy', 'Tech Evaluation & Doc Help', 'Tracking up to Bid Won', 'Legal Support'];
+export const UNLIMITED_FEATURES = ['Unlimited Bids', 'Unlimited Service Catalogs (Free)', 'Unlimited Product Catalogs (Free)', 'Unlimited Tech Evaluations (Free)', 'Unlimited Lead Search & Participation', 'Legal Support', 'MSME Samadhan', 'JV Structuring & Payment Tracking'];
 const TRACK_FEATURES = ['CRAC follow-up and generation', 'GeM invoice generation', 'Timeline-based payment tracking'];
 const TRACK_OPTIONS = [
   { key: 'track_1m', label: '1 Month' },
@@ -85,7 +85,7 @@ function PriceChecks({ rows, picked, onToggle, priceOf, dense = false }) {
   );
 }
 
-export default function GrowthPartnerPricing({ onSubscribe }) {
+export default function GrowthPartnerPricing({ onSubscribe, access }) {
   const [items, setItems] = useState(INITIAL_ITEMS);
   const [bids, setBids] = useState(1);
   const [trackKey, setTrackKey] = useState('track_1m');
@@ -164,16 +164,19 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 items-stretch">
+              {!access?.unlimitedActive && (
               <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Core subscription</p>
                 <h3 className="text-2xl font-black text-[#0A2647] mt-2">Pay-As-You-Go</h3>
                 <p className="text-sm text-slate-500 mt-1">For single or selective bids.</p>
+                <p className="mt-2 text-sm font-bold text-emerald-700">Valid for 3 months</p>
                 <p className="text-4xl font-black text-[#0A2647] mt-5">{rupee(paygTotal)}</p>
                 <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor="bid-count">Number of bids</label>
                 <input id="bid-count" type="number" min="1" inputMode="numeric" value={bids} onChange={(e) => setBidCount(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
                 <div className="mt-5 flex-1"><FeatureList items={PAYG_FEATURES} /></div>
                 <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: 'custom_bids_10', bidCount: bids })}>Subscribe</Button>
               </article>
+              )}
 
               <article className="w-full max-w-full rounded-3xl bg-[#0A2647] text-white shadow-2xl hover:-translate-y-1 transition p-5 sm:p-6 flex flex-col border-4 border-emerald-400 relative min-w-0">
                 <span className="absolute -top-3 left-6 bg-emerald-500 text-[#0A2647] text-xs font-black px-3 py-1 rounded-full">RECOMMENDED</span>
@@ -182,7 +185,7 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
                 <p className="text-sm text-slate-300 mt-1">Full-service bidding for active businesses.</p>
                 <p className="text-4xl font-black mt-5">{rupee(priceOf('saas_unlimited'))}</p>
                 <div className="mt-5 flex-1"><FeatureList items={UNLIMITED_FEATURES} light /></div>
-                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.({ planId: 'saas_unlimited' })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.({ planId: 'saas_unlimited' })}>{access?.paygActive ? 'Upgrade to Unlimited' : 'Subscribe'}</Button>
               </article>
 
               <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
@@ -259,8 +262,14 @@ export default function GrowthPartnerPricing({ onSubscribe }) {
               <div><Label>Name</Label><Input required value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} /></div>
               <div><Label>Phone Number</Label><Input required value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} /></div>
               <div><Label>Area</Label><Input required value={lead.area} onChange={(e) => setLead({ ...lead, area: e.target.value })} /></div>
-              <Button type="submit" className="w-full bg-emerald-600" disabled={sending}>{sending ? 'Sending…' : 'Submit'}</Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setLeadOpen(false)}>Go Back</Button>
+                <Button type="submit" className="flex-1 bg-emerald-600" disabled={sending}>{sending ? 'Sending…' : 'Submit'}</Button>
+              </div>
             </form>
+          )}
+          {sent && (
+            <Button type="button" variant="outline" onClick={() => setLeadOpen(false)}>Go Back</Button>
           )}
         </DialogContent>
       </Dialog>
