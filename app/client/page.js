@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react'; 
 import BrandLogo from '@/components/BrandLogo';
 import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
+import PricingPromoModal from '@/components/PricingPromoModal';
 import ClientBillingPanel from '@/components/ClientBillingPanel';
 import ViewUnlockModal from '@/components/ViewUnlockModal';
 import { liveTendersOnly } from '@/lib/tender-sort';
@@ -1237,6 +1238,7 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
+      <PricingPromoModal user={userData} />
       <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-40 tender-shadow">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <BrandLogo subtitle="Enterprise Portal" />
