@@ -10,22 +10,42 @@ const VIEWS = [
   { key: 'view_year', name: '365 days', detail: 'Unmask bid numbers and documents for a year' },
 ];
 
-export default function ViewUnlockModal({ open, tenderTitle, onClose, onChoose }) {
-  const [prices, setPrices] = useState({});
+let cachedPrices = null;
+let inflight = null;
 
-  useEffect(() => {
-    if (!open) return;
-    fetch('/api/pricing-master', { credentials: 'include' })
+function loadViewPrices() {
+  if (cachedPrices) return Promise.resolve(cachedPrices);
+  if (!inflight) {
+    inflight = fetch('/api/pricing-master', { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         const map = {};
         for (const item of data.items || []) {
           if (VIEWS.some((row) => row.key === item.service_key)) map[item.service_key] = Number(item.base_price) || 0;
         }
-        setPrices(map);
+        cachedPrices = map;
+        return map;
       })
-      .catch(() => setPrices({}));
-  }, [open]);
+      .catch(() => {
+        inflight = null;
+        return {};
+      });
+  }
+  return inflight;
+}
+
+if (typeof window !== 'undefined') loadViewPrices();
+
+export default function ViewUnlockModal({ open, tenderTitle, onClose, onChoose }) {
+  const [prices, setPrices] = useState(cachedPrices || {});
+
+  useEffect(() => {
+    let cancelled = false;
+    loadViewPrices().then((map) => {
+      if (!cancelled && map) setPrices(map);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose?.(); }}>

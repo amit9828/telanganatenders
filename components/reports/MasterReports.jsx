@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { Activity, Clock, Globe, Target, UserPlus, Users, Wallet } from 'lucide-react';
+import { Activity, Clock, Globe, Target, Users, Wallet } from 'lucide-react';
 import { staffHeaders } from '@/components/workflow/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,7 +33,6 @@ export default function MasterReports({
   onOpenTab,
   liveTenders = 0,
   clients = 0,
-  pending = 0,
   balance = 0,
 }) {
   const [range, setRange] = useState('monthly');
@@ -98,7 +97,7 @@ export default function MasterReports({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div onClick={() => onOpenTab?.('team-activity')} className="cursor-pointer transition hover:scale-[1.01]">
           <StatCard icon={<Users className="w-4 h-4 text-blue-500" />} label="Team Activity" value={report ? report.suggestions : '—'} accent />
         </div>
@@ -107,9 +106,6 @@ export default function MasterReports({
         </div>
         <div onClick={() => onOpenTab?.('clients')} className="cursor-pointer transition hover:scale-[1.01]">
           <StatCard icon={<Users className="w-4 h-4 text-purple-500" />} label="Total Clients" value={clients} />
-        </div>
-        <div onClick={() => onOpenTab?.('clients')} className="cursor-pointer transition hover:scale-[1.01]">
-          <StatCard icon={<UserPlus className="w-4 h-4 text-orange-500" />} label="Pending Appr." value={pending} accent={pending > 0} />
         </div>
         <div onClick={() => onOpenTab?.('finance')} className="cursor-pointer transition hover:scale-[1.01]">
           <StatCard icon={<Wallet className="w-4 h-4 text-emerald-600" />} label="Net Balance" value={`₹${Number(balance || 0).toLocaleString()}`} />

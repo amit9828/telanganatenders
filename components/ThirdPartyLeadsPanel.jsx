@@ -68,11 +68,11 @@ export default function ThirdPartyLeadsPanel({ token = '' }) {
             <thead>
               <tr>
                 <th>Enterprise name</th>
-                <th>Client name</th>
+                <th>Person name</th>
                 <th>Phone</th>
                 <th>Area</th>
-                <th>Query details</th>
-                <th>Requested date</th>
+                <th>Required services</th>
+                <th>Requested</th>
                 <th></th>
               </tr>
             </thead>
@@ -83,7 +83,7 @@ export default function ThirdPartyLeadsPanel({ token = '' }) {
                   <td className="text-xs">{lead.client_name || '—'}</td>
                   <td className="text-xs whitespace-nowrap">{lead.phone || '—'}</td>
                   <td className="text-xs">{lead.area || '—'}</td>
-                  <td className="text-xs max-w-[240px]">{lead.query || '—'}</td>
+                  <td className="text-xs max-w-[240px]">{(lead.services || []).join(', ') || lead.query || '—'}</td>
                   <td className="text-xs whitespace-nowrap">{when(lead.created_at)}</td>
                   <td>
                     <Button size="sm" variant="outline" className="h-7 text-[10px]" disabled={busyId === lead._id} onClick={() => closeLead(lead._id)}>

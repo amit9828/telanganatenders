@@ -9,6 +9,10 @@ import { Check, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { PRICING_DEFAULTS, paygBase } from '@/lib/billing-schema';
 
+function subscribeIntent(base, extra) {
+  return { ...extra, previewBase: Math.round((Number(base) || 0) * 100) / 100 };
+}
+
 export const PAYG_FEATURES = ['Base Tender Perks', 'Reverse Auction Strategy', 'Tech Evaluation & Doc Help', 'Tracking up to Bid Won', 'Legal Support'];
 export const UNLIMITED_FEATURES = ['Unlimited Bids', 'Unlimited Service Catalogs (Free)', 'Unlimited Product Catalogs (Free)', 'Unlimited Tech Evaluations (Free)', 'Unlimited Lead Search & Participation', 'Legal Support', 'MSME Samadhan', 'JV Structuring & Payment Tracking'];
 const TRACK_FEATURES = ['CRAC follow-up and generation', 'GeM invoice generation', 'Timeline-based payment tracking'];
@@ -167,7 +171,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
                 <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor={cardsOnly ? 'promo-bid-count' : 'bid-count'}>Number of bids</label>
                 <input id={cardsOnly ? 'promo-bid-count' : 'bid-count'} type="number" min="1" inputMode="numeric" value={bids} onChange={(e) => setBidCount(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
                 <div className="mt-5 flex-1"><FeatureList items={PAYG_FEATURES} /></div>
-                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: 'custom_bids_10', bidCount: bids })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.(subscribeIntent(paygTotal, { planId: 'custom_bids_10', bidCount: bids }))}>Subscribe</Button>
               </article>
               )}
 
@@ -178,7 +182,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
                 <p className="text-sm text-slate-300 mt-1">Full-service bidding for active businesses.</p>
                 <p className="text-4xl font-black mt-5">{rupee(priceOf('saas_unlimited'))}</p>
                 <div className="mt-5 flex-1"><FeatureList items={UNLIMITED_FEATURES} light /></div>
-                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.({ planId: 'saas_unlimited' })}>{access?.paygActive ? 'Upgrade to Unlimited' : 'Subscribe'}</Button>
+                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.(subscribeIntent(priceOf('saas_unlimited'), { planId: 'saas_unlimited' }))}>{access?.paygActive ? 'Upgrade to Unlimited' : 'Subscribe'}</Button>
               </article>
 
               <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
@@ -191,7 +195,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
                   {TRACK_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
                 </select>
                 <div className="mt-5 flex-1"><FeatureList items={TRACK_FEATURES} /></div>
-                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: trackKey })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.(subscribeIntent(priceOf(trackKey), { planId: trackKey }))}>Subscribe</Button>
               </article>
             </div>
   );
@@ -215,7 +219,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
               <p className="mt-4 text-sm font-semibold text-emerald-700">Select any of the above services and get Udyam Registration FREE!</p>
               <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-lg font-black text-[#0A2647]">Total {rupee(regTotal)}</p>
-                <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!registration.length} onClick={() => onSubscribe?.({ planId: registration[0], planIds: registration })}>Proceed to Checkout</Button>
+                <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!registration.length} onClick={() => onSubscribe?.(subscribeIntent(regTotal, { planId: registration[0], planIds: registration }))}>Proceed to Checkout</Button>
               </div>
             </div>
 

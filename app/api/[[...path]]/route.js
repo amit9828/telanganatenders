@@ -795,7 +795,7 @@ async function handleGET(request, { params }, attempt = 1) {
       const __t = Date.now();
       const directory = searchParams.get('directory') === '1';
       const users = await db.collection('users')
-         .find({ billing_paid: true, onboarding_complete: true })
+         .find({ onboarding_complete: true })
          .project(directory
            ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1 }
            : { password: 0, 'vault_docs.file_base64': 0 })

@@ -144,7 +144,6 @@ export default function AdminPage() {
   const [guestQueries, setGuestQueries] = useState([]);
   const [ticketReply, setTicketReply] = useState({}); 
   const [l1Data, setL1Data] = useState({}); 
-  const [pendingUsers, setPendingUsers] = useState([]);
   const [approvedClients, setApprovedClients] = useState([]);
 
   // Team & Credentials
@@ -295,9 +294,9 @@ export default function AdminPage() {
     };
 
     const want = new Set();
-    if (tab === 'reports') ['tenders', 'pending', 'clients', 'ledger'].forEach((k) => want.add(k));
+    if (tab === 'reports') ['tenders', 'clients', 'ledger'].forEach((k) => want.add(k));
     else if (tab === 'finance') ['ledger', 'payments', 'clients'].forEach((k) => want.add(k));
-    else if (tab === 'clients') ['pending', 'clients'].forEach((k) => want.add(k));
+    else if (tab === 'clients') want.add('clients');
     else if (tab === 'matchmaker') want.add('matches');
     else if (tab === 'internal') ['employees', 'wfInternal'].forEach((k) => want.add(k));
     else if (tab === 'team-activity') ['wfInternal', 'wfParked', 'wfSuggestions'].forEach((k) => want.add(k));
@@ -315,7 +314,6 @@ export default function AdminPage() {
       if (want.has('tenders')) tasks.tenders = safeFetch(`/api/tenders?role=admin&limit=200&t=${stamp}`);
       if (want.has('stats')) tasks.stats = safeFetch(`/api/admin/stats?t=${stamp}`);
       if (want.has('tickets')) tasks.tickets = safeFetch(`/api/tickets?role=admin&t=${stamp}`);
-      if (want.has('pending')) tasks.pending = safeFetch(`/api/users/pending?t=${stamp}`);
       if (want.has('clients')) tasks.clients = safeFetch(`/api/users/approved?t=${stamp}`);
       if (want.has('dispatches')) tasks.dispatches = safeFetch(`/api/dispatches?t=${stamp}`);
       if (want.has('employees')) tasks.employees = safeFetch(`/api/employees?t=${stamp}`);
@@ -339,7 +337,6 @@ export default function AdminPage() {
       if (got.stats?.ok) setStats(got.stats.data || {});
       if (got.tickets?.ok) setListIfChanged(setTickets, got.tickets.data.tickets || []);
       if (got.guests?.ok) setListIfChanged(setGuestQueries, got.guests.data.queries || got.guests.data['guest-queries'] || []);
-      if (got.pending?.ok) setListIfChanged(setPendingUsers, got.pending.data.users || []);
       if (got.clients?.ok) {
         setListIfChanged(setApprovedClients, got.clients.data.users || []);
       }
@@ -716,13 +713,6 @@ export default function AdminPage() {
         if(res.ok) { toast.success("Drive Synced & Created Successfully!", { id: toastId }); refresh(); } 
         else { toast.error(data.error || "Drive Sync Failed.", { id: toastId }); }
      } catch(e) { toast.error("Network Error.", { id: toastId }); }
-  };
-
-  const approveClient = async (email) => {
-    try {
-      await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email }) });
-      toast.success('✅ Client Verified & Portal Unlocked!'); refresh();
-    } catch(e) { toast.error('Network Error while approving.'); }
   };
 
   const deleteClientPermanently = async (email) => {
@@ -1212,7 +1202,6 @@ export default function AdminPage() {
               onOpenTab={setActiveTab}
               liveTenders={tenders.length}
               clients={approvedClients.length}
-              pending={pendingUsers.length}
               balance={ledgerBalance}
             />
           </TabsContent>
@@ -1287,72 +1276,14 @@ export default function AdminPage() {
               </CardContent>
             </Card>
 
-            <Card className="tender-shadow border-t-4 border-t-[#16a34a]">
-              <CardHeader className="bg-emerald-50/50 border-b pb-4">
-                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><UserCheck className="w-5 h-5 text-[#16a34a]" /> Enterprise Client Approvals</CardTitle>
-                <CardDescription>Review and approve new client registrations to unlock their portals.</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
-                {pendingUsers.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-400 mb-3" />
-                    <p className="font-semibold text-lg text-slate-600">Zero Pending Approvals</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {pendingUsers.map(user => {
-                      const safeId = user?.email ? `CLI-${user.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                      return (
-                      <div key={user._id} className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm flex flex-col xl:flex-row gap-5 justify-between items-start hover:shadow-md transition">
-                        <div className="flex-1 w-full">
-                          <div className="flex justify-between items-start mb-3">
-                             <div>
-                               <h4 className="font-black text-[#0A2647] text-xl">{user.company_name || 'Unnamed Company'}</h4>
-                               <div className="flex gap-2 text-xs font-semibold text-slate-500 mt-1">
-                                 <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-mono tracking-widest text-[10px]">{safeId}</Badge> 
-                                 <span className="flex items-center"><Mail className="w-3 h-3 mr-1 text-slate-400"/>{user.email}</span>
-                               </div>
-                             </div>
-                             <Badge className="bg-amber-100 text-amber-800 border-0 uppercase tracking-widest text-[10px]">Awaiting Approval</Badge>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs bg-slate-50 p-4 rounded-lg border border-slate-100">
-                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5"><PhoneCall className="w-3 h-3 inline mr-1"/>Contact</span>
-                               <WhatsAppVerifiedBadge
-                                 email={user.email}
-                                 phone={user.phone}
-                                 verified={user.whatsapp_verified === true}
-                                 onChanged={(v) => setPendingUsers(prev => prev.map(u => u.email === user.email ? { ...u, whatsapp_verified: v } : u))}
-                               />
-                             </div>
-                             <div><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Company Type</span> <span className="text-slate-800 font-semibold">{user.company_type || 'N/A'}</span></div>
-                             <div className="sm:col-span-2"><span className="font-bold text-slate-400 uppercase text-[10px] block mb-0.5">Interested Services</span> <span className="text-slate-800 font-semibold">{user.tender_interest || user.service_category || 'All Categories'}</span></div>
-                          </div>
-                        </div>
-                        <div className="w-full xl:w-[320px] shrink-0 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-inner">
-                          
-                          <div className="flex gap-2 w-full">
-                             <Button onClick={() => approveClient(user.email)} className="bg-[#16a34a] hover:bg-[#15803d] flex-1 shadow h-10 text-xs"><CheckCircle2 className="w-4 h-4 mr-1" /> Approve</Button>
-                             <Button onClick={() => deleteClientPermanently(user.email)} variant="outline" className="flex-1 border-red-300 text-red-600 hover:bg-red-50 shadow h-10 text-xs"><XCircle className="w-4 h-4 mr-1" /> Reject</Button>
-                          </div>
-
-                          <div className="flex items-center gap-2 my-1"><div className="flex-1 border-t border-slate-300"></div><span className="text-[10px] uppercase font-bold text-slate-400">MD Access</span><div className="flex-1 border-t border-slate-300"></div></div>
-                          <Button onClick={() => impersonateUser('client', user.email)} variant="outline" className="w-full text-[#0A2647] border-slate-300 hover:bg-slate-100"><LogIn className="w-4 h-4 mr-2" /> Login as Client (Bypass)</Button>
-                        </div>
-                      </div>
-                    )})}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
             <Card className="tender-shadow border-t-4 border-t-blue-600 mt-6 w-full">
               <CardHeader className="bg-blue-50/50 border-b pb-4">
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Briefcase className="w-5 h-5 text-blue-600" /> Active Clients</CardTitle>
-                 <CardDescription>Clients who have paid and completed their business profile.</CardDescription>
+                 <CardDescription>Every client who completed a business profile, paid or not.</CardDescription>
               </CardHeader>
               <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
                  {approvedClients.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400"><Users className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-semibold">No paid clients with a complete profile yet.</p></div>
+                    <div className="text-center py-8 text-slate-400"><Users className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-semibold">No clients with a complete profile yet.</p></div>
                  ) : (
                     <div className="grid xl:grid-cols-2 gap-4">
                        {approvedClients.map(client => {
@@ -1378,7 +1309,7 @@ export default function AdminPage() {
                                         </div>
                                       )}
                                    </div>
-                                   <Badge className="bg-emerald-100 text-emerald-800 border-0 h-fit"><CheckCircle2 className="w-3 h-3 mr-1"/> Active</Badge>
+                                   <Badge className={`border-0 h-fit ${client.billing_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{client.billing_paid ? 'Paid' : 'Unpaid'}</Badge>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
                                    <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
@@ -2415,12 +2346,18 @@ export default function AdminPage() {
                        {guestQueries.map(gq => (
                           <div key={gq._id} className="border border-purple-200 bg-white rounded-lg p-4 shadow-sm relative">
                              <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-bold text-[#0A2647] text-base">{gq.name}</h4>
+                                <div>
+                                  <h4 className="font-bold text-[#0A2647] text-base">{gq.name || '—'}</h4>
+                                  <p className="text-[10px] text-slate-400">{gq.created_at ? new Date(gq.created_at).toLocaleString() : '—'}</p>
+                                </div>
                                 <Badge className="bg-purple-100 text-purple-800 border-0">New Lead</Badge>
                              </div>
-                             <p className="text-sm text-slate-600 mb-2 font-mono"><PhoneCall className="w-3 h-3 inline mr-1"/> {gq.phone}</p>
-                             <div className="bg-slate-50 p-3 rounded border border-slate-100 mb-4">
-                                <p className="text-xs text-slate-700 italic">"{gq.query}"</p>
+                             <p className="text-sm text-slate-600 font-mono"><PhoneCall className="w-3 h-3 inline mr-1"/> {gq.phone || '—'}</p>
+                             <p className="text-xs text-slate-600 mt-1"><span className="font-bold text-slate-400">Enterprise</span> {gq.enterprise_name || '—'}</p>
+                             <p className="text-xs text-slate-600"><span className="font-bold text-slate-400">Area</span> {gq.area || '—'}</p>
+                             <div className="bg-slate-50 p-3 rounded border border-slate-100 my-3">
+                                <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Required services</p>
+                                <p className="text-xs text-slate-700">{(Array.isArray(gq.services) && gq.services.length ? gq.services : [gq.query].filter(Boolean)).join(', ') || '—'}</p>
                              </div>
                              <div className="flex gap-2">
                                 <a href={`tel:${gq.phone}`} className="flex-1"><Button size="sm" className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-xs"><PhoneCall className="w-3 h-3 mr-1"/> Call Lead</Button></a>
