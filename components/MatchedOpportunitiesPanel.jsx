@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Clock, Handshake, Loader2, MapPin, RefreshCw, Rocket, Sparkles, Target } from 'lucide-react';
-import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { staffHeaders } from '@/components/workflow/api';
 import { formatINR } from '@/lib/format';
 
@@ -39,20 +38,6 @@ export default function MatchedOpportunitiesPanel() {
     if (filter === 'all') return matches;
     return matches.filter((m) => m.match_type === filter);
   }, [matches, filter]);
-
-  const launchHunter = async () => {
-    setLaunching(true);
-    try {
-      const result = await launchGemHunter();
-      if (!result.ok) {
-        toast.error(result.error || 'Could not launch the hunter.');
-        return;
-      }
-      toast.success(result.already_running ? 'Hunter already running.' : 'GeM Live Hunter started.');
-    } finally {
-      setLaunching(false);
-    }
-  };
 
   const refreshCron = async () => {
     setRefreshing(true);
@@ -109,9 +94,6 @@ export default function MatchedOpportunitiesPanel() {
             </CardDescription>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-            <Button onClick={launchHunter} disabled={launching} variant="outline" className="border-emerald-300 text-emerald-800">
-              {launching ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</> : <><Rocket className="w-4 h-4 mr-2" /> Launch GeM Live Hunter</>}
-            </Button>
             <Button onClick={refreshCron} disabled={refreshing} className="bg-indigo-700 hover:bg-indigo-800 text-white">
               {refreshing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Scanning…</> : <><RefreshCw className="w-4 h-4 mr-2" /> Refresh Cron Matches</>}
             </Button>

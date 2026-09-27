@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { launchGemHunter } from '@/lib/gem-hunter-client';
 import {
   Clock, FileText, Loader2, MapPin, MessageCircle, Radar, RefreshCw, Rocket, Sparkles, Target, Zap,
 } from 'lucide-react';
@@ -58,35 +57,6 @@ export default function AiMatchmakerPanel({ compact = false } = {}) {
   }, []);
 
   useEffect(() => { loadSaved(); }, [loadSaved]);
-
-  const launchHunter = async () => {
-    setLaunching(true);
-    const toastId = toast.loading('Starting the GeM hunter…');
-    try {
-      const result = await launchGemHunter();
-      if (result.offline) {
-        toast.error(result.error || 'Could not start the hunter on this computer.', {
-          id: toastId,
-          duration: 10000,
-        });
-        return;
-      }
-      if (!result.ok) {
-        toast.error(result.error || 'Could not launch the hunter.', { id: toastId });
-        return;
-      }
-      toast.success(
-        result.already_running
-          ? 'The hunter is already running in the Chrome window on your screen.'
-          : result.via_popup
-            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
-            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
-        { id: toastId, duration: 9000 },
-      );
-    } finally {
-      setLaunching(false);
-    }
-  };
 
   const runMatching = async () => {
     setMatching(true);
@@ -181,16 +151,6 @@ export default function AiMatchmakerPanel({ compact = false } = {}) {
               </CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-              <Button
-                onClick={launchHunter}
-                disabled={launching}
-                variant="outline"
-                className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-              >
-                {launching
-                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
-                  : <><Rocket className="w-4 h-4 mr-2" /> Launch GeM Live Hunter</>}
-              </Button>
               <Button
                 onClick={runMatching}
                 disabled={matching}

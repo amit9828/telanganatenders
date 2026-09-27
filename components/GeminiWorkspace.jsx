@@ -7,7 +7,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { classifyWorkspacePrompt, INTENT, resolveClient } from '@/lib/workspace-intent';
 import { markdownToPlainText, markdownToSafeHtml } from '@/lib/markdown-lite';
-import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { LANGUAGE_OPTIONS, LANGUAGES } from '@/lib/language';
 import { staffHeaders } from '@/components/workflow/api';
 import {
@@ -413,30 +412,10 @@ export default function GeminiWorkspace({
 
     try {
       if (classified.intent === INTENT.LIVE_HUNTER) {
-        const result = await launchGemHunter();
-        if (result.offline) {
-          setMessages((prev) => [...prev, {
-            role: 'assistant',
-            kind: 'text',
-            text: result.error
-              || 'I could not start the hunter from here. It opens a real Chrome window, so it only works from the app running on your own computer.',
-          }]);
-          return;
-        }
-        if (!result.ok) {
-          setMessages((prev) => [...prev, {
-            role: 'error',
-            text: result.error || 'Could not launch the GeM Live Hunter.',
-          }]);
-          return;
-        }
         setMessages((prev) => [...prev, {
           role: 'assistant',
           kind: 'text',
-          text: result.already_running
-            ? 'The hunter is already running in the Chrome window on your screen.'
-            : 'Chrome is opening on GeM BidPlus and the search starts on its own. It will work through Telangana and Andhra Pradesh district by district and save every bid it finds. If GeM ever shows a real challenge on screen, solve it and the hunter resumes by itself.',
-          meta: result.pid ? `pid ${result.pid}` : undefined,
+          text: 'Live hunting has been removed. Tenders are added from the master upload, and a client chat reads a bid only when someone names it.',
         }]);
         return;
       }

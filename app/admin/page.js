@@ -8,7 +8,7 @@ import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
-import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
+import MasterTenderDesk from '@/components/MasterTenderDesk';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
@@ -43,7 +43,6 @@ import {
 } from '@/lib/job-board-state';
 import MasterReports from '@/components/reports/MasterReports';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
-import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
@@ -633,30 +632,6 @@ export default function AdminPage() {
     }
   };
 
-  const launchGemLiveHunter = async () => {
-    setLaunchingGem(true);
-    try {
-      const result = await launchGemHunter();
-      if (result.offline) {
-        toast.error(result.error || "Local agent not running. Run 'npm run gem:agent' in terminal.");
-        return;
-      }
-      if (!result.ok) {
-        toast.error(result.error || 'Could not launch the hunter.');
-        return;
-      }
-      toast.success(
-        result.already_running
-          ? 'The hunter is already running in the Chrome window on your screen.'
-          : result.via_popup
-            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
-            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
-      );
-    } finally {
-      setLaunchingGem(false);
-    }
-  };
-
   const runL1Prediction = async (match) => {
     const matchId = match._id || match.tender_id;
     setPredictingMatchId(matchId);
@@ -1146,7 +1121,7 @@ export default function AdminPage() {
     ] },
     { id: 'ai-operations', label: 'AI & Operations', items: [
       { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo', badge: matchSummary.new },
-      { value: 'live-scraped', label: 'Live Scraped', icon: Activity, color: 'teal', badge: liveScrapedTenders.length },
+      { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
     ] },
     // 🚀 RBAC: MD-only oversight into per-employee work — Global Suggestions +
@@ -2017,16 +1992,6 @@ export default function AdminPage() {
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                     <Button
-                      onClick={launchGemLiveHunter}
-                      disabled={launchingGem}
-                      variant="outline"
-                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm"
-                    >
-                      {launchingGem
-                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
-                        : <>🚀 Launch GeM Live Hunter</>}
-                    </Button>
-                    <Button
                       onClick={runMatchmakerNow}
                       disabled={runningMatchmaker}
                       className="bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm"
@@ -2228,8 +2193,8 @@ export default function AdminPage() {
           </TabsContent>
 
 
-          <TabsContent value="live-scraped" className="mt-4">
-            <LiveScrapedTendersPanel />
+          <TabsContent value="master-tenders" className="mt-4">
+            <MasterTenderDesk />
           </TabsContent>
 
           <TabsContent value="copilot-desk" className="mt-4">

@@ -92,7 +92,8 @@ function buildDoc(payload) {
  * GET — today's live scraped bids (IST), newest first.
  * Query: ?all=1 to skip the today filter (still sorted newest first).
  */
-export async function GET(request) {
+export async function GET() {
+  return NextResponse.json({ tenders: [], retired: true });
   try {
     const { searchParams } = new URL(request.url);
     const db = await getDb();
@@ -167,7 +168,8 @@ export async function GET(request) {
  * POST — upsert text-only bid payload(s) from the local GeM hunter.
  * Body: one object, or { bids: [...] }, or a raw array.
  */
-export async function POST(request) {
+export async function POST() {
+  return NextResponse.json({ error: 'Live hunting has been removed.' }, { status: 410 });
   try {
     // 🚀 FIX: `isAuthorised` is async — calling it without `await` returned a
     // Promise (always truthy), so `!isAuthorised(...)` was always `false` and this
@@ -236,7 +238,8 @@ export async function POST(request) {
  * Requires one of the two — refuses anything else so a malformed request can
  * never wipe the whole collection.
  */
-export async function DELETE(request) {
+export async function DELETE() {
+  return NextResponse.json({ error: 'Live hunting has been removed.' }, { status: 410 });
   try {
     if (!(await isAuthorised(request, { allowStaffSession: true }))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
