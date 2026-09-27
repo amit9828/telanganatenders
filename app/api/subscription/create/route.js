@@ -8,6 +8,7 @@ import { getDb } from '@/lib/db';
 // restricted to the two subscription plans, without touching the existing
 // single-PDF purchase flow at all.
 import { createCashfreeOrder } from '@/lib/payments';
+import { resolveClientEmail } from '@/lib/staff-auth';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -30,12 +31,13 @@ export async function POST(request) {
     const body = await request.json().catch(() => null);
     if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
-    if (!body.email) return json({ error: 'email is required' }, 400);
+    const email = await resolveClientEmail(request);
+    if (!email) return json({ error: 'Please sign in.' }, 401);
     if (body.plan !== 'month' && body.plan !== 'year') {
       return json({ error: "Invalid plan. Subscriptions must be 'month' or 'year'." }, 400);
     }
 
-    return await createCashfreeOrder(db, body, request);
+    return await createCashfreeOrder(db, { ...body, email }, request);
   } catch (error) {
     console.error('Subscription create error:', error);
     return json({ error: 'Server Error' }, 500);

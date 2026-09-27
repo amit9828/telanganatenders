@@ -44,7 +44,7 @@ export async function POST(request) {
     if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
     if (action === 'order') return await createCashfreeOrder(db, body, request);
-    if (action === 'verify') return await verifyCashfreeOrder(db, body);
+    if (action === 'verify') return await verifyCashfreeOrder(db, body, request);
 
     return json({ error: 'Unknown payment action', action }, 404);
   } catch (error) {

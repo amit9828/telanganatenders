@@ -2510,7 +2510,7 @@ export async function POST(request, { params }) {
     }
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       // 🚀 Extracted to app/api/payments/route.js (Cashfree Verification)
-      return await verifyCashfreeOrder(db, body);
+      return await verifyCashfreeOrder(db, body, request);
     }
 
     

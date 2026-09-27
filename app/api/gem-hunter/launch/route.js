@@ -25,7 +25,10 @@ function isAlive() {
   return Boolean(state.child && state.child.exitCode === null && !state.child.killed);
 }
 
-export async function GET() {
+export async function GET(request) {
+  const auth = await requireDashboardStaff(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   return NextResponse.json({
     supported: !process.env.VERCEL,
     running: isAlive(),
