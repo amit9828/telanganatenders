@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
 import PricingMasterPanel from '@/components/PricingMasterPanel';
-import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
+import MasterTenderDesk from '@/components/MasterTenderDesk';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import MatchedOpportunitiesPanel from '@/components/MatchedOpportunitiesPanel';
@@ -239,7 +239,7 @@ export default function StaffOpsDesk({ desk }) {
         ] },
         { id: 'ai', label: 'AI', items: [
           { value: 'matchmaker', label: 'AI Matchmaker / Live Hunting', icon: Target, color: 'indigo' },
-          { value: 'scraped', label: 'Live Scraped', icon: Activity, color: 'teal' },
+          { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
           { value: 'copilot', label: 'Co-Pilot', icon: Bot, color: 'violet' },
         ] },
         { id: 'clients-officers', label: 'Clients', items: [
@@ -497,7 +497,7 @@ export default function StaffOpsDesk({ desk }) {
                 </TabsContent>
               )}
               {isGm && (
-                <TabsContent value="scraped"><LiveScrapedTendersPanel /></TabsContent>
+                <TabsContent value="master-tenders"><MasterTenderDesk /></TabsContent>
               )}
               <TabsContent value="copilot">
                 <GemCoPilot embedded />
