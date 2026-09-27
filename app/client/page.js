@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { useServerDeskAllowed } from '@/components/DeskAuth'; 
+import { useServerDeskRole } from '@/components/DeskAuth'; 
 import BrandLogo from '@/components/BrandLogo';
 import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
 import PricingPromoModal from '@/components/PricingPromoModal';
+import EstimatorChat from '@/components/EstimatorChat';
 import ClientBillingPanel from '@/components/ClientBillingPanel';
 import ViewUnlockModal from '@/components/ViewUnlockModal';
 import { liveTendersOnly } from '@/lib/tender-sort';
@@ -82,7 +83,8 @@ const DEFAULT_VAULT_DOCS = [
 const VAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export default function ClientDashboard() {
-  const serverAllowed = useServerDeskAllowed();
+  const deskRole = useServerDeskRole();
+  const onClientDesk = deskRole === 'client';
   const { data: session, status } = useSession(); 
   
   const [isMounted, setIsMounted] = useState(false);
@@ -137,7 +139,7 @@ export default function ClientDashboard() {
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
   const [localOnboardComplete, setLocalOnboardComplete] = useState(false); 
   const [onboardForm, setOnboardForm] = useState({
-    client_name: '', company_name: '', phone: '', company_type: 'Proprietor (Individual)', service: '', 
+    client_name: '', company_name: '', phone: '', company_type: 'Proprietor (Individual)', service: '', budget: '', serviceable_states: '', 
     has_gst: false, has_esi: false, has_epf: false, has_iso: false, has_bank: false, has_pan: false, 
     has_aadhar: false, has_dsc: false, has_ifsc: false, has_fssai: false, has_cer: false, has_turnover: false, has_annual_returns: false, has_msme: false
   });
@@ -169,7 +171,7 @@ export default function ClientDashboard() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store', 'billing'];
+    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store', 'billing', 'estimator'];
     if (requested && allowed.includes(requested)) setActiveTab(requested);
     if (new URLSearchParams(window.location.search).get('step') === 'billing') setActiveTab('store');
   }, []);
@@ -177,9 +179,9 @@ export default function ClientDashboard() {
   useEffect(() => {
     setIsMounted(true);
     if (status === "loading") return;
-    if (!serverAllowed && status === "unauthenticated") return;
+    if (!onClientDesk) return;
 
-    const bypassIdent = serverAllowed || status === "authenticated" ? consumeClientBypass() : '';
+    const bypassIdent = consumeClientBypass();
     const sessionIsClient = Boolean(
       session?.user?.email
       && !session?.user?.emp_id
@@ -197,7 +199,7 @@ export default function ClientDashboard() {
 
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
     fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
-  }, [session, status, serverAllowed]);
+  }, [session, status, onClientDesk]);
 
   // 🚀 STAFF-ONLY: fetch the MD's AI matchmaker feed and narrow it to this one client,
   // for the "AI Tender Match & JV Hub" widget. Skipped entirely for real clients.
@@ -658,7 +660,8 @@ export default function ClientDashboard() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           email, client_name: onboardForm.client_name, company_name: onboardForm.company_name, phone: onboardForm.phone, 
-          company_type: onboardForm.company_type, service_category: onboardForm.service, 
+          company_type: onboardForm.company_type, service_category: onboardForm.service,
+          budget: onboardForm.budget, serviceable_states: onboardForm.serviceable_states, 
           gstin: onboardForm.gstin, udyam: onboardForm.udyam, // 🚀 క్రొత్త ఫీల్డ్స్ యాడ్ చేసాం
           documents: { 
             has_gst: onboardForm.has_gst, has_esi: onboardForm.has_esi, has_epf: onboardForm.has_epf, has_iso: onboardForm.has_iso,
@@ -972,7 +975,7 @@ export default function ClientDashboard() {
     });
   }, { audience: 'client', enabled: Boolean(email) });
 
-  if (!serverAllowed && status === "unauthenticated") {
+  if (!onClientDesk) {
     if (typeof window !== "undefined") window.location.replace("/");
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   }
@@ -1116,6 +1119,8 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                     </select>
                   </div>
                   <div><Label>Core Service *</Label><Input required value={onboardForm.service} onChange={e => setOnboardForm({...onboardForm, service: e.target.value})} className="mt-1"/></div>
+                  <div><Label>Budget</Label><Input value={onboardForm.budget} onChange={e => setOnboardForm({...onboardForm, budget: e.target.value})} placeholder="e.g. 50 lakhs" className="mt-1"/></div>
+                  <div><Label>Serviceable states</Label><Input value={onboardForm.serviceable_states} onChange={e => setOnboardForm({...onboardForm, serviceable_states: e.target.value})} placeholder="TS, AP" className="mt-1"/></div>
                   <div><Label>GSTIN Number *</Label><Input required placeholder="e.g. 36AAAAA0000A1Z5" value={onboardForm.gstin} onChange={e => setOnboardForm({...onboardForm, gstin: e.target.value})} className="mt-1 uppercase font-mono"/></div>
                   <div><Label>UDYAM Registration *</Label><Input required placeholder="e.g. UDYAM-TS-02-1234567" value={onboardForm.udyam} onChange={e => setOnboardForm({...onboardForm, udyam: e.target.value})} className="mt-1 uppercase font-mono"/></div>
                 </div>
@@ -1414,6 +1419,9 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
           <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 rounded-xl mb-6">
             <TabsTrigger value="dashboard" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Active Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="estimator" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
+              Tender assistant
             </TabsTrigger>
             <TabsTrigger value="live_tenders" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Globe className="w-4 h-4 mr-2 hidden sm:block"/> Live Tenders
@@ -1763,6 +1771,9 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
           {/* ============================================================================== */}
           {/* TAB 4: ACTIVE DASHBOARD */}
           {/* ============================================================================== */}
+          <TabsContent value="estimator" className="space-y-6">
+            <EstimatorChat />
+          </TabsContent>
           <TabsContent value="dashboard" className="space-y-6">
             
             {/* 🚀 FIX: RECOMMENDED TENDERS BLOCK (Now Fetches Full Tender Data & Has View PDF) */}

@@ -79,7 +79,6 @@ async function mdDeskResponse() {
       sameSite: 'lax',
       path: '/',
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 12,
     });
   }
   return res;
@@ -2161,7 +2160,8 @@ export async function POST(request, { params }) {
     if (path === 'users/profile' || path === 'api/users/profile') {
       const { 
         email, client_name, company_name, company_type, phone, address, 
-        service_category, gstin, udyam, has_gst, has_msme, has_iso, documents, status, agreement_signed 
+        service_category, gstin, udyam, has_gst, has_msme, has_iso, documents, status, agreement_signed,
+        budget, serviceable_states 
       } = body;
       const lead = await leadershipCaller(request);
       const sessionEmail = await resolveClientEmail(request);
@@ -2188,7 +2188,9 @@ export async function POST(request, { params }) {
         { _id: existingProfile._id },
         { $set: { 
             company_type, has_gst, has_msme, has_iso,
-            client_name, company_name, phone, address, service_category, 
+            client_name, company_name, phone, address, service_category,
+            budget: String(budget || ''),
+            serviceable_states: String(serviceable_states || ''), 
             gstin: gstin ? gstin.toUpperCase() : '',
             udyam: udyam ? udyam.toUpperCase() : '',
             documents: documents || {}, 

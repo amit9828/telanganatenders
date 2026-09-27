@@ -1,14 +1,14 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; 
-import { useSession, signOut } from 'next-auth/react'; 
-import { useServerDeskAllowed } from '@/components/DeskAuth';
+import { signOut } from 'next-auth/react'; 
+import { useServerDeskRole } from '@/components/DeskAuth';
 import { clearDeskBypass } from '@/lib/tab-handoff';
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
-import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
+import MasterTenderDesk from '@/components/MasterTenderDesk';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
@@ -43,7 +43,6 @@ import {
 } from '@/lib/job-board-state';
 import MasterReports from '@/components/reports/MasterReports';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
-import { launchGemHunter } from '@/lib/gem-hunter-client';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
@@ -131,14 +130,13 @@ function AdminDashboardSkeleton() {
 }
 
 export default function AdminPage() {
-  const serverAllowed = useServerDeskAllowed();
-  const { data: session, status: sessionStatus } = useSession();
-  const isMdSession = session?.user?.role === 'MD';
+  const deskRole = useServerDeskRole();
+  const mdDesk = deskRole === 'md';
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reports');
-  useStaffPresence(activeTab, { enabled: Boolean(serverAllowed || token || isMdSession) });
+  useStaffPresence(activeTab, { enabled: mdDesk });
 
   // --- CORE DATA STATES ---
   const [tenders, setTenders] = useState([]);
@@ -248,24 +246,27 @@ export default function AdminPage() {
   );
 
   useEffect(() => {
+    if (!mdDesk) {
+      setAuthChecking(false);
+      return;
+    }
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
     if (t) setToken(t);
     setAuthChecking(false);
-  }, []);
+  }, [mdDesk]);
 
   // 🚀 FIX: Admin Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
-    if (token || isMdSession) {
-      refresh(activeTab);
+    if (!mdDesk) return undefined;
+    refresh(activeTab);
       const interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
           refresh(activeTabRef.current);
         }
       }, 60000);
       return () => clearInterval(interval);
-    }
     // eslint-disable-next-line
-  }, [token, isMdSession, activeTab]);
+  }, [mdDesk, token, activeTab]);
 
   // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
@@ -273,11 +274,11 @@ export default function AdminPage() {
   // 🚀 Lazy-load the Team Activity module only when its tab opens — same
   // "independent of the main refresh cycle" pattern as refreshLiveFeed().
   useEffect(() => {
-    if (activeTab === 'team-activity' && (token || isMdSession)) {
+    if (activeTab === 'team-activity' && mdDesk) {
       fetchTeamActivity();
     }
     // eslint-disable-next-line
-  }, [activeTab, token]);
+  }, [activeTab, mdDesk]);
 
   // 🚀 FIX: Bulletproof refresh — one blocked/failing route (e.g. expired-tender
   // filter accidentally hiding admin data, a network blip, a non-JSON error page)
@@ -409,7 +410,7 @@ export default function AdminPage() {
   // Promise.all so every employee's suggestions/tracking don't get pulled on every
   // 60s poll; only fetched when the "Team Activity" tab is actually open.
   const fetchTeamActivity = async () => {
-    if (!token && !isMdSession) return;
+    if (!mdDesk) return;
     setTeamActivityLoading(true);
     try {
       const [parked, waiting, internal] = await Promise.all([
@@ -628,30 +629,6 @@ export default function AdminPage() {
       toast.error('Network error while running the matchmaker.', { id: toastId });
     } finally {
       setRunningMatchmaker(false);
-    }
-  };
-
-  const launchGemLiveHunter = async () => {
-    setLaunchingGem(true);
-    try {
-      const result = await launchGemHunter();
-      if (result.offline) {
-        toast.error(result.error || "Local agent not running. Run 'npm run gem:agent' in terminal.");
-        return;
-      }
-      if (!result.ok) {
-        toast.error(result.error || 'Could not launch the hunter.');
-        return;
-      }
-      toast.success(
-        result.already_running
-          ? 'The hunter is already running in the Chrome window on your screen.'
-          : result.via_popup
-            ? 'Opened the local hunter tab. If Chrome did not start, the app is not running on this PC.'
-            : 'Chrome is opening and the search starts on its own. Leave the window on screen.',
-      );
-    } finally {
-      setLaunchingGem(false);
     }
   };
 
@@ -1105,14 +1082,13 @@ export default function AdminPage() {
       return;
     }
     patchJob(mergeTrackingEvent(found, event));
-  }, { audience: 'staff', enabled: Boolean(token || isMdSession) });
+  }, { audience: 'staff', enabled: mdDesk });
 
   // 🚀 FIX (guideline #20): a bare spinner blanks the whole screen and gives no
   // sense of what's about to load. This skeleton mirrors the real header/stat-card/
   // tab layout below, so the dashboard feels instant and never "pops" into place.
-  if (!serverAllowed && authChecking) return <AdminDashboardSkeleton />;
-  if (!serverAllowed && !isMdSession && sessionStatus === 'loading') return <AdminDashboardSkeleton />;
-  if (!serverAllowed && !isMdSession) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+  if (!mdDesk) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+  if (authChecking) return <AdminDashboardSkeleton />;
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
@@ -1145,7 +1121,7 @@ export default function AdminPage() {
     ] },
     { id: 'ai-operations', label: 'AI & Operations', items: [
       { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo', badge: matchSummary.new },
-      { value: 'live-scraped', label: 'Live Scraped', icon: Activity, color: 'teal', badge: liveScrapedTenders.length },
+      { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
     ] },
     // 🚀 RBAC: MD-only oversight into per-employee work — Global Suggestions +
@@ -2016,16 +1992,6 @@ export default function AdminPage() {
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                     <Button
-                      onClick={launchGemLiveHunter}
-                      disabled={launchingGem}
-                      variant="outline"
-                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-sm"
-                    >
-                      {launchingGem
-                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Launching…</>
-                        : <>🚀 Launch GeM Live Hunter</>}
-                    </Button>
-                    <Button
                       onClick={runMatchmakerNow}
                       disabled={runningMatchmaker}
                       className="bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm"
@@ -2227,8 +2193,8 @@ export default function AdminPage() {
           </TabsContent>
 
 
-          <TabsContent value="live-scraped" className="mt-4">
-            <LiveScrapedTendersPanel />
+          <TabsContent value="master-tenders" className="mt-4">
+            <MasterTenderDesk />
           </TabsContent>
 
           <TabsContent value="copilot-desk" className="mt-4">

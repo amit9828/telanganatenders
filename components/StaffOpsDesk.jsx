@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
 import PricingMasterPanel from '@/components/PricingMasterPanel';
-import LiveScrapedTendersPanel from '@/components/LiveScrapedTendersPanel';
+import MasterTenderDesk from '@/components/MasterTenderDesk';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import MatchedOpportunitiesPanel from '@/components/MatchedOpportunitiesPanel';
@@ -37,7 +37,7 @@ import { toast } from 'sonner';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
 import { workflowDocActions } from '@/components/workflow/jobDocActions';
 import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
-import { useServerDeskAllowed } from '@/components/DeskAuth';
+import { useServerDeskRole } from '@/components/DeskAuth';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { BrandMark } from '@/components/BrandLogo';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
@@ -57,11 +57,10 @@ import {
 } from 'lucide-react';
 
 export default function StaffOpsDesk({ desk }) {
-  const serverAllowed = useServerDeskAllowed();
-  const { data: session, status } = useSession();
-  const [localEmpEmail, setLocalEmpEmail] = useState(() => (
-    typeof window !== 'undefined' ? consumeStaffBypass() : ''
-  ));
+  const deskRole = useServerDeskRole();
+  const onDesk = deskRole === desk;
+  const { data: session } = useSession();
+  const [localEmpEmail, setLocalEmpEmail] = useState('');
   const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'publisher' : 'live');
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
@@ -202,19 +201,18 @@ export default function StaffOpsDesk({ desk }) {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setLocalEmpEmail(consumeStaffBypass());
-    }
-  }, []);
+    if (!onDesk || typeof window === 'undefined') return;
+    setLocalEmpEmail(consumeStaffBypass());
+  }, [onDesk]);
 
   useEffect(() => {
-    if (!serverAllowed && status !== 'authenticated') return undefined;
+    if (!onDesk) return undefined;
     load(activeTab);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') load(activeTabRef.current);
     }, 60000);
     return () => clearInterval(interval);
-  }, [status, activeTab, load, serverAllowed]);
+  }, [activeTab, load, onDesk]);
 
   const parkedJobs = jobs.filter((j) => j.status === 'LIVE' && j.parked_client_email);
   const pendingClientJobs = jobs.filter((j) => j.status === 'AWAITING_CLIENT');
@@ -241,7 +239,7 @@ export default function StaffOpsDesk({ desk }) {
         ] },
         { id: 'ai', label: 'AI', items: [
           { value: 'matchmaker', label: 'AI Matchmaker / Live Hunting', icon: Target, color: 'indigo' },
-          { value: 'scraped', label: 'Live Scraped', icon: Activity, color: 'teal' },
+          { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
           { value: 'copilot', label: 'Co-Pilot', icon: Bot, color: 'violet' },
         ] },
         { id: 'clients-officers', label: 'Clients', items: [
@@ -343,10 +341,10 @@ export default function StaffOpsDesk({ desk }) {
       return;
     }
     patchJob(mergeTrackingEvent(found, event));
-  }, { audience: 'staff', enabled: serverAllowed || status === 'authenticated' });
+  }, { audience: 'staff', enabled: onDesk });
 
-  if (!serverAllowed && status !== 'authenticated') {
-    if (status === 'unauthenticated' && typeof window !== 'undefined') window.location.replace('/');
+  if (!onDesk) {
+    if (typeof window !== 'undefined') window.location.replace('/');
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
   }
 
@@ -499,7 +497,7 @@ export default function StaffOpsDesk({ desk }) {
                 </TabsContent>
               )}
               {isGm && (
-                <TabsContent value="scraped"><LiveScrapedTendersPanel /></TabsContent>
+                <TabsContent value="master-tenders"><MasterTenderDesk /></TabsContent>
               )}
               <TabsContent value="copilot">
                 <GemCoPilot embedded />

@@ -10,6 +10,10 @@ const nextConfig = {
     unoptimized: true,
   },
   experimental: {
+    staleTimes: {
+      dynamic: 0,
+      static: 0,
+    },
     // Remove if not using Server Components
     serverComponentsExternalPackages: ['mongodb', 'googleapis', 'unpdf'],
     // Playwright is a local-agent devDependency. NFT tracing it into every
