@@ -13,8 +13,14 @@ function deskOf(token) {
   return '';
 }
 
+function lock(res) {
+  res.headers.set('Cache-Control', 'no-store');
+  res.headers.set('x-middleware-cache', 'no-cache');
+  return res;
+}
+
 function home(req) {
-  return NextResponse.redirect(new URL('/', req.url));
+  return lock(NextResponse.redirect(new URL('/', req.url)));
 }
 
 export async function middleware(req) {
@@ -30,40 +36,40 @@ export async function middleware(req) {
     if (desk !== 'md') return home(req);
     const url = req.nextUrl.clone();
     url.pathname = `/admin${pathname.slice(3)}` || '/admin';
-    return NextResponse.rewrite(url);
+    return lock(NextResponse.rewrite(url));
   }
 
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     if (desk !== 'md') return home(req);
-    return NextResponse.next();
+    return lock(NextResponse.next());
   }
 
   if (pathname === '/gm' || pathname.startsWith('/gm/')) {
     if (desk !== 'gm' && desk !== 'md') return home(req);
-    return NextResponse.next();
+    return lock(NextResponse.next());
   }
 
   if (pathname === '/tl' || pathname.startsWith('/tl/')) {
     if (desk !== 'tl' && desk !== 'md') return home(req);
-    return NextResponse.next();
+    return lock(NextResponse.next());
   }
 
   if (pathname === '/employee' || pathname.startsWith('/employee/')) {
     if (!authed || desk === 'client') return home(req);
-    return NextResponse.next();
+    return lock(NextResponse.next());
   }
 
   if (pathname === '/client' || pathname.startsWith('/client/')) {
     if (!authed) return home(req);
-    return NextResponse.next();
+    return lock(NextResponse.next());
   }
 
   if (pathname === '/account' || pathname.startsWith('/account/')) {
     if (!authed) return home(req);
-    return NextResponse.next();
+    return lock(NextResponse.next());
   }
 
-  return NextResponse.next();
+  return lock(NextResponse.next());
 }
 
 export const config = {

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { useServerDeskAllowed } from '@/components/DeskAuth'; 
+import { useServerDeskRole } from '@/components/DeskAuth'; 
 import BrandLogo from '@/components/BrandLogo';
 import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
 import PricingPromoModal from '@/components/PricingPromoModal';
@@ -82,7 +82,8 @@ const DEFAULT_VAULT_DOCS = [
 const VAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export default function ClientDashboard() {
-  const serverAllowed = useServerDeskAllowed();
+  const deskRole = useServerDeskRole();
+  const onClientDesk = deskRole === 'client';
   const { data: session, status } = useSession(); 
   
   const [isMounted, setIsMounted] = useState(false);
@@ -177,9 +178,9 @@ export default function ClientDashboard() {
   useEffect(() => {
     setIsMounted(true);
     if (status === "loading") return;
-    if (!serverAllowed && status === "unauthenticated") return;
+    if (!onClientDesk) return;
 
-    const bypassIdent = serverAllowed || status === "authenticated" ? consumeClientBypass() : '';
+    const bypassIdent = consumeClientBypass();
     const sessionIsClient = Boolean(
       session?.user?.email
       && !session?.user?.emp_id
@@ -197,7 +198,7 @@ export default function ClientDashboard() {
 
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
     fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
-  }, [session, status, serverAllowed]);
+  }, [session, status, onClientDesk]);
 
   // 🚀 STAFF-ONLY: fetch the MD's AI matchmaker feed and narrow it to this one client,
   // for the "AI Tender Match & JV Hub" widget. Skipped entirely for real clients.
@@ -972,7 +973,7 @@ export default function ClientDashboard() {
     });
   }, { audience: 'client', enabled: Boolean(email) });
 
-  if (!serverAllowed && status === "unauthenticated") {
+  if (!onClientDesk) {
     if (typeof window !== "undefined") window.location.replace("/");
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
   }

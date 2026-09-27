@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; 
-import { useSession, signOut } from 'next-auth/react'; 
-import { useServerDeskAllowed } from '@/components/DeskAuth';
+import { signOut } from 'next-auth/react'; 
+import { useServerDeskRole } from '@/components/DeskAuth';
 import { clearDeskBypass } from '@/lib/tab-handoff';
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
@@ -131,14 +131,13 @@ function AdminDashboardSkeleton() {
 }
 
 export default function AdminPage() {
-  const serverAllowed = useServerDeskAllowed();
-  const { data: session, status: sessionStatus } = useSession();
-  const isMdSession = session?.user?.role === 'MD';
+  const deskRole = useServerDeskRole();
+  const mdDesk = deskRole === 'md';
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reports');
-  useStaffPresence(activeTab, { enabled: Boolean(serverAllowed || token || isMdSession) });
+  useStaffPresence(activeTab, { enabled: mdDesk });
 
   // --- CORE DATA STATES ---
   const [tenders, setTenders] = useState([]);
@@ -248,24 +247,27 @@ export default function AdminPage() {
   );
 
   useEffect(() => {
+    if (!mdDesk) {
+      setAuthChecking(false);
+      return;
+    }
     const t = typeof window !== 'undefined' ? localStorage.getItem('tt_admin') : '';
     if (t) setToken(t);
     setAuthChecking(false);
-  }, []);
+  }, [mdDesk]);
 
   // 🚀 FIX: Admin Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
-    if (token || isMdSession) {
-      refresh(activeTab);
+    if (!mdDesk) return undefined;
+    refresh(activeTab);
       const interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
           refresh(activeTabRef.current);
         }
       }, 60000);
       return () => clearInterval(interval);
-    }
     // eslint-disable-next-line
-  }, [token, isMdSession, activeTab]);
+  }, [mdDesk, token, activeTab]);
 
   // 🚀 Reset the Published Tenders pagination back to page 1 whenever the search changes
   useEffect(() => { setTenderPage(1); }, [tenderSearch]);
@@ -273,11 +275,11 @@ export default function AdminPage() {
   // 🚀 Lazy-load the Team Activity module only when its tab opens — same
   // "independent of the main refresh cycle" pattern as refreshLiveFeed().
   useEffect(() => {
-    if (activeTab === 'team-activity' && (token || isMdSession)) {
+    if (activeTab === 'team-activity' && mdDesk) {
       fetchTeamActivity();
     }
     // eslint-disable-next-line
-  }, [activeTab, token]);
+  }, [activeTab, mdDesk]);
 
   // 🚀 FIX: Bulletproof refresh — one blocked/failing route (e.g. expired-tender
   // filter accidentally hiding admin data, a network blip, a non-JSON error page)
@@ -409,7 +411,7 @@ export default function AdminPage() {
   // Promise.all so every employee's suggestions/tracking don't get pulled on every
   // 60s poll; only fetched when the "Team Activity" tab is actually open.
   const fetchTeamActivity = async () => {
-    if (!token && !isMdSession) return;
+    if (!mdDesk) return;
     setTeamActivityLoading(true);
     try {
       const [parked, waiting, internal] = await Promise.all([
@@ -1105,14 +1107,13 @@ export default function AdminPage() {
       return;
     }
     patchJob(mergeTrackingEvent(found, event));
-  }, { audience: 'staff', enabled: Boolean(token || isMdSession) });
+  }, { audience: 'staff', enabled: mdDesk });
 
   // 🚀 FIX (guideline #20): a bare spinner blanks the whole screen and gives no
   // sense of what's about to load. This skeleton mirrors the real header/stat-card/
   // tab layout below, so the dashboard feels instant and never "pops" into place.
-  if (!serverAllowed && authChecking) return <AdminDashboardSkeleton />;
-  if (!serverAllowed && !isMdSession && sessionStatus === 'loading') return <AdminDashboardSkeleton />;
-  if (!serverAllowed && !isMdSession) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+  if (!mdDesk) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+  if (authChecking) return <AdminDashboardSkeleton />;
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');

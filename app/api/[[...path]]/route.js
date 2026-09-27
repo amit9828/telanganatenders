@@ -79,7 +79,6 @@ async function mdDeskResponse() {
       sameSite: 'lax',
       path: '/',
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 12,
     });
   }
   return res;
