@@ -250,6 +250,9 @@ export default function App() {
     }
   }, [status, intent, userData, loadingUser]);
   const performHardSignOut = async () => {
+    try {
+      await fetch('/api/system/logout', { method: 'POST', credentials: 'include' });
+    } catch { /* the cookie clear is best-effort */ }
     if (typeof window !== 'undefined') {
         localStorage.clear();
         sessionStorage.clear();
@@ -273,7 +276,6 @@ export default function App() {
       }
       if (searchQ.trim()) {
         params.set('q', searchQ.trim());
-        params.set('scope', 'all'); 
       }
       const r = await fetch(`/api/tenders?${params.toString()}&t=${Date.now()}`, { cache: 'no-store' });
       const d = await r.json(); 

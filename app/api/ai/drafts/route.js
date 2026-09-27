@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb } from '@/lib/db';
+import { requireStaff } from '@/lib/staff-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,15 @@ function draftFilter(id) {
 }
 
 // 🚀 GET: డ్రాఫ్ట్స్ ని ఎంప్లాయ్ పేజీకి పంపడానికి
+async function staffOr401(request) {
+    const auth = await requireStaff(request);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    return null;
+}
+
 export async function GET(request) {
+    const denied = await staffOr401(request);
+    if (denied) return denied;
     try {
         const db = await getDb();
         const drafts = await db.collection('ai_draft_tenders')
@@ -34,6 +43,8 @@ export async function GET(request) {
 // Promotes a reviewed draft into the live `tenders` collection and removes it from the
 // queue. The PDF itself never moves — the tender inherits the same R2 pointers.
 export async function POST(request) {
+    const denied = await staffOr401(request);
+    if (denied) return denied;
     try {
         const body = await request.json().catch(() => null);
         if (!body?.id) {
@@ -110,6 +121,8 @@ export async function POST(request) {
 
 // 🚀 DELETE: పబ్లిష్ అయ్యాక / రిజెక్ట్ చేసినప్పుడు డ్రాఫ్ట్ ని డిలీట్ చేయడానికి
 export async function DELETE(request) {
+    const denied = await staffOr401(request);
+    if (denied) return denied;
     try {
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');

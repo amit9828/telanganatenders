@@ -10,7 +10,7 @@ function json(data, status = 200) {
   return NextResponse.json(data, { status });
 }
 
-const PUBLIC_PRICE = { service_key: 1, name: 1, base_price: 1, category: 1, bid_credits: 1, _id: 0 };
+const PUBLIC_PRICE = { service_key: 1, name: 1, base_price: 1, category: 1, bid_credits: 1, bid_tiers: 1, _id: 0 };
 const PUBLIC_CATALOG_TTL_MS = 60_000;
 
 let catalogSeeded = false;
@@ -77,9 +77,18 @@ export async function PUT(request) {
     const basePrice = existing.individually_purchasable === false
       ? 0
       : Math.max(0, Number(row.base_price) || 0);
+    const update = { base_price: basePrice, is_active: row.is_active !== false, updated_at: now };
+    if (serviceKey === 'custom_bids_10' && row.bid_tiers && typeof row.bid_tiers === 'object') {
+      update.bid_tiers = {
+        one: Math.max(0, Number(row.bid_tiers.one) || 0),
+        two_to_five: Math.max(0, Number(row.bid_tiers.two_to_five) || 0),
+        six_to_eight: Math.max(0, Number(row.bid_tiers.six_to_eight) || 0),
+        nine_plus: Math.max(0, Number(row.bid_tiers.nine_plus) || 0),
+      };
+    }
     await col.updateOne(
       { service_key: serviceKey },
-      { $set: { base_price: basePrice, is_active: row.is_active !== false, updated_at: now } },
+      { $set: update },
     );
   }
   publicCatalog = null;

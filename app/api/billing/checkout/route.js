@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import { resolveClientEmail } from '@/lib/staff-auth';
 import { createCashfreeOrder } from '@/lib/payments';
 import { assertPurchasable, comboIncludesUdyam, orderAmount, unlimitedActive } from '@/lib/billing-access';
-import { pendingOrderDoc } from '@/lib/billing-schema';
+import { pendingOrderDoc, paygBase } from '@/lib/billing-schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,7 +37,7 @@ export async function POST(request) {
     if (comboIncludesUdyam(id) || ['vendor_assessment', 'oem_panel_approval', 'product_catalogs'].includes(id)) includesUdyam = true;
     if (id === 'custom_bids_10') {
       bidCount = Math.max(1, Math.floor(Number(body.bid_count) || 1));
-      base += ((Number(check.item.base_price) || 0) / 10) * bidCount;
+      base += paygBase(check.item, bidCount);
     } else {
       base += Number(check.item.base_price) || 0;
     }

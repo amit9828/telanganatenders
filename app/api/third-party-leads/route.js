@@ -18,6 +18,7 @@ function publicLead(doc) {
     phone: doc.phone || '',
     area: doc.area || '',
     query: doc.query || '',
+    services: Array.isArray(doc.services) && doc.services.length ? doc.services : (doc.query ? [doc.query] : []),
     created_at: doc.created_at || null,
     status: doc.status || 'open',
   };

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import GrowthPartnerPricing from '@/components/GrowthPartnerPricing';
 import { paygActive, unlimitedActive } from '@/lib/billing-access';
+import { gstBreakdown } from '@/lib/billing-schema';
 
 function readIntent() {
   if (typeof window === 'undefined') return null;
@@ -67,16 +68,23 @@ export default function BillingGate({ user, onBack }) {
     paygActive: paygActive(user),
   };
 
-  const quoteCheckout = async (intent) => {
-    const data = await createBillingCheckout(intent);
-    setSummary(data);
+  const quoteCheckout = (intent) => {
+    const hasPreview = intent?.previewBase != null && intent.previewBase !== '';
+    const local = hasPreview ? gstBreakdown(intent.previewBase) : {};
+    setSummary({ ...local, pending: true });
+    createBillingCheckout(intent)
+      .then((data) => setSummary({ ...data, pending: false }))
+      .catch((err) => {
+        toast.error(err.message);
+        setSummary(null);
+      });
   };
 
   useEffect(() => {
     if (started.current || !resume?.planId) return;
     if (new URLSearchParams(window.location.search).get('step') !== 'billing') return;
     started.current = true;
-    quoteCheckout(resume).catch((err) => toast.error(err.message));
+    quoteCheckout(resume);
   }, [resume]);
 
   return (
@@ -89,7 +97,7 @@ export default function BillingGate({ user, onBack }) {
       <GrowthPartnerPricing
         access={access}
         onSubscribe={(intent) => {
-          quoteCheckout(intent).catch((err) => toast.error(err.message));
+          quoteCheckout(intent);
         }}
       />
       <Dialog open={Boolean(summary)} onOpenChange={(open) => { if (!open) setSummary(null); }}>
@@ -100,18 +108,18 @@ export default function BillingGate({ user, onBack }) {
           </DialogHeader>
           {summary && (
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between gap-3"><span>Actual base price</span><span className="font-bold">{rupee(summary.subtotal)}</span></div>
-              <div className="flex justify-between gap-3"><span>18% GST</span><span className="font-bold">{rupee(summary.gst_amount)}</span></div>
-              <div className="flex justify-between gap-3 border-t pt-2 text-base"><span className="font-black text-[#0A2647]">Final total</span><span className="font-black text-[#0A2647]">{rupee(summary.total_amount)}</span></div>
+              <div className="flex justify-between gap-3"><span>Actual base price</span><span className="font-bold">{summary.subtotal == null ? '…' : rupee(summary.subtotal)}</span></div>
+              <div className="flex justify-between gap-3"><span>18% GST</span><span className="font-bold">{summary.gst_amount == null ? '…' : rupee(summary.gst_amount)}</span></div>
+              <div className="flex justify-between gap-3 border-t pt-2 text-base"><span className="font-black text-[#0A2647]">Final total</span><span className="font-black text-[#0A2647]">{summary.total_amount == null ? '…' : rupee(summary.total_amount)}</span></div>
               <div className="flex flex-col sm:flex-row gap-2 mt-3">
               <Button type="button" variant="outline" className="sm:w-auto" onClick={() => setSummary(null)}>Go Back</Button>
-              <Button className="flex-1 bg-emerald-600" disabled={paying} onClick={() => {
+              <Button className="flex-1 bg-emerald-600" disabled={paying || summary.pending || !summary.payment_session_id} onClick={() => {
                 setPaying(true);
                 openCashfreeSession(summary).catch((err) => {
                   toast.error(err.message);
                   setPaying(false);
                 });
-              }}>{paying ? 'Opening payment…' : 'Pay'}</Button>
+              }}>{paying ? 'Opening payment…' : summary.pending ? 'Preparing payment…' : 'Pay'}</Button>
               </div>
             </div>
           )}

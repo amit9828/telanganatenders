@@ -7,7 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Check, Phone } from 'lucide-react';
 import { toast } from 'sonner';
-import { PRICING_DEFAULTS } from '@/lib/billing-schema';
+import { PRICING_DEFAULTS, paygBase } from '@/lib/billing-schema';
+
+function subscribeIntent(base, extra) {
+  return { ...extra, previewBase: Math.round((Number(base) || 0) * 100) / 100 };
+}
 
 export const PAYG_FEATURES = ['Base Tender Perks', 'Reverse Auction Strategy', 'Tech Evaluation & Doc Help', 'Tracking up to Bid Won', 'Legal Support'];
 export const UNLIMITED_FEATURES = ['Unlimited Bids', 'Unlimited Service Catalogs (Free)', 'Unlimited Product Catalogs (Free)', 'Unlimited Tech Evaluations (Free)', 'Unlimited Lead Search & Participation', 'Legal Support', 'MSME Samadhan', 'JV Structuring & Payment Tracking'];
@@ -69,7 +73,7 @@ function FeatureList({ items, light = false }) {
 
 const INITIAL_ITEMS = PRICING_DEFAULTS.map(({ service_key, name, base_price }) => ({ service_key, name, base_price }));
 
-function PriceChecks({ rows, picked, onToggle, priceOf, dense = false }) {
+function PriceChecks({ rows, picked, onToggle, priceOf, dense = false, showPrice = true }) {
   return (
     <div className={dense ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3' : 'grid grid-cols-1 gap-3'}>
       {rows.map((row) => (
@@ -78,14 +82,14 @@ function PriceChecks({ rows, picked, onToggle, priceOf, dense = false }) {
             <input type="checkbox" checked={picked.includes(row.key)} onChange={() => onToggle(row.key)} className="accent-emerald-600 shrink-0 mt-0.5" />
             <span className="flex-1 min-w-0 break-words leading-snug">{row.label}</span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-right min-w-[4.5rem] text-sm font-black text-emerald-700">{rupee(priceOf(row.key))}</span>
+          {showPrice ? <span className="shrink-0 whitespace-nowrap text-right min-w-[4.5rem] text-sm font-black text-emerald-700">{rupee(priceOf(row.key))}</span> : null}
         </label>
       ))}
     </div>
   );
 }
 
-export default function GrowthPartnerPricing({ onSubscribe, access }) {
+export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = false }) {
   const [items, setItems] = useState(INITIAL_ITEMS);
   const [bids, setBids] = useState(1);
   const [trackKey, setTrackKey] = useState('track_1m');
@@ -111,9 +115,9 @@ export default function GrowthPartnerPricing({ onSubscribe, access }) {
 
   const priceOf = (key) => Number(items.find((item) => item.service_key === key)?.base_price) || 0;
   const sumKeys = (keys) => keys.reduce((sum, key) => sum + priceOf(key), 0);
-  const paygTotal = Math.round((priceOf('custom_bids_10') / 10) * bids * 100) / 100;
+  const paygItem = items.find((item) => item.service_key === 'custom_bids_10');
+  const paygTotal = paygBase(paygItem, bids);
   const regTotal = useMemo(() => sumKeys(registration), [registration, items]);
-  const thirdTotal = useMemo(() => sumKeys(thirdParty), [thirdParty, items]);
   const coreTotal = useMemo(() => sumKeys(core), [core, items]);
 
   const toggle = (setter) => (key) => setter((prev) => (prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key]));
@@ -155,14 +159,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access }) {
     }
   };
 
-  return (
-    <section className="bg-slate-50 py-12 sm:py-16 w-full">
-      <div className="w-full max-w-[95%] lg:max-w-[1400px] mx-auto px-2 sm:px-4">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl md:text-5xl font-black text-[#0A2647] tracking-tight">Choose Your Growth Partner</h2>
-          <p className="mt-3 text-slate-500 text-base sm:text-lg">Select a plan that fits your business needs. Upgrade anytime.</p>
-        </div>
-
+  const planCards = (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 items-stretch">
               {!access?.unlimitedActive && (
               <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
@@ -171,10 +168,10 @@ export default function GrowthPartnerPricing({ onSubscribe, access }) {
                 <p className="text-sm text-slate-500 mt-1">For single or selective bids.</p>
                 <p className="mt-2 text-sm font-bold text-emerald-700">Valid for 3 months</p>
                 <p className="text-4xl font-black text-[#0A2647] mt-5">{rupee(paygTotal)}</p>
-                <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor="bid-count">Number of bids</label>
-                <input id="bid-count" type="number" min="1" inputMode="numeric" value={bids} onChange={(e) => setBidCount(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
+                <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor={cardsOnly ? 'promo-bid-count' : 'bid-count'}>Number of bids</label>
+                <input id={cardsOnly ? 'promo-bid-count' : 'bid-count'} type="number" min="1" inputMode="numeric" value={bids} onChange={(e) => setBidCount(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
                 <div className="mt-5 flex-1"><FeatureList items={PAYG_FEATURES} /></div>
-                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: 'custom_bids_10', bidCount: bids })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.(subscribeIntent(paygTotal, { planId: 'custom_bids_10', bidCount: bids }))}>Subscribe</Button>
               </article>
               )}
 
@@ -185,7 +182,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access }) {
                 <p className="text-sm text-slate-300 mt-1">Full-service bidding for active businesses.</p>
                 <p className="text-4xl font-black mt-5">{rupee(priceOf('saas_unlimited'))}</p>
                 <div className="mt-5 flex-1"><FeatureList items={UNLIMITED_FEATURES} light /></div>
-                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.({ planId: 'saas_unlimited' })}>{access?.paygActive ? 'Upgrade to Unlimited' : 'Subscribe'}</Button>
+                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.(subscribeIntent(priceOf('saas_unlimited'), { planId: 'saas_unlimited' }))}>{access?.paygActive ? 'Upgrade to Unlimited' : 'Subscribe'}</Button>
               </article>
 
               <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">
@@ -193,14 +190,27 @@ export default function GrowthPartnerPricing({ onSubscribe, access }) {
                 <h3 className="text-2xl font-black text-[#0A2647] mt-2">Payment Tracking</h3>
                 <p className="text-sm text-slate-500 mt-1">We take the responsibility to credit payments to your accounts.</p>
                 <p className="text-4xl font-black text-[#0A2647] mt-5">{rupee(priceOf(trackKey))}</p>
-                <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor="track-duration">Duration</label>
-                <select id="track-duration" value={trackKey} onChange={(e) => setTrackKey(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm">
+                <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor={cardsOnly ? 'promo-track-duration' : 'track-duration'}>Duration</label>
+                <select id={cardsOnly ? 'promo-track-duration' : 'track-duration'} value={trackKey} onChange={(e) => setTrackKey(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm">
                   {TRACK_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
                 </select>
                 <div className="mt-5 flex-1"><FeatureList items={TRACK_FEATURES} /></div>
-                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.({ planId: trackKey })}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.(subscribeIntent(priceOf(trackKey), { planId: trackKey }))}>Subscribe</Button>
               </article>
             </div>
+  );
+
+  if (cardsOnly) return planCards;
+
+  return (
+    <section className="bg-slate-50 py-12 sm:py-16 w-full">
+      <div className="w-full max-w-[95%] lg:max-w-[1400px] mx-auto px-2 sm:px-4">
+        <div className="text-center mb-10">
+          <h2 className="text-3xl md:text-5xl font-black text-[#0A2647] tracking-tight">Choose Your Growth Partner</h2>
+          <p className="mt-3 text-slate-500 text-base sm:text-lg">Select a plan that fits your business needs. Upgrade anytime.</p>
+        </div>
+
+        {planCards}
 
             <div className="mt-10 rounded-3xl bg-white border border-slate-200 shadow-xl p-5 sm:p-8">
               <h3 className="text-2xl font-black text-[#0A2647]">Registration & Setup Services</h3>
@@ -209,17 +219,16 @@ export default function GrowthPartnerPricing({ onSubscribe, access }) {
               <p className="mt-4 text-sm font-semibold text-emerald-700">Select any of the above services and get Udyam Registration FREE!</p>
               <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-lg font-black text-[#0A2647]">Total {rupee(regTotal)}</p>
-                <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!registration.length} onClick={() => onSubscribe?.({ planId: registration[0], planIds: registration })}>Proceed to Checkout</Button>
+                <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!registration.length} onClick={() => onSubscribe?.(subscribeIntent(regTotal, { planId: registration[0], planIds: registration }))}>Proceed to Checkout</Button>
               </div>
             </div>
 
             <div className="mt-8 grid grid-cols-1 xl:grid-cols-2 gap-6">
               <div className="rounded-3xl bg-white border border-slate-200 shadow-xl p-5 sm:p-8 min-w-0">
                 <h3 className="text-2xl font-black text-[#0A2647]">Third-Party & Compliance</h3>
-                <p className="text-slate-500 mt-2 text-sm">Each item is priced on its own. Our team confirms the work and calls you.</p>
-                <div className="mt-6"><PriceChecks rows={THIRD_PARTY} picked={thirdParty} onToggle={toggle(setThirdParty)} priceOf={priceOf} /></div>
-                <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <p className="text-lg font-black text-[#0A2647]">Total {rupee(thirdTotal)}</p>
+                <p className="text-slate-500 mt-2 text-sm">Costs vary by the licence. Our team will call you to confirm the work.</p>
+                <div className="mt-6"><PriceChecks rows={THIRD_PARTY} picked={thirdParty} onToggle={toggle(setThirdParty)} priceOf={priceOf} showPrice={false} /></div>
+                <div className="mt-5 flex justify-end">
                   <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!thirdParty.length} onClick={() => openLead('third')}>Request Service</Button>
                 </div>
               </div>

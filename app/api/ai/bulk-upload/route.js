@@ -5,6 +5,7 @@ import { uploadTenderPDF, isR2Configured, isValidPDFBuffer } from '@/lib/cloudfl
 import { EXTRACTION_PROMPT, parseAIJson, normaliseExtraction } from '@/lib/ai-extraction';
 import { getGeminiApiKey } from '@/lib/env';
 import { publicAiError } from '@/lib/gemini';
+import { requireStaff } from '@/lib/staff-auth';
 
 // The AI call is the slow part, so keep this on the Node runtime with the longest
 // duration the Vercel Hobby plan allows. Files are processed with bounded
@@ -114,14 +115,10 @@ async function runPool(items, worker) {
 }
 
 export async function POST(request) {
+  const auth = await requireStaff(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   try {
-    // Matches the guard used by the rest of the admin surface: the dashboard sends the
-    // token issued by /api/system/verify.
-    const adminToken = String(process.env.ADMIN_TOKEN || '').trim();
-    const bearer = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (adminToken && bearer !== adminToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const geminiApiKey = getGeminiApiKey();
     if (!geminiApiKey) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { requireStaff } from '@/lib/staff-auth';
 import { generateContent, publicAiError } from '@/lib/gemini';
 import { EXTRACTION_PROMPT, parseAIJson, normaliseExtraction } from '@/lib/ai-extraction';
 import { isValidPDFBuffer } from '@/lib/cloudflare-r2';
@@ -80,6 +81,9 @@ async function readUpload(request) {
 }
 
 export async function POST(request) {
+  const auth = await requireStaff(request);
+  if (!auth.ok) return json({ error: auth.error }, auth.status);
+
   try {
     const upload = await readUpload(request);
     if (upload.error) return json({ error: upload.error }, upload.status);

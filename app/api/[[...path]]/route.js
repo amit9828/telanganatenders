@@ -42,6 +42,34 @@ async function leadershipCaller(request) {
   return { ok: false, actor };
 }
 
+function isStaffActor(actor, leadOk) {
+  return Boolean(leadOk || actor?.role === 'EMPLOYEE' || actor?.empId);
+}
+
+const SENSITIVE_TENDER_KEYS = new Set([
+  'bid_no', 'pdf_url', 'file_url', 'pdf_r2_key', 'pdf_filename', 'pdf_base64',
+  'phone', 'email', 'contact', 'buyer_email', 'buyer_phone', 'contact_email', 'contact_phone',
+  'buyer_contact', 'officer_phone', 'officer_email',
+]);
+
+function concealPublicTender(doc) {
+  const copy = { ...doc };
+  for (const key of Object.keys(copy)) {
+    const lower = key.toLowerCase();
+    if (
+      SENSITIVE_TENDER_KEYS.has(lower)
+      || lower.includes('bid_no')
+      || lower.includes('pdf')
+      || lower.includes('phone')
+      || lower.includes('email')
+      || lower.includes('contact')
+      || lower.endsWith('_url')
+      || lower.endsWith('_key')
+    ) delete copy[key];
+  }
+  return copy;
+}
+
 async function mdDeskResponse() {
   const res = NextResponse.json({ success: true, token: process.env.ADMIN_TOKEN || 'admin_success' }, { status: 200 });
   const value = await mdSessionValue();
@@ -297,6 +325,8 @@ async function handleGET(request, { params }, attempt = 1) {
     console.log(`🔍 [API GET] ENTRY path="${path}" at ${new Date().toISOString()}`);
 
     if (path === 'admin/stats' || path === 'api/admin/stats') {
+      const browse = await leadershipCaller(request);
+      if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
       const __t = Date.now();
       // 🚀 PERF FIX: Revenue previously fetched every successful payment document
       // just to sum one field in JS. A $group/$sum aggregation does that sum
@@ -378,7 +408,8 @@ async function handleGET(request, { params }, attempt = 1) {
         query.$text = { $search: q };
       }
 
-      const skipLiveFilter = (role === 'admin' && staffBrowse) || scope === 'all';
+      const honorAll = scope === 'all' && staffBrowse;
+      const skipLiveFilter = (role === 'admin' && staffBrowse) || honorAll;
       const isArchive = scope === 'archive';
       if (!skipLiveFilter) {
         query.$and = [
@@ -386,7 +417,7 @@ async function handleGET(request, { params }, attempt = 1) {
           isArchive ? archiveTenderQuery() : liveTenderQuery(),
         ];
       }
-      if (month && year && scope !== 'all') {
+      if (month && year && !honorAll) {
         const m = parseInt(month, 10);
         const y = parseInt(year, 10);
         if (m >= 1 && m <= 12 && y > 2000) {
@@ -419,9 +450,11 @@ async function handleGET(request, { params }, attempt = 1) {
       }
 
       const tenders = await cursor.toArray();
+      const signedIn = staffBrowse || Boolean(await resolveClientEmail(request));
+      const visible = signedIn ? tenders : tenders.map(concealPublicTender);
       console.log(`🔍 [tenders] DB find().toArray() took ${Date.now() - __tendersQueryStart}ms | returned ${tenders.length} of ${total}`);
       console.log(`🔍 [tenders] EXIT | TOTAL ${Date.now() - __reqStart}ms`);
-      return json({ tenders, page, limit: limit ?? tenders.length, total });
+      return json({ tenders: visible, page, limit: limit ?? tenders.length, total });
     }
 
     // 🚀 FIX: Fetch Vault Document Instantly Without Lag
@@ -500,19 +533,26 @@ async function handleGET(request, { params }, attempt = 1) {
         .find({ last_date: { $gte: rangeStart, $lt: rangeEnd } })
         .project({ pdf_base64: 0 })
         .toArray();
+      const browse = await leadershipCaller(request);
+      const signedIn = isStaffActor(browse.actor, browse.ok) || Boolean(await resolveClientEmail(request));
 
       const days = {};
       tenders.forEach(t => {
         const d = new Date(t.last_date);
         const day = d.getDate();
         if (!days[day]) days[day] = [];
-        days[day].push(t);
+        days[day].push(signedIn ? t : concealPublicTender(t));
       });
       return json({ days });
     }
 
     if (path === 'access' || path === 'api/access') {
-      const email = searchParams.get('email');
+      const browse = await leadershipCaller(request);
+      const staff = isStaffActor(browse.actor, browse.ok);
+      const requested = String(searchParams.get('email') || '').trim().toLowerCase();
+      const sessionEmail = staff ? '' : String(await resolveClientEmail(request) || '');
+      if (!staff && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
+      const email = staff ? requested : sessionEmail;
       if (!email) return json({ subscription: null });
       const user = await db.collection('users').findOne({ email: email.toLowerCase() });
       
@@ -755,7 +795,7 @@ async function handleGET(request, { params }, attempt = 1) {
       const __t = Date.now();
       const directory = searchParams.get('directory') === '1';
       const users = await db.collection('users')
-         .find({ billing_paid: true, onboarding_complete: true })
+         .find({ onboarding_complete: true })
          .project(directory
            ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1 }
            : { password: 0, 'vault_docs.file_base64': 0 })
@@ -809,29 +849,40 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (pathArray.length === 3 && pathArray[0] === 'dispatches' && pathArray[2] === 'file') {
+      const browse = await leadershipCaller(request);
+      const staff = isStaffActor(browse.actor, browse.ok);
+      const sessionEmail = staff ? '' : String(await resolveClientEmail(request) || '');
+      if (!staff && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
       const taskId = pathArray[1];
       if (!ObjectId.isValid(taskId)) return json({ error: 'Invalid dispatch ID' }, 400);
       const dispatch = await db.collection('dispatches').findOne(
         { _id: new ObjectId(taskId) },
-        { projection: { file_base64: 1, file_name: 1 } }
+        { projection: { file_base64: 1, file_name: 1, target_id: 1 } }
       );
       if (!dispatch) return documentError(request, { status: 404, code: 'DISPATCH_NOT_FOUND', message: 'This dispatch no longer exists.' });
+      if (!staff && String(dispatch.target_id || '').toLowerCase() !== sessionEmail) {
+        return json({ error: 'Sign in required.' }, 403);
+      }
       return streamBase64Document(request, dispatch.file_base64, dispatch.file_name || 'attachment.pdf');
     }
 
     if (path === 'dispatches' || path === 'api/dispatches') {
+      const browse = await leadershipCaller(request);
+      const staff = isStaffActor(browse.actor, browse.ok);
+      const sessionEmail = staff ? '' : String(await resolveClientEmail(request) || '');
+      if (!staff && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
       const targetId = searchParams.get('target_id');
       let query = {};
-      if (targetId) query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') }; 
-      else {
-        const actor = await resolveActorRole(request);
-        if (actor.role === 'EMPLOYEE') {
-          const empId = actor.empId || '';
-          query.$or = [
-            { target_type: 'employee_task', target_id: empId },
-            { target_type: 'client_alert', employee_id: empId },
-          ];
-        }
+      if (!staff) {
+        query.target_id = sessionEmail;
+      } else if (targetId) {
+        query.target_id = { $regex: new RegExp(`^${targetId}$`, 'i') };
+      } else if (browse.actor?.role === 'EMPLOYEE') {
+        const empId = browse.actor.empId || '';
+        query.$or = [
+          { target_type: 'employee_task', target_id: empId },
+          { target_type: 'client_alert', employee_id: empId },
+        ];
       }
       const dispatches = await db.collection('dispatches')
          .find(query)
@@ -872,6 +923,8 @@ async function handleGET(request, { params }, attempt = 1) {
     }
 
     if (path === 'gov-officers' || path === 'api/gov-officers') {
+      const browse = await leadershipCaller(request);
+      if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
       const officers = await db.collection('gov_officers').find({}).sort({ created_at: -1 }).toArray();
       return json({ officers });
     }
@@ -902,17 +955,18 @@ async function handleGET(request, { params }, attempt = 1) {
     }
     
     if (path === 'bids' || path === 'api/bids') {
-      const clientEmail = searchParams.get('client_email');
+      const browse = await leadershipCaller(request);
+      const staff = isStaffActor(browse.actor, browse.ok);
+      const sessionEmail = staff ? '' : String(await resolveClientEmail(request) || '');
+      if (!staff && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
+      const clientEmail = String(searchParams.get('client_email') || '').trim().toLowerCase();
       let query = {};
-      if (clientEmail) {
-        // Client's own "My Bids" view — scoped by client, never by employee.
-        query.client_email = clientEmail.toLowerCase();
-      } else {
-        // 🚀 RBAC: Employee dashboard call (no client_email). Strictly isolate to
-        // bids this employee created/claimed; MD (and unresolved/legacy callers)
-        // keep the unfiltered global view.
-        const actor = await resolveActorRole(request);
-        if (actor.role === 'EMPLOYEE') query.employee_id = actor.empId;
+      if (!staff) {
+        query.client_email = sessionEmail;
+      } else if (clientEmail) {
+        query.client_email = clientEmail;
+      } else if (browse.actor?.role === 'EMPLOYEE') {
+        query.employee_id = browse.actor.empId;
       }
       const bids = await db.collection('bids').find(query).sort({ created_at: -1 }).toArray();
       return json({ bids });
@@ -950,12 +1004,12 @@ async function handleGET(request, { params }, attempt = 1) {
 
       let docs = [];
       if (isMd) {
-        docs = await db.collection('employees').find({}).sort({ created_at: -1 }).toArray();
+        docs = await db.collection('employees').find({}, { projection: { password: 0 } }).sort({ created_at: -1 }).toArray();
       } else if (isGm) {
         const all = await db.collection('employees').find({
           deleted: { $ne: true },
           active: { $ne: false },
-        }).sort({ created_at: -1 }).toArray();
+        }, { projection: { password: 0 } }).sort({ created_at: -1 }).toArray();
         docs = all.filter((emp) => {
           const role = resolveStaffDesignation(emp);
           return role === DESIGNATIONS.DOC_TEAM_TL || role === DESIGNATIONS.DOC_TEAM_MEMBER;
@@ -965,13 +1019,13 @@ async function handleGET(request, { params }, attempt = 1) {
           $or: [{ emp_id: actor.empId }, { team_id: actor.empId }],
           deleted: { $ne: true },
           active: { $ne: false },
-        }).sort({ created_at: -1 }).toArray();
+        }, { projection: { password: 0 } }).sort({ created_at: -1 }).toArray();
       } else if (actor.role === 'EMPLOYEE' && actor.empId) {
         docs = await db.collection('employees').find({
           emp_id: actor.empId,
           deleted: { $ne: true },
           active: { $ne: false },
-        }).toArray();
+        }, { projection: { password: 0 } }).toArray();
       }
       return json({ team: docs });
     }
@@ -981,20 +1035,28 @@ async function handleGET(request, { params }, attempt = 1) {
       // Balance Sheet Book (which reads `finance_ledger`) showed offline collections
       // only, while the Net Balance figure added online revenue on top — the money was
       // in the total but had no matching line item. Successful online payments are now
-      // projected into the same ledger view as read-only CREDIT rows. Doing it on read
+      //       projected into the same ledger view as read-only CREDIT rows. Doing it on read
       // rather than writing duplicate ledger documents means every historical payment
       // shows up immediately and there is no way for the two stores to drift apart.
+      const browse = await leadershipCaller(request);
+      const staff = isStaffActor(browse.actor, browse.ok);
+      const sessionEmail = staff ? '' : String(await resolveClientEmail(request) || '');
+      if (!staff && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
       const [manualTxns, onlinePayments, clientDirectory] = await Promise.all([
         db.collection('finance_ledger').find({}).project({ proof_base64: 0 }).sort({ created_at: -1 }).toArray(),
         db.collection('payments').find({ status: 'SUCCESS' }).sort({ paid_at: -1 }).toArray(),
         db.collection('users').find({}, { projection: { email: 1, company_name: 1, client_name: 1, name: 1, client_id: 1 } }).toArray(),
       ]);
+      const ownRow = (row) => String(row.email || row.client_id || '').toLowerCase() === sessionEmail;
+      const visibleManual = staff ? manualTxns : manualTxns.filter(ownRow);
+      const visibleOnline = staff ? onlinePayments : onlinePayments.filter((p) => String(p.email || '').toLowerCase() === sessionEmail);
+      const visibleClients = staff ? clientDirectory : clientDirectory.filter((u) => String(u.email || '').toLowerCase() === sessionEmail);
 
       const nameByEmail = new Map(
-        clientDirectory.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
+        visibleClients.map(u => [String(u.email || '').toLowerCase(), u.company_name || u.client_name || u.name || u.email])
       );
 
-      const onlineTxns = onlinePayments.map(p => {
+      const onlineTxns = visibleOnline.map(p => {
         const email = String(p.email || '').toLowerCase();
         return {
           _id: `online-${p.order_id || p._id}`,
@@ -1015,7 +1077,7 @@ async function handleGET(request, { params }, attempt = 1) {
 
       // Oldest → newest so each row can carry the balance as it stood after that entry,
       // then flipped back to newest-first for display.
-      const chronological = [...manualTxns, ...onlineTxns]
+      const chronological = [...visibleManual, ...onlineTxns]
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       let running = 0;
       for (const txn of chronological) {
@@ -1031,8 +1093,8 @@ async function handleGET(request, { params }, attempt = 1) {
       // The MD can also tag a hand-entered ledger row as ONLINE (a bank transfer, for
       // example), so the split follows how the money arrived rather than which
       // collection it lives in.
-      const manualOnline = manualTxns.filter(t => t.payment_mode === 'ONLINE');
-      const manualOffline = manualTxns.filter(t => t.payment_mode !== 'ONLINE');
+      const manualOnline = visibleManual.filter(t => t.payment_mode === 'ONLINE');
+      const manualOffline = visibleManual.filter(t => t.payment_mode !== 'ONLINE');
 
       const offlineBalance = sum(manualOffline, 'CREDIT') - sum(manualOffline, 'DEBIT');
       const onlineBalance = sum(manualOnline, 'CREDIT') - sum(manualOnline, 'DEBIT') + sum(onlineTxns, 'CREDIT');
@@ -1175,6 +1237,10 @@ async function handleGET(request, { params }, attempt = 1) {
     }
     // 🚀 FIX: Live Tracking GET route for Admin Dashboard
     if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const browse = await leadershipCaller(request);
+       const staff = isStaffActor(browse.actor, browse.ok);
+       const sessionEmail = staff ? '' : String(await resolveClientEmail(request) || '');
+       if (!staff && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
        // 🚀 PERF FIX: `users` documents average ~1.5MB (embedded vault_docs/
        // officer_queries base64 attachments). This endpoint only ever reads
        // `email` + `pending_payments`, so an inclusion projection fetches just
@@ -1187,6 +1253,7 @@ async function handleGET(request, { params }, attempt = 1) {
 
        let allRequests = [];
        usersWithPayments.forEach(user => {
+           if (!staff && String(user.email || '').toLowerCase() !== sessionEmail) return;
            user.pending_payments.forEach(req => {
                const st = String(req.status || '').toUpperCase();
                if (st !== 'PAID' && st !== 'SUCCESS' && st !== 'CANCELLED' && st !== 'FAILED') {
@@ -1493,6 +1560,8 @@ export async function PUT(request, { params }) {
      }
      // 🚀 FIX: Vault Document Approval + Rename + Duplicate Check + Auto Google Drive Sync
      if (path === 'vault/verify' || path === 'api/vault/verify') {
+        const lead = await leadershipCaller(request);
+        if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
         const { email, docId, status, reject_reason, custom_file_name, overwrite } = body;
         const targetEmail = email.toLowerCase();
         
@@ -1561,6 +1630,8 @@ export async function PUT(request, { params }) {
      }
 
      if (path === 'finance/ledger' || path === 'api/finance/ledger') {
+        const lead = await leadershipCaller(request);
+        if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
         const { id, ...updateFields } = body;
         if (!id) return json({ error: 'Missing Transaction ID' }, 400);
         if (!ObjectId.isValid(id)) return json({ error: 'Invalid Transaction ID' }, 400);
@@ -1572,6 +1643,8 @@ export async function PUT(request, { params }) {
      }
 
      if (path === 'payments/offline' || path === 'api/payments/offline') {
+        const lead = await leadershipCaller(request);
+        if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
         // 🚀 Extracted to app/api/payments/route.js (Offline Ledger logic)
         return await recordOfflineLedgerPayment(db, body);
      }
@@ -1598,6 +1671,8 @@ export async function DELETE(request, { params }) {
     const db = await getDb();
 
     if (path === 'users' || path === 'api/users') {
+       const lead = await leadershipCaller(request);
+       if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
        const email = searchParams.get('email');
        if (!email) return json({ error: 'Missing Client Email' }, 400);
 
@@ -1614,6 +1689,8 @@ export async function DELETE(request, { params }) {
 
     // 🚀 FIX: Guest Queries Deletion Route
     if (path === 'guest-queries' || path === 'api/guest-queries') {
+       const lead = await leadershipCaller(request);
+       if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing ID' }, 400);
        // 🚀 FIX: `new ObjectId(id)` throws on a malformed id, which crashed this route
@@ -1641,6 +1718,8 @@ export async function DELETE(request, { params }) {
     }
 
     if (path === 'bids' || path === 'api/bids') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
       const id = searchParams.get('id');
       if (!id) return json({ error: 'Missing Bid ID' }, 400);
 
@@ -1656,6 +1735,8 @@ export async function DELETE(request, { params }) {
     }
 
     if (path === 'tickets' || path === 'api/tickets') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
       const id = searchParams.get('id');
       if (!id) return json({ error: 'Missing Ticket ID' }, 400);
       let result = null;
@@ -1688,6 +1769,8 @@ export async function DELETE(request, { params }) {
     }
 
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
+       const lead = await leadershipCaller(request);
+       if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Transaction ID' }, 400);
        if (!ObjectId.isValid(id)) return json({ error: 'Invalid Transaction ID' }, 400);
@@ -1706,6 +1789,8 @@ export async function DELETE(request, { params }) {
     }
 
     if (path === 'dispatches' || path === 'api/dispatches') {
+       const lead = await leadershipCaller(request);
+       if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Dispatch ID' }, 400);
        if (!ObjectId.isValid(id)) return json({ error: 'Invalid Dispatch ID' }, 400);
@@ -1714,6 +1799,8 @@ export async function DELETE(request, { params }) {
     }
 
     if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const lead = await leadershipCaller(request);
+       if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Request ID' }, 400);
        await db.collection('users').updateOne(
@@ -1740,6 +1827,7 @@ export async function POST(request, { params }) {
     const db = await getDb();
     const pathArray = params?.path || [];
     const path = pathArray.join('/');
+    const { searchParams } = new URL(request.url);
 
     if (path === 'vault/upload' || path === 'api/vault/upload') {
        try {
@@ -1749,7 +1837,14 @@ export async function POST(request, { params }) {
          const email = formData.get('email');
          const customName = formData.get('customName');
 
-         if (!file || !email || !docId) return json({ error: 'Missing data' }, 400);
+         const lead = await leadershipCaller(request);
+         const sessionEmail = await resolveClientEmail(request);
+         let targetEmail = String(email || '').trim().toLowerCase();
+         if (!lead.ok) {
+           if (!sessionEmail) return json({ error: 'Sign in required.' }, 401);
+           targetEmail = sessionEmail;
+         }
+         if (!file || !docId || !targetEmail) return json({ error: 'Missing data' }, 400);
          if (typeof file.arrayBuffer !== 'function') return json({ error: 'Uploaded value is not a file.' }, 400);
 
          // 🚀 The ceiling is Vercel's ~4.5MB serverless request body limit, not R2 —
@@ -1763,7 +1858,6 @@ export async function POST(request, { params }) {
          }
          if (file.size === 0) return json({ error: 'The selected file is empty.' }, 400);
 
-         const targetEmail = String(email).toLowerCase();
          const buffer = Buffer.from(await file.arrayBuffer());
          const fileName = file.name || `${docId}.pdf`;
          const contentType = sniffContentType(buffer, fileName) || file.type || 'application/octet-stream';
@@ -1940,6 +2034,8 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'tenders' || path === 'api/tenders' || path === 'admin/tenders' || path === 'api/admin/tenders') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
       // 🚀 FIX: Offload PDF storage to Cloudflare R2 instead of MongoDB. Only the
       // resulting `pdf_url` is persisted, keeping tender documents lightweight.
       const { pdf_base64, ...tenderFields } = body;
@@ -1986,7 +2082,10 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'users' || path === 'api/users') {
-      const ident = body.email || body.client_id || '';
+      const lead = await leadershipCaller(request);
+      const sessionEmail = await resolveClientEmail(request);
+      if (!lead.ok && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
+      const ident = lead.ok ? (body.email || body.client_id || sessionEmail || '') : sessionEmail;
       const existing = await findExistingClient(db, ident);
       if (!existing) return json({ error: 'Client not found' }, 404);
       await db.collection('users').updateOne(
@@ -2019,21 +2118,27 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'subscription/cancel' || path === 'api/subscription/cancel') {
-      if (!body.email) return json({ error: 'Email required' }, 400);
+      const sessionEmail = await resolveClientEmail(request);
+      if (!sessionEmail) return json({ error: 'Sign in required.' }, 401);
       await db.collection('users').updateOne(
-        { email: body.email.toLowerCase() },
+        { email: sessionEmail },
         { $set: { 'subscription.status': 'cancelled_pending', auto_renew: false } }
       );
       return json({ success: true, message: 'Auto-renewal cancelled successfully.' });
     }
 
     if (path === 'tickets' || path === 'api/tickets') {
+      const lead = await leadershipCaller(request);
+      const sessionEmail = await resolveClientEmail(request);
+      if (!lead.ok && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
       const { email, department, subject, message } = body;
+      const clientEmail = lead.ok ? String(email || sessionEmail || '').trim().toLowerCase() : sessionEmail;
+      if (!clientEmail) return json({ error: 'Sign in required.' }, 401);
       const createdAt = new Date();
       const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); 
       
       const newTicket = {
-        client_email: email.toLowerCase(), department, subject, message,
+        client_email: clientEmail, department, subject, message,
         status: 'OPEN', created_at: createdAt, sla_deadline: deadline, reply: null
       };
       const result = await db.collection('tickets').insertOne(newTicket);
@@ -2041,6 +2146,8 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'tickets/reply' || path === 'api/tickets/reply') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
       const { ticket_id, reply, admin_email } = body;
       if (!ObjectId.isValid(ticket_id)) return json({ error: 'Invalid Ticket ID' }, 400);
       await db.collection('tickets').updateOne(
@@ -2056,7 +2163,14 @@ export async function POST(request, { params }) {
         email, client_name, company_name, company_type, phone, address, 
         service_category, gstin, udyam, has_gst, has_msme, has_iso, documents, status, agreement_signed 
       } = body;
-      const userEmail = String(email || '').trim().toLowerCase();
+      const lead = await leadershipCaller(request);
+      const sessionEmail = await resolveClientEmail(request);
+      let userEmail = String(email || '').trim().toLowerCase();
+      if (!lead.ok) {
+        if (!sessionEmail) return json({ error: 'Sign in required.' }, 401);
+        userEmail = sessionEmail;
+      }
+      if (!userEmail) return json({ error: 'Client not found' }, 404);
       const existingProfile = await findExistingClient(db, userEmail);
       if (!existingProfile) return json({ error: 'Client not found' }, 404);
 
@@ -2088,6 +2202,8 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'users/approve' || path === 'api/users/approve') {
+      const lead = await leadershipCaller(request);
+      if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
       const { email } = body;
       const userEmail = email.toLowerCase();
       
@@ -2125,6 +2241,8 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'users/request-payment' || path === 'api/users/request-payment') {
+       const lead = await leadershipCaller(request);
+       if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
        const { email, amount, reason } = body;
        const reqId = new ObjectId().toString(); // 🚀 FIX: Generate a unique ID
 
@@ -2140,6 +2258,8 @@ export async function POST(request, { params }) {
     // (see matching note above the removed GET duplicate).
     
     if (path === 'dispatches' || path === 'api/dispatches') {
+       const browse = await leadershipCaller(request);
+       if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
        const { target_type, target_id, subject, message } = body;
        // 🚀 RBAC: 'client_alert' is an officer suggesting a tender to a client
        // (handleSuggestTender in app/employee/page.js) — stamp who made the
@@ -2157,6 +2277,8 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'gov-officers' || path === 'api/gov-officers') {
+       const browse = await leadershipCaller(request);
+       if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
        const result = await db.collection('gov_officers').insertOne({
           ...body, created_at: new Date()
        });
@@ -2164,6 +2286,8 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'bids' || path === 'api/bids') {
+       const browse = await leadershipCaller(request);
+       if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
        const status = body.status || 'Doc Preparation';
        // 🚀 RBAC: stamp task ownership at creation — the employee who added this bid
        // tracking row is the only one who should see it later (GET /api/bids below).
@@ -2179,6 +2303,8 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'employee/activity' || path === 'api/employee/activity') {
+       const browse = await leadershipCaller(request);
+       if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
        const { email, action, details } = body;
        await db.collection('employee_logs').insertOne({
           email: email.toLowerCase(),
@@ -2190,6 +2316,8 @@ export async function POST(request, { params }) {
     }
     // 🚀 FIX: Delete Route to Cancel a Payment Request
     if (path === 'payments/requests' || path === 'api/payments/requests') {
+       const lead = await leadershipCaller(request);
+       if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
        const id = searchParams.get('id');
        if (!id) return json({ error: 'Missing Request ID' }, 400);
 
@@ -2200,6 +2328,8 @@ export async function POST(request, { params }) {
        return json({ success: true, message: 'Payment Request Cancelled' });
     }
     if (path === 'queries/send' || path === 'api/queries/send') {
+      const browse = await leadershipCaller(request);
+      if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
       const { client_email, subject, message } = body;
       const queryId = new ObjectId().toString();
       await db.collection('users').updateOne(
@@ -2211,18 +2341,22 @@ export async function POST(request, { params }) {
 
     // 🚀 FIX: Client submits reply (Updates query with data instead of deleting)
     if (path === 'queries/reply' || path === 'api/queries/reply') {
+      const lead = await leadershipCaller(request);
+      const sessionEmail = await resolveClientEmail(request);
+      if (!lead.ok && !sessionEmail) return json({ error: 'Sign in required.' }, 401);
       const { queryId, email, description, fileName } = body;
+      const replyEmail = lead.ok ? String(email || '').toLowerCase() : sessionEmail;
       // 🚀 FIX: the client form already marks this field required, but the API
       // trusted that blindly — a stripped/empty request body silently saved a
       // blank reply as if the officer's query had genuinely been answered.
-      if (!queryId || !email) {
+      if (!queryId || !replyEmail) {
         return json({ error: 'Missing queryId or email' }, 400);
       }
       if (!String(description || '').trim()) {
         return json({ error: 'Reply description cannot be empty' }, 400);
       }
       await db.collection('users').updateOne(
-        { email: email.toLowerCase(), "officer_queries.id": queryId },
+        { email: replyEmail, "officer_queries.id": queryId },
         { $set: { 
             "officer_queries.$.reply_submitted": true,
             "officer_queries.$.reply_text": description,
@@ -2236,6 +2370,8 @@ export async function POST(request, { params }) {
 
    // 🚀 FIX: Admin/Employee closes the query (Moves to History instead of Delete)
     if (path === 'queries/close' || path === 'api/queries/close') {
+      const browse = await leadershipCaller(request);
+      if (!isStaffActor(browse.actor, browse.ok)) return json({ error: 'Sign in required.' }, 401);
       const { queryId, email } = body;
       await db.collection('users').updateOne(
         { email: email.toLowerCase(), "officer_queries.id": queryId },
@@ -2244,6 +2380,8 @@ export async function POST(request, { params }) {
       return json({ success: true });
     }
     if (path === 'finance/ledger' || path === 'api/finance/ledger') {
+        const lead = await leadershipCaller(request);
+        if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
         const newTxn = {
             type: body.type, 
             amount: Number(body.amount),
@@ -2372,7 +2510,7 @@ export async function POST(request, { params }) {
     }
     if (path === 'payment/verify' || path === 'api/payment/verify') {
       // 🚀 Extracted to app/api/payments/route.js (Cashfree Verification)
-      return await verifyCashfreeOrder(db, body);
+      return await verifyCashfreeOrder(db, body, request);
     }
 
     

@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
+import { useServerDeskAllowed } from '@/components/DeskAuth';
 import { BrandMark } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
@@ -57,6 +58,8 @@ const BORDER_COLORS = [
 ];
 
 export default function EmployeeDashboard() {
+  const serverAllowed = useServerDeskAllowed();
+  const { data: session, status } = useSession();
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState('internal');
   const [email, setEmail] = useState('');
@@ -128,8 +131,15 @@ export default function EmployeeDashboard() {
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
   useEffect(() => {
     setIsMounted(true);
-    const e = typeof window !== 'undefined' ? consumeStaffBypass() : '';
-    const finalEmail = e;
+    if (!serverAllowed && status !== 'authenticated') {
+      setLoading(false);
+      return undefined;
+    }
+    const bypass = typeof window !== 'undefined' ? consumeStaffBypass() : '';
+    const fromSession = status === 'authenticated'
+      ? String(session?.user?.email || session?.user?.emp_id || '')
+      : '';
+    const finalEmail = fromSession || (serverAllowed ? bypass : '');
     setEmail(finalEmail);
     if (!finalEmail) {
       setLoading(false);
@@ -148,7 +158,7 @@ export default function EmployeeDashboard() {
       }
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [serverAllowed, status, session]);
 
   useEffect(() => {
     if (!email) return undefined;
@@ -687,9 +697,13 @@ export default function EmployeeDashboard() {
     if (event.status === 'WON' && activeTabRef.current === 'submitted') {
       fetchLiveOperationsData(email, 'submitted');
     }
-  }, { audience: 'staff', enabled: Boolean(email) });
+  }, { audience: 'staff', enabled: Boolean(email) && (serverAllowed || status === 'authenticated') });
 
   if (!isMounted) return null;
+  if (!serverAllowed && status !== 'authenticated') {
+    if (status === 'unauthenticated' && typeof window !== 'undefined') window.location.replace('/');
+    return null;
+  }
 
   const groupedBids = bids.reduce((acc, bid) => {
       const key = bid.client_email || 'Unknown';
