@@ -1,6 +1,8 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; 
-import { useSession } from 'next-auth/react'; 
+import { useSession, signOut } from 'next-auth/react'; 
+import { useServerDeskAllowed } from '@/components/DeskAuth';
+import { clearDeskBypass } from '@/lib/tab-handoff';
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
@@ -129,13 +131,14 @@ function AdminDashboardSkeleton() {
 }
 
 export default function AdminPage() {
+  const serverAllowed = useServerDeskAllowed();
   const { data: session, status: sessionStatus } = useSession();
   const isMdSession = session?.user?.role === 'MD';
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reports');
-  useStaffPresence(activeTab, { enabled: Boolean(token || isMdSession) });
+  useStaffPresence(activeTab, { enabled: Boolean(serverAllowed || token || isMdSession) });
 
   // --- CORE DATA STATES ---
   const [tenders, setTenders] = useState([]);
@@ -432,13 +435,16 @@ export default function AdminPage() {
     }
   };
 
-  const logout = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.clear();
-      sessionStorage.clear();
-      document.cookie = 'tt_md_session=; Path=/; Max-Age=0; SameSite=Lax';
-      window.location.href = '/';
-    }
+  const logout = async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      await fetch('/api/system/logout', { method: 'POST', credentials: 'include' });
+    } catch { /* the cookie clear is best-effort */ }
+    clearDeskBypass();
+    localStorage.clear();
+    sessionStorage.clear();
+    try { await signOut({ redirect: false }); } catch { /* already signed out */ }
+    window.location.href = '/';
   };
 
   const onPdfChange = (e) => {
@@ -1104,9 +1110,9 @@ export default function AdminPage() {
   // 🚀 FIX (guideline #20): a bare spinner blanks the whole screen and gives no
   // sense of what's about to load. This skeleton mirrors the real header/stat-card/
   // tab layout below, so the dashboard feels instant and never "pops" into place.
-  if (authChecking) return <AdminDashboardSkeleton />;
-  if (!token && sessionStatus === 'loading') return <AdminDashboardSkeleton />;
-  if (!token && !isMdSession) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
+  if (!serverAllowed && authChecking) return <AdminDashboardSkeleton />;
+  if (!serverAllowed && !isMdSession && sessionStatus === 'loading') return <AdminDashboardSkeleton />;
+  if (!serverAllowed && !isMdSession) { if (typeof window !== 'undefined') window.location.replace('/'); return null; }
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');

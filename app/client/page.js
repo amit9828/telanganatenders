@@ -1,13 +1,14 @@
 'use client';
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { useSession, signOut } from 'next-auth/react'; 
+import { useSession, signOut } from 'next-auth/react';
+import { useServerDeskAllowed } from '@/components/DeskAuth'; 
 import BrandLogo from '@/components/BrandLogo';
 import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
 import PricingPromoModal from '@/components/PricingPromoModal';
 import ClientBillingPanel from '@/components/ClientBillingPanel';
 import ViewUnlockModal from '@/components/ViewUnlockModal';
 import { liveTendersOnly } from '@/lib/tender-sort';
-import { consumeClientBypass, clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
+import { consumeClientBypass, clientHeaders, clientSessionIdent, clearDeskBypass, rememberRealClientIdent } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,6 +82,7 @@ const DEFAULT_VAULT_DOCS = [
 const VAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export default function ClientDashboard() {
+  const serverAllowed = useServerDeskAllowed();
   const { data: session, status } = useSession(); 
   
   const [isMounted, setIsMounted] = useState(false);
@@ -175,8 +177,9 @@ export default function ClientDashboard() {
   useEffect(() => {
     setIsMounted(true);
     if (status === "loading") return;
+    if (!serverAllowed && status === "unauthenticated") return;
 
-    const bypassIdent = consumeClientBypass();
+    const bypassIdent = serverAllowed || status === "authenticated" ? consumeClientBypass() : '';
     const sessionIsClient = Boolean(
       session?.user?.email
       && !session?.user?.emp_id
@@ -194,7 +197,7 @@ export default function ClientDashboard() {
 
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
     fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
-  }, [session, status]);
+  }, [session, status, serverAllowed]);
 
   // 🚀 STAFF-ONLY: fetch the MD's AI matchmaker feed and narrow it to this one client,
   // for the "AI Tender Match & JV Hub" widget. Skipped entirely for real clients.
@@ -938,7 +941,14 @@ export default function ClientDashboard() {
   };
 
   const handleSignOut = async () => {
-    if (typeof window !== 'undefined') localStorage.clear();
+    try {
+      await fetch('/api/system/logout', { method: 'POST', credentials: 'include' });
+    } catch { /* the cookie clear is best-effort */ }
+    if (typeof window !== 'undefined') {
+      clearDeskBypass();
+      localStorage.clear();
+      sessionStorage.clear();
+    }
     await signOut({ redirect: false });
     window.location.href = '/';
   };
@@ -961,6 +971,11 @@ export default function ClientDashboard() {
       return prev.map((job) => (job === found ? merged : job));
     });
   }, { audience: 'client', enabled: Boolean(email) });
+
+  if (!serverAllowed && status === "unauthenticated") {
+    if (typeof window !== "undefined") window.location.replace("/");
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+  }
 
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 

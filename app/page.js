@@ -250,6 +250,9 @@ export default function App() {
     }
   }, [status, intent, userData, loadingUser]);
   const performHardSignOut = async () => {
+    try {
+      await fetch('/api/system/logout', { method: 'POST', credentials: 'include' });
+    } catch { /* the cookie clear is best-effort */ }
     if (typeof window !== 'undefined') {
         localStorage.clear();
         sessionStorage.clear();
