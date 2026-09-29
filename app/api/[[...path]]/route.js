@@ -22,6 +22,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { isMdSessionCookie, mdSessionValue } from '@/lib/desk-cookie';
+import { findTenderByAnyId, normaliseBidNo } from '@/lib/tender-lookup';
 
 async function leadershipCaller(request) {
   const actor = await resolveActorRole(request);
@@ -1374,39 +1375,21 @@ export async function PUT(request, { params }) {
 
         if (updateFields.pdf_base64) {
            const cleanBase64 = updateFields.pdf_base64.replace(/^data:[^;,]*(;base64)?,/, '');
+           delete updateFields.pdf_base64;
            const fileBuffer = Buffer.from(cleanBase64, 'base64');
 
            if (!isValidPDFBuffer(fileBuffer)) {
               return json({ error: 'The uploaded file is not a readable PDF. Please re-select the file and try again.' }, 400);
            }
 
-           try {
-              const safeFileName = `${Date.now()}-${updateFields.pdf_filename || 'tender.pdf'}`;
-              const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
-              if (uploaded?.url) {
-                 updateFields.pdf_url = uploaded.url;
-                 updateFields.pdf_r2_key = uploaded.key;
-                 delete updateFields.pdf_base64;
-                 // 🚀 FIX: `delete` only drops the field from this $set payload — the
-                 // OLD pdf_base64 stayed on the document, and since the reader prefers
-                 // the in-document blob it kept serving the previous file forever.
-                 // Explicitly clear it so the replacement actually takes effect.
-                 unsetFields.pdf_base64 = '';
-              } else {
-                 storageWarning = isR2Configured()
-                    ? 'Cloudflare R2 upload failed. The PDF was stored in the database instead.'
-                    : 'Cloudflare R2 is not configured on this server. The PDF was stored in the database instead.';
-                 // The new blob stays in updateFields, so drop the now-stale R2 pointers.
-                 unsetFields.pdf_url = '';
-                 unsetFields.pdf_r2_key = '';
-                 delete updateFields.pdf_url;
-                 delete updateFields.pdf_r2_key;
-                 console.error(`Tender PDF upload to Cloudflare R2 failed during edit; keeping pdf_base64 so the file remains readable. ${storageWarning}`);
-              }
-           } catch (uploadError) {
-              storageWarning = 'Cloudflare R2 upload errored. The PDF was stored in the database instead.';
-              console.error('Failed to process tender PDF for upload during edit:', uploadError);
+           const safeFileName = `${Date.now()}-${updateFields.pdf_filename || 'tender.pdf'}`;
+           const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
+           if (!uploaded?.url || !uploaded?.key) {
+              return json({ error: 'The PDF could not be stored. The tender was not changed.' }, 502);
            }
+           updateFields.pdf_url = uploaded.url;
+           updateFields.pdf_r2_key = uploaded.key;
+           unsetFields.pdf_base64 = '';
         }
 
         const updateDoc = { $set: updateFields };
@@ -2033,47 +2016,52 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'tenders' || path === 'api/tenders' || path === 'admin/tenders' || path === 'api/admin/tenders') {
-      const lead = await leadershipCaller(request);
-      if (!lead.ok) return json({ error: 'Sign in required.' }, 401);
-      // 🚀 FIX: Offload PDF storage to Cloudflare R2 instead of MongoDB. Only the
-      // resulting `pdf_url` is persisted, keeping tender documents lightweight.
-      const { pdf_base64, ...tenderFields } = body;
-      let pdf_url = tenderFields.pdf_url || null;
-      let storageWarning = null;
+      const actor = await resolveActorRole(request);
+      if (actor.role !== 'MD' && actor.role !== 'EMPLOYEE') return json({ error: 'Sign in required.' }, 401);
 
-      if (pdf_base64) {
-        const cleanBase64 = pdf_base64.replace(/^data:[^;,]*(;base64)?,/, '');
-        const fileBuffer = Buffer.from(cleanBase64, 'base64');
+      const rawBid = String(body.bid_no || '').trim();
+      const bidNo = normaliseBidNo(rawBid) || rawBid;
+      const title = String(body.title || '').trim();
+      const department = String(body.department || '').trim();
+      const lastDate = body.last_date || '';
+      if (!bidNo || !title || !department || !lastDate) {
+        return json({ error: 'Bid number, title, department, and last date are required.' }, 400);
+      }
+      if (!body.pdf_base64) return json({ error: 'A PDF file is required.' }, 400);
 
-        // 🚀 Reject a bad upload here rather than storing bytes that will later open
-        // as a blank PDF for every client. Buffer.from() won't throw on malformed
-        // base64, so the magic-header check is the only real guard.
-        if (!isValidPDFBuffer(fileBuffer)) {
-          return json({ error: 'The uploaded file is not a readable PDF. Please re-select the file and try again.' }, 400);
-        }
-
-        try {
-          const safeFileName = `${Date.now()}-${tenderFields.pdf_filename || 'tender.pdf'}`;
-          const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
-          if (uploaded?.url) {
-            pdf_url = uploaded.url;
-            tenderFields.pdf_r2_key = uploaded.key;
-          } else {
-            storageWarning = isR2Configured()
-              ? 'Cloudflare R2 upload failed. The PDF was stored in the database instead.'
-              : 'Cloudflare R2 is not configured on this server. The PDF was stored in the database instead.';
-            console.error(`Tender PDF upload to Cloudflare R2 failed; keeping pdf_base64 so the file remains readable. ${storageWarning}`);
-          }
-        } catch (uploadError) {
-          storageWarning = 'Cloudflare R2 upload errored. The PDF was stored in the database instead.';
-          console.error('Failed to process tender PDF for upload:', uploadError);
-        }
+      const existing = await findTenderByAnyId(db, bidNo);
+      if (existing) {
+        return json({ error: 'A tender with this bid number is already published. It was not saved again.' }, 409);
       }
 
-      const newTender = { ...tenderFields, pdf_url, created_at: new Date() };
-      if (!pdf_url && pdf_base64) newTender.pdf_base64 = pdf_base64;
+      const cleanBase64 = String(body.pdf_base64).replace(/^data:[^;,]*(;base64)?,/, '');
+      const fileBuffer = Buffer.from(cleanBase64, 'base64');
+      if (!isValidPDFBuffer(fileBuffer)) {
+        return json({ error: 'The uploaded file is not a readable PDF. Please re-select the file and try again.' }, 400);
+      }
+
+      const safeFileName = `${Date.now()}-${body.pdf_filename || 'tender.pdf'}`;
+      const uploaded = await uploadTenderPDF(fileBuffer, safeFileName);
+      if (!uploaded?.url || !uploaded?.key) {
+        return json({ error: 'The PDF could not be stored. Nothing was published.' }, 502);
+      }
+
+      const newTender = {
+        bid_no: bidNo,
+        title,
+        department,
+        last_date: lastDate,
+        district: String(body.district || '').trim(),
+        category: String(body.category || '').trim(),
+        supply_details: String(body.supply_details || '').trim(),
+        pdf_filename: String(body.pdf_filename || 'tender.pdf'),
+        pdf_url: uploaded.url,
+        pdf_r2_key: uploaded.key,
+        published_by: actor.empId || actor.email || actor.role,
+        created_at: new Date(),
+      };
       const result = await db.collection('tenders').insertOne(newTender);
-      return json({ success: true, message: 'Tender published successfully', id: result.insertedId, storage_warning: storageWarning });
+      return json({ success: true, message: 'Tender published successfully', id: result.insertedId });
     }
 
     if (path === 'settings' || path === 'api/settings') {

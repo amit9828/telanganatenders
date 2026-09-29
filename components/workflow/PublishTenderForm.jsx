@@ -22,7 +22,7 @@ const EMPTY_FORM = {
 };
 
 const CATEGORIES = ['Product', 'Service', 'Works'];
-const PDF_MAX_BYTES = 3 * 1024 * 1024;
+const PDF_MAX_BYTES = 2 * 1024 * 1024;
 
 function lastDateValue(value) {
   if (!value) return '';
@@ -148,7 +148,7 @@ export default function PublishTenderForm({
     if (file.type !== 'application/pdf' && !String(file.name || '').toLowerCase().endsWith('.pdf')) {
       return toast.error('Please upload a PDF file');
     }
-    if (file.size > PDF_MAX_BYTES) return toast.error('PDF file is too large! Please upload under 3MB.');
+    if (file.size > PDF_MAX_BYTES) return toast.error('PDF file is too large. Please upload a file under 2MB.');
     const reader = new FileReader();
     reader.onload = () => {
       const base64Str = reader.result?.toString().split(',')[1] || '';
@@ -173,6 +173,7 @@ export default function PublishTenderForm({
     if (!form.title || !form.department || !form.last_date || !form.bid_no) {
       return toast.error('Please fill all required fields');
     }
+    if (!editingId && !pdfBase64) return toast.error('Attach the tender PDF before publishing.');
     const jobId = editingId ? '' : resolveJobId();
     setPublishing(true);
     try {
@@ -189,6 +190,10 @@ export default function PublishTenderForm({
         }),
       });
       const published = await r.json().catch(() => ({}));
+      if (r.status === 409) {
+        toast.error(published.error || 'This bid number is already published. It was not saved again.');
+        return;
+      }
       if (!r.ok) throw new Error(published.error || 'Failed to save tender');
       let attachJob = null;
       if (!editingId) {
