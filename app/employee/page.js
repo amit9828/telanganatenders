@@ -29,7 +29,7 @@ import {
 } from '@/lib/job-board-state';
 import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
 import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
-import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
+import { consumeStaffBypass, openClientBypass, rememberRealStaffIdent } from '@/lib/tab-handoff';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -137,11 +137,18 @@ export default function EmployeeDashboard() {
       return undefined;
     }
     const bypass = typeof window !== 'undefined' ? consumeStaffBypass() : '';
+    const sessionEmpId = status === 'authenticated' ? String(session?.user?.emp_id || '').trim() : '';
     const fromSession = status === 'authenticated'
       ? String(session?.user?.email || session?.user?.emp_id || '')
       : '';
     const finalEmail = fromSession || bypass;
     setEmail(finalEmail);
+    if (sessionEmpId) {
+      setEmpData((prev) => ({ ...prev, id: sessionEmpId, name: session?.user?.name || prev.name }));
+      rememberRealStaffIdent(sessionEmpId);
+    } else if (status === 'authenticated' && session?.user?.email) {
+      rememberRealStaffIdent(String(session.user.email).trim());
+    }
     if (!finalEmail) {
       setLoading(false);
       return undefined;
