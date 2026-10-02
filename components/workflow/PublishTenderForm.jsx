@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Loader2, Pencil, PlusCircle, UploadCloud } from 'lucide-react';
 import { workflowFetch, staffHeaders } from '@/components/workflow/api';
 import { TS_AP_DISTRICTS } from '@/lib/regions';
+import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, bidNumberError } from '@/lib/bid-number';
 
 const EMPTY_FORM = {
   bid_no: '',
@@ -173,6 +174,7 @@ export default function PublishTenderForm({
     if (!form.title || !form.department || !form.last_date || !form.bid_no) {
       return toast.error('Please fill all required fields');
     }
+    if (bidNumberError(form.bid_no)) return;
     if (!editingId && !pdfBase64) return toast.error('Attach the tender PDF before publishing.');
     const jobId = editingId ? '' : resolveJobId();
     setPublishing(true);
@@ -191,7 +193,7 @@ export default function PublishTenderForm({
       });
       const published = await r.json().catch(() => ({}));
       if (r.status === 409) {
-        toast.error(published.error || 'This bid number is already published. It was not saved again.');
+        toast.error(DUPLICATE_BID_MESSAGE);
         return;
       }
       if (!r.ok) throw new Error(published.error || 'Failed to save tender');
@@ -249,7 +251,10 @@ export default function PublishTenderForm({
           </div>
           <div>
             <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Bid Number (Internal Use) *</Label>
-            <Input required value={form.bid_no} onChange={(e) => setForm({ ...form, bid_no: e.target.value })} placeholder="e.g. GEM/2026/B/..." className="bg-white h-10" />
+            <Input required value={form.bid_no} onChange={(e) => setForm({ ...form, bid_no: e.target.value })} placeholder="e.g. GEM/2026/B/8091830" className="bg-white h-10" aria-invalid={bidNumberError(form.bid_no) ? true : undefined} />
+            {bidNumberError(form.bid_no) && (
+              <p className="mt-1 text-xs font-medium text-red-600">{BID_NUMBER_FORMAT_MESSAGE}</p>
+            )}
           </div>
           <div>
             <Label className="text-sm font-bold text-[#0A2647] mb-1 block">Department Name *</Label>

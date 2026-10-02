@@ -22,7 +22,7 @@ import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, record
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { isMdSessionCookie, mdSessionValue } from '@/lib/desk-cookie';
-import { findTenderByAnyId, normaliseBidNo } from '@/lib/tender-lookup';
+import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, parseBidNumber } from '@/lib/bid-number';
 
 async function leadershipCaller(request) {
   const actor = await resolveActorRole(request);
@@ -1365,7 +1365,18 @@ export async function PUT(request, { params }) {
         const tenderId = pathArray[1];
         if (!ObjectId.isValid(tenderId)) return json({ error: 'Invalid Tender ID' }, 400);
         let updateFields = { ...body, updated_at: new Date() };
-        delete updateFields._id; 
+        delete updateFields._id;
+
+        if (updateFields.bid_no != null) {
+           const bidNo = parseBidNumber(updateFields.bid_no);
+           if (!bidNo) return json({ error: BID_NUMBER_FORMAT_MESSAGE }, 400);
+           updateFields.bid_no = bidNo;
+           const clash = await db.collection('tenders').findOne(
+              { bid_no: bidNo, _id: { $ne: new ObjectId(tenderId) } },
+              { projection: { _id: 1 } },
+           );
+           if (clash) return json({ error: DUPLICATE_BID_MESSAGE }, 409);
+        }
 
         // 🚀 FIX: Editing a tender with a new PDF crashed the server because the raw
         // base64 was passed straight to MongoDB (exceeding the 16MB BSON doc limit /
@@ -2020,18 +2031,19 @@ export async function POST(request, { params }) {
       if (actor.role !== 'MD' && actor.role !== 'EMPLOYEE') return json({ error: 'Sign in required.' }, 401);
 
       const rawBid = String(body.bid_no || '').trim();
-      const bidNo = normaliseBidNo(rawBid) || rawBid;
       const title = String(body.title || '').trim();
       const department = String(body.department || '').trim();
       const lastDate = body.last_date || '';
-      if (!bidNo || !title || !department || !lastDate) {
+      if (!rawBid || !title || !department || !lastDate) {
         return json({ error: 'Bid number, title, department, and last date are required.' }, 400);
       }
+      const bidNo = parseBidNumber(rawBid);
+      if (!bidNo) return json({ error: BID_NUMBER_FORMAT_MESSAGE }, 400);
       if (!body.pdf_base64) return json({ error: 'A PDF file is required.' }, 400);
 
-      const existing = await findTenderByAnyId(db, bidNo);
+      const existing = await db.collection('tenders').findOne({ bid_no: bidNo }, { projection: { _id: 1 } });
       if (existing) {
-        return json({ error: 'A tender with this bid number is already published. It was not saved again.' }, 409);
+        return json({ error: DUPLICATE_BID_MESSAGE }, 409);
       }
 
       const cleanBase64 = String(body.pdf_base64).replace(/^data:[^;,]*(;base64)?,/, '');

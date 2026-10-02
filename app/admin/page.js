@@ -27,6 +27,7 @@ import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPan
 import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations';
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
+import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, bidNumberError } from '@/lib/bid-number';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { currentHandler, jobDeadline } from '@/lib/tender-deadline';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile } from '@/components/workflow/api';
@@ -532,7 +533,8 @@ export default function AdminPage() {
 
   const publish = async (e) => {
     e.preventDefault();
-    if (!form.title || !form.department || !form.last_date || !form.district) return toast.error('Fill all required fields');
+    if (!form.title || !form.department || !form.last_date || !form.district || !form.bid_no) return toast.error('Fill all required fields');
+    if (bidNumberError(form.bid_no)) return toast.error(BID_NUMBER_FORMAT_MESSAGE);
     setLoading(true);
     try {
       const endpoint = isEditingTender ? `/api/tenders/${isEditingTender}` : '/api/tenders';
@@ -546,6 +548,7 @@ export default function AdminPage() {
         body: JSON.stringify(payload),
       });
       const result = await r.json().catch(() => null);
+      if (r.status === 409) return toast.error(DUPLICATE_BID_MESSAGE);
       // Show the server's actual reason (e.g. an unreadable PDF) instead of a bare status code.
       if (!r.ok) return toast.error(result?.error || `Server Error (${r.status})`);
 
