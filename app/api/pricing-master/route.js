@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { resolveActorRole, resolveClientEmail } from '@/lib/staff-auth';
 import { PRICING_COLLECTION, seedPricingMaster } from '@/lib/billing-schema';
+import { clearPublicPricingCache, getPublicPricing } from '@/lib/public-pricing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,16 +11,7 @@ function json(data, status = 200) {
   return NextResponse.json(data, { status });
 }
 
-const PUBLIC_PRICE = { service_key: 1, name: 1, base_price: 1, category: 1, bid_credits: 1, bid_tiers: 1, _id: 0 };
-const PUBLIC_CATALOG_TTL_MS = 60_000;
-
 let catalogSeeded = false;
-let publicCatalog = null;
-let publicCatalogAt = 0;
-
-function publicCatalogFresh() {
-  return Array.isArray(publicCatalog) && Date.now() - publicCatalogAt < PUBLIC_CATALOG_TTL_MS;
-}
 
 async function ensureCatalogSeeded(db) {
   if (catalogSeeded) return;
@@ -27,30 +19,15 @@ async function ensureCatalogSeeded(db) {
   catalogSeeded = true;
 }
 
-async function loadPublicCatalog(db) {
-  if (publicCatalogFresh()) return publicCatalog;
-  await ensureCatalogSeeded(db);
-  const items = await db.collection(PRICING_COLLECTION).find(
-    { is_active: { $ne: false }, individually_purchasable: { $ne: false } },
-    { projection: PUBLIC_PRICE },
-  ).sort({ category: 1, name: 1 }).toArray();
-  publicCatalog = items;
-  publicCatalogAt = Date.now();
-  return items;
-}
-
 export async function GET(request) {
   const actor = await resolveActorRole(request);
   const email = await resolveClientEmail(request);
   const signedIn = Boolean(actor.role || email);
-  if (!signedIn && publicCatalogFresh()) {
-    return json({ items: publicCatalog, canEdit: false });
-  }
-  const db = await getDb();
   if (!signedIn) {
-    const items = await loadPublicCatalog(db);
+    const items = await getPublicPricing();
     return json({ items, canEdit: false });
   }
+  const db = await getDb();
   await ensureCatalogSeeded(db);
   const items = await db.collection(PRICING_COLLECTION).find({}).sort({ category: 1, name: 1 }).toArray();
   return json({
@@ -91,8 +68,7 @@ export async function PUT(request) {
       { $set: update },
     );
   }
-  publicCatalog = null;
-  publicCatalogAt = 0;
+  clearPublicPricingCache();
   const items = await col.find({}).sort({ category: 1, name: 1 }).toArray();
   return json({ items, canEdit: true });
 }

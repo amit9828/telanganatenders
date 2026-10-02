@@ -89,9 +89,10 @@ function PriceChecks({ rows, picked, onToggle, priceOf, dense = false, showPrice
   );
 }
 
-export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = false }) {
-  const [items, setItems] = useState(INITIAL_ITEMS);
-  const [bids, setBids] = useState(1);
+export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = false, initialItems }) {
+  const seeded = Array.isArray(initialItems) && initialItems.length ? initialItems : null;
+  const [items, setItems] = useState(seeded || INITIAL_ITEMS);
+  const [bids, setBids] = useState('1');
   const [trackKey, setTrackKey] = useState('track_1m');
   const [registration, setRegistration] = useState([]);
   const [thirdParty, setThirdParty] = useState([]);
@@ -103,6 +104,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
   const [sent, setSent] = useState(false);
 
   useEffect(() => {
+    if (seeded) return undefined;
     let cancelled = false;
     fetch('/api/pricing-master', { credentials: 'include' })
       .then((res) => res.json())
@@ -111,20 +113,18 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [seeded]);
 
   const priceOf = (key) => Number(items.find((item) => item.service_key === key)?.base_price) || 0;
   const sumKeys = (keys) => keys.reduce((sum, key) => sum + priceOf(key), 0);
   const paygItem = items.find((item) => item.service_key === 'custom_bids_10');
-  const paygTotal = paygBase(paygItem, bids);
+  const bidCount = Math.floor(Number(bids));
+  const bidCountValid = Number.isFinite(bidCount) && bidCount >= 1;
+  const paygTotal = bidCountValid ? paygBase(paygItem, bidCount) : 0;
   const regTotal = useMemo(() => sumKeys(registration), [registration, items]);
   const coreTotal = useMemo(() => sumKeys(core), [core, items]);
 
   const toggle = (setter) => (key) => setter((prev) => (prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key]));
-  const setBidCount = (value) => {
-    const next = Math.floor(Number(value));
-    setBids(Number.isFinite(next) && next >= 1 ? next : 1);
-  };
   const labelsFor = (rows, keys) => rows.filter((row) => keys.includes(row.key)).map((row) => row.label);
 
   const openLead = (group) => {
@@ -169,9 +169,9 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
                 <p className="mt-2 text-sm font-bold text-emerald-700">Valid for 3 months</p>
                 <p className="text-4xl font-black text-[#0A2647] mt-5">{rupee(paygTotal)}</p>
                 <label className="mt-4 text-sm font-semibold text-slate-700" htmlFor={cardsOnly ? 'promo-bid-count' : 'bid-count'}>Number of bids</label>
-                <input id={cardsOnly ? 'promo-bid-count' : 'bid-count'} type="number" min="1" inputMode="numeric" value={bids} onChange={(e) => setBidCount(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
+                <input id={cardsOnly ? 'promo-bid-count' : 'bid-count'} type="number" min="1" inputMode="numeric" value={bids} onChange={(e) => setBids(e.target.value)} className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-lg font-bold text-[#0A2647]" />
                 <div className="mt-5 flex-1"><FeatureList items={PAYG_FEATURES} /></div>
-                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" onClick={() => onSubscribe?.(subscribeIntent(paygTotal, { planId: 'custom_bids_10', bidCount: bids }))}>Subscribe</Button>
+                <Button className="mt-6 w-full bg-[#0A2647] hover:bg-emerald-600 h-11" disabled={!bidCountValid} onClick={() => { if (bidCountValid) onSubscribe?.(subscribeIntent(paygTotal, { planId: 'custom_bids_10', bidCount })); }}>Subscribe</Button>
               </article>
               )}
 
