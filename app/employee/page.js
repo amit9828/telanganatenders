@@ -141,9 +141,11 @@ export default function EmployeeDashboard() {
     const fromSession = status === 'authenticated'
       ? String(session?.user?.email || session?.user?.emp_id || '')
       : '';
-    const finalEmail = fromSession || bypass;
+    const finalEmail = bypass || fromSession;
     setEmail(finalEmail);
-    if (sessionEmpId) {
+    if (bypass) {
+      rememberRealStaffIdent(bypass);
+    } else if (sessionEmpId) {
       setEmpData((prev) => ({ ...prev, id: sessionEmpId, name: session?.user?.name || prev.name }));
       rememberRealStaffIdent(sessionEmpId);
     } else if (status === 'authenticated' && session?.user?.email) {
@@ -229,9 +231,19 @@ export default function EmployeeDashboard() {
       if (got.employees) {
         const team = got.employees.team || [];
         setListIfChanged(setTeamMembers, team);
-        const mine = team.find((t) => String(t.email || '').toLowerCase() === String(userEmail || '').toLowerCase());
+        const needle = String(userEmail || '').trim().toLowerCase();
+        const mine = team.find((t) => {
+          const rowEmail = String(t.email || '').trim().toLowerCase();
+          const rowId = String(t.emp_id || '').trim().toLowerCase();
+          return needle && (rowEmail === needle || rowId === needle);
+        });
         if (mine?.emp_id) {
+          const canonical = String(mine.email || '').trim();
           setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer' });
+          if (canonical) {
+            rememberRealStaffIdent(canonical);
+            if (canonical.toLowerCase() !== needle) setEmail(canonical);
+          }
         }
       }
       if (got.workflow) {
@@ -733,10 +745,13 @@ export default function EmployeeDashboard() {
      o.district?.toLowerCase().includes(officerSearch.toLowerCase())
   );
 
-  const filteredTenders = liveTendersOnly(publicTenders).filter(t => 
-     t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
-     t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
-  );
+  const livePublished = liveTendersOnly(publicTenders);
+  const tenderNeedle = (tenderSearch || '').trim().toLowerCase();
+  const filteredTenders = !tenderNeedle
+    ? livePublished
+    : livePublished.filter((t) =>
+        [t.bid_no, t.title].some((v) => String(v || '').toLowerCase().includes(tenderNeedle))
+      );
   const empTenderPages = Math.max(1, Math.ceil(filteredTenders.length / 10));
   const safeTenderPage = Math.min(tenderPage, empTenderPages);
   const pagedTenders = filteredTenders.slice((safeTenderPage - 1) * 10, safeTenderPage * 10);

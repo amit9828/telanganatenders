@@ -36,7 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
 import { workflowDocActions } from '@/components/workflow/jobDocActions';
-import { consumeStaffBypass, openClientBypass } from '@/lib/tab-handoff';
+import { consumeStaffBypass, openClientBypass, rememberRealStaffIdent } from '@/lib/tab-handoff';
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { BrandMark } from '@/components/BrandLogo';
@@ -86,9 +86,15 @@ export default function StaffOpsDesk({ desk }) {
     if (desk === 'tl') return d === DESIGNATIONS.DOC_TEAM_TL;
     return d === DESIGNATIONS.DOC_TEAM_MEMBER;
   })();
-  const staffEmail = localEmpEmail || (sessionMatchesDesk ? session?.user?.email : '');
-  const selfFromTeam = team.find((t) => String(t.email || '').toLowerCase() === String(staffEmail || '').toLowerCase())
-    || (localEmpEmail ? team.find((t) => String(t.emp_id || '') === String(localEmpEmail)) : null);
+  const bypassIdent = String(localEmpEmail || '').trim().toLowerCase();
+  const selfFromTeam = team.find((t) => {
+    const rowEmail = String(t.email || '').trim().toLowerCase();
+    const rowId = String(t.emp_id || '').trim().toLowerCase();
+    return bypassIdent && (rowEmail === bypassIdent || rowId === bypassIdent);
+  }) || (sessionMatchesDesk ? team.find((t) => String(t.email || '').toLowerCase() === String(session?.user?.email || '').toLowerCase()) : null);
+  const staffEmail = String(selfFromTeam?.email || '').trim()
+    || (localEmpEmail.includes('@') ? localEmpEmail : '')
+    || (sessionMatchesDesk ? String(session?.user?.email || '').trim() : '');
   const jwtEmpId = sessionMatchesDesk && session?.user?.emp_id ? session.user.emp_id : '';
   const selfId = selfFromTeam?.emp_id || jwtEmpId || '';
   const isGm = desk === 'gm';
@@ -202,8 +208,19 @@ export default function StaffOpsDesk({ desk }) {
 
   useEffect(() => {
     if (!onDesk || typeof window === 'undefined') return;
-    setLocalEmpEmail(consumeStaffBypass());
+    const ident = consumeStaffBypass();
+    if (!ident) return;
+    setLocalEmpEmail(ident);
+    rememberRealStaffIdent(ident);
   }, [onDesk]);
+
+  useEffect(() => {
+    const canonical = String(selfFromTeam?.email || '').trim();
+    if (!canonical || !localEmpEmail) return;
+    if (canonical.toLowerCase() === localEmpEmail.toLowerCase()) return;
+    setLocalEmpEmail(canonical);
+    rememberRealStaffIdent(canonical);
+  }, [selfFromTeam, localEmpEmail]);
 
   useEffect(() => {
     if (!onDesk) return undefined;

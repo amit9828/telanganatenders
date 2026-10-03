@@ -24,6 +24,12 @@ import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isM
 import { isMdSessionCookie, mdSessionValue } from '@/lib/desk-cookie';
 import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, parseBidNumber } from '@/lib/bid-number';
 
+function recordedPaymentAmount(payment) {
+  const raw = payment?.amount ?? payment?.total_amount ?? payment?.order_amount;
+  const amount = Number(raw);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 async function leadershipCaller(request) {
   const actor = await resolveActorRole(request);
   if (actor.role === 'MD' || isGmActor(actor)) return { ok: true, actor };
@@ -341,7 +347,7 @@ async function handleGET(request, { params }, attempt = 1) {
         db.collection('payments').countDocuments({ status: 'SUCCESS' }),
         db.collection('payments').aggregate([
           { $match: { status: 'SUCCESS' } },
-          { $group: { _id: null, total: { $sum: { $convert: { input: '$amount', to: 'double', onError: 0, onNull: 0 } } } } },
+          { $group: { _id: null, total: { $sum: { $convert: { input: { $ifNull: ['$amount', { $ifNull: ['$total_amount', '$order_amount'] }] }, to: 'double', onError: 0, onNull: 0 } } } } },
         ]).toArray(),
       ]);
       const totalRevenue = revenueAgg[0]?.total || 0;
@@ -1061,7 +1067,7 @@ async function handleGET(request, { params }, attempt = 1) {
         return {
           _id: `online-${p.order_id || p._id}`,
           type: 'CREDIT',
-          amount: Number(p.amount) || 0,
+          amount: recordedPaymentAmount(p),
           reason: p.reason || `${p.plan === 'single' ? 'Tender/Service' : `${p.plan} subscription`} payment`,
           client_id: email || 'N/A',
           client_name: nameByEmail.get(email) || email,

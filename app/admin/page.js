@@ -316,7 +316,7 @@ export default function AdminPage() {
     try {
       const stamp = Date.now();
       const tasks = {};
-      if (want.has('tenders')) tasks.tenders = safeFetch(`/api/tenders?role=admin&limit=200&t=${stamp}`);
+      if (want.has('tenders')) tasks.tenders = safeFetch(`/api/tenders?t=${stamp}`);
       if (want.has('stats')) tasks.stats = safeFetch(`/api/admin/stats?t=${stamp}`);
       if (want.has('tickets')) tasks.tickets = safeFetch(`/api/tickets?role=admin&t=${stamp}`);
       if (want.has('clients')) tasks.clients = safeFetch(`/api/users/approved?t=${stamp}`);
@@ -1095,11 +1095,13 @@ export default function AdminPage() {
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
-  const filteredTenders = liveTendersOnly(tenders || []).filter(t => 
-     t.bid_no?.toLowerCase().includes((tenderSearch || '').toLowerCase()) || 
-     t.title?.toLowerCase().includes((tenderSearch || '').toLowerCase()) ||
-     t.department?.toLowerCase().includes((tenderSearch || '').toLowerCase())
-  );
+  const livePublished = liveTendersOnly(tenders || []);
+  const tenderNeedle = (tenderSearch || '').trim().toLowerCase();
+  const filteredTenders = !tenderNeedle
+    ? livePublished
+    : livePublished.filter((t) =>
+        [t.bid_no, t.title, t.department].some((v) => String(v || '').toLowerCase().includes(tenderNeedle))
+      );
   // 🚀 Pagination: slice filteredTenders into pages of `tendersPerPage`
   const totalTenderPages = Math.max(1, Math.ceil(filteredTenders.length / tendersPerPage));
   const paginatedTenders = filteredTenders.slice((tenderPage - 1) * tendersPerPage, tenderPage * tendersPerPage);

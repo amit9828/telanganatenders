@@ -24,7 +24,10 @@ export async function workflowFetch(url, options = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(data.error || `Request failed (${res.status})`);
+    const message = res.status === 413
+      ? 'PDF is too large for the server (over ~4.5MB). Upload a file under 4MB.'
+      : (data.error || `Request failed (${res.status})`);
+    const err = new Error(message);
     err.status = res.status;
     err.data = data;
     throw err;

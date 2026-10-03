@@ -34,18 +34,32 @@ function loadViewPrices() {
   return inflight;
 }
 
+function pricesFromItems(items) {
+  const map = {};
+  for (const item of items || []) {
+    if (VIEWS.some((row) => row.key === item.service_key)) map[item.service_key] = Number(item.base_price) || 0;
+  }
+  return Object.keys(map).length ? map : null;
+}
+
 if (typeof window !== 'undefined') loadViewPrices();
 
-export default function ViewUnlockModal({ open, tenderTitle, onClose, onChoose }) {
-  const [prices, setPrices] = useState(cachedPrices || {});
+export default function ViewUnlockModal({ open, tenderTitle, onClose, onChoose, initialItems }) {
+  const [prices, setPrices] = useState(() => pricesFromItems(initialItems) || cachedPrices || {});
 
   useEffect(() => {
+    const seeded = pricesFromItems(initialItems);
+    if (seeded) {
+      cachedPrices = seeded;
+      setPrices(seeded);
+      return undefined;
+    }
     let cancelled = false;
     loadViewPrices().then((map) => {
       if (!cancelled && map) setPrices(map);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [initialItems]);
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose?.(); }}>
