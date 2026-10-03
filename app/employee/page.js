@@ -745,10 +745,13 @@ export default function EmployeeDashboard() {
      o.district?.toLowerCase().includes(officerSearch.toLowerCase())
   );
 
-  const filteredTenders = liveTendersOnly(publicTenders).filter(t => 
-     t.bid_no?.toLowerCase().includes(tenderSearch.toLowerCase()) || 
-     t.title?.toLowerCase().includes(tenderSearch.toLowerCase())
-  );
+  const livePublished = liveTendersOnly(publicTenders);
+  const tenderNeedle = (tenderSearch || '').trim().toLowerCase();
+  const filteredTenders = !tenderNeedle
+    ? livePublished
+    : livePublished.filter((t) =>
+        [t.bid_no, t.title].some((v) => String(v || '').toLowerCase().includes(tenderNeedle))
+      );
   const empTenderPages = Math.max(1, Math.ceil(filteredTenders.length / 10));
   const safeTenderPage = Math.min(tenderPage, empTenderPages);
   const pagedTenders = filteredTenders.slice((safeTenderPage - 1) * 10, safeTenderPage * 10);

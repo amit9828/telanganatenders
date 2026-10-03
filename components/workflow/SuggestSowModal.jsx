@@ -17,6 +17,9 @@ export default function SuggestSowModal({ open, onOpenChange, job, clients = [],
   const submit = async () => {
     if (!clientEmail) return toast.error('Select a client from the database.');
     if (!file) return toast.error('Upload the SOW PDF. Typed scope is not allowed.');
+    if (file.size > 4 * 1024 * 1024) {
+      return toast.error('SOW PDF must be under 4MB. Larger files hit the host 4.5MB request limit (413).');
+    }
     if (quotationRequired == null) return toast.error('Is a Quotation Required from the client? (Yes/No)');
     setBusy(true);
     try {

@@ -97,6 +97,10 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
       toast.error('SOW must be a PDF.');
       return;
     }
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('SOW PDF must be under 4MB. Larger files hit the host 4.5MB request limit (413).');
+      return;
+    }
     if (!jobId) return toast.error('This parked tender is missing an id.');
     setBusyId(jobId);
     try {
@@ -114,7 +118,12 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
         body: form,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Forward failed (${res.status})`);
+      if (!res.ok) {
+        if (res.status === 413) {
+          throw new Error('SOW PDF is too large for the server (over ~4.5MB). Upload a file under 4MB.');
+        }
+        throw new Error(data.error || `Forward failed (${res.status})`);
+      }
       toast.success('Sent to client. They will see it on Recommended.');
       setSowByJob((prev) => {
         const next = { ...prev };
