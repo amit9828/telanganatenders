@@ -1,0 +1,34 @@
+import { NextResponse } from 'next/server';
+import { getDb } from '@/lib/db';
+import { findOrCreateDriveFolder } from '@/lib/drive';
+
+export async function POST(request) {
+  try {
+    const { email, folderName } = await request.json();
+
+    if (!email || !folderName) {
+      return NextResponse.json({ error: 'Missing client email or folder name' }, { status: 400 });
+    }
+
+    // 1. Google Drive లో ఫోల్డర్ క్రియేట్ చేయడం
+    const { folderId, folderLink } = await findOrCreateDriveFolder({ folderName });
+
+    // 2. MongoDB లో ఫోల్డర్ లింక్ సేవ్ చేయడం (ఇదే ఇందాక మిస్సయిన అసలైన మ్యాజిక్)
+    const db = await getDb();
+    await db.collection('users').updateOne(
+      { email: email.toLowerCase() },
+      {
+        $set: {
+          drive_folder_id: folderId,
+          drive_link: folderLink,
+          drive_folder_link: folderLink
+        }
+      }
+    );
+
+    return NextResponse.json({ success: true, folderId, folderLink });
+  } catch (error) {
+    console.error('Drive Folder Creation Error:', error);
+    return NextResponse.json({ error: error.message || 'Server Error' }, { status: 500 });
+  }
+}
