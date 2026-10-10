@@ -10,10 +10,10 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing client email or folder name' }, { status: 400 });
     }
 
-    // 1. Google Drive లో ఫోల్డర్ క్రియేట్ చేయడం
+    // 1. గూగుల్ డ్రైవ్‌లో ఫోల్డర్ క్రియేట్ చేయడం
     const { folderId, folderLink } = await findOrCreateDriveFolder({ folderName });
 
-    // 2. MongoDB లో ఫోల్డర్ లింక్ సేవ్ చేయడం (ఇదే ఇందాక మిస్సయిన అసలైన మ్యాజిక్)
+    // 2. డేటాబేస్ (MongoDB) లో లింక్ సేవ్ చేయడం
     const db = await getDb();
     await db.collection('users').updateOne(
       { email: email.toLowerCase() },
