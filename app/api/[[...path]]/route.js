@@ -16,7 +16,7 @@ import {
 // lib/payments.js (a plain module, not a route.js) so it can be imported safely from
 // both this catch-all route AND app/api/payments/route.js without violating
 // Next.js's route.js export contract. Only thin delegating calls remain below.
-import { createCashfreeOrder, verifyCashfreeOrder, handleCashfreeWebhook, recordOfflineLedgerPayment } from '@/lib/payments';
+import { findOrCreateDriveFolder, createDriveFolder, ensureEntityDriveFolder, isDriveConfigured, uploadDriveFile } from '@/lib/drive';
 // 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
@@ -2493,16 +2493,19 @@ export async function POST(request, { params }) {
     if (path === 'drive/create-folder' || path === 'api/drive/create-folder') {
        const { folderName, email, collection, emp_id } = body;
        try {
-          const folder = await createDriveFolder({ folderName: folderName || `Client - ${email || emp_id || 'Folder'}` });
+          // 1. పాత createDriveFolder బదులు findOrCreateDriveFolder వాడాలి (No duplicates!)
+          const folder = await findOrCreateDriveFolder({ folderName: folderName || `Client - ${email || emp_id || 'Folder'}` });
+          
+          // 2. డేటాబేస్ లో drive_link మరియు drive_folder_link రెండూ సేవ్ అవ్వాలి
           if (collection === 'employees' && emp_id) {
              await db.collection('employees').updateOne(
                 { emp_id },
-                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
+                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink, drive_link: folder.folderLink } }
              );
           } else if (email) {
              await db.collection('users').updateOne(
                 { email: String(email).toLowerCase() },
-                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink } }
+                { $set: { drive_folder_id: folder.folderId, drive_folder_link: folder.folderLink, drive_link: folder.folderLink } }
              );
           }
           return json({ success: true, folderId: folder.folderId, folderLink: folder.folderLink });
