@@ -795,14 +795,19 @@ async function handleGET(request, { params }, attempt = 1) {
     // to live here — removed to avoid the two copies drifting apart again.
     
     if (path === 'users/approved' || path === 'api/users/approved') {
-      const lead = await leadershipCaller(request);
-      if (!lead.ok) return json({ error: 'Only MD or GM can view clients.' }, 403);
+      const browse = await leadershipCaller(request);
+      const staffBrowse = browse.ok || browse.actor?.role === 'EMPLOYEE' || Boolean(browse.actor?.empId);
+      
+      // 🚀 FIX 1: ఇక్కడ TL, Employee కి కూడా యాక్సెస్ ఇచ్చాం
+      if (!staffBrowse) return json({ error: 'Only staff can view clients.' }, 403);
+      
       const __t = Date.now();
       const directory = searchParams.get('directory') === '1';
       const users = await db.collection('users')
          .find({ onboarding_complete: true })
          .project(directory
-           ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1 }
+           // 🚀 FIX 2: ఇక్కడ drive_link, drive_folder_link, whatsapp_verified యాడ్ చేశాం (దీని వల్లే GM కి డ్రైవ్ బటన్ కనిపిస్తుంది)
+           ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1, drive_link: 1, drive_folder_link: 1, whatsapp_verified: 1 }
            : { password: 0, 'vault_docs.file_base64': 0 })
          .sort({ created_at: -1 })
          .toArray();
