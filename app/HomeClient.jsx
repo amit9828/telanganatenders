@@ -479,14 +479,50 @@ export default function App({ initialItems = [] }) {
          return;
       }
       
+      const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
+    setBuying(true); setGuestPayModal(false);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const isSubscription = planId === 'month' || planId === 'year';
+    
+    try {
+      const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
+      const r1 = await fetch(endpoint, { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({
+          email: userEmail,
+          phone: userPhone,
+          plan: planId,
+          tenderId: pendingTender?._id || pendingTender?.id,
+          return_to: '/',
+        })
+      });
+      const d1 = await r1.json();
+      
+      if (!r1.ok || (!d1.payment_session_id && !d1.order?.payment_session_id)) {
+         toast.error(d1.error || 'Failed to initialize payment');
+         setBuying(false);
+         return;
+      }
+      
       const cashfree = await load({ mode: "production" });
       const checkoutOptions = {
         paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
         returnUrl: `${window.location.origin}/payment-status?order_id={order_id}`,
       };
       
-      await cashfree.checkout(checkoutOptions);
-    } catch (e) { toast.error('Could not start payment'); } finally { setBuying(false); }
+      // 🚀 FIX: Drop-off Handling (యూజర్ క్యాన్సిల్ చేస్తే బటన్ మళ్ళీ నార్మల్ అవ్వాలి)
+      cashfree.checkout(checkoutOptions).then((result) => {
+         if (result && result.error) {
+            toast.error(result.error.message || "Payment was cancelled.");
+            setBuying(false); // ఇది ఉండటం వల్లే బటన్ మళ్ళీ క్లిక్ చేయడానికి వీలుగా మారుతుంది
+         }
+      });
+      
+    } catch (e) { 
+      toast.error('Could not start payment'); 
+      setBuying(false); 
+    } 
   };
 
   const chooseCatalogPlan = (intent) => {
