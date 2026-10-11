@@ -479,39 +479,12 @@ export default function App({ initialItems = [] }) {
          return;
       }
       
-  const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
-    setBuying(true); setGuestPayModal(false);
-    await new Promise((r) => setTimeout(r, 250));
-
-    const isSubscription = planId === 'month' || planId === 'year';
-    
-    try {
-      const endpoint = isSubscription ? '/api/subscription/create' : '/api/payment/order';
-      const r1 = await fetch(endpoint, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({
-          email: userEmail,
-          phone: userPhone,
-          plan: planId,
-          tenderId: pendingTender?._id || pendingTender?.id,
-          return_to: '/',
-        })
-      });
-      const d1 = await r1.json();
-      
-      if (!r1.ok || (!d1.payment_session_id && !d1.order?.payment_session_id)) {
-         toast.error(d1.error || 'Failed to initialize payment');
-         setBuying(false);
-         return;
-      }
-      
       const cashfree = await load({ mode: "production" });
       const checkoutOptions = {
         paymentSessionId: d1.payment_session_id || d1.order?.payment_session_id,
         returnUrl: `${window.location.origin}/payment-status?order_id={order_id}`,
       };
       
-      // 🚀 FIX: Drop-off Handling
       cashfree.checkout(checkoutOptions).then((result) => {
          if (result && result.error) {
             toast.error(result.error.message || "Payment was cancelled.");
@@ -523,8 +496,7 @@ export default function App({ initialItems = [] }) {
       toast.error('Could not start payment'); 
       setBuying(false); 
     } 
-  };
-
+  }; // <-- 🚀 FIX: ఈ క్లోజింగ్ బ్రాకెట్ మిస్ అవ్వడం వల్లే <eof> ఎర్రర్ వచ్చింది!
   const chooseCatalogPlan = (intent) => {
     const serviceKey = intent?.planId || intent;
     const planIds = intent?.planIds;
