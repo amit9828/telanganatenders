@@ -43,8 +43,13 @@ export async function POST(request) {
     const body = await request.json().catch(() => null);
     if (!body) return json({ error: 'Invalid JSON body' }, 400);
 
-    if (action === 'order') return await createCashfreeOrder(db, body, request);
-    if (action === 'verify') return await verifyCashfreeOrder(db, body, request);
+    // 🚀 FIX: Growth Partner, Monthly, Yearly మరియు Tracking ప్లాన్స్ అన్నీ సపోర్ట్ చేసేలా కండిషన్స్ యాడ్ చేశాం
+    if (action === 'order' || action === 'subscription' || body.plan === 'month' || body.plan === 'year' || body.plan === 'saas_unlimited' || body.plan?.startsWith('track_')) {
+      return await createCashfreeOrder(db, body, request);
+    }
+    if (action === 'verify') {
+      return await verifyCashfreeOrder(db, body, request);
+    }
 
     return json({ error: 'Unknown payment action', action }, 404);
   } catch (error) {
