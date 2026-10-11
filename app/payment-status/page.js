@@ -27,38 +27,54 @@ function PaymentStatusContent() {
       return;
     }
 
-    fetch('/api/payment/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_id })
-    })
-    .then(res => res.json())
-    .then(data => {
-      const returnTo = safePath(data.return_to) || fallbackNext;
-      // Auto-open magic link: send the tender ID back to whichever page opened checkout.
-      const target = returnTo
-        ? (data.tenderId ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
-        : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
+    // 🚀 FIX: Cashfree కి టైమ్ ఇవ్వడానికి చిన్న Delay మరియు 3 సార్లు Retry చేసే సిస్టమ్
+    const verifyOrder = async (retries = 3) => {
+      try {
+        const res = await fetch('/api/payment/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id })
+        });
+        const data = await res.json();
 
-      setDestination(target);
-      if (data.success) {
-        sessionStorage.removeItem('tt_pending_plan');
-        sessionStorage.removeItem('tt_pending_bid_count');
-        sessionStorage.removeItem('tt_pending_plans');
-        sessionStorage.removeItem('tt_pending_tender');
-        setStatus('success');
-        setTimeout(() => router.push(target), 3000);
-      } else {
-        setDestination(billingReturn);
-        setStatus('failed');
-        setTimeout(() => router.push(billingReturn), 4000);
+        // రిజల్ట్ రాకపోతే, లేదా ఇంకా పెండింగ్ లో ఉంటే 2 సెకన్లు ఆగి మళ్ళీ ట్రై చేస్తుంది
+        if (!res.ok && retries > 0) {
+          setTimeout(() => verifyOrder(retries - 1), 2000);
+          return;
+        }
+
+        const returnTo = safePath(data.return_to) || fallbackNext;
+        const target = returnTo
+          ? (data.tenderId ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
+          : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
+
+        setDestination(target);
+        
+        if (data.success) {
+          sessionStorage.removeItem('tt_pending_plan');
+          sessionStorage.removeItem('tt_pending_bid_count');
+          sessionStorage.removeItem('tt_pending_plans');
+          sessionStorage.removeItem('tt_pending_tender');
+          setStatus('success');
+          setTimeout(() => router.push(target), 3000);
+        } else {
+          setDestination(billingReturn);
+          setStatus('failed');
+          setTimeout(() => router.push(billingReturn), 4000);
+        }
+      } catch (err) {
+        if (retries > 0) {
+          setTimeout(() => verifyOrder(retries - 1), 2000);
+        } else {
+          setDestination(billingReturn);
+          setStatus('failed');
+          setTimeout(() => router.push(billingReturn), 4000);
+        }
       }
-    })
-    .catch(() => {
-      setDestination(billingReturn);
-      setStatus('failed');
-      setTimeout(() => router.push(billingReturn), 4000);
-    });
+    };
+
+    // 🚀 పేజీ ఓపెన్ అవ్వగానే 1 సెకన్ ఆగి వెరిఫికేషన్ మొదలుపెడుతుంది
+    setTimeout(() => verifyOrder(3), 1000);
 
   }, [order_id, router, fallbackNext]);
 
