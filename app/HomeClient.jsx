@@ -479,7 +479,7 @@ export default function App({ initialItems = [] }) {
          return;
       }
       
-      const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
+  const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
     setBuying(true); setGuestPayModal(false);
     await new Promise((r) => setTimeout(r, 250));
 
@@ -511,11 +511,11 @@ export default function App({ initialItems = [] }) {
         returnUrl: `${window.location.origin}/payment-status?order_id={order_id}`,
       };
       
-      // 🚀 FIX: Drop-off Handling (యూజర్ క్యాన్సిల్ చేస్తే బటన్ మళ్ళీ నార్మల్ అవ్వాలి)
+      // 🚀 FIX: Drop-off Handling
       cashfree.checkout(checkoutOptions).then((result) => {
          if (result && result.error) {
             toast.error(result.error.message || "Payment was cancelled.");
-            setBuying(false); // ఇది ఉండటం వల్లే బటన్ మళ్ళీ క్లిక్ చేయడానికి వీలుగా మారుతుంది
+            setBuying(false); 
          }
       });
       
@@ -543,7 +543,6 @@ export default function App({ initialItems = [] }) {
     }
     window.location.href = '/client?step=billing';
   };
-
   const buyPlan = (planId) => {
     const catalogKey = planId === 'month' ? 'view_month' : planId === 'year' ? 'view_year' : planId === 'single' ? 'view_single' : planId;
     if (typeof window !== 'undefined') sessionStorage.setItem('tt_pending_plan', catalogKey);
