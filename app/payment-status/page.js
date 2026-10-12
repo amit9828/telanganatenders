@@ -27,8 +27,8 @@ function PaymentStatusContent() {
       return;
     }
 
-    // 🚀 FIX: Cashfree కి టైమ్ ఇవ్వడానికి చిన్న Delay మరియు 3 సార్లు Retry చేసే సిస్టమ్
-    const verifyOrder = async (retries = 3) => {
+    // 🚀 FIX: Cashfree సిగ్నల్ ఇవ్వడానికి 30 సెకన్ల వరకు (15 retries) వెయిట్ చేసే సిస్టమ్
+    const verifyOrder = async (retries = 15) => {
       try {
         const res = await fetch('/api/payment/verify', {
           method: 'POST',
@@ -74,7 +74,7 @@ function PaymentStatusContent() {
     };
 
     // 🚀 పేజీ ఓపెన్ అవ్వగానే 1 సెకన్ ఆగి వెరిఫికేషన్ మొదలుపెడుతుంది
-    setTimeout(() => verifyOrder(3), 1000);
+    setTimeout(() => verifyOrder(15), 1000);
 
   }, [order_id, router, fallbackNext]);
 
