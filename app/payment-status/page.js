@@ -27,44 +27,60 @@ function PaymentStatusContent() {
       return;
     }
 
-    // 🚀 FIX: Cashfree సిగ్నల్ ఇవ్వడానికి 30 సెకన్ల వరకు (15 retries) వెయిట్ చేసే సిస్టమ్
-    const verifyOrder = async (retries = 15) => {
+    // 🚀 FIX: Cashfree సిగ్నల్ కన్ఫర్మ్ అయ్యేదాకా కనీసం 60 సెకన్ల పాటు (20 retries * 3s) వెయిట్ చేసే సిస్టమ్
+    const verifyOrder = async (retries = 20) => {
       try {
         const res = await fetch('/api/payment/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ order_id })
         });
-        const data = await res.json();
-
-        // రిజల్ట్ రాకపోతే, లేదా ఇంకా పెండింగ్ లో ఉంటే 2 సెకన్లు ఆగి మళ్ళీ ట్రై చేస్తుంది
-        if (!res.ok && retries > 0) {
-          setTimeout(() => verifyOrder(retries - 1), 2000);
+        
+        // బ్యాకెండ్ 202 (PROCESSING) అని పంపితే, ఫెయిల్ అనకుండా మళ్ళీ 3 సెకన్లు ఆగి చెక్ చేస్తుంది
+        if (res.status === 202 && retries > 0) {
+          setTimeout(() => verifyOrder(retries - 1), 3000);
           return;
         }
 
-        const returnTo = safePath(data.return_to) || fallbackNext;
-        const target = returnTo
-          ? (data.tenderId ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
-          : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
+        const data = await res.json().catch(() => ({}));
 
-        setDestination(target);
-        
-        if (data.success) {
+        // బ్యాంక్ దగ్గర ప్రాసెసింగ్ లో ఉన్నా లేదా పెండింగ్ లో ఉన్నా, ఆగి మళ్ళీ చెక్ చేయాలి
+        if ((data.status === 'ACTIVE' || data.status === 'PENDING') && retries > 0) {
+          setTimeout(() => verifyOrder(retries - 1), 3000); 
+          return;
+        }
+
+        // నెట్‌వర్క్ ఎర్రర్ లాంటివి వస్తే వెంటనే ఫెయిల్ అనకుండా మళ్ళీ ట్రై చేస్తుంది
+        if (!res.ok && retries > 0) {
+          setTimeout(() => verifyOrder(retries - 1), 3000);
+          return;
+        }
+
+        // పక్కాగా సక్సెస్ అని సిగ్నల్ వస్తే అప్పుడు మాత్రమే అన్‌లాక్ చేయాలి
+        if (data.success && (data.status === 'PAID' || !data.status)) {
+          const returnTo = safePath(data.return_to) || fallbackNext;
+          const target = returnTo
+            ? (data.tenderId ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
+            : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
+
+          setDestination(target);
           sessionStorage.removeItem('tt_pending_plan');
           sessionStorage.removeItem('tt_pending_bid_count');
           sessionStorage.removeItem('tt_pending_plans');
           sessionStorage.removeItem('tt_pending_tender');
           setStatus('success');
           setTimeout(() => router.push(target), 3000);
-        } else {
-          setDestination(billingReturn);
-          setStatus('failed');
-          setTimeout(() => router.push(billingReturn), 4000);
+          return;
         }
+
+        // క్యాష్‌ఫ్రీ పక్కాగా "ఫెయిల్" అని కన్ఫర్మ్ చేస్తేనే ఫెయిల్ చేయాలి (లేదా retries అయిపోతే)
+        setDestination(billingReturn);
+        setStatus('failed');
+        setTimeout(() => router.push(billingReturn), 4000);
+
       } catch (err) {
         if (retries > 0) {
-          setTimeout(() => verifyOrder(retries - 1), 2000);
+          setTimeout(() => verifyOrder(retries - 1), 3000);
         } else {
           setDestination(billingReturn);
           setStatus('failed');
@@ -73,8 +89,8 @@ function PaymentStatusContent() {
       }
     };
 
-    // 🚀 పేజీ ఓపెన్ అవ్వగానే 1 సెకన్ ఆగి వెరిఫికేషన్ మొదలుపెడుతుంది
-    setTimeout(() => verifyOrder(15), 1000);
+    // పేజీ ఓపెన్ అవ్వగానే 1 సెకన్ ఆగి వెరిఫికేషన్ మొదలుపెడుతుంది
+    setTimeout(() => verifyOrder(20), 1000);
 
   }, [order_id, router, fallbackNext]);
 
