@@ -170,18 +170,11 @@ export default function App({ initialItems = [] }) {
   // ALL LIVE API FETCHES
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
-    
-    const getLiveTraffic = () => {
-      fetch('/api/analytics/visitors')
-        .then(r => r.json())
-        .then(d => { if(d) setVisitors(d); })
-        .catch(()=>{});
-    };
-    
-    getLiveTraffic();
-    const trafficInterval = setInterval(getLiveTraffic, 15000); 
-    
-    return () => clearInterval(trafficInterval);
+
+    fetch('/api/analytics/visitors')
+      .then(r => r.json())
+      .then(d => { if(d) setVisitors(d); })
+      .catch(()=>{});
   }, []);
 
   // 🚀 PWA App Installation Logic
@@ -504,6 +497,8 @@ export default function App({ initialItems = [] }) {
       sessionStorage.setItem('tt_pending_plan', serviceKey);
       if (intent?.bidCount) sessionStorage.setItem('tt_pending_bid_count', String(intent.bidCount));
       else sessionStorage.removeItem('tt_pending_bid_count');
+      if (intent?.months) sessionStorage.setItem('tt_pending_months', String(intent.months));
+      else sessionStorage.removeItem('tt_pending_months');
       if (planIds?.length) sessionStorage.setItem('tt_pending_plans', JSON.stringify(planIds));
       else sessionStorage.removeItem('tt_pending_plans');
       if (intent?.tenderId) sessionStorage.setItem('tt_pending_tender', intent.tenderId);

@@ -14,7 +14,6 @@ import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
-import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import CompactTenderCard from '@/components/workflow/CompactTenderCard';
@@ -337,28 +336,6 @@ export default function StaffOpsDesk({ desk }) {
     openClientBypass(targetEmail);
   };
 
-  const boardJobsRef = useRef({ jobs: [], internal: [], submitted: [], winning: [] });
-  boardJobsRef.current = {
-    jobs,
-    internal: internalJobs,
-    submitted: submittedJobs,
-    winning: winningJobs,
-  };
-  useWorkflowStream((event) => {
-    if (!event?.jobId) return;
-    if (event.archived) {
-      removeJob(event.jobId);
-      return;
-    }
-    const pools = boardJobsRef.current;
-    const found = [...pools.submitted, ...pools.winning, ...pools.internal, ...pools.jobs]
-      .find((job) => String(job._id) === String(event.jobId));
-    if (!found) {
-      if (activeTabRef.current === 'submitted') load('submitted');
-      return;
-    }
-    patchJob(mergeTrackingEvent(found, event));
-  }, { audience: 'staff', enabled: onDesk });
 
   if (!onDesk) {
     if (typeof window !== 'undefined') window.location.replace('/');

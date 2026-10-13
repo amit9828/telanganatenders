@@ -35,7 +35,6 @@ import { formatINR } from '@/lib/format';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
 import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
 import { openClientWorkflowFile } from '@/components/workflow/api';
-import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import { belongsOnInternal } from '@/lib/job-board-state';
 import { CLIENT_TRACKING_ORDER, clientTrackingStage } from '@/lib/tracking-status';
 
@@ -963,17 +962,6 @@ export default function ClientDashboard() {
       [t.bid_no, t.title, t.department, t.district].some((v) => String(v || '').toLowerCase().includes(needle))
     );
   }, [publicTenders, liveTenderSearch]);
-
-  useWorkflowStream((event) => {
-    if (!event?.jobId) return;
-    setWorkflowJobs((prev) => {
-      if (event.archived) return prev.filter((job) => String(job._id) !== String(event.jobId));
-      const found = prev.find((job) => String(job._id) === String(event.jobId));
-      if (!found) return prev;
-      const merged = mergeTrackingEvent(found, event);
-      return prev.map((job) => (job === found ? merged : job));
-    });
-  }, { audience: 'client', enabled: Boolean(email) });
 
   if (!onClientDesk) {
     if (typeof window !== "undefined") window.location.replace("/");

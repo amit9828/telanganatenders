@@ -4,7 +4,7 @@ import { ThemeProvider } from 'next-themes';
 
 export default function Providers({ children }) {
   return (
-    <SessionProvider>
+    <SessionProvider refetchOnWindowFocus={false}>
       {/*
         🚀 Dark-mode foundation: `next-themes` was already a dependency (the
         Toaster even calls useTheme()), but nothing ever provided the context,

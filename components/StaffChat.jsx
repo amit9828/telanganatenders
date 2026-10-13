@@ -335,13 +335,23 @@ export default function StaffChat({ selfId, roster = [], teammates, jobId = null
   }, [loadInbox, loadThread, peer]);
 
   useEffect(() => {
-    const id = setInterval(() => {
+    const poll = () => {
       loadInbox({ since: inboxSinceRef.current || undefined });
       if (peer) {
         loadThread(peer, { silent: true, since: threadSinceRef.current || undefined });
       }
-    }, 5000);
-    return () => clearInterval(id);
+    };
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') poll();
+    }, 15000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [loadInbox, loadThread, peer]);
 
   useEffect(() => {

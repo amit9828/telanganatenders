@@ -17,7 +17,6 @@ import ThirdPartyLeadsPanel from '@/components/ThirdPartyLeadsPanel';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
-import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import ArchiveBoard from '@/components/workflow/ArchiveBoard';
@@ -1063,29 +1062,6 @@ export default function AdminPage() {
       if(res.ok) { toast.success("Employee removed successfully"); refresh(); } else toast.error("Failed to remove employee");
     } catch(err) { toast.error("Network error"); }
   };
-
-  const boardJobsRef = useRef({ suggestions: [], internal: [], submitted: [], winning: [] });
-  boardJobsRef.current = {
-    suggestions: wfSuggestions,
-    internal: wfInternal,
-    submitted: wfSubmitted,
-    winning: wfWinning,
-  };
-  useWorkflowStream((event) => {
-    if (!event?.jobId) return;
-    if (event.archived) {
-      removeJob(event.jobId);
-      return;
-    }
-    const pools = boardJobsRef.current;
-    const found = [...pools.submitted, ...pools.winning, ...pools.internal, ...pools.suggestions]
-      .find((job) => String(job._id) === String(event.jobId));
-    if (!found) {
-      if (activeTabRef.current === 'submitted') refresh('submitted');
-      return;
-    }
-    patchJob(mergeTrackingEvent(found, event));
-  }, { audience: 'staff', enabled: mdDesk });
 
   // 🚀 FIX (guideline #20): a bare spinner blanks the whole screen and gives no
   // sense of what's about to load. This skeleton mirrors the real header/stat-card/

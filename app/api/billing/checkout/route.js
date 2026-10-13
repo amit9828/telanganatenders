@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import { resolveClientEmail } from '@/lib/staff-auth';
 import { createCashfreeOrder } from '@/lib/payments';
 import { assertPurchasable, comboIncludesUdyam, orderAmount, unlimitedActive } from '@/lib/billing-access';
-import { pendingOrderDoc, paygBase } from '@/lib/billing-schema';
+import { pendingOrderDoc, paygBase, unlimitedBase, normalizeUnlimitedMonths, UNLIMITED_DURATIONS } from '@/lib/billing-schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,16 +29,23 @@ export async function POST(request) {
   let includesUdyam = false;
   let primary = null;
   let bidCount = null;
+  let months = null;
   for (const id of ids) {
     const check = await assertPurchasable(db, id);
     if (check.error) return json({ error: check.error }, check.status);
     primary = primary || check.item;
-    names.push(check.item.name);
     if (comboIncludesUdyam(id) || ['vendor_assessment', 'oem_panel_approval', 'product_catalogs'].includes(id)) includesUdyam = true;
     if (id === 'custom_bids_10') {
+      names.push(check.item.name);
       bidCount = Math.max(1, Math.floor(Number(body.bid_count) || 1));
       base += paygBase(check.item, bidCount);
+    } else if (id === 'saas_unlimited') {
+      months = normalizeUnlimitedMonths(body.months);
+      const term = UNLIMITED_DURATIONS.find((row) => row.months === months);
+      names.push(`Unlimited (${term.label})`);
+      base += unlimitedBase(check.item, months);
     } else {
+      names.push(check.item.name);
       base += Number(check.item.base_price) || 0;
     }
   }
@@ -60,6 +67,7 @@ export async function POST(request) {
   });
   draft.plan_ids = ids;
   draft.bid_count = bidCount;
+  draft.months = months;
   draft.tender_id = body.tender_id || null;
   draft.includes_udyam = includesUdyam;
   draft.return_to = '/client?step=agreement';
@@ -86,5 +94,6 @@ export async function POST(request) {
     gst_amount: money.gst_amount,
     total_amount: money.total_amount,
     includes_udyam: includesUdyam,
+    months,
   });
 }

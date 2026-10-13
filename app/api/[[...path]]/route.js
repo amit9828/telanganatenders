@@ -808,7 +808,7 @@ async function handleGET(request, { params }, attempt = 1) {
          .project(directory
            // 🚀 FIX 2: ఇక్కడ drive_link, drive_folder_link, whatsapp_verified యాడ్ చేశాం (దీని వల్లే GM కి డ్రైవ్ బటన్ కనిపిస్తుంది)
            ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1, drive_link: 1, drive_folder_link: 1, whatsapp_verified: 1 }
-           : { password: 0, 'vault_docs.file_base64': 0 })
+           : { password: 0, 'vault_docs.file_base64': 0, 'officer_queries.file_base64': 0 })
          .sort({ created_at: -1 })
          .toArray();
       console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${users.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
