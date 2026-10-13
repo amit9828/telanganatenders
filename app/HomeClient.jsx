@@ -35,6 +35,30 @@ const PLANS = [
 
 const monthName = (m) => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m];
 
+const ABOUT_FALLBACK = 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.';
+const ABOUT_HEADINGS = new Set([
+  'our core values',
+  'our service range',
+  'innovation at tg tenders',
+  'our vision for the future',
+  'join us on this journey',
+]);
+
+function formatAboutUs(text) {
+  const source = String(text || '').replace(/^\s*about us\s*(\n+|$)/i, '').trim() || ABOUT_FALLBACK;
+  return source.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+    if (/^[-*•]\s+/.test(line) && line.includes(':')) {
+      const body = line.replace(/^[-*•]\s+/, '');
+      const splitAt = body.indexOf(':');
+      return { kind: 'bullet', label: body.slice(0, splitAt + 1), rest: body.slice(splitAt + 1) };
+    }
+    const known = ABOUT_HEADINGS.has(line.toLowerCase());
+    const shortHeading = line.length < 60 && !line.includes('.');
+    if (known || shortHeading) return { kind: 'heading', text: line };
+    return { kind: 'text', text: line };
+  });
+}
+
 export default function App({ initialItems = [] }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0); 
@@ -1041,19 +1065,23 @@ export default function App({ initialItems = [] }) {
       )}
 
       <section className="bg-slate-50 py-16 sm:py-20 w-full border-t border-slate-200">
-        <div className="container mx-auto px-4 w-full">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-8">About Us</h2>
-            <div className="space-y-6 text-base md:text-lg text-slate-700 leading-relaxed">
-              {(brandSettings.about_us || 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.')
-                .replace(/^\s*about us\s*\n+/i, '')
-                .split(/\n\s*\n/)
-                .map((paragraph) => paragraph.trim())
-                .filter(Boolean)
-                .map((paragraph) => (
-                  <p key={paragraph} className="whitespace-pre-line">{paragraph}</p>
-                ))}
-            </div>
+        <div className="w-full max-w-7xl mx-auto px-4 md:px-8 text-left">
+          <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-8 text-center">About Us</h2>
+          <div className="space-y-4 text-base md:text-lg">
+            {formatAboutUs(brandSettings.about_us).map((block, index) => {
+              if (block.kind === 'heading') {
+                return <h3 key={index} className="text-blue-800 font-bold text-xl mt-6 mb-2">{block.text}</h3>;
+              }
+              if (block.kind === 'bullet') {
+                return (
+                  <p key={index} className="leading-relaxed">
+                    <span className="text-blue-800 font-bold">- {block.label}</span>
+                    <span className="text-slate-700">{block.rest}</span>
+                  </p>
+                );
+              }
+              return <p key={index} className="text-slate-700 leading-relaxed text-justify">{block.text}</p>;
+            })}
           </div>
         </div>
       </section>
