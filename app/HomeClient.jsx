@@ -170,18 +170,11 @@ export default function App({ initialItems = [] }) {
   // ALL LIVE API FETCHES
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
-    
-    const getLiveTraffic = () => {
-      fetch('/api/analytics/visitors')
-        .then(r => r.json())
-        .then(d => { if(d) setVisitors(d); })
-        .catch(()=>{});
-    };
-    
-    getLiveTraffic();
-    const trafficInterval = setInterval(getLiveTraffic, 15000); 
-    
-    return () => clearInterval(trafficInterval);
+
+    fetch('/api/analytics/visitors')
+      .then(r => r.json())
+      .then(d => { if(d) setVisitors(d); })
+      .catch(()=>{});
   }, []);
 
   // 🚀 PWA App Installation Logic

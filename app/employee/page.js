@@ -28,7 +28,6 @@ import {
   SUBMITTED_BOARD_STATUSES,
 } from '@/lib/job-board-state';
 import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
-import { mergeTrackingEvent, useWorkflowStream } from '@/components/workflow/useWorkflowStream';
 import { consumeStaffBypass, openClientBypass, rememberRealStaffIdent } from '@/lib/tab-handoff';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -130,6 +129,9 @@ export default function EmployeeDashboard() {
   }, [removeJob]);
 
 // 🚀 FIX: Employee Live Tracking (Auto-Refresh without Cache)
+  const sessionUserEmail = session?.user?.email;
+  const sessionUserEmpId = session?.user?.emp_id;
+  const sessionUserName = session?.user?.name;
   useEffect(() => {
     setIsMounted(true);
     if (!onEmployeeDesk) {
@@ -137,19 +139,19 @@ export default function EmployeeDashboard() {
       return undefined;
     }
     const bypass = typeof window !== 'undefined' ? consumeStaffBypass() : '';
-    const sessionEmpId = status === 'authenticated' ? String(session?.user?.emp_id || '').trim() : '';
+    const sessionEmpId = status === 'authenticated' ? String(sessionUserEmpId || '').trim() : '';
     const fromSession = status === 'authenticated'
-      ? String(session?.user?.email || session?.user?.emp_id || '')
+      ? String(sessionUserEmail || sessionUserEmpId || '')
       : '';
     const finalEmail = bypass || fromSession;
     setEmail(finalEmail);
     if (bypass) {
       rememberRealStaffIdent(bypass);
     } else if (sessionEmpId) {
-      setEmpData((prev) => ({ ...prev, id: sessionEmpId, name: session?.user?.name || prev.name }));
+      setEmpData((prev) => ({ ...prev, id: sessionEmpId, name: sessionUserName || prev.name }));
       rememberRealStaffIdent(sessionEmpId);
-    } else if (status === 'authenticated' && session?.user?.email) {
-      rememberRealStaffIdent(String(session.user.email).trim());
+    } else if (status === 'authenticated' && sessionUserEmail) {
+      rememberRealStaffIdent(String(sessionUserEmail).trim());
     }
     if (!finalEmail) {
       setLoading(false);
@@ -168,7 +170,7 @@ export default function EmployeeDashboard() {
       }
     }, 60000);
     return () => clearInterval(interval);
-  }, [onEmployeeDesk, status, session]);
+  }, [onEmployeeDesk, status, sessionUserEmail, sessionUserEmpId]);
 
   useEffect(() => {
     if (!email) return undefined;
@@ -699,25 +701,6 @@ export default function EmployeeDashboard() {
         body: JSON.stringify({ email, action, details })
     }).catch(err => console.log('Activity log failed', err));
   };
-
-  const jobsRef = useRef({ jobs: [], winning: [] });
-  jobsRef.current = { jobs: wfJobs, winning: wfWinning };
-  useWorkflowStream((event) => {
-    if (!event?.jobId) return;
-    if (event.archived) {
-      removeJob(event.jobId);
-      return;
-    }
-    const pools = jobsRef.current;
-    const found = [...pools.jobs, ...pools.winning].find((job) => String(job._id) === String(event.jobId));
-    if (found) {
-      patchJob(mergeTrackingEvent(found, event));
-      return;
-    }
-    if (event.status === 'WON' && activeTabRef.current === 'submitted') {
-      fetchLiveOperationsData(email, 'submitted');
-    }
-  }, { audience: 'staff', enabled: Boolean(email) && onEmployeeDesk });
 
   if (!isMounted) return null;
   if (!onEmployeeDesk) {
