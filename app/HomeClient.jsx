@@ -999,9 +999,9 @@ export default function App({ initialItems = [] }) {
                <p className="text-slate-500 font-medium max-w-2xl mx-auto">Meet the visionaries driving our consultancy forward. Connect directly with our core management team.</p>
             </div>
             
-            <div className="flex flex-col items-center gap-4 w-full max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 w-full max-w-6xl mx-auto">
               {brandSettings.leaders.map((leader, i) => (
-                <div key={i} className="flex flex-col md:flex-row items-center gap-4 md:gap-6 w-full max-w-xl rounded-[2rem] bg-white border border-slate-200 shadow-md px-4 py-3 md:px-5 md:py-3 text-left hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
+                <div key={i} className="flex flex-col sm:flex-row items-center gap-4 md:gap-6 w-full rounded-[2rem] bg-white border border-slate-200 shadow-md px-4 py-3 md:px-5 md:py-3 text-left hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
                   <div className="relative w-28 h-28 shrink-0 rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors shadow-md bg-white">
                     <Image src={leader.image} alt={`${leader.name} — Telangana Tenders leadership team`} fill sizes="112px" className="object-cover object-top" />
                   </div>
