@@ -157,7 +157,6 @@ export default function App({ initialItems = [] }) {
     name: 'TG Tenders', logo: null, gem_logo: null, banners: [], leaders: [], clients: [], vision_text: null 
   });
   const [activeBanner, setActiveBanner] = useState(0);
-  const [bannerPaused, setBannerPaused] = useState(false);
   const [bannerResetKey, setBannerResetKey] = useState(0);
   const [logoFlip, setLogoFlip] = useState(false); // 🚀 3D Rotating Logo State for Loading Screen
 
@@ -178,15 +177,15 @@ export default function App({ initialItems = [] }) {
     return () => clearInterval(flipTimer);
   }, []);
 
-  // Auto-Slide Logic for Banners (10s; pause on hover; reset on manual click)
+  // Auto-Slide Logic for Banners (10s; reset on manual click)
   useEffect(() => {
-    if (!brandSettings.banners?.length || bannerPaused) return;
-    const bannerTimer = setInterval(
-      () => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length),
-      10000
-    );
+    const count = brandSettings.banners?.length || 0;
+    if (count < 2) return;
+    const bannerTimer = setInterval(() => {
+      setActiveBanner((prev) => (prev + 1) % count);
+    }, 10000);
     return () => clearInterval(bannerTimer);
-  }, [brandSettings.banners, bannerPaused, bannerResetKey]);
+  }, [brandSettings.banners, bannerResetKey]);
 
   const prevBanner = () => {
     if (brandSettings.banners?.length > 0) {
@@ -706,11 +705,7 @@ export default function App({ initialItems = [] }) {
       </header>
 
       {/* Main Content follows below... */}
-      <section
-        className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group"
-        onMouseEnter={() => setBannerPaused(true)}
-        onMouseLeave={() => setBannerPaused(false)}
-      >
+      <section className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group">
         <div className="relative w-full max-w-none aspect-[3/1]">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
