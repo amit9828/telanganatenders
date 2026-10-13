@@ -958,17 +958,6 @@ export default function App({ initialItems = [] }) {
         </div>
       </section>
 
-      <section className="bg-[#0A2647] py-16 sm:py-20 w-full">
-        <div className="container mx-auto px-4 w-full">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-wide mb-6">About Us</h2>
-            <p className="text-base md:text-lg text-slate-200 leading-relaxed whitespace-pre-line">
-              {brandSettings.about_us || 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.'}
-            </p>
-          </div>
-        </div>
-      </section>
-
       <GrowthPartnerPricing onSubscribe={chooseCatalogPlan} onGuestRegistration={!email} initialItems={initialItems} />
       <ViewUnlockModal
         open={viewOffer}
@@ -1050,6 +1039,17 @@ export default function App({ initialItems = [] }) {
           </div>
         </section>
       )}
+
+      <section className="bg-[#0A2647] py-16 sm:py-20 w-full">
+        <div className="container mx-auto px-4 w-full">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-wide mb-6">About Us</h2>
+            <p className="text-base md:text-lg text-slate-200 leading-relaxed whitespace-pre-line">
+              {brandSettings.about_us || 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.'}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <footer className="bg-[#051324] text-white pt-16 pb-8 border-t-4 border-emerald-500 w-full relative">
         <div className="container mx-auto px-4 text-center w-full">
