@@ -999,30 +999,28 @@ export default function App({ initialItems = [] }) {
                <p className="text-slate-500 font-medium max-w-2xl mx-auto">Meet the visionaries driving our consultancy forward. Connect directly with our core management team.</p>
             </div>
             
-            <div className="flex flex-wrap justify-center gap-8 w-full max-w-6xl mx-auto">
+            <div className="flex flex-col items-center gap-4 w-full max-w-6xl mx-auto">
               {brandSettings.leaders.map((leader, i) => (
-                <div key={i} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-sm hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 group">
-                  <div className="relative w-36 h-36 mx-auto rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors mb-5 shadow-lg bg-white">
-                    <Image src={leader.image} alt={`${leader.name} — Telangana Tenders leadership team`} fill sizes="144px" className="object-cover object-top" />
+                <div key={i} className="flex flex-col md:flex-row items-center gap-4 md:gap-6 w-full max-w-xl rounded-[2rem] bg-white border border-slate-200 shadow-md px-4 py-3 md:px-5 md:py-3 text-left hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
+                  <div className="relative w-28 h-28 shrink-0 rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors shadow-md bg-white">
+                    <Image src={leader.image} alt={`${leader.name} — Telangana Tenders leadership team`} fill sizes="112px" className="object-cover object-top" />
                   </div>
-                  <h3 className="font-black text-2xl text-[#0A2647] mb-2">{leader.name}</h3>
-                  <Badge className="bg-emerald-100 text-emerald-800 border-0 font-bold px-4 py-1.5 mb-5 text-xs tracking-wide uppercase">
-                    {leader.role}
-                  </Badge>
-                  {(leader.phone || leader.email) && (
-                    <div className="border-t border-slate-100 pt-5 flex flex-col gap-3 items-center">
-                      {leader.phone && (
-                         <a href={`tel:${leader.phone}`} className="flex items-center gap-3 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm w-full justify-center">
-                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors"><Phone className="w-4 h-4" /></div>{leader.phone}
-                         </a>
-                      )}
-                      {leader.email && (
-                         <a href={`mailto:${leader.email}`} className="flex items-center gap-3 text-slate-600 hover:text-blue-600 font-bold transition-colors text-sm w-full justify-center">
-                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors"><Mail className="w-4 h-4" /></div><span className="truncate max-w-[200px]">{leader.email}</span>
-                         </a>
-                      )}
-                    </div>
-                  )}
+                  <div className="min-w-0 flex flex-col items-start gap-1">
+                    <h3 className="font-black text-xl text-[#0A2647] leading-tight">{leader.name}</h3>
+                    <Badge className="bg-emerald-100 text-emerald-800 border-0 font-bold px-3 py-0.5 text-[10px] tracking-wide uppercase">
+                      {leader.role}
+                    </Badge>
+                    {leader.phone && (
+                      <a href={`tel:${leader.phone}`} className="flex items-center gap-2 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm">
+                        <Phone className="w-4 h-4 shrink-0" />{leader.phone}
+                      </a>
+                    )}
+                    {leader.email && (
+                      <a href={`mailto:${leader.email}`} className="flex items-center gap-2 text-slate-600 hover:text-blue-600 font-bold transition-colors text-sm min-w-0 max-w-full">
+                        <Mail className="w-4 h-4 shrink-0" /><span className="truncate">{leader.email}</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
