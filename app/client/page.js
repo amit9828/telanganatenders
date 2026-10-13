@@ -5,7 +5,6 @@ import { useServerDeskRole } from '@/components/DeskAuth';
 import BrandLogo from '@/components/BrandLogo';
 import BillingGate, { startCashfreeCheckout } from '@/components/BillingGate';
 import PricingPromoModal from '@/components/PricingPromoModal';
-import EstimatorChat from '@/components/EstimatorChat';
 import ClientBillingPanel from '@/components/ClientBillingPanel';
 import ViewUnlockModal from '@/components/ViewUnlockModal';
 import { liveTendersOnly } from '@/lib/tender-sort';
@@ -28,8 +27,8 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee, PenTool, Printer, UserCog, Sparkles, Wand2, Lock, FileSignature,
-  Handshake, Landmark, Gavel, ScrollText, Search, ArrowLeft
+  IndianRupee, PenTool, Printer, UserCog, Sparkles, Lock, FileSignature,
+  Handshake, Landmark, Search, ArrowLeft
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
@@ -170,7 +169,7 @@ export default function ClientDashboard() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const requested = new URLSearchParams(window.location.search).get('tab');
-    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'bid_tools', 'store', 'billing', 'estimator'];
+    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'store', 'billing'];
     if (requested && allowed.includes(requested)) setActiveTab(requested);
     if (new URLSearchParams(window.location.search).get('step') === 'billing') setActiveTab('store');
   }, []);
@@ -1403,13 +1402,10 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
           {/* Order per Enterprise UI/UX Blueprint (section A): the two most frequent
               client actions — checking their dashboard and browsing live tenders — come
               first, followed by wins/vault/finance/profile. Flat bar (no grouping) since
-              6-7 items doesn't need it. Staff-only "Bid Tools" stays last. */}
+              6-7 items doesn't need it. */}
           <TabsList className="flex flex-wrap w-full bg-white tender-shadow border border-slate-200/80 h-auto p-1.5 rounded-xl mb-6">
             <TabsTrigger value="dashboard" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Activity className="w-4 h-4 mr-2 hidden sm:block"/> Active Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="estimator" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
-              Tender assistant
             </TabsTrigger>
             <TabsTrigger value="live_tenders" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               <Globe className="w-4 h-4 mr-2 hidden sm:block"/> Live Tenders
@@ -1432,14 +1428,6 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
             <TabsTrigger value="billing" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-[#0A2647] data-[state=active]:text-white font-semibold rounded-md">
               Billing & Payments
             </TabsTrigger>
-            {/* 🚀 RBAC: "Bid Tools" hidden exclusively for real clients — still fully
-                present in the DOM/functional for MD/employee staff-preview sessions,
-                and its TabsContent below is untouched (nothing deleted). */}
-            {isStaffPreview && (
-              <TabsTrigger value="bid_tools" className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-indigo-700 data-[state=active]:text-white font-semibold rounded-md">
-                <Wand2 className="w-4 h-4 mr-2 hidden sm:block"/> Bid Tools
-              </TabsTrigger>
-            )}
           </TabsList>
 
           {/* ============================================================================== */}
@@ -1759,9 +1747,6 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
           {/* ============================================================================== */}
           {/* TAB 4: ACTIVE DASHBOARD */}
           {/* ============================================================================== */}
-          <TabsContent value="estimator" className="space-y-6">
-            <EstimatorChat />
-          </TabsContent>
           <TabsContent value="dashboard" className="space-y-6">
             
             {/* 🚀 FIX: RECOMMENDED TENDERS BLOCK (Now Fetches Full Tender Data & Has View PDF) */}
@@ -2128,29 +2113,6 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                     <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="w-5 h-5 text-slate-700"/> 24/7 SLA Support Desk</CardTitle>
                   </CardHeader>
                   <CardContent className="pt-5 space-y-6">
-                    {/* 🚀 STAFF-ONLY: Legal Defense & Support quick action — deep-links into the
-                        existing Bid Tools document generator with the new "GeM Show-Cause Notice
-                        Reply" doc type preselected. No new API route; reuses handleGenerateDoc. */}
-                    {isStaffPreview && (
-                       <div className="border border-slate-200 bg-slate-50 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="flex items-start gap-2.5">
-                             <Gavel className="w-5 h-5 text-slate-700 shrink-0 mt-0.5"/>
-                             <div>
-                                <p className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                   Legal Defense & Support
-                                   <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
-                                </p>
-                                <p className="text-xs text-slate-500 mt-0.5">Draft a formal reply to a GeM Show-Cause Notice on this client's behalf.</p>
-                             </div>
-                          </div>
-                          <Button
-                            onClick={() => { setDocForm(prev => ({ ...prev, doc_type: 'scn_reply' })); setActiveTab('bid_tools'); }}
-                            className="bg-slate-800 hover:bg-slate-900 h-10 shrink-0 w-full sm:w-auto"
-                          >
-                             <ScrollText className="w-4 h-4 mr-2"/> Generate GeM SCN Reply Draft
-                          </Button>
-                       </div>
-                    )}
                     <form onSubmit={handleTicketSubmit} className="space-y-4 border-b pb-6">
                       <div>
                         <Label className="text-xs text-slate-600 font-bold">Ticket Subject *</Label>
