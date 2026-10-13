@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 
 import {
   CalendarDays, ChevronLeft, ChevronRight, FileText, MapPin, Building2, Clock, Lock, Mail, CheckCircle2,
-  Filter, Search, ShieldCheck, UserCog, Briefcase, LogOut, Award, TrendingUp, Loader2, Star,
+  Filter, Search, UserCog, Briefcase, LogOut, Award, Loader2, Star,
   FileBadge, Activity, Eye, User, Sparkles, X, Phone, Smartphone
 } from 'lucide-react';
 import { TS_DISTRICTS, AP_DISTRICTS } from '@/lib/regions';
@@ -34,6 +34,57 @@ const PLANS = [
 ];
 
 const monthName = (m) => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m];
+
+const OUR_SERVICES = [
+  {
+    title: 'Tender Discovery & Analysis',
+    subtitle: 'Find the Right Opportunities',
+    theme: 'bg-blue-50 border-blue-200 text-blue-900',
+    items: ['Master Database', 'Business-related Tender Suggestions', 'Bid Analysis', 'Clear Scope of Work Explanation', 'Eligibility & Requirement Analysis', 'Required Documents Checklist'],
+  },
+  {
+    title: 'Bid Preparation & Participation',
+    subtitle: 'Complete Bid Management',
+    theme: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+    items: ['Technical Document Preparation', 'Financial Document Preparation', 'Bid Participation Assistance', 'Tender-related Document Management'],
+  },
+  {
+    title: 'Tender Tracking & Documentation',
+    subtitle: 'Stay Updated at Every Stage',
+    theme: 'bg-orange-50 border-orange-200 text-orange-900',
+    items: ['Website / Portal Tracking', 'Daily Tender Status Monitoring', 'Tracking Until Bid Award', 'Tender Document Storage', 'Complete Tender History & Records'],
+  },
+  {
+    title: 'Business Support Services',
+    subtitle: 'Beyond Tendering',
+    theme: 'bg-purple-50 border-purple-200 text-purple-900',
+    items: ['Business Support & Growth Strategies', 'On-time Payment Support', 'Invoice Generation', 'Product Catalogue', 'Service Catalogue'],
+  },
+];
+
+const ABOUT_FALLBACK = 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.';
+const ABOUT_HEADINGS = new Set([
+  'our core values',
+  'our service range',
+  'innovation at tg tenders',
+  'our vision for the future',
+  'join us on this journey',
+]);
+
+function formatAboutUs(text) {
+  const source = String(text || '').replace(/^\s*about us\s*(\n+|$)/i, '').trim() || ABOUT_FALLBACK;
+  return source.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+    if (/^[-*•]\s+/.test(line) && line.includes(':')) {
+      const body = line.replace(/^[-*•]\s+/, '');
+      const splitAt = body.indexOf(':');
+      return { kind: 'bullet', label: body.slice(0, splitAt + 1), rest: body.slice(splitAt + 1) };
+    }
+    const known = ABOUT_HEADINGS.has(line.toLowerCase());
+    const shortHeading = line.length < 60 && !line.includes('.');
+    if (known || shortHeading) return { kind: 'heading', text: line };
+    return { kind: 'text', text: line };
+  });
+}
 
 export default function App({ initialItems = [] }) {
   const today = new Date();
@@ -901,70 +952,24 @@ export default function App({ initialItems = [] }) {
         </div>
       </main>
 
-      <section className="bg-slate-900 py-20 relative overflow-hidden w-full">
-        <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-600/30 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
-        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-emerald-600/20 blur-[120px] rounded-full mix-blend-screen pointer-events-none"></div>
-        
-        <div className="container mx-auto px-4 relative z-10 w-full">
-           <div className="max-w-4xl mx-auto text-center mb-20 bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-3xl shadow-2xl">
-              <TrendingUp className="w-14 h-14 mx-auto text-emerald-400 mb-6 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)]" />
-              <h2 className="text-3xl md:text-5xl font-black text-white mb-6 uppercase tracking-tight">Our Corporate Vision</h2>
-              <p className="text-lg md:text-2xl text-slate-300 font-medium leading-relaxed">
-                {brandSettings.vision_text || '"Empowering every young individual to become an entrepreneur and transforming middle-class dreams into business reality. We turn private individuals into trusted partners of the Government."'}
-              </p>
-           </div>
-
-           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20 w-full">
-              {[
-                { title: "Bid Analysis & Tracking", icon: <TrendingUp className="w-8 h-8 text-blue-400"/>, desc: "End-to-end guidance, market analysis, and real-time tracking of government tenders." },
-                { title: "GST & Corporate Certs", icon: <FileText className="w-8 h-8 text-pink-400"/>, desc: "Flawless documentation, GST filing, and essential corporate certifications handled." },
-                { title: "Government Licenses", icon: <Award className="w-8 h-8 text-amber-400"/>, desc: "Class-1 to Class-5 contractor registrations, renewals, and specialized govt licenses." },
-                { title: "Company Registrations", icon: <Building2 className="w-8 h-8 text-emerald-400"/>, desc: "Private Limited, Partnership, or Proprietorship—we set up your legal foundation." },
-                { title: "MSME & Udyam", icon: <ShieldCheck className="w-8 h-8 text-purple-400"/>, desc: "Get officially recognized as an MSME to unlock exclusive government quotas." },
-                { title: "Direct MD Support", icon: <UserCog className="w-8 h-8 text-indigo-400"/>, desc: "Dedicated consultation with our Managing Director for major enterprise bids." }
-              ].map((svc, i) => (
-                <div key={i} className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-lg border border-white/10 p-6 rounded-2xl hover:scale-105 transition-transform duration-300 shadow-xl group">
-                  <div className="bg-white/10 w-16 h-16 rounded-xl flex items-center justify-center mb-5 group-hover:bg-white/20 transition-colors">
-                    {svc.icon}
-                  </div>
-                  <h3 className="font-bold text-white text-xl mb-2">{svc.title}</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed">{svc.desc}</p>
-                </div>
-              ))}
-           </div>
-        </div>
-      </section>
-
-      <section className="bg-white py-16 sm:py-20 border-t-4 border-emerald-500 w-full">
-        <div className="container mx-auto px-4 w-full">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-3">Our Achievements</h2>
-            <p className="text-slate-500 font-medium max-w-2xl mx-auto">Results we deliver for businesses bidding on government work.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { title: '1,000+ tenders tracked', desc: 'Live and historical tenders followed from notice to award.', icon: <TrendingUp className="w-7 h-7 text-emerald-600" /> },
-              { title: 'MSME and GeM partners served', desc: 'Registration, catalogs, and bid support for growing enterprises.', icon: <Building2 className="w-7 h-7 text-emerald-600" /> },
-              { title: 'End-to-end bid documentation', desc: 'Quotations, technical packs, and submission files prepared in one place.', icon: <FileText className="w-7 h-7 text-emerald-600" /> },
-              { title: 'Direct MD support', desc: 'Leadership stays involved on the bids that matter most.', icon: <UserCog className="w-7 h-7 text-emerald-600" /> },
-            ].map((item) => (
-              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-md hover:-translate-y-1 hover:shadow-xl transition">
-                <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-4">{item.icon}</div>
-                <h3 className="font-black text-[#0A2647] text-lg leading-snug">{item.title}</h3>
-                <p className="text-sm text-slate-600 mt-2 leading-relaxed">{item.desc}</p>
-              </div>
+      <section className="bg-white py-16 sm:py-20 w-full">
+        <div className="max-w-7xl mx-auto px-4">
+          <h2 className="text-center text-3xl md:text-5xl font-black text-[#0A2647] uppercase tracking-tight mb-10">Our Services</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+            {OUR_SERVICES.map((card) => (
+              <article key={card.title} className={`rounded-2xl border shadow-sm p-6 md:p-8 hover:-translate-y-2 hover:shadow-xl transition-all duration-300 ${card.theme}`}>
+                <h3 className="text-2xl font-black">{card.title}</h3>
+                <p className="mt-1 font-semibold opacity-80">{card.subtitle}</p>
+                <ul className="mt-5 space-y-3">
+                  {card.items.map((item) => (
+                    <li key={item} className="flex items-start gap-3 font-medium">
+                      <svg className="w-5 h-5 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 9.7a1 1 0 011.4-1.4l3.1 3.1 6.8-6.8a1 1 0 011.4 0z" clipRule="evenodd" /></svg>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
             ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-[#0A2647] py-16 sm:py-20 w-full">
-        <div className="container mx-auto px-4 w-full">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-wide mb-6">About Us</h2>
-            <p className="text-base md:text-lg text-slate-200 leading-relaxed whitespace-pre-line">
-              {brandSettings.about_us || 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.'}
-            </p>
           </div>
         </div>
       </section>
@@ -1050,6 +1055,28 @@ export default function App({ initialItems = [] }) {
           </div>
         </section>
       )}
+
+      <section className="bg-slate-50 py-16 sm:py-20 w-full border-t border-slate-200">
+        <div className="w-full max-w-7xl mx-auto px-4 md:px-8 text-left">
+          <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-8 text-center">About Us</h2>
+          <div className="space-y-4 text-base md:text-lg">
+            {formatAboutUs(brandSettings.about_us).map((block, index) => {
+              if (block.kind === 'heading') {
+                return <h3 key={index} className="text-blue-800 font-bold text-xl mt-6 mb-2">{block.text}</h3>;
+              }
+              if (block.kind === 'bullet') {
+                return (
+                  <p key={index} className="leading-relaxed">
+                    <span className="text-blue-800 font-bold">- {block.label}</span>
+                    <span className="text-slate-700">{block.rest}</span>
+                  </p>
+                );
+              }
+              return <p key={index} className="text-slate-700 leading-relaxed text-justify">{block.text}</p>;
+            })}
+          </div>
+        </div>
+      </section>
 
       <footer className="bg-[#051324] text-white pt-16 pb-8 border-t-4 border-emerald-500 w-full relative">
         <div className="container mx-auto px-4 text-center w-full">
