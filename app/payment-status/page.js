@@ -3,8 +3,11 @@ import { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react';
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 2000;
 const POLL_WINDOW_MS = 90 * 1000;
+const REQUEST_TIMEOUT_MS = 10000;
+const SLOW_NOTICE_MS = 10000;
+const SUCCESS_REDIRECT_MS = 1200;
 
 /** Only same-site absolute paths may be used as a redirect target. */
 function safePath(value) {
@@ -29,6 +32,7 @@ function PaymentStatusContent() {
   const billingReturn = '/client?step=billing';
   const [destination, setDestination] = useState(fallbackNext || billingReturn);
   const [attempt, setAttempt] = useState(0);
+  const [slow, setSlow] = useState(false);
   const timers = useRef([]);
 
   const later = useCallback((fn, ms) => {
@@ -42,8 +46,11 @@ function PaymentStatusContent() {
     }
 
     let cancelled = false;
+    let inflight = null;
     const deadline = Date.now() + POLL_WINDOW_MS;
     setStatus('verifying');
+    setSlow(false);
+    later(() => setSlow(true), SLOW_NOTICE_MS);
 
     const succeed = (data) => {
       const returnTo = safePath(data.return_to) || fallbackNext;
@@ -53,23 +60,29 @@ function PaymentStatusContent() {
       setDestination(target);
       clearPendingCheckout();
       setStatus('success');
-      later(() => router.push(target), 3000);
+      later(() => router.push(target), SUCCESS_REDIRECT_MS);
     };
 
     const poll = async () => {
       if (cancelled) return;
       let res = null;
       let data = {};
+      inflight = new AbortController();
+      const abortTimer = setTimeout(() => inflight?.abort(), REQUEST_TIMEOUT_MS);
       try {
         res = await fetch('/api/payment/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           cache: 'no-store',
           body: JSON.stringify({ order_id }),
+          signal: inflight.signal,
         });
         data = await res.json().catch(() => ({}));
       } catch {
         res = null;
+      } finally {
+        clearTimeout(abortTimer);
+        inflight = null;
       }
       if (cancelled) return;
 
@@ -91,9 +104,10 @@ function PaymentStatusContent() {
       later(poll, POLL_INTERVAL_MS);
     };
 
-    later(poll, 1000);
+    poll();
     return () => {
       cancelled = true;
+      inflight?.abort();
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
@@ -107,6 +121,12 @@ function PaymentStatusContent() {
             <Loader2 className="w-16 h-16 text-[#0A2647] animate-spin mb-4" />
             <h2 className="text-2xl font-bold text-[#0A2647]">Verifying Payment...</h2>
             <p className="text-muted-foreground mt-2">Please wait, do not close this window.</p>
+            {slow && (
+              <p className="text-slate-600 mt-3 text-sm">
+                Your bank is taking a little longer to confirm. Your money is safe, and do not pay
+                again. Access unlocks the moment the bank confirms.
+              </p>
+            )}
           </div>
         )}
 
