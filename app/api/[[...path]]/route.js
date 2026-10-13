@@ -2105,11 +2105,18 @@ export async function POST(request, { params }) {
     }
 
     if (path === 'guest-queries' || path === 'api/guest-queries') {
+      const source = String(body.source || 'public');
       const enterpriseName = String(body.enterprise_name || '').trim();
       const name = String(body.name || '').trim();
       const phone = String(body.phone || '').trim();
       const area = String(body.area || '').trim();
-      if (!enterpriseName || !name || !phone || !area) {
+      const email = String(body.email || '').trim().toLowerCase();
+      const services = Array.isArray(body.services) ? body.services.map((item) => String(item || '').trim()).filter(Boolean) : [];
+      if (source === 'registration') {
+        if (!name || !phone || !email || !services.length) {
+          return json({ error: 'Name, phone, email, and at least one service are required.' }, 400);
+        }
+      } else if (!enterpriseName || !name || !phone || !area) {
         return json({ error: 'Enterprise name, name, phone, and area are required.' }, 400);
       }
       const result = await db.collection('guest_queries').insertOne({
@@ -2117,9 +2124,10 @@ export async function POST(request, { params }) {
         name,
         phone,
         area,
+        email,
         query: String(body.query || '').trim(),
-        services: Array.isArray(body.services) ? body.services : [],
-        source: body.source || 'public',
+        services,
+        source,
         status: 'open',
         created_at: new Date(),
       });

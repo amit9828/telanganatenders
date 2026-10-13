@@ -89,7 +89,7 @@ function PriceChecks({ rows, picked, onToggle, priceOf, dense = false, showPrice
   );
 }
 
-export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = false, initialItems }) {
+export default function GrowthPartnerPricing({ onSubscribe, onGuestRegistration, access, cardsOnly = false, initialItems }) {
   const seeded = Array.isArray(initialItems) && initialItems.length ? initialItems : null;
   const [items, setItems] = useState(seeded || INITIAL_ITEMS);
   const [bids, setBids] = useState('1');
@@ -100,7 +100,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
   const [core, setCore] = useState([]);
   const [leadOpen, setLeadOpen] = useState(false);
   const [leadGroup, setLeadGroup] = useState('third');
-  const [lead, setLead] = useState({ enterprise_name: '', name: '', phone: '', area: '' });
+  const [lead, setLead] = useState({ enterprise_name: '', name: '', phone: '', area: '', email: '' });
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -137,9 +137,21 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
     setLeadOpen(true);
   };
 
+  const openRegistrationLead = () => {
+    if (!registration.length) return;
+    setLeadGroup('registration');
+    setSent(false);
+    setLeadOpen(true);
+  };
+
   const submitLead = async (e) => {
     e.preventDefault();
-    const selected = leadGroup === 'core' ? labelsFor(CORE_SERVICES, core) : labelsFor(THIRD_PARTY, thirdParty);
+    const selected = leadGroup === 'core'
+      ? labelsFor(CORE_SERVICES, core)
+      : leadGroup === 'registration'
+        ? labelsFor(REGISTRATION, registration)
+        : labelsFor(THIRD_PARTY, thirdParty);
+    const source = leadGroup === 'core' ? 'core_services' : leadGroup === 'registration' ? 'registration' : 'third_party';
     setSending(true);
     try {
       const res = await fetch('/api/guest-queries', {
@@ -149,7 +161,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
           ...lead,
           query: selected.join(', '),
           services: selected,
-          source: leadGroup === 'core' ? 'core_services' : 'third_party',
+          source,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -234,7 +246,10 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
               <p className="mt-4 text-sm font-semibold text-emerald-700">Select any of the above services and get Udyam Registration FREE!</p>
               <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-lg font-black text-[#0A2647]">Total {rupee(regTotal)}</p>
-                <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!registration.length} onClick={() => onSubscribe?.(subscribeIntent(regTotal, { planId: registration[0], planIds: registration }))}>Proceed to Checkout</Button>
+                <Button className="w-full sm:w-auto bg-[#0A2647] hover:bg-emerald-600" disabled={!registration.length} onClick={() => {
+                  if (onGuestRegistration) openRegistrationLead();
+                  else onSubscribe?.(subscribeIntent(regTotal, { planId: registration[0], planIds: registration }));
+                }}>Proceed to Checkout</Button>
               </div>
             </div>
 
@@ -282,10 +297,21 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
             <p className="text-emerald-700 font-bold">Request Submitted. We will directly call you.</p>
           ) : (
             <form onSubmit={submitLead} className="space-y-3">
-              <div><Label>Enterprise Name</Label><Input required value={lead.enterprise_name} onChange={(e) => setLead({ ...lead, enterprise_name: e.target.value })} /></div>
-              <div><Label>Name</Label><Input required value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} /></div>
-              <div><Label>Phone Number</Label><Input required value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} /></div>
-              <div><Label>Area</Label><Input required value={lead.area} onChange={(e) => setLead({ ...lead, area: e.target.value })} /></div>
+              {leadGroup === 'registration' ? (
+                <>
+                  <div><Label>Name</Label><Input required value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} /></div>
+                  <div><Label>Phone</Label><Input required type="tel" value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} /></div>
+                  <div><Label>Email</Label><Input required type="email" value={lead.email} onChange={(e) => setLead({ ...lead, email: e.target.value })} /></div>
+                  <p className="text-sm text-slate-600"><span className="font-bold text-[#0A2647]">Services: </span>{labelsFor(REGISTRATION, registration).join(', ')}</p>
+                </>
+              ) : (
+                <>
+                  <div><Label>Enterprise Name</Label><Input required value={lead.enterprise_name} onChange={(e) => setLead({ ...lead, enterprise_name: e.target.value })} /></div>
+                  <div><Label>Name</Label><Input required value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} /></div>
+                  <div><Label>Phone Number</Label><Input required value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} /></div>
+                  <div><Label>Area</Label><Input required value={lead.area} onChange={(e) => setLead({ ...lead, area: e.target.value })} /></div>
+                </>
+              )}
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => setLeadOpen(false)}>Go Back</Button>
                 <Button type="submit" className="flex-1 bg-emerald-600" disabled={sending}>{sending ? 'Sending…' : 'Submit'}</Button>

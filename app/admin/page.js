@@ -2663,6 +2663,7 @@ function BrandSettings({ token }) {
   const [brandName, setBrandName] = useState('Telangana Tenders');
   const [tagline, setTagline] = useState('Official Government Tender Portal');
   const [visionText, setVisionText] = useState('');
+  const [aboutUs, setAboutUs] = useState('');
   const [banners, setBanners] = useState([]);
   const [leaders, setLeaders] = useState([]);
   const [clients, setClients] = useState([]); 
@@ -2689,6 +2690,7 @@ function BrandSettings({ token }) {
       if (settings.name) setBrandName(settings.name);
       if (settings.tagline) setTagline(settings.tagline);
       if (settings.vision_text) setVisionText(settings.vision_text);
+      if (settings.about_us) setAboutUs(settings.about_us);
       if (Array.isArray(settings.banners)) {
         setBanners(settings.banners.map((src, i) => ({ src, file: null, originIndex: i })));
       }
@@ -2838,6 +2840,7 @@ function BrandSettings({ token }) {
         name: brandName,
         tagline,
         vision_text: visionText,
+        about_us: aboutUs,
         logo: logoUrl || imageFormRef(logoPreview, logoOrigin),
         gem_logo: gemUrl || imageFormRef(gemLogoPreview, gemOrigin),
         md_signature: sigUrl || imageFormRef(mdSignaturePreview, sigOrigin),
@@ -2933,6 +2936,7 @@ function BrandSettings({ token }) {
               <div><Label className="text-slate-700 font-bold">Portal Brand Name</Label><Input value={brandName} onChange={e => setBrandName(e.target.value)} className="mt-1" /></div>
               <div><Label className="text-slate-700 font-bold">Portal Tagline / Short Desc</Label><Input value={tagline} onChange={e => setTagline(e.target.value)} className="mt-1" /></div>
               <div><Label className="text-slate-700 font-bold">Corporate Vision Text (Home Page)</Label><Textarea rows={3} value={visionText} onChange={e => setVisionText(e.target.value)} className="mt-1 text-sm bg-white" placeholder="Empowering every young individual..." /></div>
+              <div><Label className="text-slate-700 font-bold">About Us (Home Page)</Label><Textarea rows={8} value={aboutUs} onChange={e => setAboutUs(e.target.value)} className="mt-1 text-sm bg-white" placeholder="Write the About Us text shown on the public homepage." /></div>
             </div>
           </div>
         </CardContent>

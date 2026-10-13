@@ -70,6 +70,7 @@ export default function ThirdPartyLeadsPanel({ token = '' }) {
                 <th>Enterprise name</th>
                 <th>Person name</th>
                 <th>Phone</th>
+                <th>Email</th>
                 <th>Area</th>
                 <th>Required services</th>
                 <th>Requested</th>
@@ -82,6 +83,7 @@ export default function ThirdPartyLeadsPanel({ token = '' }) {
                   <td className="text-xs font-semibold">{lead.enterprise_name || '—'}</td>
                   <td className="text-xs">{lead.client_name || '—'}</td>
                   <td className="text-xs whitespace-nowrap">{lead.phone || '—'}</td>
+                  <td className="text-xs">{lead.email || '—'}</td>
                   <td className="text-xs">{lead.area || '—'}</td>
                   <td className="text-xs max-w-[240px]">{(lead.services || []).join(', ') || lead.query || '—'}</td>
                   <td className="text-xs whitespace-nowrap">{when(lead.created_at)}</td>
