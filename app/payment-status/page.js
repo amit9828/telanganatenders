@@ -1,13 +1,21 @@
 'use client';
-import { useEffect, useState, Suspense } from 'react';
+import { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react';
+
+const POLL_INTERVAL_MS = 3000;
+const POLL_WINDOW_MS = 90 * 1000;
 
 /** Only same-site absolute paths may be used as a redirect target. */
 function safePath(value) {
   const path = String(value || '').trim();
   if (!path.startsWith('/') || path.startsWith('//')) return null;
   return path;
+}
+
+function clearPendingCheckout() {
+  ['tt_pending_plan', 'tt_pending_bid_count', 'tt_pending_plans', 'tt_pending_tender', 'tt_pending_months']
+    .forEach((key) => sessionStorage.removeItem(key));
 }
 
 function PaymentStatusContent() {
@@ -20,79 +28,76 @@ function PaymentStatusContent() {
   const [status, setStatus] = useState('verifying');
   const billingReturn = '/client?step=billing';
   const [destination, setDestination] = useState(fallbackNext || billingReturn);
+  const [attempt, setAttempt] = useState(0);
+  const timers = useRef([]);
+
+  const later = useCallback((fn, ms) => {
+    timers.current.push(setTimeout(fn, ms));
+  }, []);
 
   useEffect(() => {
     if (!order_id) {
       router.push(billingReturn);
-      return;
+      return undefined;
     }
 
-    // 🚀 FIX: Cashfree సిగ్నల్ కన్ఫర్మ్ అయ్యేదాకా కనీసం 60 సెకన్ల పాటు (20 retries * 3s) వెయిట్ చేసే సిస్టమ్
-    const verifyOrder = async (retries = 20) => {
-      try {
-        const res = await fetch('/api/payment/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order_id })
-        });
-        
-        // బ్యాకెండ్ 202 (PROCESSING) అని పంపితే, ఫెయిల్ అనకుండా మళ్ళీ 3 సెకన్లు ఆగి చెక్ చేస్తుంది
-        if (res.status === 202 && retries > 0) {
-          setTimeout(() => verifyOrder(retries - 1), 3000);
-          return;
-        }
+    let cancelled = false;
+    const deadline = Date.now() + POLL_WINDOW_MS;
+    setStatus('verifying');
 
-        const data = await res.json().catch(() => ({}));
-
-        // బ్యాంక్ దగ్గర ప్రాసెసింగ్ లో ఉన్నా లేదా పెండింగ్ లో ఉన్నా, ఆగి మళ్ళీ చెక్ చేయాలి
-        if ((data.status === 'ACTIVE' || data.status === 'PENDING') && retries > 0) {
-          setTimeout(() => verifyOrder(retries - 1), 3000); 
-          return;
-        }
-
-        // నెట్‌వర్క్ ఎర్రర్ లాంటివి వస్తే వెంటనే ఫెయిల్ అనకుండా మళ్ళీ ట్రై చేస్తుంది
-        if (!res.ok && retries > 0) {
-          setTimeout(() => verifyOrder(retries - 1), 3000);
-          return;
-        }
-
-        // పక్కాగా సక్సెస్ అని సిగ్నల్ వస్తే అప్పుడు మాత్రమే అన్‌లాక్ చేయాలి
-        if (data.success && (data.status === 'PAID' || !data.status)) {
-          const returnTo = safePath(data.return_to) || fallbackNext;
-          const target = returnTo
-            ? (data.tenderId ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
-            : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
-
-          setDestination(target);
-          sessionStorage.removeItem('tt_pending_plan');
-          sessionStorage.removeItem('tt_pending_bid_count');
-          sessionStorage.removeItem('tt_pending_plans');
-          sessionStorage.removeItem('tt_pending_tender');
-          setStatus('success');
-          setTimeout(() => router.push(target), 3000);
-          return;
-        }
-
-        // క్యాష్‌ఫ్రీ పక్కాగా "ఫెయిల్" అని కన్ఫర్మ్ చేస్తేనే ఫెయిల్ చేయాలి (లేదా retries అయిపోతే)
-        setDestination(billingReturn);
-        setStatus('failed');
-        setTimeout(() => router.push(billingReturn), 4000);
-
-      } catch (err) {
-        if (retries > 0) {
-          setTimeout(() => verifyOrder(retries - 1), 3000);
-        } else {
-          setDestination(billingReturn);
-          setStatus('failed');
-          setTimeout(() => router.push(billingReturn), 4000);
-        }
-      }
+    const succeed = (data) => {
+      const returnTo = safePath(data.return_to) || fallbackNext;
+      const target = returnTo
+        ? (data.tenderId ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
+        : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
+      setDestination(target);
+      clearPendingCheckout();
+      setStatus('success');
+      later(() => router.push(target), 3000);
     };
 
-    // పేజీ ఓపెన్ అవ్వగానే 1 సెకన్ ఆగి వెరిఫికేషన్ మొదలుపెడుతుంది
-    setTimeout(() => verifyOrder(20), 1000);
+    const poll = async () => {
+      if (cancelled) return;
+      let res = null;
+      let data = {};
+      try {
+        res = await fetch('/api/payment/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({ order_id }),
+        });
+        data = await res.json().catch(() => ({}));
+      } catch {
+        res = null;
+      }
+      if (cancelled) return;
 
-  }, [order_id, router, fallbackNext]);
+      if (res?.ok && data.success) {
+        succeed(data);
+        return;
+      }
+      // Only an explicit verdict from Cashfree ends in "failed". 202, 404, 5xx and
+      // network errors mean "not confirmed yet" and keep polling.
+      if (res?.status === 400 && data.status === 'FAILED') {
+        setDestination(billingReturn);
+        setStatus('failed');
+        return;
+      }
+      if (Date.now() >= deadline) {
+        setStatus('pending');
+        return;
+      }
+      later(poll, POLL_INTERVAL_MS);
+    };
+
+    later(poll, 1000);
+    return () => {
+      cancelled = true;
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    };
+  }, [order_id, router, fallbackNext, attempt, later]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -104,7 +109,7 @@ function PaymentStatusContent() {
             <p className="text-muted-foreground mt-2">Please wait, do not close this window.</p>
           </div>
         )}
-        
+
         {status === 'success' && (
           <div className="flex flex-col items-center">
             <CheckCircle2 className="w-20 h-20 text-[#16a34a] mb-4" />
@@ -120,11 +125,36 @@ function PaymentStatusContent() {
           </div>
         )}
 
+        {status === 'pending' && (
+          <div className="flex flex-col items-center">
+            <Clock className="w-20 h-20 text-amber-500 mb-4" />
+            <h2 className="text-2xl font-bold text-[#0A2647]">Payment Still Confirming</h2>
+            <p className="text-slate-600 mt-3">
+              If money left your account, do not pay again. Your access unlocks automatically
+              as soon as Cashfree confirms the payment.
+            </p>
+            <button
+              type="button"
+              onClick={() => setAttempt((n) => n + 1)}
+              className="mt-5 rounded-lg bg-[#0A2647] px-5 py-2 text-sm font-semibold text-white"
+            >
+              Check again
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/client')}
+              className="mt-3 text-sm font-semibold text-[#0A2647] underline underline-offset-4"
+            >
+              Go to dashboard
+            </button>
+          </div>
+        )}
+
         {status === 'failed' && (
           <div className="flex flex-col items-center">
             <XCircle className="w-20 h-20 text-red-500 mb-4" />
             <h2 className="text-3xl font-bold text-red-500">Payment Failed</h2>
-            <p className="text-slate-600 mt-3">We could not verify your payment. Taking you back to checkout...</p>
+            <p className="text-slate-600 mt-3">Cashfree reported this order as not paid. No access was granted.</p>
             <button
               type="button"
               onClick={() => router.push(billingReturn)}

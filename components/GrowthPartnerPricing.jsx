@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Check, Phone } from 'lucide-react';
 import { toast } from 'sonner';
-import { PRICING_DEFAULTS, paygBase } from '@/lib/billing-schema';
+import { PRICING_DEFAULTS, UNLIMITED_DURATIONS, paygBase, unlimitedBase } from '@/lib/billing-schema';
 
 function subscribeIntent(base, extra) {
   return { ...extra, previewBase: Math.round((Number(base) || 0) * 100) / 100 };
@@ -94,6 +94,7 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
   const [items, setItems] = useState(seeded || INITIAL_ITEMS);
   const [bids, setBids] = useState('1');
   const [trackKey, setTrackKey] = useState('track_1m');
+  const [unlimitedMonths, setUnlimitedMonths] = useState(1);
   const [registration, setRegistration] = useState([]);
   const [thirdParty, setThirdParty] = useState([]);
   const [core, setCore] = useState([]);
@@ -121,6 +122,9 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
   const bidCount = Math.floor(Number(bids));
   const bidCountValid = Number.isFinite(bidCount) && bidCount >= 1;
   const paygTotal = bidCountValid ? paygBase(paygItem, bidCount) : 0;
+  const unlimitedItem = items.find((item) => item.service_key === 'saas_unlimited');
+  const unlimitedTerm = UNLIMITED_DURATIONS.find((row) => row.months === unlimitedMonths) || UNLIMITED_DURATIONS[0];
+  const unlimitedTotal = unlimitedBase(unlimitedItem, unlimitedMonths);
   const regTotal = useMemo(() => sumKeys(registration), [registration, items]);
   const coreTotal = useMemo(() => sumKeys(core), [core, items]);
 
@@ -178,11 +182,22 @@ export default function GrowthPartnerPricing({ onSubscribe, access, cardsOnly = 
               <article className="w-full max-w-full rounded-3xl bg-[#0A2647] text-white shadow-2xl hover:-translate-y-1 transition p-5 sm:p-6 flex flex-col border-4 border-emerald-400 relative min-w-0">
                 <span className="absolute -top-3 left-6 bg-emerald-500 text-[#0A2647] text-xs font-black px-3 py-1 rounded-full">RECOMMENDED</span>
                 <p className="text-xs font-bold uppercase tracking-widest text-emerald-300">Core subscription</p>
-                <h3 className="text-2xl font-black mt-2">Unlimited Monthly</h3>
+                <h3 className="text-2xl font-black mt-2">Unlimited</h3>
                 <p className="text-sm text-slate-300 mt-1">Full-service bidding for active businesses.</p>
-                <p className="text-4xl font-black mt-5">{rupee(priceOf('saas_unlimited'))}</p>
+                <p className="text-4xl font-black mt-5">{rupee(unlimitedTotal)}</p>
+                <p className="text-xs font-semibold text-emerald-300 mt-1">
+                  for {unlimitedTerm.label}{unlimitedTerm.discount ? ` · save ${Math.round(unlimitedTerm.discount * 100)}%` : ''}
+                </p>
+                <label className="mt-4 text-sm font-semibold text-slate-200" htmlFor={cardsOnly ? 'promo-unlimited-duration' : 'unlimited-duration'}>Duration</label>
+                <select id={cardsOnly ? 'promo-unlimited-duration' : 'unlimited-duration'} value={unlimitedMonths} onChange={(e) => setUnlimitedMonths(Number(e.target.value))} className="mt-2 h-11 w-full rounded-lg border border-emerald-400/40 bg-white px-3 text-sm text-[#0A2647]">
+                  {UNLIMITED_DURATIONS.map((row) => (
+                    <option key={row.months} value={row.months}>
+                      {row.label}{row.discount ? ` (save ${Math.round(row.discount * 100)}%)` : ''}
+                    </option>
+                  ))}
+                </select>
                 <div className="mt-5 flex-1"><FeatureList items={UNLIMITED_FEATURES} light /></div>
-                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.(subscribeIntent(priceOf('saas_unlimited'), { planId: 'saas_unlimited' }))}>{access?.paygActive ? 'Upgrade to Unlimited' : 'Subscribe'}</Button>
+                <Button className="mt-6 w-full bg-emerald-500 hover:bg-emerald-400 text-[#0A2647] font-black h-11" onClick={() => onSubscribe?.(subscribeIntent(unlimitedTotal, { planId: 'saas_unlimited', months: unlimitedMonths }))}>{access?.paygActive ? 'Upgrade to Unlimited' : 'Subscribe'}</Button>
               </article>
 
               <article className="w-full max-w-full rounded-3xl bg-white border border-slate-200 shadow-xl hover:-translate-y-1 hover:shadow-2xl transition p-5 sm:p-6 flex flex-col min-w-0">

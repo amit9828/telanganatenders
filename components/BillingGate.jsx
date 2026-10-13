@@ -19,6 +19,7 @@ function readIntent() {
     planId,
     planIds: Array.isArray(planIds) ? planIds : undefined,
     bidCount: Number(sessionStorage.getItem('tt_pending_bid_count')) || undefined,
+    months: Number(sessionStorage.getItem('tt_pending_months')) || undefined,
     tenderId: sessionStorage.getItem('tt_pending_tender') || undefined,
   };
 }
@@ -36,6 +37,7 @@ export async function createBillingCheckout(intent) {
       plan_id: intent.planId,
       plan_ids: intent.planIds,
       bid_count: intent.bidCount,
+      months: intent.months,
       tender_id: intent.tenderId,
     }),
   });

@@ -30,7 +30,7 @@ export default function PricingPromoModal({ user }) {
       <DialogContent className="max-w-6xl w-[calc(100%-1rem)] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-[#0A2647]">Choose a plan</DialogTitle>
-          <DialogDescription>Pay-As-You-Go, Unlimited Monthly, and Payment Tracking. Close this if you want to look around first.</DialogDescription>
+          <DialogDescription>Pay-As-You-Go, Unlimited (1 month to 1 year), and Payment Tracking. Close this if you want to look around first.</DialogDescription>
         </DialogHeader>
         <GrowthPartnerPricing
           cardsOnly
