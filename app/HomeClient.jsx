@@ -127,12 +127,12 @@ export default function App({ initialItems = [] }) {
     return () => clearInterval(flipTimer);
   }, []);
 
-  // Auto-Slide Logic for Banners (30s; pause on hover; reset on manual click)
+  // Auto-Slide Logic for Banners (10s; pause on hover; reset on manual click)
   useEffect(() => {
     if (!brandSettings.banners?.length || bannerPaused) return;
     const bannerTimer = setInterval(
       () => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length),
-      30000
+      10000
     );
     return () => clearInterval(bannerTimer);
   }, [brandSettings.banners, bannerPaused, bannerResetKey]);
@@ -935,7 +935,41 @@ export default function App({ initialItems = [] }) {
         </div>
       </section>
 
-      <GrowthPartnerPricing onSubscribe={chooseCatalogPlan} initialItems={initialItems} />
+      <section className="bg-white py-16 sm:py-20 border-t-4 border-emerald-500 w-full">
+        <div className="container mx-auto px-4 w-full">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-3">Our Achievements</h2>
+            <p className="text-slate-500 font-medium max-w-2xl mx-auto">Results we deliver for businesses bidding on government work.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { title: '1,000+ tenders tracked', desc: 'Live and historical tenders followed from notice to award.', icon: <TrendingUp className="w-7 h-7 text-emerald-600" /> },
+              { title: 'MSME and GeM partners served', desc: 'Registration, catalogs, and bid support for growing enterprises.', icon: <Building2 className="w-7 h-7 text-emerald-600" /> },
+              { title: 'End-to-end bid documentation', desc: 'Quotations, technical packs, and submission files prepared in one place.', icon: <FileText className="w-7 h-7 text-emerald-600" /> },
+              { title: 'Direct MD support', desc: 'Leadership stays involved on the bids that matter most.', icon: <UserCog className="w-7 h-7 text-emerald-600" /> },
+            ].map((item) => (
+              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-md hover:-translate-y-1 hover:shadow-xl transition">
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-4">{item.icon}</div>
+                <h3 className="font-black text-[#0A2647] text-lg leading-snug">{item.title}</h3>
+                <p className="text-sm text-slate-600 mt-2 leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-[#0A2647] py-16 sm:py-20 w-full">
+        <div className="container mx-auto px-4 w-full">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-wide mb-6">About Us</h2>
+            <p className="text-base md:text-lg text-slate-200 leading-relaxed whitespace-pre-line">
+              {brandSettings.about_us || 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.'}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <GrowthPartnerPricing onSubscribe={chooseCatalogPlan} onGuestRegistration={!email} initialItems={initialItems} />
       <ViewUnlockModal
         open={viewOffer}
         tenderTitle={pendingTender?.title}
@@ -999,15 +1033,15 @@ export default function App({ initialItems = [] }) {
                <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-4">Our Prestigious Clients</h2>
                <p className="text-slate-500 font-medium max-w-2xl mx-auto">Proudly serving top enterprises and successfully executing government contracts.</p>
             </div>
-            <div className="flex flex-wrap justify-center gap-8 w-full max-w-6xl mx-auto">
+            <div className="flex flex-wrap justify-center gap-4 w-full max-w-7xl mx-auto">
               {brandSettings.clients.map((client, i) => (
-                <div key={i} className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-md text-center w-full max-w-xs hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
-                  <div className="relative w-24 h-24 mx-auto rounded-full overflow-hidden border-4 border-white shadow-md mb-4 bg-white">
-                    <Image src={client.image || 'https://via.placeholder.com/150'} alt={`${client.company_name} — Telangana Tenders client`} fill sizes="96px" className="object-cover" />
+                <div key={i} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-md text-center w-[calc(50%-0.5rem)] sm:w-[calc(33.333%-0.667rem)] lg:w-[calc(20%-0.8rem)] min-w-0 hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
+                  <div className="relative w-16 h-16 lg:w-20 lg:h-20 mx-auto rounded-full overflow-hidden border-4 border-white shadow-md mb-3 bg-white">
+                    <Image src={client.image || 'https://via.placeholder.com/150'} alt={`${client.company_name} — Telangana Tenders client`} fill sizes="80px" className="object-cover" />
                   </div>
-                  <h3 className="font-black text-xl text-[#0A2647] mb-1">{client.company_name}</h3>
-                  <p className="text-sm font-bold text-slate-600 mb-3">{client.client_name}</p>
-                  <Badge className="bg-blue-100 text-blue-800 border-0 font-mono tracking-widest text-[10px]">
+                  <h3 className="font-black text-sm lg:text-base text-[#0A2647] mb-1 leading-tight break-words">{client.company_name}</h3>
+                  <p className="text-xs font-bold text-slate-600 mb-2 break-words">{client.client_name}</p>
+                  <Badge className="bg-blue-100 text-blue-800 border-0 font-mono tracking-wider text-[9px] max-w-full truncate">
                     UDYAM: {client.udyam_no || 'N/A'}
                   </Badge>
                 </div>
