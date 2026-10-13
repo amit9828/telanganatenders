@@ -1040,13 +1040,20 @@ export default function App({ initialItems = [] }) {
         </section>
       )}
 
-      <section className="bg-[#0A2647] py-16 sm:py-20 w-full">
+      <section className="bg-slate-50 py-16 sm:py-20 w-full border-t border-slate-200">
         <div className="container mx-auto px-4 w-full">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-wide mb-6">About Us</h2>
-            <p className="text-base md:text-lg text-slate-200 leading-relaxed whitespace-pre-line">
-              {brandSettings.about_us || 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.'}
-            </p>
+          <div className="max-w-4xl mx-auto text-center">
+            <h2 className="text-3xl md:text-4xl font-black text-[#0A2647] uppercase tracking-wide mb-8">About Us</h2>
+            <div className="space-y-6 text-base md:text-lg text-slate-700 leading-relaxed">
+              {(brandSettings.about_us || 'Telangana Tenders helps businesses find, prepare, and submit government bids. Our team handles documentation, GeM registration, and bid tracking so you can focus on the work itself.')
+                .replace(/^\s*about us\s*\n+/i, '')
+                .split(/\n\s*\n/)
+                .map((paragraph) => paragraph.trim())
+                .filter(Boolean)
+                .map((paragraph) => (
+                  <p key={paragraph} className="whitespace-pre-line">{paragraph}</p>
+                ))}
+            </div>
           </div>
         </div>
       </section>
