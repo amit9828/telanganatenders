@@ -55,8 +55,9 @@ function PaymentStatusContent() {
     const succeed = (data) => {
       const returnTo = safePath(data.return_to) || fallbackNext;
       const opensPdf = Boolean(returnTo && returnTo.includes('/pdf'));
+      const visitorDash = returnTo === '/visitor-account' || Boolean(returnTo && returnTo.startsWith('/visitor-account?'));
       const target = returnTo
-        ? (data.tenderId && !opensPdf ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
+        ? (data.tenderId && !opensPdf && !visitorDash ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
         : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
       setDestination(target);
       clearPendingCheckout();
