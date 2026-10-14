@@ -31,6 +31,7 @@ function PaymentStatusContent() {
   const [status, setStatus] = useState('verifying');
   const billingReturn = '/client?step=billing';
   const [destination, setDestination] = useState(fallbackNext || billingReturn);
+  const [retryTo, setRetryTo] = useState(fallbackNext || '/');
   const [attempt, setAttempt] = useState(0);
   const [slow, setSlow] = useState(false);
   const timers = useRef([]);
@@ -55,8 +56,9 @@ function PaymentStatusContent() {
     const succeed = (data) => {
       const returnTo = safePath(data.return_to) || fallbackNext;
       const opensPdf = Boolean(returnTo && returnTo.includes('/pdf'));
+      const visitorDash = returnTo === '/visitor-account' || Boolean(returnTo && returnTo.startsWith('/visitor-account?'));
       const target = returnTo
-        ? (data.tenderId && !opensPdf ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
+        ? (data.tenderId && !opensPdf && !visitorDash ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
         : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
       setDestination(target);
       clearPendingCheckout();
@@ -91,10 +93,14 @@ function PaymentStatusContent() {
         succeed(data);
         return;
       }
-      // Only an explicit verdict from Cashfree ends in "failed". 202, 404, 5xx and
+      // A dropped, cancelled, or failed attempt stops the spinner. 202, 404, 5xx and
       // network errors mean "not confirmed yet" and keep polling.
-      if (res?.status === 400 && data.status === 'FAILED') {
-        setDestination(billingReturn);
+      const verdict = String(data.status || '').toUpperCase();
+      if (res?.status === 400 && ['FAILED', 'CANCELLED', 'USER_DROPPED', 'VOID'].includes(verdict)) {
+        const back = safePath(data.return_to) || fallbackNext || '/';
+        const visitor = back === '/visitor-account' || back.startsWith('/visitor-account?');
+        setDestination(visitor ? '/visitor-account' : back);
+        setRetryTo(visitor ? '/visitor-account?checkout=1' : back);
         setStatus('failed');
         return;
       }
@@ -175,13 +181,20 @@ function PaymentStatusContent() {
           <div className="flex flex-col items-center">
             <XCircle className="w-20 h-20 text-red-500 mb-4" />
             <h2 className="text-3xl font-bold text-red-500">Payment Failed</h2>
-            <p className="text-slate-600 mt-3">Cashfree reported this order as not paid. No access was granted.</p>
+            <p className="text-slate-600 mt-3">Cashfree reported this payment as not completed. No access was granted.</p>
             <button
               type="button"
-              onClick={() => router.push(billingReturn)}
-              className="mt-5 text-sm font-semibold text-[#0A2647] underline underline-offset-4"
+              onClick={() => router.push(retryTo)}
+              className="mt-5 rounded-lg bg-[#0A2647] px-5 py-2 text-sm font-semibold text-white"
             >
-              Go back to checkout
+              Try Again
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(destination)}
+              className="mt-3 text-sm font-semibold text-[#0A2647] underline underline-offset-4"
+            >
+              Go Back
             </button>
           </div>
         )}

@@ -86,6 +86,18 @@ function formatAboutUs(text) {
   });
 }
 
+function viewerHasAccess(profile, tenderId) {
+  const sub = profile?.subscription || {};
+  const viewUntil = sub.view_until ? new Date(sub.view_until) : null;
+  const viewWindow = sub.view_source === 'pricing_master'
+    && viewUntil
+    && !Number.isNaN(viewUntil.getTime())
+    && viewUntil > new Date();
+  const unlocked = Array.isArray(profile?.view_unlocks)
+    && profile.view_unlocks.some((row) => String(row?.tender_id) === String(tenderId));
+  return Boolean(viewWindow || unlocked || hasCorePlanView(profile));
+}
+
 export default function App({ initialItems = [] }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0); 
@@ -109,6 +121,13 @@ export default function App({ initialItems = [] }) {
     if (typeof window !== 'undefined') return localStorage.getItem('tt_intent') || '';
     return '';
   });
+  const pdfResume = useRef(false);
+  if (typeof window !== 'undefined' && !pdfResume.current) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('resume_pdf') === '1' || sessionStorage.getItem('tt_resume_pdf')) {
+      pdfResume.current = true;
+    }
+  }
 
   // Search & Filters
   const [uiYear, setUiYear] = useState(today.getFullYear());
@@ -281,6 +300,7 @@ export default function App({ initialItems = [] }) {
   }, [session, status]);
 
   useEffect(() => {
+    if (pdfResume.current) return;
     if (status === 'authenticated' && userData !== null && !loadingUser) {
       if (intent === 'subscribe' || intent === 'client') {
         if (typeof window !== 'undefined') {
@@ -456,37 +476,35 @@ export default function App({ initialItems = [] }) {
     } catch (e) { toast.error("Failed to submit query. Try again."); } finally { setSubmittingLead(false); }
   };
 
-  const tryUnlockPDF = async (t) => {
-    const userMail = email || (typeof window !== 'undefined' ? localStorage.getItem('guest_email') : null);
-    if (!userMail) {
-       setPendingTender(t);
-       setViewOffer(true);
-       return;
+  const pdfResumeStarted = useRef(false);
+
+  const tryUnlockPDF = async (t, { fromResume = false } = {}) => {
+    if (status === 'loading') return;
+    const tenderId = String(t?._id || t?.id || '');
+    if (!tenderId) return;
+    const sessionEmail = session?.user?.email;
+    if (!sessionEmail) {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('tt_resume_pdf', tenderId);
+        signIn('google', { callbackUrl: `${window.location.origin}/?resume_pdf=1` });
+      }
+      return;
     }
 
-    // 🚀 FIX (PDF never opened): the window.open() below used to run *after* awaiting
-    // /api/me. By then the user-gesture chain is broken, so Chrome/Edge/Safari silently
-    // block the popup — nothing happened and nothing was logged. Claim the tab
-    // synchronously while still inside the click handler, then point it at the PDF once
-    // access is verified (or close it if access is denied).
-    const viewer = window.open('', '_blank');
+    // A click can open a tab while the gesture is still live. The post-login resume
+    // runs from an effect, where a popup is blocked, so that path stays in this tab.
+    const viewer = fromResume ? null : window.open('', '_blank');
     const toastId = toast.loading('Verifying secure access...');
     try {
-       const res = await fetch(`/api/me?email=${encodeURIComponent(userMail)}`);
-       const d = await res.json();
-       
-       const tenderId = String(t._id || t.id);
-       const sub = d.subscription || {};
-       const viewUntil = sub.view_until ? new Date(sub.view_until) : null;
-       const viewWindow = sub.view_source === 'pricing_master' && viewUntil && viewUntil > new Date();
-       const unlocked = Array.isArray(d.view_unlocks) && d.view_unlocks.some((row) => String(row.tender_id) === tenderId);
-       const hasAccess = viewWindow || unlocked || hasCorePlanView(d);
+       const res = await fetch(`/api/me?email=${encodeURIComponent(sessionEmail)}`, { credentials: 'include' });
+       const d = await res.json().catch(() => ({}));
+       if (!res.ok) throw new Error(d.error || 'Sign in required');
 
-       if (hasAccess) {
+       if (viewerHasAccess(d, tenderId)) {
           toast.success('Access Granted!', { id: toastId });
-          const pdfUrl = `/api/tenders/${t._id || t.id}/pdf?email=${encodeURIComponent(userMail)}&role=guest`;
+          const pdfUrl = `/api/tenders/${tenderId}/pdf`;
           if (viewer && !viewer.closed) viewer.location.href = pdfUrl;
-          else window.location.href = pdfUrl; // popup blocked entirely — navigate in place
+          else window.location.href = pdfUrl;
        } else {
           if (viewer && !viewer.closed) viewer.close();
           toast.dismiss(toastId);
@@ -498,6 +516,21 @@ export default function App({ initialItems = [] }) {
        toast.error('Network Error.', { id: toastId });
     }
   };
+
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.user?.email || pdfResumeStarted.current) return;
+    if (typeof window === 'undefined') return;
+    const resumeId = sessionStorage.getItem('tt_resume_pdf');
+    if (!resumeId) return;
+    pdfResumeStarted.current = true;
+    sessionStorage.removeItem('tt_resume_pdf');
+    localStorage.removeItem('tt_intent');
+    setIntent('');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('resume_pdf');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    tryUnlockPDF({ _id: resumeId, id: resumeId }, { fromResume: true });
+  }, [status, session]);
 
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
     setBuying(true); setGuestPayModal(false);

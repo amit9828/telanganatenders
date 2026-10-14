@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { signIn, signOut, useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 import BrandLogo from '@/components/BrandLogo';
@@ -41,6 +41,7 @@ export default function VisitorAccountPage() {
   const [loading, setLoading] = useState(false);
   const [checkout, setCheckout] = useState(null);
   const [paying, setPaying] = useState(false);
+  const autoStarted = useRef(false);
   const email = status === 'authenticated' ? String(session?.user?.email || '').toLowerCase() : '';
   const windowAccess = viewWindow(data?.subscription);
   const unlocks = Array.isArray(data?.unlocked_tenders) ? data.unlocked_tenders : [];
@@ -61,7 +62,22 @@ export default function VisitorAccountPage() {
   }, [email]);
 
   useEffect(() => {
-    if (email) setCheckout(readCheckout());
+    if (!email || autoStarted.current) return undefined;
+    const pending = readCheckout();
+    if (!pending) return undefined;
+    autoStarted.current = true;
+    setCheckout(pending);
+    setPaying(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('checkout');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+    createBillingCheckout(pending)
+      .then((quote) => openCashfreeSession(quote))
+      .catch((err) => {
+        toast.error(err.message || 'Could not start payment');
+        setPaying(false);
+      });
+    return undefined;
   }, [email]);
 
   const pay = async () => {
