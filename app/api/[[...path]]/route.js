@@ -635,18 +635,8 @@ async function handleGET(request, { params }, attempt = 1) {
 
       const fileUrl = String(tender.pdf_url || tender.file_url || '').trim();
 
-      // 🚀 FIX (blank PDF viewer): we used to 307-redirect to `pdf_url` unconditionally.
-      // When CLOUDFLARE_R2_PUBLIC_URL isn't configured, that URL is the private
-      // `*.r2.cloudflarestorage.com` S3 API endpoint, which rejects unsigned browser
-      // requests with a 401 XML body — the viewer renders it as an empty page. Only
-      // redirect to a genuinely public domain; otherwise proxy the bytes ourselves.
-      if (fileUrl && format !== 'json' && isPubliclyServableUrl(fileUrl)) {
-        try {
-          return NextResponse.redirect(new URL(fileUrl).toString(), 307);
-        } catch (_) {
-          console.warn('[tenders/pdf] stored pdf_url is not a valid absolute URL:', fileUrl);
-        }
-      }
+      // Bytes stay on this route after canViewTender. A public object URL is never
+      // handed to the browser, even when the file also lives on a public host.
 
       // Source 1: the blob stored directly on the tender document.
       const blobDoc = await db.collection('tenders').findOne(tenderQuery, {
@@ -1135,19 +1125,31 @@ async function handleGET(request, { params }, attempt = 1) {
 
       const email = String(user.email || '').toLowerCase();
 
-      // 🚀 PERF FIX: These five lookups are all independent of each other (none
-      // depends on another's result) but were previously awaited one-at-a-time,
-      // stacking up their round-trip latencies serially. Running them through a
-      // single Promise.all lets them execute concurrently instead.
-      const purchaseObjectIds = (user.purchases && user.purchases.length > 0)
-        ? user.purchases.map(id => { try { return new ObjectId(id); } catch (e) { return id; } })
-        : null;
+      const unlockIds = new Set();
+      for (const id of user.purchases || []) {
+        const value = String(id || '').trim();
+        if (value) unlockIds.add(value);
+      }
+      for (const row of user.view_unlocks || []) {
+        const value = String(row?.tender_id || '').trim();
+        if (value && value !== 'null') unlockIds.add(value);
+      }
+      const unlockList = [...unlockIds];
+      const unlockObjectIds = unlockList.filter((id) => ObjectId.isValid(id)).map((id) => {
+        try { return new ObjectId(id); } catch { return null; }
+      }).filter(Boolean);
+      const unlockOr = [];
+      if (unlockObjectIds.length) unlockOr.push({ _id: { $in: unlockObjectIds } });
+      if (unlockList.length) {
+        unlockOr.push({ _id: { $in: unlockList } });
+        unlockOr.push({ id: { $in: unlockList } });
+      }
 
       const [tendersData, payments, custom_requests, active_bids, action_alerts, clientJobs] = await Promise.all([
-        purchaseObjectIds
+        unlockOr.length
           ? db.collection('tenders')
-              .find({ _id: { $in: purchaseObjectIds } })
-              .project({ title: 1, department: 1, district: 1 })
+              .find({ $or: unlockOr })
+              .project({ title: 1, department: 1, district: 1, id: 1 })
               .toArray()
           : Promise.resolve([]),
         db.collection('payments')
@@ -1173,12 +1175,19 @@ async function handleGET(request, { params }, attempt = 1) {
         ).toArray(),
       ]);
 
-      const unlocked_tenders = tendersData.map(t => ({
-        id: t._id.toString(),
-        title: t.title,
-        department: t.department,
-        district: t.district
-      }));
+      const seenUnlocks = new Set();
+      const unlocked_tenders = [];
+      for (const t of tendersData) {
+        const id = String(t._id || t.id || '');
+        if (!id || seenUnlocks.has(id)) continue;
+        seenUnlocks.add(id);
+        unlocked_tenders.push({
+          id,
+          title: t.title,
+          department: t.department,
+          district: t.district,
+        });
+      }
 
        const rupee = (value) => {
          const n = Number(String(value ?? '').replace(/[^0-9.-]+/g, ''));

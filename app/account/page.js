@@ -1,15 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useSession, signIn, signOut } from 'next-auth/react';
 import BrandLogo from '@/components/BrandLogo';
-import { clientHeaders, clientSessionIdent, rememberRealClientIdent } from '@/lib/tab-handoff';
+import { clientHeaders } from '@/lib/tab-handoff';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
 import {
   ArrowLeft,
-  Mail,
   CheckCircle2,
   FileText,
   IndianRupee,
@@ -17,45 +15,48 @@ import {
   Loader2
 } from 'lucide-react';
 
+function viewWindow(subscription) {
+  if (!subscription || subscription.view_source !== 'pricing_master' || !subscription.view_until) return null;
+  const until = new Date(subscription.view_until);
+  if (Number.isNaN(until.getTime())) return null;
+  return { until, active: until > new Date() };
+}
+
 function AccountPage() {
-  const [isMounted, setIsMounted] = useState(false);
-  const [email, setEmail] = useState('');
-  const [tempEmail, setTempEmail] = useState('');
+  const { data: session, status } = useSession();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const email = status === 'authenticated' ? String(session?.user?.email || '').toLowerCase() : '';
 
   useEffect(() => {
-    setIsMounted(true);
-    const e = clientSessionIdent();
-    if (e) setEmail(e);
-  }, []);
-
-  useEffect(() => {
-    if (!email) return;
+    if (!email) {
+      setData(null);
+      return undefined;
+    }
+    let cancelled = false;
     setLoading(true);
-    
-    // Fetch User Data (Only Core Details)
     fetch(`/api/me?email=${encodeURIComponent(email)}`, { credentials: 'include', headers: clientHeaders() })
       .then((r) => r.json())
-      .then((d) => setData(d))
+      .then((d) => { if (!cancelled) setData(d); })
       .catch((err) => console.error(err))
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [email]);
 
-  const setMyEmail = (e) => {
-    e.preventDefault();
-    if (!tempEmail) return;
-    rememberRealClientIdent(tempEmail.toLowerCase());
-    setEmail(tempEmail.toLowerCase());
-  };
-
   const logout = () => {
-    if (typeof window !== 'undefined') sessionStorage.removeItem('tt_email');
-    setEmail('');
-    setData(null);
+    signOut({ callbackUrl: '/' });
   };
 
-  if (!isMounted) return null;
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-[#0A2647]" />
+      </div>
+    );
+  }
+
+  const windowAccess = viewWindow(data?.subscription);
+  const unlockCount = data?.unlocked_tenders?.length || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -81,117 +82,74 @@ function AccountPage() {
         {!email ? (
           <Card className="tender-shadow max-w-md mx-auto">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-[#0A2647]">
-                <Mail className="w-5 h-5 text-[#16a34a]" /> Enter your email
-              </CardTitle>
+              <CardTitle className="text-[#0A2647]">Sign in to see your account</CardTitle>
+              <CardDescription>Your view plan, billing history, and unlocked PDFs are tied to your Google account.</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={setMyEmail} className="space-y-3">
-                <Input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={tempEmail}
-                  onChange={(e) => setTempEmail(e.target.value)}
-                  required
-                />
-                <Button type="submit" className="bg-[#0A2647] hover:bg-[#144272] w-full">
-                  View My Account
-                </Button>
-              </form>
+              <Button type="button" className="bg-[#0A2647] hover:bg-[#144272] w-full" onClick={() => signIn('google', { callbackUrl: '/account' })}>
+                Sign in with Google
+              </Button>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-6">
             
-            {/* USER HEADER */}
             <Card className="tender-shadow border-t-4 border-t-[#0A2647]">
-              <CardContent className="p-6 flex items-center justify-between">
+              <CardContent className="p-6 flex items-center justify-between gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Signed in as</p>
                   <p className="text-lg md:text-xl font-bold text-[#0A2647]">{email}</p>
                 </div>
-                {data?.subscription ? (
+                {windowAccess?.active ? (
                   <Badge className="bg-[#16a34a] hover:bg-[#15803d] text-sm px-3 py-1">
                     <CheckCircle2 className="w-4 h-4 mr-1" />
-                    {data.subscription.plan === 'year' ? 'Pro Annual' : 'Monthly Premium'} Active
+                    View access active
                   </Badge>
+                ) : unlockCount > 0 ? (
+                  <Badge className="bg-[#0A2647] text-sm px-3 py-1">PDF access</Badge>
                 ) : (
-                  <Badge variant="outline" className="bg-slate-100 text-slate-600">No active subscription</Badge>
+                  <Badge variant="outline" className="bg-slate-100 text-slate-600">No active view plan</Badge>
                 )}
               </CardContent>
             </Card>
 
-            {/* SUBSCRIPTION CARD */}
-            {data?.subscription && (
-              <Card className="tender-shadow bg-emerald-50 border border-[#16a34a]/30">
-                <CardContent className="p-6">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-8 h-8 text-[#16a34a]" />
-                      <div>
-                        <p className="text-sm text-emerald-800 font-semibold">
-                          Your {data.subscription.plan === 'year' ? 'Annual' : 'Monthly'} Access Pass
-                        </p>
+            <Card className="tender-shadow bg-emerald-50 border border-[#16a34a]/30">
+              <CardContent className="p-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
+                  <div className="flex items-center gap-3">
+                    <Calendar className="w-8 h-8 text-[#16a34a]" />
+                    <div>
+                      <p className="text-sm text-emerald-800 font-semibold">View subscription</p>
+                      {windowAccess ? (
                         <p className="text-lg font-bold text-[#0A2647]">
-                          Valid until {new Date(data.subscription.expires_at).toDateString()}
+                          {windowAccess.active ? 'Active until' : 'Expired on'} {windowAccess.until.toLocaleDateString()}
                         </p>
-                        {data.auto_renew && (
-                          <p className="text-xs text-emerald-700 mt-1">
-                            🔁 Auto-renews via Cashfree — cancel anytime
-                          </p>
-                        )}
-                        {data.subscription_status === 'cancelled_pending' && (
-                          <p className="text-xs text-amber-700 mt-1">
-                            ⏳ Auto-renewal cancelled — premium ends at expiry
-                          </p>
-                        )}
-                      </div>
+                      ) : (
+                        <p className="text-lg font-bold text-[#0A2647]">No 30-day or yearly view plan</p>
+                      )}
+                      <p className="text-xs text-emerald-800 mt-1">A single PDF purchase stays on this account and does not start a timed plan.</p>
                     </div>
-                    {data.auto_renew && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="bg-white text-red-600 border-red-200 hover:bg-red-50"
-                        onClick={async () => {
-                          if (!confirm('Cancel auto-renewal? You keep premium until current expiry.')) return;
-                          const r = await fetch('/api/subscription/cancel', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email }),
-                          });
-                          const d = await r.json();
-                          if (r.ok) {
-                            toast.success(d.message || 'Cancelled');
-                            fetch(`/api/me?email=${encodeURIComponent(email)}`, { credentials: 'include', headers: clientHeaders() })
-                              .then((r) => r.json())
-                              .then((d) => setData(d));
-                          } else {
-                            toast.error(d.error || 'Failed');
-                          }
-                        }}
-                      >
-                        Cancel Auto-renew
-                      </Button>
-                    )}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                  <a href="/client?step=billing">
+                    <Button className="bg-[#0A2647] hover:bg-[#144272]">Upgrade to Full Client</Button>
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* PURCHASED PDFs */}
             <Card className="tender-shadow">
               <CardHeader className="bg-slate-50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2">
                   <FileText className="w-5 h-5 text-[#16a34a]" />
-                  My Purchased PDFs ({data?.unlocked_tenders?.length || 0})
+                  My Purchased PDFs ({unlockCount})
                   {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
                 </CardTitle>
-                <CardDescription>Documents you have unlocked with a Single Purchase plan.</CardDescription>
+                <CardDescription>Documents unlocked with a single purchase. You can open them again anytime.</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                {(!data || !data.unlocked_tenders || data.unlocked_tenders.length === 0) && (
+                {unlockCount === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-8">
-                    You haven't purchased any single PDF documents yet.
+                    You have not purchased any single PDF documents yet.
                   </p>
                 )}
                 <div className="divide-y">
@@ -206,7 +164,7 @@ function AccountPage() {
                           <span className="font-semibold text-slate-600">{t.department}</span> • {t.district}
                         </p>
                       </div>
-                      <a href={`/?open_tender=${t.id || t._id}`} className="shrink-0">
+                      <a href={`/api/tenders/${t.id || t._id}/pdf`} className="shrink-0" target="_blank" rel="noreferrer">
                         <Button size="sm" className="bg-[#0A2647] hover:bg-[#144272] w-full sm:w-auto">
                           <FileText className="w-3 h-3 mr-2" /> View Document
                         </Button>
@@ -217,12 +175,11 @@ function AccountPage() {
               </CardContent>
             </Card>
 
-            {/* PAYMENT HISTORY */}
             <Card className="tender-shadow">
               <CardHeader className="bg-slate-50 border-b pb-4">
                 <CardTitle className="text-[#0A2647] flex items-center gap-2">
                   <IndianRupee className="w-5 h-5 text-[#16a34a]" />
-                  Payment History
+                  Billing History
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -237,20 +194,20 @@ function AccountPage() {
                       <thead>
                         <tr>
                           <th>Date</th>
-                          <th>Plan Type</th>
+                          <th>Plan</th>
                           <th>Amount</th>
                           <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
                         {data.payments.map((p, i) => (
-                          <tr key={i}>
+                          <tr key={p.order_id || i}>
                             <td className="font-medium text-[#0A2647]">
                               {p.paid_at ? new Date(p.paid_at).toLocaleDateString() : '-'}
                             </td>
-                            <td className="capitalize">{p.plan} Access</td>
+                            <td className="capitalize">{p.plan_id || p.plan || 'Payment'}</td>
                             <td className="text-[#16a34a] font-bold">
-                              ₹{p.amount}
+                              ₹{p.total_amount ?? p.amount}
                             </td>
                             <td>
                               <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">Success</Badge>

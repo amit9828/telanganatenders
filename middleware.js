@@ -64,11 +64,6 @@ export async function middleware(req) {
     return lock(NextResponse.next());
   }
 
-  if (pathname === '/account' || pathname.startsWith('/account/')) {
-    if (!authed) return home(req);
-    return lock(NextResponse.next());
-  }
-
   return lock(NextResponse.next());
 }
 
@@ -86,7 +81,5 @@ export const config = {
     '/tl/:path*',
     '/employee',
     '/employee/:path*',
-    '/account',
-    '/account/:path*',
   ],
 };
