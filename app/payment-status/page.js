@@ -54,8 +54,9 @@ function PaymentStatusContent() {
 
     const succeed = (data) => {
       const returnTo = safePath(data.return_to) || fallbackNext;
+      const opensPdf = Boolean(returnTo && returnTo.includes('/pdf'));
       const target = returnTo
-        ? (data.tenderId ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
+        ? (data.tenderId && !opensPdf ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}open_tender=${data.tenderId}` : returnTo)
         : (data.tenderId ? `/?open_tender=${data.tenderId}` : '/');
       setDestination(target);
       clearPendingCheckout();
