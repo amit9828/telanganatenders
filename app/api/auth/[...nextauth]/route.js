@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import { cookies } from 'next/headers';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import {
@@ -141,9 +142,12 @@ const handler = NextAuth({
         if (!email) return false;
         
         const existing = await db.collection('users').findOne({ email });
-        
+        let signupKind = '';
+        try { signupKind = cookies().get('tt_signup_kind')?.value || ''; } catch { signupKind = ''; }
+        const asVisitor = signupKind === 'visitor';
+
         if (!existing) {
-          // Register new Google User
+          // Register new Google User. A view-plan signup is a visitor, not a client.
           await db.collection('users').insertOne({
             id: uuidv4(),
             email,
@@ -154,7 +158,14 @@ const handler = NextAuth({
             subscription: { status: 'none', planType: null, expires_at: null, paywall: false, enforced_at: null },
             bid_balance: 0,
             agreement_signed: false,
+            onboarding_complete: false,
+            ...(asVisitor ? { account_kind: 'visitor' } : {}),
           });
+        } else if (asVisitor && !existing.onboarding_complete && existing.account_kind !== 'client') {
+          await db.collection('users').updateOne(
+            { email },
+            { $set: { account_kind: 'visitor', name: user.name || existing.name, image: user.image || existing.image } },
+          );
         } else if (!existing.name || !existing.image) {
           // Backfill missing profile picture or name
           await db.collection('users').updateOne(

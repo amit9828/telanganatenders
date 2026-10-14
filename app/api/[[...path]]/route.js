@@ -342,7 +342,7 @@ async function handleGET(request, { params }, attempt = 1) {
       // run in parallel instead of sequentially.
       const [tendersCount, usersCount, paymentsCount, revenueAgg] = await Promise.all([
         db.collection('tenders').countDocuments(),
-        db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true }),
+        db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true, account_kind: { $ne: 'visitor' } }),
         db.collection('payments').countDocuments({ status: 'SUCCESS' }),
         db.collection('payments').aggregate([
           { $match: { status: 'SUCCESS' } },
@@ -772,7 +772,7 @@ async function handleGET(request, { params }, attempt = 1) {
       const lead = await leadershipCaller(request);
       if (!lead.ok) return json({ error: 'Only MD or GM can view clients.' }, 403);
       const users = await db.collection('users')
-         .find({ is_approved: { $ne: true }, onboarding_complete: true })
+         .find({ is_approved: { $ne: true }, onboarding_complete: true, account_kind: { $ne: 'visitor' } })
          .project({ "vault_docs.file_base64": 0 }) // 🚀 FIX: Block heavy PDF loads
          .sort({ created_at: -1 })
          .toArray();
@@ -794,7 +794,7 @@ async function handleGET(request, { params }, attempt = 1) {
       const __t = Date.now();
       const directory = searchParams.get('directory') === '1';
       const users = await db.collection('users')
-         .find({ onboarding_complete: true })
+         .find({ onboarding_complete: true, account_kind: { $ne: 'visitor' } })
          .project(directory
            // 🚀 FIX 2: ఇక్కడ drive_link, drive_folder_link, whatsapp_verified యాడ్ చేశాం (దీని వల్లే GM కి డ్రైవ్ బటన్ కనిపిస్తుంది)
            ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1, drive_link: 1, drive_folder_link: 1, whatsapp_verified: 1 }
@@ -1220,6 +1220,7 @@ async function handleGET(request, { params }, attempt = 1) {
         payments: payments,
         auto_renew: user.auto_renew !== false,
         onboarding_complete: user.onboarding_complete || false,
+        account_kind: user.account_kind || null,
         is_approved: user.is_approved || false,
         agreement_signed: user.agreement_signed || false,
         billing_paid: user.billing_paid === true,
@@ -2222,7 +2223,8 @@ export async function POST(request, { params }) {
             udyam: udyam ? udyam.toUpperCase() : '',
             documents: documents || {}, 
             status: status || 'pending', 
-            onboarding_complete: true, 
+            onboarding_complete: true,
+            account_kind: 'client',
             profile_score: 100 
           } 
         }

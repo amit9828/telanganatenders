@@ -285,7 +285,10 @@ export default function App({ initialItems = [] }) {
       if (intent === 'subscribe' || intent === 'client') {
         if (typeof window !== 'undefined') {
           const pending = sessionStorage.getItem('tt_pending_plan');
-          window.location.href = (intent === 'subscribe' || pending) ? '/client?step=billing' : '/client';
+          const viewPlan = pending === 'view_single' || pending === 'view_month' || pending === 'view_year';
+          window.location.href = viewPlan
+            ? '/visitor-account?checkout=1'
+            : ((intent === 'subscribe' || pending) ? '/client?step=billing' : '/client');
           localStorage.removeItem('tt_intent');
           setIntent('');
         }
@@ -554,11 +557,14 @@ export default function App({ initialItems = [] }) {
       if (intent?.tenderId) sessionStorage.setItem('tt_pending_tender', intent.tenderId);
     }
     if (!email) {
+      document.cookie = `${['view_single', 'view_month', 'view_year'].includes(serviceKey) ? 'tt_signup_kind=visitor' : 'tt_signup_kind=client'}; path=/; max-age=600; samesite=lax`;
       toast.info('Please sign in to subscribe securely');
       handleSubscribeLogin();
       return;
     }
-    window.location.href = '/client?step=billing';
+    window.location.href = ['view_single', 'view_month', 'view_year'].includes(serviceKey)
+      ? '/visitor-account?checkout=1'
+      : '/client?step=billing';
   };
   const buyPlan = (planId) => {
     const catalogKey = planId === 'month' ? 'view_month' : planId === 'year' ? 'view_year' : planId === 'single' ? 'view_single' : planId;
