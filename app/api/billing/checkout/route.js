@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { resolveClientEmail } from '@/lib/staff-auth';
-import { createCashfreeOrder } from '@/lib/payments';
+import { createCashfreeOrder, paymentDestination } from '@/lib/payments';
 import { assertPurchasable, comboIncludesUdyam, orderAmount, unlimitedActive } from '@/lib/billing-access';
 import { pendingOrderDoc, paygBase, unlimitedBase, normalizeUnlimitedMonths, UNLIMITED_DURATIONS } from '@/lib/billing-schema';
 
@@ -70,7 +70,11 @@ export async function POST(request) {
   draft.months = months;
   draft.tender_id = body.tender_id || null;
   draft.includes_udyam = includesUdyam;
-  draft.return_to = '/client?step=agreement';
+  const buyer = await db.collection('users').findOne(
+    { email: String(email).toLowerCase() },
+    { projection: { agreement_signed: 1, onboarding_complete: 1 } },
+  );
+  draft.return_to = paymentDestination(draft, buyer);
   await db.collection('payments').insertOne(draft);
 
   const cashfree = await createCashfreeOrder(db, {
@@ -78,7 +82,7 @@ export async function POST(request) {
     plan: 'single',
     customAmount: money.total_amount,
     tenderId: body.tender_id || null,
-    return_to: '/client?step=agreement',
+    return_to: draft.return_to,
     reason: names.join(', '),
     order_id: orderId,
   }, request);

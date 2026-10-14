@@ -157,7 +157,6 @@ export default function App({ initialItems = [] }) {
     name: 'TG Tenders', logo: null, gem_logo: null, banners: [], leaders: [], clients: [], vision_text: null 
   });
   const [activeBanner, setActiveBanner] = useState(0);
-  const [bannerPaused, setBannerPaused] = useState(false);
   const [bannerResetKey, setBannerResetKey] = useState(0);
   const [logoFlip, setLogoFlip] = useState(false); // 🚀 3D Rotating Logo State for Loading Screen
 
@@ -178,15 +177,15 @@ export default function App({ initialItems = [] }) {
     return () => clearInterval(flipTimer);
   }, []);
 
-  // Auto-Slide Logic for Banners (10s; pause on hover; reset on manual click)
+  // Auto-Slide Logic for Banners (10s; reset on manual click)
   useEffect(() => {
-    if (!brandSettings.banners?.length || bannerPaused) return;
-    const bannerTimer = setInterval(
-      () => setActiveBanner((prev) => (prev + 1) % brandSettings.banners.length),
-      10000
-    );
+    const count = brandSettings.banners?.length || 0;
+    if (count < 2) return;
+    const bannerTimer = setInterval(() => {
+      setActiveBanner((prev) => (prev + 1) % count);
+    }, 10000);
     return () => clearInterval(bannerTimer);
-  }, [brandSettings.banners, bannerPaused, bannerResetKey]);
+  }, [brandSettings.banners, bannerResetKey]);
 
   const prevBanner = () => {
     if (brandSettings.banners?.length > 0) {
@@ -706,11 +705,7 @@ export default function App({ initialItems = [] }) {
       </header>
 
       {/* Main Content follows below... */}
-      <section
-        className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group"
-        onMouseEnter={() => setBannerPaused(true)}
-        onMouseLeave={() => setBannerPaused(false)}
-      >
+      <section className="w-full max-w-none px-0 mx-0 relative overflow-hidden bg-slate-900 group">
         <div className="relative w-full max-w-none aspect-[3/1]">
         {brandSettings.banners && brandSettings.banners.length > 0 && (
           <>
@@ -999,30 +994,28 @@ export default function App({ initialItems = [] }) {
                <p className="text-slate-500 font-medium max-w-2xl mx-auto">Meet the visionaries driving our consultancy forward. Connect directly with our core management team.</p>
             </div>
             
-            <div className="flex flex-wrap justify-center gap-8 w-full max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 w-full max-w-6xl mx-auto">
               {brandSettings.leaders.map((leader, i) => (
-                <div key={i} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-center w-full max-w-sm hover:-translate-y-2 hover:shadow-2xl transition-all duration-300 group">
-                  <div className="relative w-36 h-36 mx-auto rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors mb-5 shadow-lg bg-white">
-                    <Image src={leader.image} alt={`${leader.name} — Telangana Tenders leadership team`} fill sizes="144px" className="object-cover object-top" />
+                <div key={i} className="flex flex-col sm:flex-row items-center gap-4 md:gap-6 w-full rounded-[2rem] bg-white border border-slate-200 shadow-md px-4 py-3 md:px-5 md:py-3 text-left hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group">
+                  <div className="relative w-28 h-28 shrink-0 rounded-full overflow-hidden border-4 border-slate-100 group-hover:border-emerald-500 transition-colors shadow-md bg-white">
+                    <Image src={leader.image} alt={`${leader.name} — Telangana Tenders leadership team`} fill sizes="112px" className="object-cover object-top" />
                   </div>
-                  <h3 className="font-black text-2xl text-[#0A2647] mb-2">{leader.name}</h3>
-                  <Badge className="bg-emerald-100 text-emerald-800 border-0 font-bold px-4 py-1.5 mb-5 text-xs tracking-wide uppercase">
-                    {leader.role}
-                  </Badge>
-                  {(leader.phone || leader.email) && (
-                    <div className="border-t border-slate-100 pt-5 flex flex-col gap-3 items-center">
-                      {leader.phone && (
-                         <a href={`tel:${leader.phone}`} className="flex items-center gap-3 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm w-full justify-center">
-                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors"><Phone className="w-4 h-4" /></div>{leader.phone}
-                         </a>
-                      )}
-                      {leader.email && (
-                         <a href={`mailto:${leader.email}`} className="flex items-center gap-3 text-slate-600 hover:text-blue-600 font-bold transition-colors text-sm w-full justify-center">
-                           <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors"><Mail className="w-4 h-4" /></div><span className="truncate max-w-[200px]">{leader.email}</span>
-                         </a>
-                      )}
-                    </div>
-                  )}
+                  <div className="min-w-0 flex flex-col items-start gap-1">
+                    <h3 className="font-black text-xl text-[#0A2647] leading-tight">{leader.name}</h3>
+                    <Badge className="bg-emerald-100 text-emerald-800 border-0 font-bold px-3 py-0.5 text-[10px] tracking-wide uppercase">
+                      {leader.role}
+                    </Badge>
+                    {leader.phone && (
+                      <a href={`tel:${leader.phone}`} className="flex items-center gap-2 text-slate-600 hover:text-emerald-600 font-bold transition-colors text-sm">
+                        <Phone className="w-4 h-4 shrink-0" />{leader.phone}
+                      </a>
+                    )}
+                    {leader.email && (
+                      <a href={`mailto:${leader.email}`} className="flex items-center gap-2 text-slate-600 hover:text-blue-600 font-bold transition-colors text-sm min-w-0 max-w-full">
+                        <Mail className="w-4 h-4 shrink-0" /><span className="truncate">{leader.email}</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
