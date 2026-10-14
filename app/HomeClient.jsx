@@ -86,6 +86,25 @@ function formatAboutUs(text) {
   });
 }
 
+const VIEW_PLAN_KEYS = ['view_single', 'view_month', 'view_year'];
+
+function catalogCallback(planId) {
+  return VIEW_PLAN_KEYS.includes(planId) ? '/visitor-account?checkout=1' : '/client?step=billing';
+}
+
+function readPurchaseHandoff() {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('intent') || params.get('resume_pdf') === '1') return true;
+  try {
+    if (localStorage.getItem('tt_intent')) return true;
+    if (sessionStorage.getItem('tt_resume_pdf')) return true;
+    return VIEW_PLAN_KEYS.includes(sessionStorage.getItem('tt_pending_plan') || '');
+  } catch {
+    return false;
+  }
+}
+
 function viewerHasAccess(profile, tenderId) {
   const sub = profile?.subscription || {};
   const viewUntil = sub.view_until ? new Date(sub.view_until) : null;
@@ -98,7 +117,7 @@ function viewerHasAccess(profile, tenderId) {
   return Boolean(viewWindow || unlocked || hasCorePlanView(profile));
 }
 
-export default function App({ initialItems = [] }) {
+export default function App({ initialItems = [], handoffQuery = false }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0); 
   const { data: session, status } = useSession();
@@ -301,18 +320,16 @@ export default function App({ initialItems = [] }) {
 
   useEffect(() => {
     if (pdfResume.current) return;
-    if (status === 'authenticated' && userData !== null && !loadingUser) {
-      if (intent === 'subscribe' || intent === 'client') {
-        if (typeof window !== 'undefined') {
-          const pending = sessionStorage.getItem('tt_pending_plan');
-          const viewPlan = pending === 'view_single' || pending === 'view_month' || pending === 'view_year';
-          window.location.href = viewPlan
-            ? '/visitor-account?checkout=1'
-            : ((intent === 'subscribe' || pending) ? '/client?step=billing' : '/client');
-          localStorage.removeItem('tt_intent');
-          setIntent('');
-        }
-      }
+    if (status !== 'authenticated' || typeof window === 'undefined') return;
+    const pending = sessionStorage.getItem('tt_pending_plan');
+    if (VIEW_PLAN_KEYS.includes(pending || '')) {
+      window.location.replace('/visitor-account?checkout=1');
+      return;
+    }
+    if (userData !== null && !loadingUser && (intent === 'subscribe' || intent === 'client')) {
+      window.location.href = (intent === 'subscribe' || pending) ? '/client?step=billing' : '/client';
+      localStorage.removeItem('tt_intent');
+      setIntent('');
     }
   }, [status, intent, userData, loadingUser]);
   const performHardSignOut = async () => {
@@ -394,12 +411,14 @@ export default function App({ initialItems = [] }) {
 
   const handleClientLogin = () => {
     localStorage.setItem('tt_intent', 'client'); setIntent('client');
-    signIn('google', { callbackUrl: `${window.location.origin}/?intent=client` }, { prompt: 'select_account' });
+    signIn('google', { callbackUrl: '/client' }, { prompt: 'select_account' });
   };
 
   const handleSubscribeLogin = () => {
-    localStorage.setItem('tt_intent', 'subscribe'); setIntent('subscribe');
-    signIn('google', { callbackUrl: `${window.location.origin}/?intent=subscribe` }, { prompt: 'select_account' });
+    const pending = sessionStorage.getItem('tt_pending_plan') || '';
+    localStorage.removeItem('tt_intent');
+    setIntent('');
+    signIn('google', { callbackUrl: catalogCallback(pending) }, { prompt: 'select_account' });
   };
 
   const handleEmployeeLogin = async (e) => {
@@ -486,7 +505,7 @@ export default function App({ initialItems = [] }) {
     if (!sessionEmail) {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('tt_resume_pdf', tenderId);
-        signIn('google', { callbackUrl: `${window.location.origin}/?resume_pdf=1` });
+        signIn('google', { callbackUrl: `/pdf-resume?tender=${encodeURIComponent(tenderId)}` });
       }
       return;
     }
@@ -521,15 +540,16 @@ export default function App({ initialItems = [] }) {
     if (status !== 'authenticated' || !session?.user?.email || pdfResumeStarted.current) return;
     if (typeof window === 'undefined') return;
     const resumeId = sessionStorage.getItem('tt_resume_pdf');
-    if (!resumeId) return;
+    const resumeQuery = new URLSearchParams(window.location.search).get('resume_pdf') === '1';
+    if (!resumeId && !resumeQuery) return;
     pdfResumeStarted.current = true;
-    sessionStorage.removeItem('tt_resume_pdf');
     localStorage.removeItem('tt_intent');
     setIntent('');
-    const url = new URL(window.location.href);
-    url.searchParams.delete('resume_pdf');
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-    tryUnlockPDF({ _id: resumeId, id: resumeId }, { fromResume: true });
+    if (!resumeId) {
+      window.location.replace('/');
+      return;
+    }
+    window.location.replace(`/pdf-resume?tender=${encodeURIComponent(resumeId)}`);
   }, [status, session]);
 
   const executePayment = async (planId, userEmail, userPhone = "9999999999") => {
@@ -590,14 +610,13 @@ export default function App({ initialItems = [] }) {
       if (intent?.tenderId) sessionStorage.setItem('tt_pending_tender', intent.tenderId);
     }
     if (!email) {
-      document.cookie = `${['view_single', 'view_month', 'view_year'].includes(serviceKey) ? 'tt_signup_kind=visitor' : 'tt_signup_kind=client'}; path=/; max-age=600; samesite=lax`;
-      toast.info('Please sign in to subscribe securely');
-      handleSubscribeLogin();
+      document.cookie = `${VIEW_PLAN_KEYS.includes(serviceKey) ? 'tt_signup_kind=visitor' : 'tt_signup_kind=client'}; path=/; max-age=600; samesite=lax`;
+      localStorage.removeItem('tt_intent');
+      setIntent('');
+      signIn('google', { callbackUrl: catalogCallback(serviceKey) });
       return;
     }
-    window.location.href = ['view_single', 'view_month', 'view_year'].includes(serviceKey)
-      ? '/visitor-account?checkout=1'
-      : '/client?step=billing';
+    window.location.href = catalogCallback(serviceKey);
   };
   const buyPlan = (planId) => {
     const catalogKey = planId === 'month' ? 'view_month' : planId === 'year' ? 'view_year' : planId === 'single' ? 'view_single' : planId;
@@ -622,6 +641,17 @@ export default function App({ initialItems = [] }) {
     
     executePayment('single', dummyEmail, guestPayForm.phone);
   };
+
+  // A pending purchase or PDF handoff must not paint the portal while the session resolves.
+  const purchaseHandoff = handoffQuery || readPurchaseHandoff();
+  if (purchaseHandoff && (status === 'loading' || status === 'authenticated')) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-[#0A2647] mb-3" />
+        <p className="text-[#0A2647] font-bold">Continuing to the next step...</p>
+      </div>
+    );
+  }
 
   // 🚀 FIXED: 3D ANIMATED SPINNER LOADER
   if (status === 'authenticated' && loadingUser) {
