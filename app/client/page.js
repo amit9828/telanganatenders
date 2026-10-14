@@ -970,6 +970,15 @@ export default function ClientDashboard() {
   if (!isMounted || status === "loading" || loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
 
   const gateStep = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('step') : '';
+  const pendingPlan = typeof window !== 'undefined' ? sessionStorage.getItem('tt_pending_plan') : '';
+  const pendingIsView = pendingPlan === 'view_single' || pendingPlan === 'view_month' || pendingPlan === 'view_year';
+  if (userData?.account_kind === 'visitor' && !userData.onboarding_complete && !session?.user?.is_bypass) {
+    const stayForUpgrade = gateStep === 'billing' && !pendingIsView;
+    if (!stayForUpgrade) {
+      if (typeof window !== 'undefined') window.location.replace(pendingIsView ? '/visitor-account?checkout=1' : '/visitor-account');
+      return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-[#0A2647]"/></div>;
+    }
+  }
   const backToBilling = () => { window.location.href = '/client?step=billing'; };
   const backToAgreement = () => { window.location.href = '/client?step=agreement'; };
 

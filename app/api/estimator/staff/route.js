@@ -59,7 +59,7 @@ export async function GET(request) {
     { projection: { bid_no: 1, title: 1, category: 1, department: 1, district: 1, supply_details: 1, estimated_value: 1, emd_amount: 1 } },
   ).limit(200).toArray();
   const clients = await db.collection('users').find(
-    { onboarding_complete: true },
+    { onboarding_complete: true, account_kind: { $ne: 'visitor' } },
     { projection: { email: 1, company_name: 1, client_name: 1, service_category: 1, district: 1, address: 1, budget: 1, serviceable_states: 1, documents: 1 } },
   ).limit(200).toArray();
 
