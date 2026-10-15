@@ -11,6 +11,7 @@ import path from 'node:path';
 import { extractText } from 'unpdf';
 import { loadLocalEnv } from './load-local-env.js';
 import { assertNoLeak, buildFourPartReport } from './gem-universal-report.js';
+import { ocrEmptyPdf } from './ocr-empty-pdf.js';
 
 function parseArgs(argv) {
   const opts = { files: [], rules: path.join('fixtures', 'rules'), output: path.join('fixtures', 'reports') };
@@ -133,7 +134,10 @@ async function downloadDocument(url) {
 async function pdfText(buffer) {
   const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
   const raw = Array.isArray(text) ? text.join('\n') : String(text || '');
-  return toEnglish(raw);
+  const english = toEnglish(raw);
+  if (squash(english).length >= 40) return english;
+  console.log('  no text layer, reading the scan');
+  return toEnglish(await ocrEmptyPdf(buffer));
 }
 
 function coverScope(cover) {

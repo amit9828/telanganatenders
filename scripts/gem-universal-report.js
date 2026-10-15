@@ -241,11 +241,51 @@ function extractSor(text) {
     .slice(0, 40);
 }
 
+function uniqueLines(lines) {
+  const seen = new Set();
+  const out = [];
+  for (const line of lines) {
+    const key = line.toLowerCase().slice(0, 80);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+  }
+  return out;
+}
+
+export function scanFindings(text) {
+  let body = String(text || '').replace(/[ \t]+/g, ' ');
+  body = body.replace(/\s+(?=(?:List of High end machinery|Machinery required|Local Presence|Site Visit)\b)/gi, '\n');
+  body = body.replace(/(\d+\.\d+\s+)/g, '\n$1');
+  const lines = body.split(/\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter((line) => line.length > 8);
+  const scope = [];
+  const eligibility = [];
+  const machinery = [];
+  const payment = [];
+  for (const line of lines) {
+    const machineAt = line.search(/list of high end machinery|machinery required/i);
+    if (machineAt >= 0) {
+      const tail = line.slice(machineAt).trim();
+      if (tail.length > 20) machinery.push(tail);
+    }
+    if (/^\d+\.\d+\s+/.test(line) && /water|prun|mulch|grass|plant|sweep|compost|hedge|garden|sapling|manure|arboricult/i.test(line)) scope.push(line);
+    if (/local presence|site visit|visakhapatnam based|only visakhapatnam/i.test(line) && line.length < 1200) eligibility.push(line);
+    if (/electronic payment|fall clause|\bIFSC\b|45\s*days/i.test(line) && line.length < 700) payment.push(line);
+  }
+  return {
+    scope: uniqueLines(scope).slice(0, 30),
+    eligibility: uniqueLines(eligibility).slice(0, 8),
+    machinery: uniqueLines(machinery).slice(0, 20),
+    payment: uniqueLines(payment).slice(0, 12),
+  };
+}
+
 function scopeReport({ atc, sow, coverScopePoints }) {
   const sections = [];
   const buyer = tidy(atc || '');
   const uploaded = tidy(sow || '');
   const primary = buyer.length > 400 ? buyer : uploaded;
+  const findings = scanFindings([buyer, uploaded].filter(Boolean).join('\n'));
   const groups = groupClauses(splitNumbered(scopeSlice(primary)));
   for (const group of groups) sections.push({ title: group.title, blocks: group.items });
   if (!groups.length && uploaded && uploaded !== primary) {
@@ -266,6 +306,12 @@ function scopeReport({ atc, sow, coverScopePoints }) {
   }
   const sor = extractSor(primary);
   if (sor.length) sections.push({ title: 'Schedule of requirements', blocks: [{ kind: 'numbered', items: sor }] });
+  if (findings.scope.length) {
+    sections.push({ title: 'Scope of work', blocks: findings.scope.map((line, index) => point(String(index + 1), line)) });
+  }
+  if (findings.machinery.length) {
+    sections.push({ title: 'Machinery required', blocks: [{ kind: 'numbered', items: findings.machinery.map((line, index) => point(String(index + 1), line)) }] });
+  }
   if (coverScopePoints?.length) {
     sections.push({
       title: 'Service lines on the GeM cover',
@@ -284,6 +330,8 @@ function coverDocuments(cover) {
 }
 
 function docTitle(clause, bucket = '') {
+  if (/local presence/i.test(clause)) return 'Local presence';
+  if (/site visit/i.test(clause)) return 'Site visit';
   if (bucket === 'offline') return 'Offline EMD submission';
   if (bucket === 'post') {
     const annex = clause.match(/Annexure\s*-?\s*[0-9]+/i);
@@ -333,6 +381,11 @@ function documentReport(cover, atc) {
     else if (/furnish performance security|after placing contract|documents to be provided from successful bidder|labour licen|indemnity bond|deed of indemnity|within \d+ days (?:of|from).{0,40}(?:APO|advance purchase|issuing APO)/i.test(clause)) postAward.push(clause);
     else if (/certificate|undertaking|affidavit|annexure|power of attorney|\bPAN\b|GST|turnover|experience|declaration|licen[cs]e|letterhead|udyam|udhyam|\bMSME\b|black[- ]?list|stamp paper/i.test(head)) online.push(clause);
   }
+  const findings = scanFindings(atc);
+  for (const line of findings.eligibility) {
+    const title = /site visit/i.test(line) ? 'Site visit' : 'Local presence';
+    online.push(`${title}. ${line}`);
+  }
   const coverItems = coverDocuments(cover).filter((item) => {
     const key = item.title.toLowerCase().split(/\s+/)[0];
     return key.length <= 4 || !online.some((clause) => clause.toLowerCase().includes(key));
@@ -371,6 +424,7 @@ function termTitle(text) {
   if (/toll[- ]?free|dedicated\s*\/?\s*toll/i.test(text)) return 'Service support number';
   if (/financial standing|not be under liquidation|bankrupt/i.test(text)) return 'Financial standing';
   if (/registered at/i.test(text)) return 'Place of registration';
+  if (/local presence|site visit/i.test(text)) return 'Eligibility';
   return '';
 }
 
@@ -393,7 +447,8 @@ function paymentTitle(text) {
   if (/GSTIN|triplicate|invoice/i.test(text)) return 'Invoice requirements';
   if (/advance/i.test(text)) return 'Advance payment';
   if (/deduct|penalt/i.test(text)) return 'Deductions';
-  if (/NEFT|RTGS|e-payment/i.test(text)) return 'Mode of payment';
+  if (/NEFT|RTGS|e-payment|electronic payment|\bIFSC\b/i.test(text)) return 'Mode of payment';
+  if (/45\s*days/i.test(text)) return 'Payment timeline';
   return 'Payment condition';
 }
 
@@ -405,7 +460,9 @@ function penaltyTable(text) {
     .map((row) => [row[1], tidy(row[2]), `Rs. ${row[3]} ${tidy(row[4])}`]);
 }
 
-function termsReport({ coverTerms, atc, paymentLines, slaPenalties }) {
+function termsReport({ coverTerms, atc, sow, paymentText, paymentLines, slaPenalties }) {
+  const corpus = [atc, sow, paymentText].filter(Boolean).join('\n');
+  const findings = scanFindings(corpus);
   const body = operativeText(atc);
   const atcTerms = splitNumbered(body).filter((clause) => termTitle(clause));
   const payWindowHits = indexes(body, /Payment Terms and Conditions/i);
@@ -413,8 +470,8 @@ function termsReport({ coverTerms, atc, paymentLines, slaPenalties }) {
   const payWindow = payStart < 0 ? '' : body.slice(payStart, payStart + 8000);
   const payCut = payWindow.search(/1\.\s+Scope\b|Scope of Work/i);
   const payClauses = splitNumbered(payCut > 80 ? payWindow.slice(0, payCut) : payWindow);
-  const terms = groupByTitle([...(coverTerms || []), ...atcTerms], termTitle);
-  const payment = groupByTitle([...(paymentLines || []), ...payClauses], paymentTitle);
+  const terms = groupByTitle([...(coverTerms || []), ...atcTerms, ...findings.payment.filter((line) => /fall clause/i.test(line))], termTitle);
+  const payment = groupByTitle([...(paymentLines || []), ...payClauses, ...findings.payment.filter((line) => !/fall clause/i.test(line))], paymentTitle);
   const rows = penaltyTable(atc);
   const sections = [
     { title: '1. Key terms and conditions', items: terms.length ? terms : [point('Additional terms', NONE)] },
