@@ -9,6 +9,7 @@ import StationeryUploader from '@/components/StationeryUploader';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
 import MasterTenderDesk from '@/components/MasterTenderDesk';
+import BidReportDesk from '@/components/BidReportDesk';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
@@ -1104,6 +1105,7 @@ export default function AdminPage() {
       { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo', badge: matchSummary.new },
       { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
+      { value: 'bid-report', label: 'Bid report', icon: FileText, color: 'teal' },
     ] },
     // 🚀 RBAC: MD-only oversight into per-employee work — Global Suggestions +
     // Master Live Tracking — kept as its own focused group rather than sprawling
@@ -2186,6 +2188,10 @@ export default function AdminPage() {
               clients={approvedClients}
               tenders={tenders}
             />
+          </TabsContent>
+
+          <TabsContent value="bid-report" className="mt-4">
+            <BidReportDesk />
           </TabsContent>
 
           <TabsContent value="publisher" className="mt-4">

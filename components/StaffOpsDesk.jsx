@@ -9,6 +9,7 @@ import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import MatchedOpportunitiesPanel from '@/components/MatchedOpportunitiesPanel';
 import GemCoPilot from '@/components/GemCoPilot';
+import BidReportDesk from '@/components/BidReportDesk';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
@@ -257,6 +258,7 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'matchmaker', label: 'AI Matchmaker / Live Hunting', icon: Target, color: 'indigo' },
           { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
           { value: 'copilot', label: 'Co-Pilot', icon: Bot, color: 'violet' },
+          { value: 'bid-report', label: 'Bid report', icon: FileText, color: 'teal' },
         ] },
         { id: 'clients-officers', label: 'Clients', items: [
           { value: 'clients', label: 'Clients DB', icon: Briefcase, color: 'navy' },
@@ -496,6 +498,11 @@ export default function StaffOpsDesk({ desk }) {
               <TabsContent value="copilot">
                 <GemCoPilot embedded />
               </TabsContent>
+              {isGm && (
+                <TabsContent value="bid-report">
+                  <BidReportDesk />
+                </TabsContent>
+              )}
               {(isGm || isTl) && (
                 <TabsContent value="clients">
                   <Card className="tender-shadow border-t-4 border-t-blue-600">
