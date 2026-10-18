@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { readDeskSession } from '@/lib/desk-guard';
+import { analyzeTenderBuffer } from '@/lib/gem-bid-extract';
 import { belongsOnSuggestions } from '@/lib/job-board-state';
 import { suggestionTenderRows } from '@/lib/suggestion-tenders';
 import { resolveActorRole } from '@/lib/staff-auth';
@@ -13,7 +13,7 @@ import { originalTenderPackFile } from '@/lib/workflow-api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 800;
+export const maxDuration = 60;
 
 const NO_PDF = 'This tender has no PDF, so a report cannot be written.';
 
@@ -53,24 +53,6 @@ function publicReport(doc, jobId) {
     },
     markdown: doc.markdown || '',
   };
-}
-
-async function runExtractor(pdfPath, bidNo, jsonPath) {
-  const script = path.join(process.cwd(), 'scripts', 'test-llm-pipeline-step3.js');
-  const outputDir = path.join(process.cwd(), 'fixtures', 'reports');
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [
-      script,
-      '--pdf', pdfPath,
-      '--bid', bidNo,
-      '--json-out', jsonPath,
-      '--output', outputDir,
-    ], { cwd: process.cwd() });
-    let output = '';
-    child.stdout.on('data', (chunk) => { output += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { output += chunk.toString(); });
-    child.on('close', (code) => resolve({ code, output: output.slice(-1500) }));
-  });
 }
 
 export async function GET(request) {
@@ -126,15 +108,11 @@ export async function POST(request) {
   if (!pack?.buffer?.length) return NextResponse.json({ error: NO_PDF }, { status: 400 });
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bid-report-'));
-  const pdfPath = path.join(dir, 'cover.pdf');
-  const jsonPath = path.join(dir, 'report.json');
   try {
-    fs.writeFileSync(pdfPath, pack.buffer);
-    const result = await runExtractor(pdfPath, String(job.bid_no || jobId), jsonPath);
-    if (result.code !== 0 || !fs.existsSync(jsonPath)) {
-      return NextResponse.json({ error: 'The bid could not be read.', detail: result.output }, { status: 500 });
-    }
-    const generated = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    const generated = await analyzeTenderBuffer(pack.buffer, {
+      bidNo: String(job.bid_no || jobId),
+      outputDir: dir,
+    });
     if (!generated?.report_en || !generated?.report_te) {
       return NextResponse.json({ error: 'The bid could not be read.' }, { status: 500 });
     }
@@ -157,6 +135,8 @@ export async function POST(request) {
       { upsert: true },
     );
     return NextResponse.json(publicReport(doc, jobId));
+  } catch (err) {
+    return NextResponse.json({ error: 'The bid could not be read.', detail: String(err?.message || '').slice(0, 500) }, { status: 500 });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

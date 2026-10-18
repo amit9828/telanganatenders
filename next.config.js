@@ -15,9 +15,10 @@ const nextConfig = {
       static: 0,
     },
     // Remove if not using Server Components
-    serverComponentsExternalPackages: ['mongodb', 'googleapis', 'unpdf'],
+    serverComponentsExternalPackages: ['mongodb', 'googleapis', 'unpdf', 'tesseract.js', 'tesseract.js-core'],
     // Playwright is a local-agent devDependency. NFT tracing it into every
     // serverless function blows past Vercel's size limit after a successful compile.
+    // The bid-report route must not trace fixtures, sample PDFs, or the CLI scripts.
     outputFileTracingExcludes: {
       '*': [
         'node_modules/playwright/**',
@@ -25,7 +26,38 @@ const nextConfig = {
         'node_modules/@playwright/**',
         'scripts/gem-local-agent.js',
         'scripts/gem-agent-server.js',
+        './fixtures/**',
+        './sample_tenders/**',
+        './scripts/**',
+        './test_reports/**',
+        './tests/**',
+        './.git/**',
+        'fixtures/**',
+        'sample_tenders/**',
+        'scripts/**',
+        'test_reports/**',
+        'tests/**',
+        '.git/**',
       ],
+      '/api/**': [
+        './fixtures/**',
+        './sample_tenders/**',
+        './scripts/**',
+        './test_reports/**',
+        './tests/**',
+        './.git/**',
+        'fixtures/**',
+        'sample_tenders/**',
+        'scripts/**',
+        'test_reports/**',
+        'tests/**',
+        '.git/**',
+      ],
+    },
+    // tesseract.js loads these wasm files by path. Keep only this package, not the repo.
+    outputFileTracingIncludes: {
+      '/api/reports/bid': ['./node_modules/tesseract.js-core/**/*', './node_modules/tesseract.js/src/worker-script/**/*'],
+      '/api/reports/bid/route': ['./node_modules/tesseract.js-core/**/*', './node_modules/tesseract.js/src/worker-script/**/*'],
     },
     // Required on Next 14.x for instrumentation.js's register() hook to fire (it's
     // stable/default from Next 15 onward). Used to auto-start the local GeM agent
