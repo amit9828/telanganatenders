@@ -8,17 +8,31 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { extractText } from 'unpdf';
+import { fileURLToPath } from 'node:url';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { loadLocalEnv } from './load-local-env.js';
 import { assertNoLeak, buildFourPartReport } from './gem-universal-report.js';
+import { documentsFrom, emdFrom, mseFrom } from './extract-rules-step2.js';
 import { ocrEmptyPdf } from './ocr-empty-pdf.js';
 
+const URL_RE = /https?:\/\/[^\s<>"'`)\]]+/gi;
+
 function parseArgs(argv) {
-  const opts = { files: [], rules: path.join('fixtures', 'rules'), output: path.join('fixtures', 'reports') };
+  const opts = {
+    files: [],
+    rules: path.join('fixtures', 'rules'),
+    output: path.join('fixtures', 'reports'),
+    pdf: '',
+    bid: '',
+    jsonOut: '',
+  };
   for (let i = 2; i < argv.length; i += 1) {
     if (argv[i] === '--file' && argv[i + 1]) opts.files.push(argv[++i]);
     else if (argv[i] === '--rules' && argv[i + 1]) opts.rules = argv[++i];
     else if (argv[i] === '--output' && argv[i + 1]) opts.output = argv[++i];
+    else if (argv[i] === '--pdf' && argv[i + 1]) opts.pdf = argv[++i];
+    else if (argv[i] === '--bid' && argv[i + 1]) opts.bid = argv[++i];
+    else if (argv[i] === '--json-out' && argv[i + 1]) opts.jsonOut = argv[++i];
   }
   return opts;
 }
@@ -630,10 +644,48 @@ async function translateReport(report) {
   return applyStrings(report, translated);
 }
 
-async function buildReport(rules, rulesDir, outputDir) {
-  const fixturePath = path.join(path.dirname(rulesDir), rules.fixture);
-  const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-  const cover = toEnglish(fixture.pages.map((page) => page.text).join('\n'));
+async function linksFromPdf(buffer, pages, cover) {
+  const links = [];
+  const seen = new Set();
+  const push = (url, page, context) => {
+    const clean = String(url || '').replace(/[.,;:]+$/g, '');
+    if (!/^https?:\/\//i.test(clean) || seen.has(clean)) return;
+    seen.add(clean);
+    links.push({ url: clean, page, context: context || '' });
+  };
+  try {
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const annotations = await page.getAnnotations();
+      const context = toEnglish(pages[pageNumber - 1]?.text || '').slice(0, 500);
+      for (const annotation of annotations) {
+        if (annotation.subtype !== 'Link') continue;
+        push(annotation.url || annotation.unsafeUrl || '', pageNumber, context);
+      }
+    }
+  } catch (err) {
+    console.log(`  link annotations skipped: ${err.message}`);
+  }
+  pages.forEach((page) => {
+    const context = toEnglish(page.text).slice(0, 500);
+    for (const raw of String(page.text || '').match(URL_RE) || []) push(raw, page.page, context);
+  });
+  for (const raw of String(cover || '').match(URL_RE) || []) push(raw, 1, '');
+  return links;
+}
+
+function rulesFromCover(cover, file, links) {
+  const pages = [{ page: 1, text: cover }];
+  return {
+    file,
+    emd: emdFrom(pages),
+    mse_relaxation: mseFrom(pages),
+    documents: documentsFrom({ pages, links, named_pdfs: [] }),
+  };
+}
+
+async function composeReport(cover, rules, outputDir) {
   const downloadDir = path.join(outputDir, 'downloads', String(rules.file || 'bid').replace(/\.pdf$/i, ''));
   fs.mkdirSync(downloadDir, { recursive: true });
 
@@ -708,13 +760,41 @@ async function buildReport(rules, rulesDir, outputDir) {
   };
 }
 
+async function buildReport(rules, rulesDir, outputDir) {
+  const fixturePath = path.join(path.dirname(rulesDir), rules.fixture);
+  const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  const cover = toEnglish(fixture.pages.map((page) => page.text).join('\n'));
+  return composeReport(cover, rules, outputDir);
+}
+
+async function analyzePdfFile(pdfPath, bidNo, outputDir) {
+  const buffer = fs.readFileSync(pdfPath);
+  const extracted = await extractText(new Uint8Array(buffer), { mergePages: false });
+  const pageList = Array.isArray(extracted.text) ? extracted.text : [extracted.text];
+  const pages = pageList.map((text, index) => ({ page: index + 1, text: String(text || '') }));
+  const joined = toEnglish(pages.map((page) => page.text).join('\n'));
+  const cover = squash(joined).length >= 40 ? joined : await pdfText(buffer);
+  const links = await linksFromPdf(buffer, pages, cover);
+  const file = String(bidNo || path.basename(pdfPath, '.pdf')).replace(/[^\w.-]+/g, '_').slice(0, 80) || 'bid';
+  const rules = rulesFromCover(cover, file, links);
+  return composeReport(cover, rules, outputDir);
+}
+
 async function main() {
   loadLocalEnv();
   const opts = parseArgs(process.argv);
-  const rulesDir = path.resolve(opts.rules);
   const outputDir = path.resolve(opts.output);
   fs.mkdirSync(outputDir, { recursive: true });
   const cachePath = loadTranslationCache(outputDir);
+  if (opts.pdf) {
+    const report = await analyzePdfFile(opts.pdf, opts.bid, outputDir);
+    const outPath = path.resolve(opts.jsonOut || path.join(outputDir, 'live-bid-report.json'));
+    fs.writeFileSync(outPath, `${JSON.stringify({ ...report, markdown: renderMarkdown(report) }, null, 2)}\n`);
+    saveTranslationCache(cachePath);
+    console.log(`Wrote ${outPath}`);
+    return;
+  }
+  const rulesDir = path.resolve(opts.rules);
   const files = opts.files.length
     ? opts.files
     : JSON.parse(fs.readFileSync(path.join(rulesDir, 'index.json'), 'utf8')).map((row) => String(row.file).replace(/\.pdf$/i, ''));
@@ -733,7 +813,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err?.stack || err?.message || err);
-  process.exit(1);
-});
+const isDirect = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirect) {
+  main().catch((err) => {
+    console.error(err?.stack || err?.message || err);
+    process.exit(1);
+  });
+}
