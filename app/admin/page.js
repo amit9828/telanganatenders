@@ -137,6 +137,7 @@ export default function AdminPage() {
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reports');
+  const [bidReportJobId, setBidReportJobId] = useState('');
   useStaffPresence(activeTab, { enabled: mdDesk });
 
   // --- CORE DATA STATES ---
@@ -1736,6 +1737,18 @@ export default function AdminPage() {
                             <td className="align-top">
                               <p className="font-semibold text-xs">{job.bid_no || 'PENDING'}</p>
                               <p className="text-[10px] text-slate-500 line-clamp-1">{job.title}</p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="mt-1 h-7 text-[10px]"
+                                onClick={() => {
+                                  setBidReportJobId(String(job._id || job.id || ''));
+                                  setActiveTab('bid-report');
+                                }}
+                              >
+                                View Bid Report
+                              </Button>
                             </td>
                             <td className="align-top">
                               <Badge className="text-[10px] border bg-amber-100 text-amber-800 border-amber-200">
@@ -2191,7 +2204,7 @@ export default function AdminPage() {
           </TabsContent>
 
           <TabsContent value="bid-report" className="mt-4">
-            <BidReportDesk />
+            <BidReportDesk initialJobId={bidReportJobId} />
           </TabsContent>
 
           <TabsContent value="publisher" className="mt-4">

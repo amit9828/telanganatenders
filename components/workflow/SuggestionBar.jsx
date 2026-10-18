@@ -19,7 +19,7 @@ function clientLabel(job) {
   return job.parked_client_name || job.parked_client_email || 'Unassigned client';
 }
 
-export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJob }) {
+export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJob, onOpenReport }) {
   const [busyId, setBusyId] = useState('');
   const [sowByJob, setSowByJob] = useState({});
   const [quoteJob, setQuoteJob] = useState(null);
@@ -199,6 +199,14 @@ export default function SuggestionBar({ jobs = [], pdfEmail, onRefresh, onPatchJ
                         onClick={() => openPdf(job)}
                       >
                         <FileText className="w-3 h-3 mr-1" /> View PDF
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] w-full"
+                        onClick={() => onOpenReport?.(job)}
+                      >
+                        View Bid Report
                       </Button>
                       <input
                         id={inputId}

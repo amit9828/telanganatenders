@@ -5,6 +5,7 @@ import { Copy, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { workflowFetch } from '@/components/workflow/api';
 
 const NONE = 'Not stated in this tender';
 
@@ -65,36 +66,51 @@ function Blocks({ blocks }) {
   });
 }
 
-export default function BidReportDesk() {
-  const [files, setFiles] = useState([]);
-  const [file, setFile] = useState('GeM-Bidding-9747960');
+export default function BidReportDesk({ initialJobId = '' }) {
+  const [tenders, setTenders] = useState([]);
+  const [query, setQuery] = useState('');
+  const [jobId, setJobId] = useState(initialJobId || '');
   const [bundle, setBundle] = useState(null);
   const [markdown, setMarkdown] = useState('');
   const [script, setScript] = useState('en');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (initialJobId) setJobId(String(initialJobId));
+  }, [initialJobId]);
+
+  useEffect(() => {
     let cancelled = false;
-    fetch('/api/reports/bid', { credentials: 'include' })
-      .then((res) => res.json())
-      .then((data) => {
-        if (cancelled) return;
-        const names = data.files || [];
-        setFiles(names);
-        setFile((current) => (names.includes(current) ? current : (names[0] || current)));
+    workflowFetch('/api/reports/bid')
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not list Suggestion Bar tenders.');
+        return data;
       })
-      .catch(() => { if (!cancelled) setError('Could not list saved reports.'); });
+      .then((data) => { if (!cancelled) setTenders(data.tenders || []); })
+      .catch((err) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (!file) return undefined;
+    if (!jobId) {
+      setBundle(null);
+      setMarkdown('');
+      setLoading(false);
+      return undefined;
+    }
     let cancelled = false;
+    setRunning(true);
     setLoading(true);
     setError('');
-    fetch(`/api/reports/bid?file=${encodeURIComponent(file)}`, { credentials: 'include' })
+    setBundle(null);
+    workflowFetch('/api/reports/bid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    })
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Could not open this report.');
@@ -106,13 +122,22 @@ export default function BidReportDesk() {
         setMarkdown(data.markdown || '');
       })
       .catch((err) => { if (!cancelled) setError(err.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => { if (!cancelled) { setLoading(false); setRunning(false); } });
     return () => { cancelled = true; };
-  }, [file, running]);
+  }, [jobId]);
 
   const report = script === 'te' ? bundle?.report_te : bundle?.report_en;
   const parts = useMemo(() => scriptParts(markdown), [markdown]);
   const skipped = bundle?.core_details?.downloads_skipped || [];
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const matched = needle
+      ? tenders.filter((row) => [row.bidNo, row.title, row.organisation, row.client].join(' ').toLowerCase().includes(needle))
+      : tenders;
+    const selected = tenders.find((row) => row.jobId === jobId);
+    if (selected && !matched.some((row) => row.jobId === jobId)) return [selected, ...matched];
+    return matched;
+  }, [jobId, query, tenders]);
 
   async function copy(which) {
     const text = which === 'te' ? parts.te : which === 'en' ? parts.en : parts.both;
@@ -125,18 +150,22 @@ export default function BidReportDesk() {
   }
 
   async function reread() {
+    if (!jobId) return;
     setRunning(true);
+    setError('');
     try {
-      const res = await fetch('/api/reports/bid', {
+      const res = await workflowFetch('/api/reports/bid', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file }),
+        body: JSON.stringify({ jobId, force: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Read failed.');
+      setBundle(data.report);
+      setMarkdown(data.markdown || '');
       toast.success('Report saved.');
     } catch (err) {
+      setError(err.message);
       toast.error(err.message);
     } finally {
       setRunning(false);
@@ -150,23 +179,36 @@ export default function BidReportDesk() {
           <CardTitle className="flex items-center gap-2 text-[#0A2647]"><FileText className="h-5 w-5" /> Bid report</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <label className="text-sm font-medium text-slate-700" htmlFor="bid-report-file">Saved bid</label>
-            <select
-              id="bid-report-file"
-              className="h-10 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm"
-              value={file}
-              onChange={(event) => setFile(event.target.value)}
-            >
-              {files.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-            <Button type="button" variant="outline" onClick={reread} disabled={running || !file}>
-              {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Read again
-            </Button>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-slate-700" htmlFor="bid-report-search">Search Suggestion Bar</label>
+            <input
+              id="bid-report-search"
+              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm"
+              value={query}
+              placeholder="Bid number, title, organisation, or client"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="text-sm font-medium text-slate-700" htmlFor="bid-report-tender">
+                {`Select Tender from Suggestion Bar (${tenders.length} Tenders)`}
+              </label>
+              <select
+                id="bid-report-tender"
+                className="h-10 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm"
+                value={shown.some((row) => row.jobId === jobId) ? jobId : ''}
+                onChange={(event) => setJobId(event.target.value)}
+              >
+                <option value="">{`Select Tender from Suggestion Bar (${tenders.length} Tenders)`}</option>
+                {shown.map((row) => <option key={row.jobId} value={row.jobId}>{row.label}</option>)}
+              </select>
+              <Button type="button" variant="outline" onClick={reread} disabled={running || !jobId}>
+                {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Read again
+              </Button>
+            </div>
           </div>
           <p className="text-sm text-slate-600">
-            {running ? 'Reading the bid. A scanned PDF can take several minutes.' : 'Saved report'}
+            {running ? 'Reading the bid. A scanned PDF can take several minutes.' : (jobId ? 'Saved report' : 'Choose a tender from the Suggestion Bar.')}
             {skipped.length ? `. Not read: ${skipped.join(', ')}` : ''}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -180,7 +222,7 @@ export default function BidReportDesk() {
       </Card>
 
       {error ? <p className="text-sm text-red-700">{error}</p> : null}
-      {loading ? <p className="text-sm text-slate-600">Opening the saved report…</p> : null}
+      {loading ? <p className="text-sm text-slate-600">Opening the report…</p> : null}
 
       {report ? (
         <div className="space-y-4">

@@ -62,6 +62,7 @@ export default function StaffOpsDesk({ desk }) {
   const { data: session } = useSession();
   const [localEmpEmail, setLocalEmpEmail] = useState('');
   const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'publisher' : 'live');
+  const [bidReportJobId, setBidReportJobId] = useState('');
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
   const [submittedJobs, setSubmittedJobs] = useState([]);
@@ -390,18 +391,39 @@ export default function StaffOpsDesk({ desk }) {
               )}
               {isGm && (
                 <TabsContent value="suggestion-bar">
-                  <SuggestionBar jobs={parkedJobs} pdfEmail={staffEmail} onPatchJob={patchJob} />
+                  <SuggestionBar
+                    jobs={parkedJobs}
+                    pdfEmail={staffEmail}
+                    onPatchJob={patchJob}
+                    onOpenReport={(job) => {
+                      setBidReportJobId(String(job?._id || ''));
+                      setActiveTab('bid-report');
+                    }}
+                  />
                   {pendingClientJobs.length > 0 && (
                     <div className="mt-6">
                       <h3 className="text-sm font-black text-[#0A2647] uppercase tracking-wide mb-3">Pending client approval</h3>
                       <div className="grid sm:grid-cols-2 gap-3">
                         {pendingClientJobs.map((j) => (
-                          <CompactTenderCard
-                            key={j._id}
-                            job={{ ...j, display_status: 'Pending Approval' }}
-                            showClientName
-                            actions={workflowDocActions(j, (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
-                          />
+                          <div key={j._id} className="space-y-2">
+                            <CompactTenderCard
+                              job={{ ...j, display_status: 'Pending Approval' }}
+                              showClientName
+                              actions={workflowDocActions(j, (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => {
+                                setBidReportJobId(String(j._id || ''));
+                                setActiveTab('bid-report');
+                              }}
+                            >
+                              View Bid Report
+                            </Button>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -500,7 +522,7 @@ export default function StaffOpsDesk({ desk }) {
               </TabsContent>
               {isGm && (
                 <TabsContent value="bid-report">
-                  <BidReportDesk />
+                  <BidReportDesk initialJobId={bidReportJobId} />
                 </TabsContent>
               )}
               {(isGm || isTl) && (

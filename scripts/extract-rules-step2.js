@@ -12,6 +12,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const AMOUNT_RE = /EMD Amount\s*:?\s*([0-9][0-9,]*)/i;
 const REQUIRED_RE = /EMD Detail[\s\S]{0,160}?Required\s+(Yes|No)/i;
@@ -46,7 +47,7 @@ function findOnPages(pages, pattern) {
   return null;
 }
 
-function emdFrom(pages) {
+export function emdFrom(pages) {
   const amountHit = findOnPages(pages, AMOUNT_RE);
   if (amountHit) {
     return {
@@ -69,7 +70,7 @@ function emdFrom(pages) {
   return { required: null, amount: null, evidence: null, page: null };
 }
 
-function mseFrom(pages) {
+export function mseFrom(pages) {
   const hit = findOnPages(pages, MSE_RE);
   if (!hit) return { granted: null, evidence: null, page: null };
   return {
@@ -120,7 +121,7 @@ function contextFor(link, pages) {
   return english(page?.text || '');
 }
 
-function documentsFrom(fixture) {
+export function documentsFrom(fixture) {
   const buckets = { scope_of_work: [], payment_terms: [], sla: [], atc: [] };
   const seen = new Set();
   const pages = Array.isArray(fixture.pages) ? fixture.pages : [];
@@ -197,4 +198,5 @@ function main() {
   console.log(`Wrote ${index.length} result(s) to ${outputDir}`);
 }
 
-main();
+const isDirect = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirect) main();
