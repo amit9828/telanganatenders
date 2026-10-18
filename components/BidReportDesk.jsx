@@ -84,11 +84,6 @@ export default function BidReportDesk({ initialJobId = '' }) {
   useEffect(() => {
     let cancelled = false;
     workflowFetch('/api/reports/bid')
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Could not list Suggestion Bar tenders.');
-        return data;
-      })
       .then((data) => { if (!cancelled) setTenders(data.tenders || []); })
       .catch((err) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
@@ -111,11 +106,6 @@ export default function BidReportDesk({ initialJobId = '' }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobId }),
     })
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Could not open this report.');
-        return data;
-      })
       .then((data) => {
         if (cancelled) return;
         setBundle(data.report);
@@ -129,15 +119,22 @@ export default function BidReportDesk({ initialJobId = '' }) {
   const report = script === 'te' ? bundle?.report_te : bundle?.report_en;
   const parts = useMemo(() => scriptParts(markdown), [markdown]);
   const skipped = bundle?.core_details?.downloads_skipped || [];
+  const needle = query.trim();
+  const searching = needle.length > 0;
+  const matched = useMemo(() => {
+    const text = needle.toLowerCase();
+    if (!text) return tenders;
+    return tenders.filter((row) => [row.bidNo, row.title, row.organisation, row.client].join(' ').toLowerCase().includes(text));
+  }, [needle, tenders]);
   const shown = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const matched = needle
-      ? tenders.filter((row) => [row.bidNo, row.title, row.organisation, row.client].join(' ').toLowerCase().includes(needle))
-      : tenders;
     const selected = tenders.find((row) => row.jobId === jobId);
     if (selected && !matched.some((row) => row.jobId === jobId)) return [selected, ...matched];
     return matched;
-  }, [jobId, query, tenders]);
+  }, [jobId, matched, tenders]);
+  const selectLabel = searching
+    ? `Select Tender from Suggestion Bar (${matched.length} of ${tenders.length} Tenders)`
+    : `Select Tender from Suggestion Bar (${tenders.length} Tenders)`;
+  const canAnalyze = searching && matched.length === 0 && /(?:GEM\/\d{4}\/B\/\d+|\d{5,})/i.test(needle);
 
   async function copy(which) {
     const text = which === 'te' ? parts.te : which === 'en' ? parts.en : parts.both;
@@ -149,18 +146,39 @@ export default function BidReportDesk({ initialJobId = '' }) {
     }
   }
 
+  async function analyzeBid() {
+    const bidNo = query.trim();
+    if (!bidNo) return;
+    setRunning(true);
+    setError('');
+    try {
+      const data = await workflowFetch('/api/reports/bid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bidNo }),
+      });
+      setBundle(data.report);
+      setMarkdown(data.markdown || '');
+      if (data.jobId && tenders.some((row) => row.jobId === data.jobId)) setJobId(data.jobId);
+      toast.success('Report saved.');
+    } catch (err) {
+      setError(err.message);
+      toast.error(err.message);
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function reread() {
     if (!jobId) return;
     setRunning(true);
     setError('');
     try {
-      const res = await workflowFetch('/api/reports/bid', {
+      const data = await workflowFetch('/api/reports/bid', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId, force: true }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Read failed.');
       setBundle(data.report);
       setMarkdown(data.markdown || '');
       toast.success('Report saved.');
@@ -181,16 +199,21 @@ export default function BidReportDesk({ initialJobId = '' }) {
         <CardContent className="space-y-3">
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-slate-700" htmlFor="bid-report-search">Search Suggestion Bar</label>
-            <input
-              id="bid-report-search"
-              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm"
-              value={query}
-              placeholder="Bid number, title, organisation, or client"
-              onChange={(event) => setQuery(event.target.value)}
-            />
+            <div className="flex gap-2">
+              <input
+                id="bid-report-search"
+                className="h-10 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm"
+                value={query}
+                placeholder="Bid number, title, organisation, or client"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              {searching ? (
+                <Button type="button" variant="outline" onClick={() => setQuery('')}>Clear search</Button>
+              ) : null}
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <label className="text-sm font-medium text-slate-700" htmlFor="bid-report-tender">
-                {`Select Tender from Suggestion Bar (${tenders.length} Tenders)`}
+                {selectLabel}
               </label>
               <select
                 id="bid-report-tender"
@@ -198,7 +221,7 @@ export default function BidReportDesk({ initialJobId = '' }) {
                 value={shown.some((row) => row.jobId === jobId) ? jobId : ''}
                 onChange={(event) => setJobId(event.target.value)}
               >
-                <option value="">{`Select Tender from Suggestion Bar (${tenders.length} Tenders)`}</option>
+                <option value="">{selectLabel}</option>
                 {shown.map((row) => <option key={row.jobId} value={row.jobId}>{row.label}</option>)}
               </select>
               <Button type="button" variant="outline" onClick={reread} disabled={running || !jobId}>
@@ -206,6 +229,12 @@ export default function BidReportDesk({ initialJobId = '' }) {
                 Read again
               </Button>
             </div>
+            {canAnalyze ? (
+              <Button type="button" onClick={analyzeBid} disabled={running}>
+                {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Analyze Bid Number
+              </Button>
+            ) : null}
           </div>
           <p className="text-sm text-slate-600">
             {running ? 'Reading the bid. A scanned PDF can take several minutes.' : (jobId ? 'Saved report' : 'Choose a tender from the Suggestion Bar.')}
