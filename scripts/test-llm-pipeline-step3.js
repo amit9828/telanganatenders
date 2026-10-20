@@ -15,8 +15,10 @@ import {
   buildReport,
   loadTranslationCache,
   renderMarkdown,
+  reportFromTexts,
   saveTranslationCache,
 } from '../lib/gem-bid-extract.js';
+import { exactQuote } from '../lib/gem-quote-resolve.js';
 
 function parseArgs(argv) {
   const opts = {
@@ -48,10 +50,58 @@ function loadRules(rulesDir, fileHint) {
   throw new Error(`No rules file matching ${fileHint} in ${rulesDir}`);
 }
 
+const TRANSPORT_COVER = [
+  'Item Category Goods Transport Services - Per MT - Gypsum /Similar Category As per Bid As per Bid',
+  'Document required from seller Experience Criteria,Bidder Turnover,Certificate (Requested in ATC),Additional Doc 1 (Requested in ATC) *In case any bidder is seeking exemption from Experience',
+  'Do you want to show documents',
+  'Buyer Added Bid Specific Terms and Conditions',
+  '1. The seller shall carry the goods described in the specification document.',
+  'Disclaimer',
+].join(' ');
+
+const TRANSPORT_SOW = 'Scope of Work. Transportation of Gypsum from the loading point at Mancherial to the unloading point at Ramagundam. The quantity for the contract period is 5000 MT. Vehicle requirement is one 25 MT tipper. Loading and unloading shall be arranged by the seller at both ends.';
+
+const TRANSPORT_ATC = 'Additional Doc 1: The bidder shall upload a valid Fitness Certificate, PUC and RTO permit for every offered vehicle. Certificate (Requested in ATC): The bidder shall upload an experience certificate for similar goods transport work during the last three years.';
+
+const TRANSPORT_SLA = 'Late delivery beyond the scheduled date shall attract liquidated damages at 0.5% of the contract value per week, subject to a maximum of 10%. Detention of the vehicle beyond 8 hours shall be charged at Rs. 1500 per day. Short supply shall be deducted at the quoted rate per MT.';
+
+function printPart(title, sections, pick) {
+  console.log(`\n${title}`);
+  for (const section of sections || []) {
+    console.log(section.title);
+    const items = pick(section);
+    for (const item of items) console.log(`- ${item.title}: ${item.text}`);
+  }
+}
+
+async function runTransportDemo() {
+  const source = [TRANSPORT_SOW, TRANSPORT_ATC, TRANSPORT_SLA].join('\n');
+  const invented = exactQuote(source, 'Fitness Certificate issued by the lunar port authority');
+  console.log(`Hallucinated certificate kept: ${invented ? 'yes' : 'no'}`);
+  const report = await reportFromTexts({
+    cover: TRANSPORT_COVER,
+    sow: TRANSPORT_SOW,
+    atc: TRANSPORT_ATC,
+    sla: TRANSPORT_SLA,
+    bidNo: 'goods-transport-gypsum',
+  });
+  printPart('PART B', report.report_en.part_b_scope_of_work.sections, (section) => (section.blocks || []).filter((block) => block.text));
+  printPart('PART C', report.report_en.part_c_documents.groups, (group) => group.items || []);
+  printPart('PART D', report.report_en.part_d_terms_payment_penalties.sections, (section) => section.items || []);
+  const teluguScope = report.report_te.part_b_scope_of_work.sections.find((section) => section.title === 'Transport scope' || /రవాణ|Transport/i.test(section.title));
+  console.log('\nTELUGU TRANSPORT', teluguScope ? (teluguScope.blocks || []).map((block) => block.text).join(' | ') : '(translated with the English facts)');
+  console.log('pointers_unresolved', report.pointers_unresolved);
+  console.log('openai_key', Boolean(process.env.OPENAI_API_KEY));
+}
+
 async function main() {
   loadLocalEnv();
   process.env.GEM_OCR_CACHE = process.env.GEM_OCR_CACHE || path.join(process.cwd(), 'fixtures', 'reports');
   const opts = parseArgs(process.argv);
+  if (process.argv.includes('--demo-transport')) {
+    await runTransportDemo();
+    return;
+  }
   const outputDir = path.resolve(opts.output);
   fs.mkdirSync(outputDir, { recursive: true });
   const cachePath = loadTranslationCache(outputDir);
