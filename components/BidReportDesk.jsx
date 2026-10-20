@@ -144,6 +144,7 @@ export default function BidReportDesk({ initialJobId = '' }) {
   const [script, setScript] = useState('en');
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
   const [saved, setSaved] = useState(true);
 
   useEffect(() => {
