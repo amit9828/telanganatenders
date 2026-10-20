@@ -15,7 +15,7 @@ const nextConfig = {
       static: 0,
     },
     // Remove if not using Server Components
-    serverComponentsExternalPackages: ['mongodb', 'googleapis', 'unpdf', 'tesseract.js', 'tesseract.js-core'],
+    serverComponentsExternalPackages: ['mongodb', 'googleapis', 'unpdf', 'tesseract.js', 'tesseract.js-core', 'openai'],
     // Playwright is a local-agent devDependency. NFT tracing it into every
     // serverless function blows past Vercel's size limit after a successful compile.
     // The bid-report route must not trace fixtures, sample PDFs, or the CLI scripts.

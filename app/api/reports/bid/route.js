@@ -168,7 +168,7 @@ export async function POST(request) {
       updated_at: now,
     };
     const links = generated.core_details?.links || [];
-    const incomplete = links.some((link) => link.ok === false);
+    const incomplete = Boolean(generated.core_details?.incomplete) || links.some((link) => link.ok === false);
     if (!incomplete) {
       await reports.updateOne(
         { report_key: key },
