@@ -167,12 +167,16 @@ export async function POST(request) {
       created_by: actor.email || actor.name || actor.role || '',
       updated_at: now,
     };
-    await reports.updateOne(
-      { report_key: key },
-      { $set: doc, $setOnInsert: { created_at: now } },
-      { upsert: true },
-    );
-    return NextResponse.json(publicReport(doc, responseId));
+    const links = generated.core_details?.links || [];
+    const incomplete = links.some((link) => link.ok === false);
+    if (!incomplete) {
+      await reports.updateOne(
+        { report_key: key },
+        { $set: doc, $setOnInsert: { created_at: now } },
+        { upsert: true },
+      );
+    }
+    return NextResponse.json({ ...publicReport(doc, responseId), saved: !incomplete });
   } catch (err) {
     return NextResponse.json({ error: 'The bid could not be read.', detail: String(err?.message || '').slice(0, 500) }, { status: 500 });
   } finally {

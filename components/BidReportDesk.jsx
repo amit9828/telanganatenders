@@ -66,6 +66,75 @@ function Blocks({ blocks }) {
   });
 }
 
+const WORD_TABLE = "border-collapse:collapse; width:100%; font-family:'Nirmala UI','Segoe UI',sans-serif; font-size:11pt; border:1px solid #cbd5e1;";
+const WORD_TH = 'background-color:#f1f5f9; font-weight:bold; border:1px solid #cbd5e1; padding:8px; text-align:left;';
+const WORD_TD = 'border:1px solid #cbd5e1; padding:8px;';
+
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function htmlTable(columns, rows) {
+  const head = columns.map((column) => `<th style="${WORD_TH}">${esc(column)}</th>`).join('');
+  const body = (rows || []).map((row) => `<tr>${row.map((cell) => `<td style="${WORD_TD}">${esc(cell)}</td>`).join('')}</tr>`).join('');
+  return `<table border="1" cellspacing="0" cellpadding="6" style="${WORD_TABLE}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function htmlPoints(items, numbered) {
+  if (!items?.length) return '<p>Not stated in this tender</p>';
+  const tag = numbered ? 'ol' : 'ul';
+  const body = items.map((item) => {
+    const title = item.title ? `<strong>${esc(item.title)}. </strong>` : '';
+    const quantity = item.quantity ? ` — ${esc(item.quantity)}` : '';
+    const children = item.children?.length ? htmlPoints(item.children, false) : '';
+    return `<li>${title}${esc(item.text || '')}${quantity}${children}</li>`;
+  }).join('');
+  return `<${tag}>${body}</${tag}>`;
+}
+
+function htmlBlocks(blocks) {
+  return (blocks || []).map((block) => {
+    if (block.kind === 'table') return htmlTable(block.columns, block.rows);
+    if (block.kind === 'numbered') return htmlPoints(block.items, true);
+    return htmlPoints([block], false);
+  }).join('');
+}
+
+function reportHtml(report, title) {
+  if (!report) return '';
+  const parts = [`<h2 style="font-family:'Nirmala UI','Segoe UI',sans-serif;">${esc(title)}</h2>`];
+  parts.push('<h3>Part A. Basic details</h3>');
+  parts.push(htmlTable(
+    ['Sl.', 'Parameter', 'Details'],
+    (report.part_a_basic_details?.basic_details_table || []).map((row) => [row.sl, row.parameter, row.details]),
+  ));
+  parts.push(htmlPoints(report.part_a_basic_details?.basic_details_text, false));
+  parts.push('<h3>Part B. Scope of work</h3>');
+  for (const section of report.part_b_scope_of_work?.sections || []) {
+    parts.push(`<h3>${esc(section.title)}</h3>`);
+    parts.push(htmlBlocks(section.blocks));
+  }
+  parts.push('<h3>Part C. Documents and eligibility</h3>');
+  for (const group of report.part_c_documents?.groups || []) {
+    parts.push(`<h3>${esc(group.title)}</h3>`);
+    parts.push(htmlPoints(group.items, group.numbered));
+  }
+  parts.push('<h3>Part D. Terms, payment, and penalties</h3>');
+  for (const section of report.part_d_terms_payment_penalties?.sections || []) {
+    parts.push(`<h3>${esc(section.title)}</h3>`);
+    if (section.items) parts.push(htmlPoints(section.items, false));
+    if (section.table) parts.push(htmlTable(section.table.columns, section.table.rows));
+    if (section.sla_penalties?.length) {
+      parts.push(htmlPoints(section.sla_penalties.map((line, index) => ({ title: String(index + 1), text: line })), false));
+    }
+  }
+  return `<div style="font-family:'Nirmala UI','Segoe UI',sans-serif; font-size:11pt;">${parts.join('')}</div>`;
+}
+
 export default function BidReportDesk({ initialJobId = '' }) {
   const [tenders, setTenders] = useState([]);
   const [query, setQuery] = useState('');
@@ -75,7 +144,7 @@ export default function BidReportDesk({ initialJobId = '' }) {
   const [script, setScript] = useState('en');
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(true);
 
   useEffect(() => {
     if (initialJobId) setJobId(String(initialJobId));
@@ -110,6 +179,7 @@ export default function BidReportDesk({ initialJobId = '' }) {
         if (cancelled) return;
         setBundle(data.report);
         setMarkdown(data.markdown || '');
+        setSaved(data.saved !== false);
       })
       .catch((err) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) { setLoading(false); setRunning(false); } });
@@ -119,6 +189,7 @@ export default function BidReportDesk({ initialJobId = '' }) {
   const report = script === 'te' ? bundle?.report_te : bundle?.report_en;
   const parts = useMemo(() => scriptParts(markdown), [markdown]);
   const skipped = bundle?.core_details?.downloads_skipped || [];
+  const links = bundle?.core_details?.links || [];
   const needle = query.trim();
   const searching = needle.length > 0;
   const matched = useMemo(() => {
@@ -137,9 +208,22 @@ export default function BidReportDesk({ initialJobId = '' }) {
   const canAnalyze = searching && matched.length === 0 && /(?:GEM\/\d{4}\/B\/\d+|\d{5,})/i.test(needle);
 
   async function copy(which) {
+    const chosen = [];
+    if (which !== 'en') chosen.push({ report: bundle?.report_te, title: 'SCRIPT 1 (Full Telugu Report)' });
+    if (which !== 'te') chosen.push({ report: bundle?.report_en, title: 'SCRIPT 2 (Full Simple English Report)' });
+    const html = chosen.map((item) => reportHtml(item.report, item.title)).join('<hr/>');
     const text = which === 'te' ? parts.te : which === 'en' ? parts.en : parts.both;
     try {
-      await navigator.clipboard.writeText(text);
+      if (navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
       toast.success(which === 'both' ? 'Both scripts copied.' : which === 'te' ? 'Telugu script copied.' : 'English script copied.');
     } catch {
       toast.error('Copy failed.');
@@ -159,8 +243,9 @@ export default function BidReportDesk({ initialJobId = '' }) {
       });
       setBundle(data.report);
       setMarkdown(data.markdown || '');
+      setSaved(data.saved !== false);
       if (data.jobId && tenders.some((row) => row.jobId === data.jobId)) setJobId(data.jobId);
-      toast.success('Report saved.');
+      toast.success(data.saved === false ? 'Shown. A link failed, so this read was not saved.' : 'Report saved.');
     } catch (err) {
       setError(err.message);
       toast.error(err.message);
@@ -181,7 +266,8 @@ export default function BidReportDesk({ initialJobId = '' }) {
       });
       setBundle(data.report);
       setMarkdown(data.markdown || '');
-      toast.success('Report saved.');
+      setSaved(data.saved !== false);
+      toast.success(data.saved === false ? 'Shown. A link failed, so this read was not saved.' : 'Report saved.');
     } catch (err) {
       setError(err.message);
       toast.error(err.message);
@@ -237,7 +323,7 @@ export default function BidReportDesk({ initialJobId = '' }) {
             ) : null}
           </div>
           <p className="text-sm text-slate-600">
-            {running ? 'Reading the bid. A scanned PDF can take several minutes.' : (jobId ? 'Saved report' : 'Choose a tender from the Suggestion Bar.')}
+            {running ? 'Reading the bid. A scanned PDF can take several minutes.' : (jobId ? (saved ? 'Saved report' : 'Shown, not saved — a linked file failed') : 'Choose a tender from the Suggestion Bar.')}
             {skipped.length ? `. Not read: ${skipped.join(', ')}` : ''}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -255,6 +341,22 @@ export default function BidReportDesk({ initialJobId = '' }) {
 
       {report ? (
         <div className="space-y-4">
+          {links.length ? (
+            <Card>
+              <CardHeader><CardTitle>Attached Documents &amp; Links Found in PDF</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {links.map((link) => (
+                  <div key={link.url} className="text-sm">
+                    <span className="font-medium text-slate-900">{link.label}</span>
+                    <span className={link.ok ? 'text-emerald-700' : 'text-red-700'}> — {link.status}</span>
+                    <div>
+                      <a href={link.url} target="_blank" rel="noreferrer" className="break-all text-blue-700 underline">{link.url}</a>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader><CardTitle>Part A. Basic details</CardTitle></CardHeader>
             <CardContent className="space-y-4">
