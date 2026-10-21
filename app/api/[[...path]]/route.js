@@ -16,7 +16,7 @@ import {
 // lib/payments.js (a plain module, not a route.js) so it can be imported safely from
 // both this catch-all route AND app/api/payments/route.js without violating
 // Next.js's route.js export contract. Only thin delegating calls remain below.
-import { findOrCreateDriveFolder, createDriveFolder, ensureEntityDriveFolder, isDriveConfigured, uploadDriveFile } from '@/lib/drive';
+import { findOrCreateDriveFolder, createDriveFolder, ensureEntityDriveFolder, isDriveConfigured, uploadDriveFile, approvalClientFolderName } from '@/lib/drive';
 // 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
@@ -342,7 +342,7 @@ async function handleGET(request, { params }, attempt = 1) {
       // run in parallel instead of sequentially.
       const [tendersCount, usersCount, paymentsCount, revenueAgg] = await Promise.all([
         db.collection('tenders').countDocuments(),
-        db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true, account_kind: { $ne: 'visitor' } }),
+        db.collection('users').countDocuments({ is_approved: { $ne: true }, onboarding_complete: true, account_kind: 'client' }),
         db.collection('payments').countDocuments({ status: 'SUCCESS' }),
         db.collection('payments').aggregate([
           { $match: { status: 'SUCCESS' } },
@@ -772,7 +772,7 @@ async function handleGET(request, { params }, attempt = 1) {
       const lead = await leadershipCaller(request);
       if (!lead.ok) return json({ error: 'Only MD or GM can view clients.' }, 403);
       const users = await db.collection('users')
-         .find({ is_approved: { $ne: true }, onboarding_complete: true, account_kind: { $ne: 'visitor' } })
+         .find({ is_approved: { $ne: true }, onboarding_complete: true, account_kind: 'client' })
          .project({ "vault_docs.file_base64": 0 }) // 🚀 FIX: Block heavy PDF loads
          .sort({ created_at: -1 })
          .toArray();
@@ -794,7 +794,7 @@ async function handleGET(request, { params }, attempt = 1) {
       const __t = Date.now();
       const directory = searchParams.get('directory') === '1';
       const users = await db.collection('users')
-         .find({ onboarding_complete: true, account_kind: { $ne: 'visitor' } })
+         .find({ onboarding_complete: true, account_kind: 'client' })
          .project(directory
            // 🚀 FIX 2: ఇక్కడ drive_link, drive_folder_link, whatsapp_verified యాడ్ చేశాం (దీని వల్లే GM కి డ్రైవ్ బటన్ కనిపిస్తుంది)
            ? { email: 1, name: 1, company_name: 1, client_name: 1, client_id: 1, district: 1, subscription: 1, bid_balance: 1, bid_expiry: 1, billing_paid: 1, drive_link: 1, drive_folder_link: 1, whatsapp_verified: 1 }
@@ -2251,12 +2251,12 @@ export async function POST(request, { params }) {
         { $set: { is_approved: true, status: 'approved', client_id: finalClientId } }
       );
       try {
-        const display = existingUser?.company_name || existingUser?.client_name || existingUser?.name || userEmail;
+        const approvedClient = { ...existingUser, client_id: finalClientId };
         await ensureEntityDriveFolder({
           db,
           collection: 'users',
           query: { email: userEmail },
-          folderName: `Client - ${finalClientId} - ${display}`,
+          folderName: approvalClientFolderName(approvedClient, userEmail),
           email: userEmail,
         });
       } catch (err) {

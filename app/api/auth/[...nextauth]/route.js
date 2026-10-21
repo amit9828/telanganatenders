@@ -17,6 +17,20 @@ function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function visitorCheckoutCallback() {
+  let raw = '';
+  try {
+    const jar = cookies();
+    raw = jar.get('__Secure-next-auth.callback-url')?.value
+      || jar.get('next-auth.callback-url')?.value
+      || '';
+  } catch {
+    raw = '';
+  }
+  try { raw = decodeURIComponent(raw); } catch { /* keep the stored value */ }
+  return raw.includes('/visitor-account');
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -144,7 +158,7 @@ const handler = NextAuth({
         const existing = await db.collection('users').findOne({ email });
         let signupKind = '';
         try { signupKind = cookies().get('tt_signup_kind')?.value || ''; } catch { signupKind = ''; }
-        const asVisitor = signupKind === 'visitor';
+        const asVisitor = signupKind === 'visitor' || visitorCheckoutCallback();
 
         if (!existing) {
           // Register new Google User. A view-plan signup is a visitor, not a client.
