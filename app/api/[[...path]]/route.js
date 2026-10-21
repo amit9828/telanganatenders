@@ -16,7 +16,7 @@ import {
 // lib/payments.js (a plain module, not a route.js) so it can be imported safely from
 // both this catch-all route AND app/api/payments/route.js without violating
 // Next.js's route.js export contract. Only thin delegating calls remain below.
-import { findOrCreateDriveFolder, createDriveFolder, ensureEntityDriveFolder, isDriveConfigured, uploadDriveFile } from '@/lib/drive';
+import { findOrCreateDriveFolder, createDriveFolder, ensureEntityDriveFolder, isDriveConfigured, uploadDriveFile, approvalClientFolderName } from '@/lib/drive';
 // 🚀 RBAC: resolves MD vs EMPLOYEE (and the employee's emp_id) from the ADMIN_TOKEN
 // bearer or the NextAuth session cookie, for task-ownership stamping/filtering on
 // bids and suggestion dispatches. See lib/staff-auth.js for the full contract.
@@ -2251,12 +2251,12 @@ export async function POST(request, { params }) {
         { $set: { is_approved: true, status: 'approved', client_id: finalClientId } }
       );
       try {
-        const display = existingUser?.company_name || existingUser?.client_name || existingUser?.name || userEmail;
+        const approvedClient = { ...existingUser, client_id: finalClientId };
         await ensureEntityDriveFolder({
           db,
           collection: 'users',
           query: { email: userEmail },
-          folderName: `Client - ${finalClientId} - ${display}`,
+          folderName: approvalClientFolderName(approvedClient, userEmail),
           email: userEmail,
         });
       } catch (err) {
