@@ -1250,6 +1250,9 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
   }) || []; 
 
   const totalEmd = userData?.emd_ledger?.total_paid || 0;
+  const openClientRequests = (userData?.custom_requests || []).filter(
+    (req) => !/^(rejected|resolved|completed)\b/i.test(String(req?.status || ''))
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -1913,10 +1916,10 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                   </div>
                 </form>
 
-                {userData?.custom_requests?.length > 0 && (
+                {openClientRequests.length > 0 && (
                   <div className="mt-6 border-t pt-6 space-y-4">
-                     <h4 className="font-bold text-[#0A2647]">My Submitted Requests ({userData.custom_requests.length})</h4>
-                     {userData.custom_requests.map((req, i) => (
+                     <h4 className="font-bold text-[#0A2647]">My Submitted Requests ({openClientRequests.length})</h4>
+                     {openClientRequests.map((req, i) => (
                         <div key={req._id || i} className="p-4 border border-slate-200 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
                            <div className="flex-1">
                               <div className="flex justify-between items-start">

@@ -1004,7 +1004,11 @@ async function handleGET(request, { params }, attempt = 1) {
 
       let docs = [];
       if (isMd) {
-        docs = await db.collection('employees').find({}, { projection: { password: 0 } }).sort({ created_at: -1 }).toArray();
+        docs = await db.collection('employees').find({
+          deleted: { $ne: true },
+          active: { $ne: false },
+          status: { $ne: 'Revoked' },
+        }, { projection: { password: 0 } }).sort({ created_at: -1 }).toArray();
       } else if (isGm) {
         const all = await db.collection('employees').find({
           deleted: { $ne: true },
@@ -1157,7 +1161,10 @@ async function handleGET(request, { params }, attempt = 1) {
           .sort({ paid_at: -1 })
           .toArray(),
         db.collection('client_requests')
-          .find({ client_email: email.toLowerCase() })
+          .find({
+            client_email: email.toLowerCase(),
+            status: { $not: /^(rejected|resolved|completed)\b/i },
+          })
           .project({ file_base64: 0, document_base64: 0 })
           .sort({ created_at: -1 })
           .toArray(),
