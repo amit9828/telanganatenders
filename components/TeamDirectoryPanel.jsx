@@ -8,13 +8,17 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
+import { Key, LogIn, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { DESIGNATION_LABELS, DESIGNATIONS, deskPathForStaff, loginAsLabel, resolveStaffDesignation } from '@/lib/designations';
 import { workflowFetch } from '@/components/workflow/api';
 import { openStaffBypass } from '@/lib/tab-handoff';
 
+function isListedStaff(member) {
+  if (!member || member.deleted === true || member.active === false) return false;
+  return String(member.status || '').trim().toLowerCase() !== 'revoked';
+}
+
 function StaffCard({ off, canManage, canDelete, canBypass, impersonate, onRefresh, tls }) {
-  const [showPw, setShowPw] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     name: off.name || '',
@@ -71,16 +75,11 @@ function StaffCard({ off, canManage, canDelete, canBypass, impersonate, onRefres
           )}
         </div>
       </div>
-      {canManage && showPw && (
-        <p className="mt-2 text-[11px] font-mono bg-slate-50 border rounded px-2 py-1 break-all">
-          Password: {off.password || '—'}
-        </p>
-      )}
       {editing && (
         <div className="mt-2 space-y-2">
           <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="h-8 text-xs" />
           <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="h-8 text-xs" />
-          <Input placeholder="New password (optional)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="h-8 text-xs" />
+          <Input type="password" placeholder="New password (optional)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="h-8 text-xs" autoComplete="new-password" />
           {form.designation === 'DOC_TEAM_MEMBER' && (
             <Select value={form.team_id} onValueChange={(v) => setForm({ ...form, team_id: v })}>
               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Team Lead" /></SelectTrigger>
@@ -103,9 +102,6 @@ function StaffCard({ off, canManage, canDelete, canBypass, impersonate, onRefres
             <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setEditing((v) => !v)}>
               <Pencil className="w-3 h-3 mr-1" /> Edit
             </Button>
-            <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setShowPw((v) => !v)}>
-              {showPw ? <EyeOff className="w-3 h-3 mr-1" /> : <Eye className="w-3 h-3 mr-1" />} Password
-            </Button>
             {canDelete && !off.deleted && (
             <Button size="sm" variant="outline" className="h-7 text-[10px] text-red-600 border-red-200" onClick={remove}>
               <Trash2 className="w-3 h-3 mr-1" /> Delete
@@ -120,9 +116,10 @@ function StaffCard({ off, canManage, canDelete, canBypass, impersonate, onRefres
 
 export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, impersonate, actorEmpId = '' }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', designation: actorDesk === 'md' ? 'GM' : 'DOC_TEAM_TL', team_id: '' });
-  const tls = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_TL);
-  const gms = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.GM);
-  const members = team.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
+  const listed = team.filter(isListedStaff);
+  const tls = listed.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_TL);
+  const gms = listed.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.GM);
+  const members = listed.filter((t) => resolveStaffDesignation(t) === DESIGNATIONS.DOC_TEAM_MEMBER);
   const allowed = useMemo(() => {
     if (actorDesk === 'md') return ['GM', 'DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
     if (actorDesk === 'gm') return ['DOC_TEAM_TL', 'DOC_TEAM_MEMBER'];
@@ -211,7 +208,7 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
               </div>
               <div>
                 <Label>Password</Label>
-                <Input required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="mt-1" />
+                <Input type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="mt-1" autoComplete="new-password" />
               </div>
               <Button type="submit" className="w-full"><UserPlus className="w-4 h-4 mr-2" /> Save</Button>
             </form>
@@ -246,7 +243,7 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
               ))}
             </div>
           )}
-          {team.length === 0 && <p className="text-sm text-slate-400 text-center py-8">No staff yet.</p>}
+          {listed.length === 0 && <p className="text-sm text-slate-400 text-center py-8">No staff yet.</p>}
         </CardContent>
       </Card>
     </div>
