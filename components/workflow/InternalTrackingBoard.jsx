@@ -9,8 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { Lock } from 'lucide-react';
 import { workflowFetch, openWorkflowFile } from '@/components/workflow/api';
 import { workflowDocActions, mdDeleteCardAction } from '@/components/workflow/jobDocActions';
+import { canViewPrepFiles, prepLockLabel, viewerFromDesk } from '@/lib/prep-access';
 
 const STATUS_LABEL = {
   MD_CHECKLIST: 'MD Checklist',
@@ -251,8 +253,11 @@ function InternalTrackingBoard({
 
   const renderJobCard = (job) => {
     const cardBusy = busyId === job._id;
+    const viewer = viewerFromDesk(desk, actorEmpId);
+    const prepOpen = canViewPrepFiles(viewer, job);
+    const prepLock = prepLockLabel(job.status);
     const actions = [
-      ...workflowDocActions(job, openFile),
+      ...workflowDocActions(job, openFile, viewer),
     ];
     if (desk === 'md' && job.status === 'MD_CHECKLIST') {
       actions.push({ label: 'Upload checklist + TL', variant: 'default', icon: 'upload', disabled: cardBusy, onClick: () => setChecklistJob(job) });
@@ -389,8 +394,15 @@ function InternalTrackingBoard({
                           />
                         </label>
                       )}
-                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] shrink-0" onClick={() => openFile(job, f.slot)}>
-                        View
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[10px] shrink-0"
+                        disabled={!prepOpen}
+                        title={prepOpen ? 'View' : prepLock}
+                        onClick={() => { if (prepOpen) openFile(job, f.slot); }}
+                      >
+                        {prepOpen ? 'View' : <><Lock className="w-3 h-3 mr-1" />{prepLock}</>}
                       </Button>
                     </span>
                   </li>

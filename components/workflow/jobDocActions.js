@@ -1,4 +1,6 @@
-export function workflowDocActions(job, openFile) {
+import { canViewPrepFiles, prepLockLabel } from '@/lib/prep-access';
+
+export function workflowDocActions(job, openFile, actor) {
   const actions = [];
   if (!job || typeof openFile !== 'function') return actions;
   if (job.tender_id || job.tender_pdf) {
@@ -13,12 +15,18 @@ export function workflowDocActions(job, openFile) {
   if (job.checklist_file) {
     actions.push({ label: 'Checklist', onClick: () => openFile(job, 'checklist') });
   }
+  const prepOpen = actor ? canViewPrepFiles(actor, job) : true;
+  const prepLock = prepLockLabel(job.status);
   (job.prep_files || []).forEach((file, index) => {
     const slot = file?.slot || `prep-${index}`;
     const name = file?.name || slot;
     actions.push({
-      label: `Prep ${index + 1}: ${name}`,
-      onClick: () => openFile(job, slot),
+      slot,
+      label: prepOpen ? `Prep ${index + 1}: ${name}` : prepLock,
+      locked: !prepOpen,
+      disabled: !prepOpen,
+      icon: prepOpen ? 'file' : 'lock',
+      onClick: () => { if (prepOpen) openFile(job, slot); },
     });
   });
   if (job.receipt) {
