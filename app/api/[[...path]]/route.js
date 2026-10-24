@@ -2490,15 +2490,16 @@ export async function POST(request, { params }) {
         const newEmpId = await allocateEmpId(db);
         if (designation === DESIGNATIONS.DOC_TEAM_TL) teamId = newEmpId;
 
-        const newEmployee = { 
-            emp_id: newEmpId, 
-            name: body.name, 
-            email: body.email.toLowerCase(), 
-            password: body.password, 
-            role: body.role || designation,
+        const newEmployee = {
+            emp_id: newEmpId,
+            name: body.name,
+            email: body.email.toLowerCase(),
+            password: body.password,
+            role: 'EMPLOYEE',
             designation,
             team_id: teamId,
-            created_at: new Date() 
+            active: true,
+            created_at: new Date(),
         };
         const result = await db.collection('employees').insertOne(newEmployee);
         try {
