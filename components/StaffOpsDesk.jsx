@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile, staffHeaders } from '@/components/workflow/api';
 import { workflowDocActions } from '@/components/workflow/jobDocActions';
+import { viewerFromDesk } from '@/lib/prep-access';
 import { consumeStaffBypass, openClientBypass, rememberRealStaffIdent } from '@/lib/tab-handoff';
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
@@ -412,7 +413,7 @@ export default function StaffOpsDesk({ desk }) {
                             <CompactTenderCard
                               job={{ ...j, display_status: 'Pending Approval' }}
                               showClientName
-                              actions={workflowDocActions(j, (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file')))}
+                              actions={workflowDocActions(j, (job, slot) => openWorkflowFile(job._id, slot).catch((err) => toast.error(err.message || 'Could not open file')), viewerFromDesk(desk, selfId))}
                             />
                             <Button
                               type="button"
