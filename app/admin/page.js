@@ -234,10 +234,7 @@ export default function AdminPage() {
   // MD Team Activity: parked + AWAITING_CLIENT vs internal pipeline (MD_CHECKLIST..AWAITING_RECEIPT).
   const [teamActivityLoading, setTeamActivityLoading] = useState(false);
 
-  const suggestionBoardJobs = useMemo(
-    () => wfSuggestions.filter((job) => belongsOnSuggestions(job) && jobDeadline(job)?.text !== 'Ended'),
-    [wfSuggestions],
-  );
+  const suggestionBoardJobs = wfSuggestions;
   const masterLiveJobs = useMemo(
     () => wfInternal.filter((job) => INTERNAL_BOARD_STATUSES.includes(job.status)),
     [wfInternal],
@@ -300,7 +297,7 @@ export default function AdminPage() {
     else if (tab === 'finance') ['ledger', 'payments', 'clients'].forEach((k) => want.add(k));
     else if (tab === 'clients') want.add('clients');
     else if (tab === 'internal') ['employees', 'wfInternal'].forEach((k) => want.add(k));
-    else if (tab === 'team-activity') ['wfInternal', 'wfParked', 'wfSuggestions'].forEach((k) => want.add(k));
+    else if (tab === 'team-activity') ['wfInternal', 'wfMirror'].forEach((k) => want.add(k));
     else if (tab === 'submitted') ['employees', 'wfSubmitted', 'wfWinning'].forEach((k) => want.add(k));
     else if (tab === 'archive') want.add('wfArchive');
     else if (tab === 'publisher') want.add('tenders');
@@ -325,8 +322,7 @@ export default function AdminPage() {
         const sort = tab === 'team-activity' ? 'last_date' : undefined;
         tasks.wfInternal = fetchWorkflowQueue('internal', { sort }).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       }
-      if (want.has('wfParked')) tasks.wfParked = fetchWorkflowQueue('parked').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
-      if (want.has('wfSuggestions')) tasks.wfSuggestions = fetchWorkflowQueue('suggestions').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfMirror')) tasks.wfMirror = fetchWorkflowQueue('suggestion-mirror').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSubmitted')) tasks.wfSubmitted = fetchWorkflowQueue('submitted').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfWinning')) tasks.wfWinning = fetchWorkflowQueue('winning').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfArchive')) tasks.wfArchive = workflowFetch(`/api/workflow/archive?t=${stamp}`).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
@@ -355,19 +351,7 @@ export default function AdminPage() {
         setFinancialRequests((got.payments.data.requests || []).filter((r) => r.status !== 'SUCCESS' && r.status !== 'PAID'));
       }
       if (got.wfInternal?.ok) setListIfChanged(setWfInternal, (got.wfInternal.data.jobs || []).filter(belongsOnInternal));
-      if (got.wfParked?.ok || got.wfSuggestions?.ok) {
-        const parked = got.wfParked?.ok ? (got.wfParked.data.jobs || []) : [];
-        const waiting = got.wfSuggestions?.ok ? (got.wfSuggestions.data.jobs || []) : [];
-        const merged = [...parked, ...waiting].filter(belongsOnSuggestions);
-        const seen = new Set();
-        const unique = merged.filter((job) => {
-          const id = String(job._id || job.id || '');
-          if (!id || seen.has(id)) return false;
-          seen.add(id);
-          return true;
-        });
-        setListIfChanged(setWfSuggestions, unique);
-      }
+      if (got.wfMirror?.ok) setListIfChanged(setWfSuggestions, got.wfMirror.data.jobs || []);
       if (got.wfSubmitted?.ok) setListIfChanged(setWfSubmitted, got.wfSubmitted.data.jobs || []);
       if (got.wfWinning?.ok) setListIfChanged(setWfWinning, (got.wfWinning.data.jobs || []).filter(belongsOnWinning));
       if (got.wfArchive?.ok) setListIfChanged(setWfArchive, got.wfArchive.data.jobs || []);
@@ -408,20 +392,11 @@ export default function AdminPage() {
     if (!mdDesk) return;
     setTeamActivityLoading(true);
     try {
-      const [parked, waiting, internal] = await Promise.all([
-        fetchWorkflowQueue('parked').catch(() => ({ jobs: [] })),
-        fetchWorkflowQueue('suggestions').catch(() => ({ jobs: [] })),
+      const [mirror, internal] = await Promise.all([
+        fetchWorkflowQueue('suggestion-mirror').catch(() => ({ jobs: [] })),
         fetchWorkflowQueue('internal', { sort: 'last_date' }).catch(() => ({ jobs: [] })),
       ]);
-      const merged = [...(parked.jobs || []), ...(waiting.jobs || [])].filter(belongsOnSuggestions);
-      const seen = new Set();
-      const unique = merged.filter((job) => {
-        const id = String(job._id || job.id || '');
-        if (!id || seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
-      setListIfChanged(setWfSuggestions, unique);
+      setListIfChanged(setWfSuggestions, mirror.jobs || []);
       setListIfChanged(setWfInternal, (internal.jobs || []).filter(belongsOnInternal));
     } catch (e) {
       console.error('Team activity refresh failed:', e);
@@ -1601,14 +1576,14 @@ export default function AdminPage() {
                 <CardHeader className="bg-blue-50/50 border-b pb-4 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Send className="w-5 h-5 text-blue-600"/> Global Suggestions</CardTitle>
-                    <CardDescription>Waiting for client approval only — parked LIVE tenders and AWAITING_CLIENT. Approved jobs leave this table at MD_CHECKLIST. Tenders whose last date has ended are left off this list.</CardDescription>
+                    <CardDescription>Waiting for client approval only — parked LIVE tenders and AWAITING_CLIENT. Approved jobs leave this table at MD_CHECKLIST.</CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => fetchTeamActivity()} disabled={teamActivityLoading}>
                     <RefreshCw className={`w-4 h-4 ${teamActivityLoading ? 'animate-spin' : ''}`} />
                   </Button>
                 </CardHeader>
                 <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
-                  {teamActivityLoading ? (
+                  {teamActivityLoading && suggestionBoardJobs.length === 0 ? (
                     <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading team suggestions...</p></div>
                   ) : suggestionBoardJobs.length === 0 ? (
                     <div className="text-center py-12 text-slate-400"><Send className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No tenders waiting for client approval.</p></div>
@@ -1665,7 +1640,7 @@ export default function AdminPage() {
                     <CardDescription>Internal operations only — MD_CHECKLIST through AWAITING_RECEIPT. SUBMITTED moves to Submitted Tracking; WON stays there; Lost goes to Archive.</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-4 max-h-[450px] overflow-y-auto pr-2">
-                  {teamActivityLoading ? (
+                  {teamActivityLoading && masterLiveJobs.length === 0 ? (
                     <div className="text-center py-12 text-slate-400"><Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin"/><p className="text-sm">Loading live tracking...</p></div>
                   ) : masterLiveJobs.length === 0 ? (
                     <div className="text-center py-12 text-slate-400"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-sm">No jobs in the internal pipeline.</p></div>
