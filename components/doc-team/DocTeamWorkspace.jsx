@@ -79,7 +79,11 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
   const onPatch = async (row, patch) => {
     try {
       const data = await docFetch(`/api/doc-tasks/${row.id}`, { method: 'PUT', body: JSON.stringify(patch) });
-      setTasks((current) => current.map((item) => (item.id === row.id ? data.task : item)));
+      setTasks((current) => (
+        data.deleted
+          ? current.filter((item) => item.id !== row.id)
+          : current.map((item) => (item.id === row.id ? data.task : item))
+      ));
       try { await reloadSummary(); } catch (err) { toast.error(err.message || 'Could not refresh the counts.'); }
     } catch (err) {
       toast.error(err.message || 'Save failed.');
@@ -154,8 +158,9 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
           editable={role === 'maker'}
           editorEmpId={actorEmpId}
           canAssign={canLead}
-          canDelete={canLead}
-          canDeleteQuotation={canLead || role === 'md'}
+          canDelete={false}
+          canDeleteQuotation={false}
+          advanceMode={role === 'maker' ? 'maker' : (canLead ? 'lead' : 'none')}
           assignees={assignees}
           onPatch={onPatch}
           onAssign={onAssign}
@@ -164,7 +169,11 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
         />
       ) : null}
       {!loading && tab === 'completed' ? (
-        <DocTaskCompleted rows={completed} canDelete={canLead} onDelete={onDelete} />
+        <DocTaskCompleted
+          rows={completed}
+          advanceMode={role === 'maker' ? 'maker' : (canLead ? 'lead' : 'none')}
+          onPatch={onPatch}
+        />
       ) : null}
     </div>
   );

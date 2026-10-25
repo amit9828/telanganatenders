@@ -3,9 +3,15 @@
 import { compareDocTasks, formatDisplayDate, normalizeIsoDate } from '@/lib/doc-task-dates';
 
 const ROW_FILL = {
-  'Waiting for Quotation': '#e9d5ff',
-  'Waiting for Documents': '#fdba74',
-  'Under Preparation': '#93c5fd',
+  'Waiting for Quotation': '#c084fc',
+  'Waiting for Documents': '#fb923c',
+  'Under Preparation': '#60a5fa',
+};
+
+const STAGE_ACTIONS = {
+  documents: { label: 'Document Submitted', confirm: 'Move this row to Under Preparation?', action: 'documentSubmitted' },
+  preparation: { label: 'Completed: Yes', confirm: 'Move this row to Completed?', action: 'markCompleted' },
+  completed: { label: 'Documents Submitted: Yes', confirm: 'Remove this completed row from the sheet?', action: 'submitDocuments' },
 };
 
 const COLUMNS = [
@@ -24,11 +30,14 @@ const COLUMNS = [
   { key: 'remark', label: 'Remark', width: 220 },
   { key: 'status', label: 'Current Status', width: 190 },
   { key: 'delete', label: 'Delete', width: 84 },
+  { key: 'action', label: 'Action', width: 210 },
 ];
 
 const OVERVIEW_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'clientNextUpdateDate', 'status'];
-const QUOTATION_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'clientNextUpdateDate', 'quotationRequired', 'delete'];
-const COMPLETED_KEYS = ['bidNumber', 'clientName', 'companyName', 'assigned', 'lastDate', 'delete'];
+const QUOTATION_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'clientNextUpdateDate'];
+const DOCUMENTS_KEYS = ['sno', 'bidNumber', 'lastDate', 'assigned', 'clientName', 'companyName', 'missingDocDetails', 'checklistError', 'action'];
+const PREPARATION_KEYS = ['sno', 'bidNumber', 'lastDate', 'assigned', 'clientName', 'companyName', 'action'];
+const COMPLETED_KEYS = ['bidNumber', 'clientName', 'companyName', 'assigned', 'lastDate', 'action'];
 
 const cellStyle = {
   border: '1px solid #64748b',
@@ -159,17 +168,22 @@ export default function DocTaskGrid({
   outline,
   confirmDate = false,
   allowQuotationEdit = false,
+  advanceMode = 'none',
 }) {
   const ordered = [...rows].sort(compareDocTasks);
   const byKey = Object.fromEntries(COLUMNS.map((column) => [column.key, column]));
-  const fullKeys = COLUMNS.map((column) => column.key).filter((key) => key !== 'status');
+  const fullKeys = COLUMNS.map((column) => column.key).filter((key) => key !== 'status' && key !== 'action');
   const columnKeys = variant === 'completed'
     ? COMPLETED_KEYS
     : variant === 'overview'
       ? OVERVIEW_KEYS
       : variant === 'quotation'
         ? QUOTATION_KEYS
-        : fullKeys;
+        : variant === 'documents'
+          ? DOCUMENTS_KEYS
+          : variant === 'preparation'
+            ? PREPARATION_KEYS
+            : fullKeys;
   const columns = columnKeys
     .filter((key) => key !== 'delete' || canDelete)
     .map((key) => byKey[key])
@@ -178,11 +192,12 @@ export default function DocTaskGrid({
   const fillFor = (row) => (variant === 'completed' ? '#fff' : (ROW_FILL[row.status] || '#fff'));
 
   return (
-    <div style={{
+    <div className="w-full" style={{
+      width: '100%',
       overflowX: 'auto',
       border: variant === 'completed' ? 'none' : `${outline ? 3 : 1}px solid ${outline || '#64748b'}`,
     }}>
-      <table style={{ borderCollapse: 'collapse', tableLayout: 'fixed', width: columns.reduce((sum, column) => sum + column.width, 0) }}>
+      <table className="w-full" style={{ borderCollapse: 'collapse', width: '100%', minWidth: columns.reduce((sum, column) => sum + column.width, 0) }}>
         <colgroup>
           {columns.map((column) => <col key={column.key} style={{ width: column.width }} />)}
         </colgroup>
@@ -282,6 +297,28 @@ export default function DocTaskGrid({
                           disabled={locked}
                           onCommit={(text) => onPatch?.(row, { [column.key]: text })}
                         />
+                      </td>
+                    );
+                  }
+                  if (column.key === 'action') {
+                    const stage = STAGE_ACTIONS[variant];
+                    const mayAct = Boolean(stage) && (
+                      advanceMode === 'lead'
+                      || (advanceMode === 'maker' && Boolean(editorEmpId) && String(row.assignedEmployeeId || '') === String(editorEmpId))
+                    );
+                    if (!mayAct) return <td key={column.key} style={paint} />;
+                    return (
+                      <td key={column.key} style={paint}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!window.confirm(stage.confirm)) return;
+                            onPatch?.(row, { action: stage.action });
+                          }}
+                          style={{ border: '1px solid #0f172a', background: '#0f172a', color: '#fff', fontWeight: 700, padding: '4px 8px', whiteSpace: 'nowrap' }}
+                        >
+                          {stage.label}
+                        </button>
                       </td>
                     );
                   }
