@@ -16,6 +16,7 @@ import DashboardNav from '@/components/DashboardNav';
 import PricingMasterPanel from '@/components/PricingMasterPanel';
 import ThirdPartyLeadsPanel from '@/components/ThirdPartyLeadsPanel';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
+import DocTeamWorkspace from '@/components/doc-team/DocTeamWorkspace';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
@@ -1115,6 +1116,7 @@ export default function AdminPage() {
       { value: 'team-activity', label: 'Team Activity', icon: Users, color: 'blue' },
     ] },
     { id: 'workflow', label: 'Tender Workflow', items: [
+      { value: 'doc-team', label: 'Doc Team', icon: ClipboardList, color: 'navy' },
       { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
       { value: 'submitted', label: 'Submitted Board', icon: FileText, color: 'emerald' },
       { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
@@ -1703,6 +1705,9 @@ export default function AdminPage() {
               live (non-Won/Lost) bid, across the whole team, each row attributed to the
               employee who owns it. Employee dashboards never see this — GET /api/dispatches
               and GET /api/bids strictly isolate each officer to their own employee_id there. */}
+          <TabsContent value="doc-team" className="mt-4">
+            <DocTeamWorkspace role="md" />
+          </TabsContent>
           <TabsContent value="team-activity" className="mt-4">
             <div className="space-y-6">
               <Card className="shadow-sm border-t-4 border-t-blue-600">

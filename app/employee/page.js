@@ -9,6 +9,7 @@ import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
 import GlobalSuggestionsBoard from '@/components/workflow/GlobalSuggestionsBoard';
+import DocTeamWorkspace from '@/components/doc-team/DocTeamWorkspace';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
 import PublishTenderForm from '@/components/workflow/PublishTenderForm';
@@ -751,6 +752,7 @@ export default function EmployeeDashboard() {
   // is untouched.
   const EMPLOYEE_NAV_GROUPS = [
     { id: 'my-work', label: 'My Work', items: [
+      { value: 'doc-team', label: 'Doc Team', icon: ClipboardList, color: 'navy' },
       { value: 'global-suggestions', label: 'Global Suggestions', icon: Send, color: 'blue' },
       { value: 'internal', label: 'Internal Tracking', icon: ClipboardList, color: 'navy' },
       { value: 'submitted', label: 'Submitted Tracking', icon: FileText, color: 'navy' },
@@ -834,6 +836,10 @@ return (
               onRemoveJob={removeJob}
               actorEmpId={empData.id}
             />
+          </TabsContent>
+
+          <TabsContent value="doc-team" className="w-full">
+            <DocTeamWorkspace role="maker" />
           </TabsContent>
 
           <TabsContent value="global-suggestions" className="w-full space-y-6">
