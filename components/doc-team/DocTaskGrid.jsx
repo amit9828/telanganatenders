@@ -33,7 +33,7 @@ const COLUMNS = [
   { key: 'action', label: 'Action', width: 210 },
 ];
 
-const OVERVIEW_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'clientNextUpdateDate', 'status'];
+const OVERVIEW_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'remark', 'status'];
 const QUOTATION_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'clientNextUpdateDate'];
 const DOCUMENTS_KEYS = ['sno', 'bidNumber', 'lastDate', 'assigned', 'clientName', 'companyName', 'missingDocDetails', 'checklistError', 'action'];
 const PREPARATION_KEYS = ['sno', 'bidNumber', 'lastDate', 'assigned', 'clientName', 'companyName', 'action'];
@@ -286,6 +286,15 @@ export default function DocTaskGrid({
                         />
                       </td>
                     );
+                  }
+                  if (variant === 'overview' && column.key === 'remark') {
+                    const text = row.status === 'Waiting for Quotation'
+                      ? (row.clientNextUpdateDate || '')
+                      : row.status === 'Waiting for Documents'
+                        ? (row.missingDocDetails || '')
+                        : (row.remark || '');
+                    const note = { ...paint, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', wordBreak: 'break-word' };
+                    return <td key={column.key} style={note}>{readText(text, { wrap: true })}</td>;
                   }
                   if (column.key === 'missingDocDetails' || column.key === 'checklistError' || column.key === 'remark') {
                     const locked = column.key === 'missingDocDetails' && row.missingDocuments !== true;
