@@ -4,8 +4,8 @@ import DocTaskGrid from '@/components/doc-team/DocTaskGrid';
 
 const SECTIONS = [
   { status: 'Waiting for Quotation', color: '#7e22ce', assign: false, variant: 'quotation' },
-  { status: 'Waiting for Documents', color: '#c2410c', assign: true, variant: 'full' },
-  { status: 'Under Preparation', color: '#1d4ed8', assign: true, variant: 'full' },
+  { status: 'Waiting for Documents', color: '#c2410c', assign: true, variant: 'documents' },
+  { status: 'Under Preparation', color: '#1d4ed8', assign: true, variant: 'preparation' },
 ];
 
 export default function DocTaskWorkflow({
@@ -15,11 +15,12 @@ export default function DocTaskWorkflow({
   canAssign,
   canDelete,
   canDeleteQuotation = false,
+  advanceMode = 'none',
+  canEditNextUpdate = false,
   assignees,
   onPatch,
   onAssign,
   onDelete,
-  onDateError,
 }) {
   return (
     <div>
@@ -32,15 +33,15 @@ export default function DocTaskWorkflow({
             editable={editable}
             editorEmpId={editorEmpId}
             canAssign={canAssign && section.assign}
-            canDelete={section.variant === 'quotation' ? canDeleteQuotation : canDelete}
-            allowQuotationEdit={section.variant === 'quotation' && editable}
-            confirmDate={section.variant === 'quotation'}
+            canDelete={section.variant === 'quotation' ? canDeleteQuotation : false}
+            advanceMode={advanceMode}
+            canEditNextUpdate={canEditNextUpdate}
+            allowQuotationEdit={false}
             assignees={assignees}
             outline={section.color}
             onPatch={onPatch}
             onAssign={onAssign}
             onDelete={onDelete}
-            onDateError={onDateError}
           />
         </section>
       ))}

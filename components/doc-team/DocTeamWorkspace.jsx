@@ -8,9 +8,9 @@ import DocTaskWorkflow from '@/components/doc-team/DocTaskWorkflow';
 import DocTaskCompleted from '@/components/doc-team/DocTaskCompleted';
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'workflow', label: 'Workflow' },
-  { id: 'completed', label: 'Completed' },
+  { id: 'overview', label: 'Overview', active: '#7c3aed', idle: '#ede9fe', activeText: '#fff', idleText: '#4c1d95' },
+  { id: 'workflow', label: 'Workflow', active: '#ea580c', idle: '#ffedd5', activeText: '#fff', idleText: '#9a3412' },
+  { id: 'completed', label: 'Completed', active: '#2563eb', idle: '#dbeafe', activeText: '#fff', idleText: '#1e3a8a' },
 ];
 
 const METRICS = [
@@ -79,7 +79,11 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
   const onPatch = async (row, patch) => {
     try {
       const data = await docFetch(`/api/doc-tasks/${row.id}`, { method: 'PUT', body: JSON.stringify(patch) });
-      setTasks((current) => current.map((item) => (item.id === row.id ? data.task : item)));
+      setTasks((current) => (
+        data.deleted
+          ? current.filter((item) => item.id !== row.id)
+          : current.map((item) => (item.id === row.id ? data.task : item))
+      ));
       try { await reloadSummary(); } catch (err) { toast.error(err.message || 'Could not refresh the counts.'); }
     } catch (err) {
       toast.error(err.message || 'Save failed.');
@@ -125,24 +129,29 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
           Refresh
         </button>
       </div>
-      <div style={{ display: 'flex', gap: 0, marginBottom: 8 }}>
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setTab(item.id)}
-            style={{
-              border: '1px solid #64748b',
-              borderBottom: tab === item.id ? '1px solid #fff' : '1px solid #64748b',
-              background: tab === item.id ? '#fff' : '#e2e8f0',
-              fontWeight: 700,
-              padding: '6px 14px',
-              marginBottom: -1,
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="flex w-full" style={{ display: 'flex', width: '100%', gap: 8, marginBottom: 12 }}>
+        {TABS.map((item) => {
+          const selected = tab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="flex-1"
+              onClick={() => setTab(item.id)}
+              style={{
+                flex: 1,
+                border: 'none',
+                background: selected ? item.active : item.idle,
+                color: selected ? item.activeText : item.idleText,
+                fontWeight: 800,
+                fontSize: 18,
+                padding: '16px 12px',
+              }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
       {loading ? <p style={{ fontSize: 13, color: '#334155' }}>Loading sheet…</p> : null}
       {!loading && tab === 'overview' ? (
@@ -154,17 +163,22 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
           editable={role === 'maker'}
           editorEmpId={actorEmpId}
           canAssign={canLead}
-          canDelete={canLead}
-          canDeleteQuotation={canLead || role === 'md'}
+          canDelete={false}
+          canDeleteQuotation={false}
+          advanceMode={role === 'maker' ? 'maker' : (canLead ? 'lead' : 'none')}
+          canEditNextUpdate={role === 'maker' || canLead}
           assignees={assignees}
           onPatch={onPatch}
           onAssign={onAssign}
           onDelete={onDelete}
-          onDateError={(message) => toast.error(message)}
         />
       ) : null}
       {!loading && tab === 'completed' ? (
-        <DocTaskCompleted rows={completed} canDelete={canLead} onDelete={onDelete} />
+        <DocTaskCompleted
+          rows={completed}
+          advanceMode={role === 'maker' ? 'maker' : (canLead ? 'lead' : 'none')}
+          onPatch={onPatch}
+        />
       ) : null}
     </div>
   );

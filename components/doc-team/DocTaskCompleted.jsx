@@ -2,14 +2,15 @@
 
 import DocTaskGrid from '@/components/doc-team/DocTaskGrid';
 
-export default function DocTaskCompleted({ rows, canDelete, onDelete }) {
+export default function DocTaskCompleted({ rows, advanceMode = 'none', onPatch }) {
   return (
     <DocTaskGrid
       variant="completed"
       rows={rows}
       editable={false}
-      canDelete={canDelete}
-      onDelete={onDelete}
+      canDelete={false}
+      advanceMode={advanceMode}
+      onPatch={onPatch}
     />
   );
 }
