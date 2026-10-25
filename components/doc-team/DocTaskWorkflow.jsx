@@ -16,11 +16,11 @@ export default function DocTaskWorkflow({
   canDelete,
   canDeleteQuotation = false,
   advanceMode = 'none',
+  canEditNextUpdate = false,
   assignees,
   onPatch,
   onAssign,
   onDelete,
-  onDateError,
 }) {
   return (
     <div>
@@ -35,14 +35,13 @@ export default function DocTaskWorkflow({
             canAssign={canAssign && section.assign}
             canDelete={section.variant === 'quotation' ? canDeleteQuotation : false}
             advanceMode={advanceMode}
+            canEditNextUpdate={canEditNextUpdate}
             allowQuotationEdit={false}
-            confirmDate={false}
             assignees={assignees}
             outline={section.color}
             onPatch={onPatch}
             onAssign={onAssign}
             onDelete={onDelete}
-            onDateError={onDateError}
           />
         </section>
       ))}

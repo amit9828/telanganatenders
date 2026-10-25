@@ -1,6 +1,6 @@
 'use client';
 
-import { compareDocTasks, formatDisplayDate, normalizeIsoDate } from '@/lib/doc-task-dates';
+import { compareDocTasks, formatDisplayDate } from '@/lib/doc-task-dates';
 
 const ROW_FILL = {
   'Waiting for Quotation': '#c084fc',
@@ -65,37 +65,16 @@ function yesNo(value) {
   return value ? 'Yes' : 'No';
 }
 
-function DateField({ value, confirm, onCommit }) {
-  const shown = formatDisplayDate(value);
+function NextUpdateField({ value, onCommit }) {
   return (
     <input
-      defaultValue={shown}
-      key={shown}
+      type="text"
+      defaultValue={value || ''}
+      key={value || ''}
       aria-label="Client Next Update Date"
       onBlur={(event) => {
-        const raw = event.target.value.trim();
-        if (!raw) {
-          if (raw !== shown && confirm && shown && !window.confirm('Are you sure you want to update the date?')) {
-            event.target.value = shown;
-            return;
-          }
-          if (shown) onCommit('');
-          return;
-        }
-        const iso = normalizeIsoDate(raw, { defaultYear: new Date().getFullYear() });
-        if (!iso) {
-          event.target.value = shown;
-          onCommit(null);
-          return;
-        }
-        event.target.value = formatDisplayDate(iso);
-        if (iso !== value) {
-          if (confirm && !window.confirm('Are you sure you want to update the date?')) {
-            event.target.value = shown;
-            return;
-          }
-          onCommit(iso);
-        }
+        const next = event.target.value;
+        if (next !== (value || '')) onCommit(next);
       }}
       style={{ width: '100%', border: 0, background: 'transparent', font: 'inherit', padding: 0 }}
     />
@@ -116,19 +95,40 @@ function YesNoField({ value, label, onChange }) {
   );
 }
 
-function TextField({ value, label, disabled, onCommit }) {
+function fitTextarea(element) {
+  if (!element) return;
+  element.style.height = 'auto';
+  element.style.height = `${element.scrollHeight}px`;
+}
+
+function TextField({ value, label, disabled, onCommit, grow = false }) {
   return (
     <textarea
       aria-label={label}
       defaultValue={value || ''}
       key={`${label}:${value || ''}`}
       disabled={disabled}
-      rows={2}
+      rows={grow ? 1 : 2}
+      ref={(node) => { if (grow) fitTextarea(node); }}
+      onInput={(event) => { if (grow) fitTextarea(event.currentTarget); }}
       onBlur={(event) => {
         if (disabled) return;
         if (event.target.value !== (value || '')) onCommit(event.target.value);
       }}
-      style={{
+      style={grow ? {
+        width: '100%',
+        border: 0,
+        background: 'transparent',
+        font: 'inherit',
+        resize: 'none',
+        overflow: 'hidden',
+        whiteSpace: 'pre-wrap',
+        overflowWrap: 'break-word',
+        wordBreak: 'break-word',
+        padding: 0,
+        minHeight: '1.4em',
+        color: 'inherit',
+      } : {
         width: '100%',
         border: 0,
         background: 'transparent',
@@ -145,9 +145,15 @@ function TextField({ value, label, disabled, onCommit }) {
   );
 }
 
-function readText(value) {
+function readText(value, { wrap = false } = {}) {
   return (
-    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 96, overflow: 'auto' }}>
+    <div style={{
+      whiteSpace: 'pre-wrap',
+      overflowWrap: 'break-word',
+      wordBreak: 'break-word',
+      ...(wrap ? {} : { maxHeight: 96, overflow: 'auto' }),
+    }}
+    >
       {value || ''}
     </div>
   );
@@ -164,11 +170,10 @@ export default function DocTaskGrid({
   onPatch,
   onAssign,
   onDelete,
-  onDateError,
   outline,
-  confirmDate = false,
   allowQuotationEdit = false,
   advanceMode = 'none',
+  canEditNextUpdate = false,
 }) {
   const ordered = [...rows].sort(compareDocTasks);
   const byKey = Object.fromEntries(COLUMNS.map((column) => [column.key, column]));
@@ -256,19 +261,15 @@ export default function DocTaskGrid({
                     return <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>{cells[column.key] ?? ''}</td>;
                   }
                   if (column.key === 'clientNextUpdateDate') {
-                    if (!(rowEditable || quotationEditable)) return <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>{formatDisplayDate(row.clientNextUpdateDate)}</td>;
+                    const note = { ...paint, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' };
+                    if (!(canEditNextUpdate && variant === 'quotation' && row.status === 'Waiting for Quotation')) {
+                      return <td key={column.key} style={note}>{row.clientNextUpdateDate || ''}</td>;
+                    }
                     return (
-                      <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>
-                        <DateField
-                          confirm={confirmDate}
+                      <td key={column.key} style={note}>
+                        <NextUpdateField
                           value={row.clientNextUpdateDate}
-                          onCommit={(iso) => {
-                            if (iso == null) {
-                              onDateError?.('Enter the date as DD-MM.');
-                              return;
-                            }
-                            onPatch?.(row, { clientNextUpdateDate: iso });
-                          }}
+                          onCommit={(text) => onPatch?.(row, { clientNextUpdateDate: text })}
                         />
                       </td>
                     );
@@ -288,13 +289,18 @@ export default function DocTaskGrid({
                   }
                   if (column.key === 'missingDocDetails' || column.key === 'checklistError' || column.key === 'remark') {
                     const locked = column.key === 'missingDocDetails' && row.missingDocuments !== true;
-                    if (!rowEditable) return <td key={column.key} style={paint}>{readText(row[column.key])}</td>;
+                    const wrapping = column.key === 'missingDocDetails';
+                    const note = wrapping
+                      ? { ...paint, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', wordBreak: 'break-word' }
+                      : paint;
+                    if (!rowEditable) return <td key={column.key} style={note}>{readText(row[column.key], { wrap: wrapping })}</td>;
                     return (
-                      <td key={column.key} style={paint}>
+                      <td key={column.key} style={note}>
                         <TextField
                           label={column.label}
                           value={row[column.key]}
                           disabled={locked}
+                          grow={wrapping}
                           onCommit={(text) => onPatch?.(row, { [column.key]: text })}
                         />
                       </td>
