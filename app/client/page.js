@@ -29,8 +29,8 @@ import {
   MessageSquare, Target, UserCheck, Upload, Banknote, BellRing, Loader2, LogOut, 
   FileUp, Download, Activity, Building2, ChevronDown, UserCircle, UploadCloud, 
   Globe, Database, PhoneCall, Plus, Trash2, Trophy, Eye, ShieldCheck, XCircle,
-  IndianRupee, PenTool, Printer, UserCog, Sparkles, Lock, FileSignature,
-  Handshake, Landmark, Search, ArrowLeft
+  IndianRupee, PenTool, Printer, UserCog, Lock, FileSignature,
+  Landmark, Search, ArrowLeft
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
@@ -166,11 +166,6 @@ export default function ClientDashboard() {
   const [workflowJobs, setWorkflowJobs] = useState([]);
   const [brandSettings, setBrandSettings] = useState({});
 
-  // 🚀 STAFF-ONLY: AI Win Probability + JV Partner data for the "AI Tender Match & JV
-  // Hub" widget. Only ever fetched when isStaffPreview is true — a real client never
-  // triggers this call, and the underlying /api/bid-matches route requires the MD's
-  // ADMIN_TOKEN anyway, so a real client couldn't read it even if they tried.
-  const [staffBidMatches, setStaffBidMatches] = useState([]);
   const [submittingLead, setSubmittingLead] = useState('');
 
   useEffect(() => {
@@ -197,24 +192,6 @@ export default function ClientDashboard() {
     fetch('/api/settings').then(r => r.json()).then(d => { if(d.settings) setBrandSettings(d.settings); }).catch(()=>{});
     fetch('/api/ai/generate-doc').then(r => r.json()).then(d => { if(d.doc_types) setDocTypes(d.doc_types); }).catch(()=>{});
   }, [session, status, onClientDesk]);
-
-  // 🚀 STAFF-ONLY: fetch the MD's AI matchmaker feed and narrow it to this one client,
-  // for the "AI Tender Match & JV Hub" widget. Skipped entirely for real clients.
-  useEffect(() => {
-    if (!isStaffPreview || !email || typeof window === 'undefined') return;
-    const adminToken = localStorage.getItem('tt_admin');
-    fetch('/api/bid-matches', {
-      headers: adminToken ? { Authorization: `Bearer ${adminToken}` } : {},
-    })
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => {
-        if (!d?.matches) return;
-        setStaffBidMatches(
-          d.matches.filter(m => (m.client_email || '').toLowerCase() === email.toLowerCase())
-        );
-      })
-      .catch(() => {});
-  }, [isStaffPreview, email]);
 
  // 🚀 FIX: Live Tracking (Auto-Refresh) without external packages
   useEffect(() => {
@@ -1768,44 +1745,6 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                 <CardDescription>Handpicked high-probability tenders assigned by your MD/Operations Officer.</CardDescription>
               </CardHeader>
               <CardContent className="p-5">
-                 {/* 🚀 STAFF-ONLY: AI Tender Match & JV Hub — surfaces the MD's AI matchmaker
-                     feed (confidence score + JV partner suggestion) for this one client.
-                     Invisible to real clients; nothing below this block changes for them. */}
-                 {isStaffPreview && staffBidMatches.length > 0 && (
-                    <div className="mb-5 space-y-3">
-                       <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-indigo-600">
-                          <Sparkles className="w-3.5 h-3.5" /> AI Tender Match & JV Hub
-                          <Badge className="bg-indigo-100 text-indigo-700 border-0 text-[9px] font-bold">Staff Only</Badge>
-                       </div>
-                       <div className="grid md:grid-cols-2 gap-3">
-                          {staffBidMatches.map((m) => (
-                             <div key={m._id || m.tender_id} className="border-t-4 border-t-indigo-600 border border-indigo-100 rounded-xl p-4 bg-indigo-50/30 tender-shadow">
-                                <div className="flex justify-between items-start gap-2 mb-2 flex-wrap">
-                                   <Badge className="bg-indigo-600 text-white border-0 text-[10px] font-bold">
-                                      AI Win Probability: {Math.round((Number(m.confidence) || 0) * 100)}%
-                                   </Badge>
-                                   {m.match_type === 'JV' && (
-                                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">JV Opportunity</Badge>
-                                   )}
-                                </div>
-                                <h4 className="font-bold text-[#0A2647] text-sm leading-tight mb-1">{m.tender_title}</h4>
-                                <p className="text-xs text-slate-500">
-                                   {m.tender_department}{m.tender_bid_no ? ` • ${m.tender_bid_no}` : ''}
-                                </p>
-                                {m.match_type === 'JV' && m.jv_partner && (
-                                   <div className="mt-3 bg-amber-50 border border-amber-200 rounded-md p-2.5">
-                                      <div className="text-[9px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1">
-                                         <Handshake className="w-3 h-3" /> Find JV Partner
-                                      </div>
-                                      <div className="text-xs font-semibold text-amber-900 mt-0.5">{m.jv_partner.company_name}</div>
-                                      <div className="text-[10px] text-amber-700">Combined Capacity: {formatINR(m.jv_partner.combined_capacity)}</div>
-                                   </div>
-                                )}
-                             </div>
-                          ))}
-                       </div>
-                    </div>
-                 )}
                  {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length > 0 ? (
                     <div className="grid md:grid-cols-2 gap-4">
                       {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').map((job) => (
