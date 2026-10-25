@@ -235,7 +235,7 @@ export default function AdminPage() {
   const [teamActivityLoading, setTeamActivityLoading] = useState(false);
 
   const suggestionBoardJobs = useMemo(
-    () => wfSuggestions.filter(belongsOnSuggestions),
+    () => wfSuggestions.filter((job) => belongsOnSuggestions(job) && jobDeadline(job)?.text !== 'Ended'),
     [wfSuggestions],
   );
   const masterLiveJobs = useMemo(
@@ -1601,7 +1601,7 @@ export default function AdminPage() {
                 <CardHeader className="bg-blue-50/50 border-b pb-4 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Send className="w-5 h-5 text-blue-600"/> Global Suggestions</CardTitle>
-                    <CardDescription>Waiting for client approval only — parked LIVE tenders and AWAITING_CLIENT. Approved jobs leave this table at MD_CHECKLIST.</CardDescription>
+                    <CardDescription>Waiting for client approval only — parked LIVE tenders and AWAITING_CLIENT. Approved jobs leave this table at MD_CHECKLIST. Tenders whose last date has ended are left off this list.</CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => fetchTeamActivity()} disabled={teamActivityLoading}>
                     <RefreshCw className={`w-4 h-4 ${teamActivityLoading ? 'animate-spin' : ''}`} />
