@@ -11,6 +11,7 @@ const SECTIONS = [
 export default function DocTaskWorkflow({
   rows,
   editable,
+  editorEmpId = '',
   canAssign,
   canDelete,
   assignees,
@@ -27,6 +28,7 @@ export default function DocTaskWorkflow({
           <DocTaskGrid
             rows={rows.filter((row) => row.status === section.status)}
             editable={editable}
+            editorEmpId={editorEmpId}
             canAssign={canAssign && section.assign}
             canDelete={canDelete}
             assignees={assignees}

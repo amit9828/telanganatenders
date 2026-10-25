@@ -137,6 +137,7 @@ export default function DocTaskGrid({
   rows,
   variant = 'full',
   editable = false,
+  editorEmpId = '',
   canAssign = false,
   canDelete = false,
   assignees = [],
@@ -182,6 +183,7 @@ export default function DocTaskGrid({
           ) : ordered.map((row, index) => {
             const fill = fillFor(row);
             const paint = { ...cellStyle, background: fill };
+            const rowEditable = editable && Boolean(editorEmpId) && String(row.assignedEmployeeId || '') === String(editorEmpId);
             const cells = {
               sno: index + 1,
               bidNumber: row.bidNumber,
@@ -217,7 +219,7 @@ export default function DocTaskGrid({
                     return <td key={column.key} style={paint}>{row.assignedEmployeeName || ''}</td>;
                   }
                   if (column.key === 'clientNextUpdateDate') {
-                    if (!editable) return <td key={column.key} style={paint}>{formatDisplayDate(row.clientNextUpdateDate)}</td>;
+                    if (!rowEditable) return <td key={column.key} style={paint}>{formatDisplayDate(row.clientNextUpdateDate)}</td>;
                     return (
                       <td key={column.key} style={paint}>
                         <DateField
@@ -234,7 +236,7 @@ export default function DocTaskGrid({
                     );
                   }
                   if (column.key === 'quotationRequired' || column.key === 'missingDocuments' || column.key === 'workCompleted') {
-                    if (!editable) return <td key={column.key} style={paint}>{yesNo(row[column.key])}</td>;
+                    if (!rowEditable) return <td key={column.key} style={paint}>{yesNo(row[column.key])}</td>;
                     return (
                       <td key={column.key} style={paint}>
                         <YesNoField
@@ -247,7 +249,7 @@ export default function DocTaskGrid({
                   }
                   if (column.key === 'missingDocDetails' || column.key === 'checklistError' || column.key === 'remark') {
                     const locked = column.key === 'missingDocDetails' && row.missingDocuments !== true;
-                    if (!editable) return <td key={column.key} style={paint}>{readText(row[column.key])}</td>;
+                    if (!rowEditable) return <td key={column.key} style={paint}>{readText(row[column.key])}</td>;
                     return (
                       <td key={column.key} style={paint}>
                         <TextField

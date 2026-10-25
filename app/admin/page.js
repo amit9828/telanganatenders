@@ -16,7 +16,6 @@ import DashboardNav from '@/components/DashboardNav';
 import PricingMasterPanel from '@/components/PricingMasterPanel';
 import ThirdPartyLeadsPanel from '@/components/ThirdPartyLeadsPanel';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
-import DocTeamWorkspace from '@/components/doc-team/DocTeamWorkspace';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
@@ -328,7 +327,10 @@ export default function AdminPage() {
       if (want.has('guests')) tasks.guests = safeFetch(`/api/guest-queries?t=${stamp}`);
       if (want.has('payments')) tasks.payments = safeFetch(`/api/payments/requests?t=${stamp}`);
       if (want.has('matches')) tasks.matches = safeFetch(`/api/bid-matches?t=${stamp}`);
-      if (want.has('wfInternal')) tasks.wfInternal = fetchWorkflowQueue('internal').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfInternal')) {
+        const sort = tab === 'team-activity' ? 'last_date' : undefined;
+        tasks.wfInternal = fetchWorkflowQueue('internal', { sort }).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      }
       if (want.has('wfParked')) tasks.wfParked = fetchWorkflowQueue('parked').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSuggestions')) tasks.wfSuggestions = fetchWorkflowQueue('suggestions').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSubmitted')) tasks.wfSubmitted = fetchWorkflowQueue('submitted').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
@@ -419,7 +421,7 @@ export default function AdminPage() {
       const [parked, waiting, internal] = await Promise.all([
         fetchWorkflowQueue('parked').catch(() => ({ jobs: [] })),
         fetchWorkflowQueue('suggestions').catch(() => ({ jobs: [] })),
-        fetchWorkflowQueue('internal').catch(() => ({ jobs: [] })),
+        fetchWorkflowQueue('internal', { sort: 'last_date' }).catch(() => ({ jobs: [] })),
       ]);
       const merged = [...(parked.jobs || []), ...(waiting.jobs || [])].filter(belongsOnSuggestions);
       const seen = new Set();
@@ -1116,7 +1118,6 @@ export default function AdminPage() {
       { value: 'team-activity', label: 'Team Activity', icon: Users, color: 'blue' },
     ] },
     { id: 'workflow', label: 'Tender Workflow', items: [
-      { value: 'doc-team', label: 'Doc Team', icon: ClipboardList, color: 'navy' },
       { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
       { value: 'submitted', label: 'Submitted Board', icon: FileText, color: 'emerald' },
       { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
@@ -1705,9 +1706,6 @@ export default function AdminPage() {
               live (non-Won/Lost) bid, across the whole team, each row attributed to the
               employee who owns it. Employee dashboards never see this — GET /api/dispatches
               and GET /api/bids strictly isolate each officer to their own employee_id there. */}
-          <TabsContent value="doc-team" className="mt-4">
-            <DocTeamWorkspace role="md" />
-          </TabsContent>
           <TabsContent value="team-activity" className="mt-4">
             <div className="space-y-6">
               <Card className="shadow-sm border-t-4 border-t-blue-600">

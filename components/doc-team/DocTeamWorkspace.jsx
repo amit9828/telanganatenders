@@ -35,7 +35,7 @@ async function docFetch(url, options = {}) {
   return data;
 }
 
-export default function DocTeamWorkspace({ role = 'maker' }) {
+export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
   const [tab, setTab] = useState('overview');
   const [tasks, setTasks] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -152,6 +152,7 @@ export default function DocTeamWorkspace({ role = 'maker' }) {
         <DocTaskWorkflow
           rows={active}
           editable={role === 'maker'}
+          editorEmpId={actorEmpId}
           canAssign={canLead}
           canDelete={canLead}
           assignees={assignees}
