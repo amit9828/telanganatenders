@@ -22,9 +22,11 @@ const COLUMNS = [
   { key: 'checklistError', label: 'Check list error', width: 240 },
   { key: 'workCompleted', label: 'Completed', width: 110 },
   { key: 'remark', label: 'Remark', width: 220 },
+  { key: 'status', label: 'Current Status', width: 190 },
   { key: 'delete', label: 'Delete', width: 84 },
 ];
 
+const OVERVIEW_KEYS = ['sno', 'bidNumber', 'lastDate', 'assigned', 'clientName', 'companyName', 'clientNextUpdateDate', 'status', 'delete'];
 const COMPLETED_KEYS = ['bidNumber', 'clientName', 'companyName', 'assigned', 'lastDate', 'delete'];
 
 const cellStyle = {
@@ -142,17 +144,25 @@ export default function DocTaskGrid({
   onAssign,
   onDelete,
   onDateError,
+  outline,
 }) {
   const ordered = [...rows].sort(compareDocTasks);
-  const columns = (variant === 'completed'
-    ? COLUMNS.filter((column) => COMPLETED_KEYS.includes(column.key))
-    : COLUMNS
-  ).filter((column) => column.key !== 'delete' || canDelete);
+  const byKey = Object.fromEntries(COLUMNS.map((column) => [column.key, column]));
+  const fullKeys = COLUMNS.map((column) => column.key).filter((key) => key !== 'status');
+  const columnKeys = variant === 'completed' ? COMPLETED_KEYS : variant === 'overview' ? OVERVIEW_KEYS : fullKeys;
+  const columns = columnKeys
+    .filter((key) => key !== 'delete' || canDelete)
+    .map((key) => byKey[key])
+    .filter(Boolean);
 
   const fillFor = (row) => (variant === 'completed' ? '#fff' : (ROW_FILL[row.status] || '#fff'));
 
   return (
-    <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 220px)', border: '1px solid #64748b' }}>
+    <div style={{
+      overflow: 'auto',
+      maxHeight: 'calc(100vh - 220px)',
+      border: variant === 'completed' ? 'none' : `${outline ? 3 : 1}px solid ${outline || '#64748b'}`,
+    }}>
       <table style={{ borderCollapse: 'collapse', tableLayout: 'fixed', width: columns.reduce((sum, column) => sum + column.width, 0) }}>
         <colgroup>
           {columns.map((column) => <col key={column.key} style={{ width: column.width }} />)}
@@ -178,6 +188,7 @@ export default function DocTaskGrid({
               lastDate: formatDisplayDate(row.lastDate),
               clientName: row.clientName,
               companyName: row.companyName,
+              status: row.status,
             };
             return (
               <tr key={row.id} style={{ background: fill }}>
