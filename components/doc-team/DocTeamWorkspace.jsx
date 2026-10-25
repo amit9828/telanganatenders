@@ -146,7 +146,7 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
       </div>
       {loading ? <p style={{ fontSize: 13, color: '#334155' }}>Loading sheet…</p> : null}
       {!loading && tab === 'overview' ? (
-        <DocTaskOverview rows={tasks} canDelete={canLead} onDelete={onDelete} />
+        <DocTaskOverview rows={tasks} />
       ) : null}
       {!loading && tab === 'workflow' ? (
         <DocTaskWorkflow
@@ -155,6 +155,7 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
           editorEmpId={actorEmpId}
           canAssign={canLead}
           canDelete={canLead}
+          canDeleteQuotation={canLead || role === 'md'}
           assignees={assignees}
           onPatch={onPatch}
           onAssign={onAssign}

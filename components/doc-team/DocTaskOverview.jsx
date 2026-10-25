@@ -2,7 +2,7 @@
 
 import DocTaskGrid from '@/components/doc-team/DocTaskGrid';
 
-export default function DocTaskOverview({ rows, canDelete, onDelete }) {
+export default function DocTaskOverview({ rows }) {
   const ongoing = rows.filter((row) => row.status !== 'Completed');
   return (
     <DocTaskGrid
@@ -10,8 +10,7 @@ export default function DocTaskOverview({ rows, canDelete, onDelete }) {
       rows={ongoing}
       editable={false}
       canAssign={false}
-      canDelete={canDelete}
-      onDelete={onDelete}
+      canDelete={false}
     />
   );
 }

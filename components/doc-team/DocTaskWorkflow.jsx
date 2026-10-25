@@ -3,9 +3,9 @@
 import DocTaskGrid from '@/components/doc-team/DocTaskGrid';
 
 const SECTIONS = [
-  { status: 'Waiting for Quotation', color: '#7e22ce', assign: false },
-  { status: 'Waiting for Documents', color: '#c2410c', assign: true },
-  { status: 'Under Preparation', color: '#1d4ed8', assign: true },
+  { status: 'Waiting for Quotation', color: '#7e22ce', assign: false, variant: 'quotation' },
+  { status: 'Waiting for Documents', color: '#c2410c', assign: true, variant: 'full' },
+  { status: 'Under Preparation', color: '#1d4ed8', assign: true, variant: 'full' },
 ];
 
 export default function DocTaskWorkflow({
@@ -14,6 +14,7 @@ export default function DocTaskWorkflow({
   editorEmpId = '',
   canAssign,
   canDelete,
+  canDeleteQuotation = false,
   assignees,
   onPatch,
   onAssign,
@@ -26,11 +27,14 @@ export default function DocTaskWorkflow({
         <section key={section.status} style={{ marginBottom: 18 }}>
           <h3 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 700, color: section.color }}>{section.status}</h3>
           <DocTaskGrid
+            variant={section.variant}
             rows={rows.filter((row) => row.status === section.status)}
             editable={editable}
             editorEmpId={editorEmpId}
             canAssign={canAssign && section.assign}
-            canDelete={canDelete}
+            canDelete={section.variant === 'quotation' ? canDeleteQuotation : canDelete}
+            allowQuotationEdit={section.variant === 'quotation' && editable}
+            confirmDate={section.variant === 'quotation'}
             assignees={assignees}
             outline={section.color}
             onPatch={onPatch}
