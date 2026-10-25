@@ -38,6 +38,7 @@ async function docFetch(url, options = {}) {
 export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
   const [tab, setTab] = useState('overview');
   const [tasks, setTasks] = useState([]);
+  const [overview, setOverview] = useState([]);
   const [summary, setSummary] = useState(null);
   const [assignees, setAssignees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +48,9 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
     setLoading(true);
     try {
       const data = await docFetch('/api/doc-tasks');
-      setTasks(data.tasks || []);
+      const loaded = data.tasks || [];
+      setTasks(loaded);
+      setOverview(data.overview || loaded);
       setSummary(data.summary || null);
       if (canLead) {
         const staff = await docFetch('/api/doc-tasks?view=assignees');
@@ -63,12 +66,13 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
   useEffect(() => { load(); }, [load]);
 
   const replaceTask = (task) => {
-    setTasks((current) => {
-      const next = current.some((row) => row.id === task.id)
+    const swap = (current) => (
+      current.some((row) => row.id === task.id)
         ? current.map((row) => (row.id === task.id ? task : row))
-        : current;
-      return next;
-    });
+        : current
+    );
+    setTasks(swap);
+    setOverview(swap);
   };
 
   const reloadSummary = async () => {
@@ -79,11 +83,13 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
   const onPatch = async (row, patch) => {
     try {
       const data = await docFetch(`/api/doc-tasks/${row.id}`, { method: 'PUT', body: JSON.stringify(patch) });
-      setTasks((current) => (
+      const swap = (current) => (
         data.deleted
           ? current.filter((item) => item.id !== row.id)
           : current.map((item) => (item.id === row.id ? data.task : item))
-      ));
+      );
+      setTasks(swap);
+      setOverview(swap);
       try { await reloadSummary(); } catch (err) { toast.error(err.message || 'Could not refresh the counts.'); }
     } catch (err) {
       toast.error(err.message || 'Save failed.');
@@ -106,7 +112,9 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
     if (!window.confirm(`Delete bid ${row.bidNumber || 'this row'} from the doc team sheet?`)) return;
     try {
       await docFetch(`/api/doc-tasks/${row.id}`, { method: 'DELETE' });
-      setTasks((current) => current.filter((item) => item.id !== row.id));
+      const drop = (current) => current.filter((item) => item.id !== row.id);
+      setTasks(drop);
+      setOverview(drop);
       try { await reloadSummary(); } catch (err) { toast.error(err.message || 'Could not refresh the counts.'); }
     } catch (err) {
       toast.error(err.message || 'Delete failed.');
@@ -155,7 +163,7 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
       </div>
       {loading ? <p style={{ fontSize: 13, color: '#334155' }}>Loading sheet…</p> : null}
       {!loading && tab === 'overview' ? (
-        <DocTaskOverview rows={tasks} />
+        <DocTaskOverview rows={overview} />
       ) : null}
       {!loading && tab === 'workflow' ? (
         <DocTaskWorkflow
