@@ -1,14 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab';
 import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
 import PricingMasterPanel from '@/components/PricingMasterPanel';
-import MasterTenderDesk from '@/components/MasterTenderDesk';
-import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
-import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
-import MatchedOpportunitiesPanel from '@/components/MatchedOpportunitiesPanel';
-import GemCoPilot from '@/components/GemCoPilot';
 import BidReportDesk from '@/components/BidReportDesk';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
@@ -55,15 +51,24 @@ import {
   upsertJob,
 } from '@/lib/job-board-state';
 import {
-  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2, IndianRupee
+  Briefcase, FileText, Users, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2, IndianRupee
 } from 'lucide-react';
+
+const GM_TABS = [
+  'live', 'suggestion-bar', 'doc-team', 'internal', 'submitted', 'bid-support', 'archive',
+  'bid-report', 'clients', 'officers', 'team',
+  'pricing', 'alerts', 'chat',
+];
+const TL_TABS = [
+  'publisher', 'doc-team', 'internal', 'submitted', 'clients', 'team', 'alerts', 'chat',
+];
 
 export default function StaffOpsDesk({ desk }) {
   const deskRole = useServerDeskRole();
   const onDesk = deskRole === desk;
   const { data: session } = useSession();
   const [localEmpEmail, setLocalEmpEmail] = useState('');
-  const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'publisher' : 'live');
+  const [activeTab, setActiveTab] = useDeskTab('tab', desk === 'tl' ? 'publisher' : 'live', desk === 'tl' ? TL_TABS : GM_TABS);
   const [bidReportJobId, setBidReportJobId] = useState('');
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);
@@ -259,9 +264,6 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
         ] },
         { id: 'ai', label: 'AI', items: [
-          { value: 'matchmaker', label: 'AI Matchmaker / Live Hunting', icon: Target, color: 'indigo' },
-          { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
-          { value: 'copilot', label: 'Co-Pilot', icon: Bot, color: 'violet' },
           { value: 'bid-report', label: 'Bid report', icon: FileText, color: 'teal' },
         ] },
         { id: 'clients-officers', label: 'Clients', items: [
@@ -281,9 +283,6 @@ export default function StaffOpsDesk({ desk }) {
           { value: 'doc-team', label: 'Doc Team', icon: ClipboardList, color: 'navy' },
           { value: 'internal', label: 'Team Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
-        ] },
-        { id: 'ai', label: 'AI', items: [
-          { value: 'copilot', label: 'Co-Pilot', icon: Bot, color: 'violet' },
         ] },
         { id: 'team', label: 'Team', items: [
           { value: 'clients', label: 'Clients DB', icon: Briefcase, color: 'navy' },
@@ -514,19 +513,6 @@ export default function StaffOpsDesk({ desk }) {
                   <ArchiveBoard jobs={archivedJobs} onRemoveJob={removeJob} />
                 </TabsContent>
               )}
-              {isGm && (
-                <TabsContent value="matchmaker">
-                  <AiMatchmakerPanel />
-                  <div className="mt-6"><L1BenchmarkDropzone /></div>
-                  <div className="mt-6"><MatchedOpportunitiesPanel /></div>
-                </TabsContent>
-              )}
-              {isGm && (
-                <TabsContent value="master-tenders"><MasterTenderDesk /></TabsContent>
-              )}
-              <TabsContent value="copilot">
-                <GemCoPilot embedded />
-              </TabsContent>
               {isGm && (
                 <TabsContent value="bid-report">
                   <BidReportDesk initialJobId={bidReportJobId} />

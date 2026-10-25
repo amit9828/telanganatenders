@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab';
 import { toast } from 'sonner';
 import { staffHeaders } from '@/components/workflow/api';
 import DocTaskOverview from '@/components/doc-team/DocTaskOverview';
@@ -35,19 +36,26 @@ async function docFetch(url, options = {}) {
   return data;
 }
 
+const SHEET_TABS = ['overview', 'workflow', 'completed'];
+
 export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useDeskTab('sheet', 'overview', SHEET_TABS);
   const [tasks, setTasks] = useState([]);
+  const [overview, setOverview] = useState([]);
   const [summary, setSummary] = useState(null);
   const [assignees, setAssignees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const canLead = role === 'gm' || role === 'tl';
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ soft = false } = {}) => {
+    if (soft) setRefreshing(true);
+    else setLoading(true);
     try {
       const data = await docFetch('/api/doc-tasks');
-      setTasks(data.tasks || []);
+      const loaded = data.tasks || [];
+      setTasks(loaded);
+      setOverview(data.overview || loaded);
       setSummary(data.summary || null);
       if (canLead) {
         const staff = await docFetch('/api/doc-tasks?view=assignees');
@@ -57,18 +65,20 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
       toast.error(err.message || 'Could not load the doc team sheet.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [canLead]);
 
   useEffect(() => { load(); }, [load]);
 
   const replaceTask = (task) => {
-    setTasks((current) => {
-      const next = current.some((row) => row.id === task.id)
+    const swap = (current) => (
+      current.some((row) => row.id === task.id)
         ? current.map((row) => (row.id === task.id ? task : row))
-        : current;
-      return next;
-    });
+        : current
+    );
+    setTasks(swap);
+    setOverview(swap);
   };
 
   const reloadSummary = async () => {
@@ -79,11 +89,13 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
   const onPatch = async (row, patch) => {
     try {
       const data = await docFetch(`/api/doc-tasks/${row.id}`, { method: 'PUT', body: JSON.stringify(patch) });
-      setTasks((current) => (
+      const swap = (current) => (
         data.deleted
           ? current.filter((item) => item.id !== row.id)
           : current.map((item) => (item.id === row.id ? data.task : item))
-      ));
+      );
+      setTasks(swap);
+      setOverview(swap);
       try { await reloadSummary(); } catch (err) { toast.error(err.message || 'Could not refresh the counts.'); }
     } catch (err) {
       toast.error(err.message || 'Save failed.');
@@ -106,7 +118,9 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
     if (!window.confirm(`Delete bid ${row.bidNumber || 'this row'} from the doc team sheet?`)) return;
     try {
       await docFetch(`/api/doc-tasks/${row.id}`, { method: 'DELETE' });
-      setTasks((current) => current.filter((item) => item.id !== row.id));
+      const drop = (current) => current.filter((item) => item.id !== row.id);
+      setTasks(drop);
+      setOverview(drop);
       try { await reloadSummary(); } catch (err) { toast.error(err.message || 'Could not refresh the counts.'); }
     } catch (err) {
       toast.error(err.message || 'Delete failed.');
@@ -125,8 +139,25 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
             <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>{summary[metric.key] ?? 0}</div>
           </div>
         )) : <div style={{ flex: 1 }} />}
-        <button type="button" onClick={load} style={{ border: '1px solid #64748b', background: '#fff', padding: '2px 8px', fontWeight: 700 }}>
-          Refresh
+        <button
+          type="button"
+          disabled={refreshing}
+          onClick={() => load({ soft: true })}
+          style={{ border: '1px solid #64748b', background: '#fff', padding: '2px 8px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          <span
+            aria-hidden="true"
+            className={refreshing ? 'animate-spin' : ''}
+            style={{
+              width: 12,
+              height: 12,
+              border: '2px solid #64748b',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              display: 'inline-block',
+            }}
+          />
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
       <div className="flex w-full" style={{ display: 'flex', width: '100%', gap: 8, marginBottom: 12 }}>
@@ -155,7 +186,7 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
       </div>
       {loading ? <p style={{ fontSize: 13, color: '#334155' }}>Loading sheet…</p> : null}
       {!loading && tab === 'overview' ? (
-        <DocTaskOverview rows={tasks} />
+        <DocTaskOverview rows={overview} />
       ) : null}
       {!loading && tab === 'workflow' ? (
         <DocTaskWorkflow

@@ -1703,7 +1703,26 @@ export async function DELETE(request, { params }) {
        await db.collection('client_requests').deleteMany({ client_email: targetEmail });
        await db.collection('tickets').deleteMany({ client_email: targetEmail });
        await db.collection('dispatches').deleteMany({ target_id: targetEmail });
-       
+
+       const ownedJobs = await db.collection('workflow_jobs').find({
+         $expr: {
+           $or: [
+             { $eq: [{ $toLower: { $ifNull: ['$client_email', ''] } }, targetEmail] },
+             { $eq: [{ $toLower: { $ifNull: ['$parked_client_email', ''] } }, targetEmail] },
+           ],
+         },
+       }, { projection: { _id: 1 } }).toArray();
+       const jobIds = ownedJobs.map((job) => String(job._id));
+       await db.collection('doc_team_tasks').deleteMany({
+         $or: [
+           { $expr: { $eq: [{ $toLower: { $ifNull: ['$clientEmail', ''] } }, targetEmail] } },
+           ...(jobIds.length ? [{ workflowJobId: { $in: jobIds } }] : []),
+         ],
+       });
+       if (ownedJobs.length) {
+         await db.collection('workflow_jobs').deleteMany({ _id: { $in: ownedJobs.map((job) => job._id) } });
+       }
+
        return json({ success: true, message: 'Client and all associated data permanently wiped out.' });
     }
 

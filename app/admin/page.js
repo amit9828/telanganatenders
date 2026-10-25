@@ -1,22 +1,19 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab'; 
 import { signOut } from 'next-auth/react'; 
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { clearDeskBypass } from '@/lib/tab-handoff';
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
-import L1BenchmarkDropzone from '@/components/L1BenchmarkDropzone';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
-import MasterTenderDesk from '@/components/MasterTenderDesk';
 import BidReportDesk from '@/components/BidReportDesk';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
-import AiMatchmakerPanel from '@/components/AiMatchmakerPanel';
 import DashboardNav from '@/components/DashboardNav';
 import PricingMasterPanel from '@/components/PricingMasterPanel';
 import ThirdPartyLeadsPanel from '@/components/ThirdPartyLeadsPanel';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
-import DocTeamWorkspace from '@/components/doc-team/DocTeamWorkspace';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
 import CreatePublishTaskForm from '@/components/workflow/CreatePublishTaskForm';
@@ -64,10 +61,10 @@ import {
   ShieldCheck, LogOut, Upload, FileText, Users, IndianRupee, Trash2, Plus, PlusCircle,
   Image as ImageIcon, Lock, MessageSquare, Send, TrendingDown, Clock, UserCheck, 
   CheckCircle2, Loader2, Eye, UserPlus, Briefcase, ClipboardList, Key, Mail, 
-  Activity, BarChart3, EyeOff, UserCog, MapPin, Target, LogIn, UploadCloud, 
+  Activity, BarChart3, EyeOff, UserCog, MapPin, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight, Handshake, Sparkles, TrendingUp, Gauge, ShieldAlert, Bot, BellRing, Archive
+  ChevronLeft, ChevronRight, Bot, BellRing, Archive
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -131,13 +128,20 @@ function AdminDashboardSkeleton() {
   );
 }
 
+const ADMIN_TABS = [
+  'reports', 'finance', 'clients', 'copilot-desk', 'bid-report',
+  'team-activity', 'internal', 'submitted', 'archive', 'publisher', 'team', 'alerts',
+  'client-queries', 'chat', 'tickets', 'pricing', 'leads', 'settings', 'operations', 'live-scraped',
+];
+
 export default function AdminPage() {
   const deskRole = useServerDeskRole();
   const mdDesk = deskRole === 'md';
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('reports');
+  const [activeTab, setActiveTab] = useDeskTab('tab', 'reports', ADMIN_TABS);
+  const [syncing, setSyncing] = useState(false);
   const [bidReportJobId, setBidReportJobId] = useState('');
   useStaffPresence(activeTab, { enabled: mdDesk });
 
@@ -220,15 +224,6 @@ export default function AdminPage() {
     setWfArchive((prev) => upsertJob(prev, { ...job, archive_reason: job.archive_reason || 'Lost' }));
   }, [removeJob]);
 
-  // 🚀 AI Matchmaker & Competitor Intel
-  const [bidMatches, setBidMatches] = useState([]);
-  const [matchSummary, setMatchSummary] = useState({ total: 0, new: 0, jv: 0 });
-  const [matchTypeFilter, setMatchTypeFilter] = useState('all'); // all | DIRECT | JV
-  const [runningMatchmaker, setRunningMatchmaker] = useState(false);
-  const [launchingGem, setLaunchingGem] = useState(false);
-  const [predictingMatchId, setPredictingMatchId] = useState(null);
-  const [predictionOpen, setPredictionOpen] = useState(false);
-  const [prediction, setPrediction] = useState(null); // { match, tender, history, prediction }
   const [stationeryClient, setStationeryClient] = useState(null);
 
   // 🚀 Today's Live Scraped Tenders (text-only GeM hunter feed)
@@ -304,7 +299,6 @@ export default function AdminPage() {
     if (tab === 'reports') ['tenders', 'clients', 'ledger'].forEach((k) => want.add(k));
     else if (tab === 'finance') ['ledger', 'payments', 'clients'].forEach((k) => want.add(k));
     else if (tab === 'clients') want.add('clients');
-    else if (tab === 'matchmaker') want.add('matches');
     else if (tab === 'internal') ['employees', 'wfInternal'].forEach((k) => want.add(k));
     else if (tab === 'team-activity') ['wfInternal', 'wfParked', 'wfSuggestions'].forEach((k) => want.add(k));
     else if (tab === 'submitted') ['employees', 'wfSubmitted', 'wfWinning'].forEach((k) => want.add(k));
@@ -327,7 +321,6 @@ export default function AdminPage() {
       if (want.has('ledger')) tasks.ledger = safeFetch(`/api/finance/ledger?t=${stamp}`);
       if (want.has('guests')) tasks.guests = safeFetch(`/api/guest-queries?t=${stamp}`);
       if (want.has('payments')) tasks.payments = safeFetch(`/api/payments/requests?t=${stamp}`);
-      if (want.has('matches')) tasks.matches = safeFetch(`/api/bid-matches?t=${stamp}`);
       if (want.has('wfInternal')) {
         const sort = tab === 'team-activity' ? 'last_date' : undefined;
         tasks.wfInternal = fetchWorkflowQueue('internal', { sort }).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
@@ -360,10 +353,6 @@ export default function AdminPage() {
       }
       if (got.payments?.ok) {
         setFinancialRequests((got.payments.data.requests || []).filter((r) => r.status !== 'SUCCESS' && r.status !== 'PAID'));
-      }
-      if (got.matches?.ok) {
-        setBidMatches(got.matches.data.matches || []);
-        setMatchSummary(got.matches.data.summary || { total: 0, new: 0, jv: 0 });
       }
       if (got.wfInternal?.ok) setListIfChanged(setWfInternal, (got.wfInternal.data.jobs || []).filter(belongsOnInternal));
       if (got.wfParked?.ok || got.wfSuggestions?.ok) {
@@ -594,105 +583,6 @@ export default function AdminPage() {
     } catch(e) { toast.error('Error saving L1 Price'); }
   };
 
-  // 🚀 AI Matchmaker & Competitor Intel ------------------------------------------------
-  // Triggers the same job Vercel Cron runs nightly, so the MD never has to wait for the
-  // schedule after publishing a batch of tenders.
-  const runMatchmakerNow = async () => {
-    setRunningMatchmaker(true);
-    const toastId = toast.loading('Scanning open TS/AP tenders against client profiles...');
-    try {
-      const res = await fetch('/api/cron/matchmaker', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        toast.error(data?.error || `Matchmaker failed (${res.status})`, { id: toastId, duration: 9000 });
-        return;
-      }
-
-      const s = data?.stats || {};
-      if (!s.matches_found) {
-        // Zero matches is a valid outcome; the API explains which rule filtered
-        // everything out so this doesn't look like a broken job.
-        toast.info(
-          data?.explanation || `Scanned ${s.tenders_in_ts_ap || 0} open TS/AP tenders — no matches this time.`,
-          { id: toastId, duration: 12000 }
-        );
-      } else {
-        toast.success(
-          `${s.matches_found} match(es) across ${s.tenders_in_ts_ap || 0} open TS/AP tenders` +
-          `${s.jv_opportunities ? ` — ${s.jv_opportunities} JV opportunity(ies)` : ''}.`,
-          { id: toastId, duration: 8000 }
-        );
-      }
-      // A failed WhatsApp send is reported separately: the matches are still saved.
-      if (data?.alert?.error) toast.warning(`Matches saved, but the WhatsApp alert failed: ${data.alert.error}`, { duration: 9000 });
-      else if (data?.alert?.skipped && s.inserted > 0) toast.info(`WhatsApp alert skipped: ${data.alert.reason}`);
-
-      refresh();
-    } catch (e) {
-      console.error('Matchmaker run failed:', e);
-      toast.error('Network error while running the matchmaker.', { id: toastId });
-    } finally {
-      setRunningMatchmaker(false);
-    }
-  };
-
-  const runL1Prediction = async (match) => {
-    const matchId = match._id || match.tender_id;
-    setPredictingMatchId(matchId);
-    try {
-      const res = await fetch('/api/ai/predict-l1', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ tender_id: match.tender_id }),
-      });
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        toast.error(data?.error || `Prediction failed (${res.status})`, { duration: 9000 });
-        return;
-      }
-
-      setPrediction({ match, ...data });
-      setPredictionOpen(true);
-    } catch (e) {
-      console.error('L1 prediction failed:', e);
-      toast.error('Network error while running the prediction.');
-    } finally {
-      setPredictingMatchId(null);
-    }
-  };
-
-  const updateMatchStatus = async (match, status) => {
-    const id = match._id;
-    if (!id) return;
-    // Optimistic: dismissed matches leave the feed immediately, reviewed ones stay but
-    // lose their "New" badge.
-    setBidMatches(prev => status === 'dismissed'
-      ? prev.filter(m => m._id !== id)
-      : prev.map(m => (m._id === id ? { ...m, status } : m)));
-
-    try {
-      const res = await fetch('/api/bid-matches', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ id, status }),
-      });
-      if (!res.ok) throw new Error('Update rejected');
-      toast.success(status === 'dismissed' ? 'Match dismissed.' : 'Match marked as reviewed.');
-    } catch (e) {
-      toast.error('Could not update the match. Reloading.');
-      refresh();
-    }
-  };
-
-  const visibleMatches = matchTypeFilter === 'all'
-    ? bidMatches
-    : bidMatches.filter(m => m.match_type === matchTypeFilter);
-  
   const handleSyncDrive = async (email, companyName) => {
      const toastId = toast.loading("Creating Google Drive Workspace...");
      try {
@@ -1107,8 +997,6 @@ export default function AdminPage() {
       { value: 'clients', label: 'Client CRM', icon: UserCheck, color: 'navy' },
     ] },
     { id: 'ai-operations', label: 'AI & Operations', items: [
-      { value: 'matchmaker', label: 'AI Matchmaker', icon: Target, color: 'indigo', badge: matchSummary.new },
-      { value: 'master-tenders', label: 'Master Tenders', icon: FileText, color: 'teal' },
       { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
       { value: 'bid-report', label: 'Bid report', icon: FileText, color: 'teal' },
     ] },
@@ -1119,7 +1007,6 @@ export default function AdminPage() {
       { value: 'team-activity', label: 'Team Activity', icon: Users, color: 'blue' },
     ] },
     { id: 'workflow', label: 'Tender Workflow', items: [
-      { value: 'doc-team', label: 'Doc Team', icon: ClipboardList, color: 'navy' },
       { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
       { value: 'submitted', label: 'Submitted Board', icon: FileText, color: 'emerald' },
       { value: 'archive', label: 'Archive', icon: Archive, color: 'slate' },
@@ -1153,7 +1040,7 @@ export default function AdminPage() {
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <BrandMark size="md" />
-            <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
+            <Button variant="ghost" size="sm" disabled={syncing} onClick={async () => { setSyncing(true); try { await refresh(); } finally { setSyncing(false); } }} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className={`w-4 h-4 sm:mr-1 ${syncing ? 'animate-spin' : ''}`} /> <span className="hidden sm:inline">Sync Live</span></Button>
             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-white/20 text-slate-200 hover:text-white hover:bg-white/10 transition-all duration-200">View Public Site</Button>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-300 hover:text-red-200 hover:bg-red-500/15 transition-all duration-200"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
           </div>
@@ -1708,9 +1595,6 @@ export default function AdminPage() {
               live (non-Won/Lost) bid, across the whole team, each row attributed to the
               employee who owns it. Employee dashboards never see this — GET /api/dispatches
               and GET /api/bids strictly isolate each officer to their own employee_id there. */}
-          <TabsContent value="doc-team" className="mt-4">
-            <DocTeamWorkspace role="md" />
-          </TabsContent>
           <TabsContent value="team-activity" className="mt-4">
             <div className="space-y-6">
               <Card className="shadow-sm border-t-4 border-t-blue-600">
@@ -1967,241 +1851,9 @@ export default function AdminPage() {
 
             </div>
           </TabsContent>
-          {/* ==================== 6. PUBLISHER ==================== */}
-          {/* 🚀 AI MATCHMAKER & COMPETITOR INTEL — matches produced by the nightly
-              /api/cron/matchmaker job, plus on-demand L1 price prediction. */}
-          <TabsContent value="matchmaker" className="mt-4">
 
-            <AiMatchmakerPanel />
-
-            <div className="mb-6 mt-6">
-              <CopilotTrainDropzone />
-            </div>
-
-            <div className="mb-6 mt-6">
-              <L1BenchmarkDropzone />
-            </div>
-
-            <Card className="tender-shadow border-t-4 border-t-indigo-600 w-full mb-6">
-              <CardHeader className="bg-indigo-50/40 border-b pb-4">
-                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg">
-                      <Target className="w-5 h-5 text-indigo-600" /> Legacy Match Feed &amp; L1 Prediction
-                    </CardTitle>
-                    <CardDescription className="mt-1">
-                      Nightly cron matches with on-demand L1 competitor intel. Prefer the Suggested Bids panel above for
-                      manual WhatsApp alerts.
-                    </CardDescription>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-                    <Button
-                      onClick={runMatchmakerNow}
-                      disabled={runningMatchmaker}
-                      className="bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm"
-                    >
-                      {runningMatchmaker
-                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Scanning tenders...</>
-                        : <><RefreshCw className="w-4 h-4 mr-2" /> Refresh Cron Matches</>}
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="pt-5">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Live Matches</div>
-                    <div className="text-2xl font-extrabold text-[#0A2647] mt-0.5">{bidMatches.length}</div>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Awaiting Review</div>
-                    <div className="text-2xl font-extrabold text-indigo-700 mt-0.5">{matchSummary.new || 0}</div>
-                  </div>
-                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500">JV Opportunities</div>
-                    <div className="text-2xl font-extrabold text-amber-700 mt-0.5">{matchSummary.jv || 0}</div>
-                  </div>
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Est. Pipeline</div>
-                    <div className="text-lg font-extrabold text-emerald-700 mt-1 truncate">
-                      {formatINR(bidMatches.reduce((sum, m) => sum + (Number(m.estimated_value) || 0), 0))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 mt-4 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Filter</span>
-                  {[
-                    { id: 'all', label: `All (${bidMatches.length})` },
-                    { id: 'DIRECT', label: `Direct (${bidMatches.filter(m => m.match_type === 'DIRECT').length})` },
-                    { id: 'JV', label: `Joint Venture (${bidMatches.filter(m => m.match_type === 'JV').length})` },
-                  ].map(opt => (
-                    <Button
-                      key={opt.id}
-                      size="sm"
-                      variant={matchTypeFilter === opt.id ? 'default' : 'outline'}
-                      onClick={() => setMatchTypeFilter(opt.id)}
-                      className={`h-7 text-xs ${matchTypeFilter === opt.id ? 'bg-[#0A2647] hover:bg-[#0A2647]/90' : 'text-slate-600'}`}
-                    >
-                      {opt.label}
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="tender-shadow w-full">
-              <CardHeader className="border-b pb-4">
-                <CardTitle className="flex items-center gap-2 text-[#0A2647] text-base">
-                  <Handshake className="w-5 h-5 text-indigo-600" /> Matched Opportunities
-                </CardTitle>
-                <CardDescription>
-                  Confidence blends category overlap, district presence, vault completeness and proven contract value.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                {visibleMatches.length === 0 ? (
-                  <div className="p-10 text-center">
-                    <Target className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                    <p className="font-bold text-slate-700">No matches to show yet</p>
-                    <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-                      {bidMatches.length === 0
-                        ? 'Run the matchmaker to score today\u2019s open TS/AP tenders against your approved clients. Matches need a client service-category overlap to qualify.'
-                        : 'No matches of this type. Try a different filter.'}
-                    </p>
-                  </div>
-                ) : (
-                  <Table className="min-w-[900px]">
-                    <TableHeader>
-                      <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
-                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Client</TableHead>
-                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Bid Details</TableHead>
-                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Value / Turnover</TableHead>
-                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Fit</TableHead>
-                        <TableHead className="text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {visibleMatches.map((m) => {
-                        const matchId = m._id || m.tender_id;
-                        const isPredicting = predictingMatchId === matchId;
-                        return (
-                          <TableRow key={matchId} className="align-top hover:bg-indigo-50/30">
-                            <TableCell className="py-3">
-                              <div className="font-bold text-sm text-[#0A2647] flex items-center gap-1.5">
-                                {m.client_company}
-                                {m.status === 'new' && (
-                                  <Badge className="bg-indigo-600 text-white text-[9px] px-1.5 py-0 h-4">NEW</Badge>
-                                )}
-                              </div>
-                              <div className="text-[11px] text-slate-500">{m.client_email}</div>
-                              <div className="text-[11px] text-slate-500 mt-1">
-                                Proven value: <span className="font-semibold text-slate-700">{formatINR(m.client_capacity)}</span>
-                              </div>
-                              {m.match_type === 'JV' && m.jv_partner && (
-                                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md p-2">
-                                  <div className="text-[9px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1">
-                                    <Handshake className="w-3 h-3" /> JV Partner
-                                  </div>
-                                  <div className="text-xs font-semibold text-amber-900">{m.jv_partner.company_name}</div>
-                                  <div className="text-[10px] text-amber-700">
-                                    Combined: {formatINR(m.jv_partner.combined_capacity)}
-                                  </div>
-                                </div>
-                              )}
-                            </TableCell>
-
-                            <TableCell className="py-3 max-w-[320px]">
-                              <div className="font-semibold text-sm text-slate-800 leading-snug">{m.tender_title}</div>
-                              <div className="text-[11px] text-slate-500 mt-1 space-y-0.5">
-                                {m.tender_bid_no && <div className="font-mono">{m.tender_bid_no}</div>}
-                                {m.tender_department && <div>{m.tender_department}</div>}
-                                <div className="flex items-center gap-2 flex-wrap pt-0.5">
-                                  {m.tender_district && (
-                                    <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> {m.tender_district}</span>
-                                  )}
-                                  {m.tender_last_date && (
-                                    <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" /> {m.tender_last_date}</span>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="py-3">
-                              <div className="text-sm font-bold text-emerald-700">{formatINR(m.estimated_value)}</div>
-                              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Est. value</div>
-                              {m.required_turnover ? (
-                                <div className="text-[11px] text-slate-600 mt-1.5">
-                                  Turnover req: <span className="font-semibold">{formatINR(m.required_turnover)}</span>
-                                </div>
-                              ) : (
-                                <div className="text-[11px] text-slate-400 mt-1.5">No turnover clause found</div>
-                              )}
-                            </TableCell>
-
-                            <TableCell className="py-3">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-lg font-extrabold ${
-                                  m.confidence >= 75 ? 'text-emerald-600' : m.confidence >= 60 ? 'text-blue-600' : 'text-amber-600'
-                                }`}>{m.confidence}%</span>
-                                <Badge variant="outline" className={
-                                  m.match_type === 'JV'
-                                    ? 'border-amber-300 text-amber-700 bg-amber-50 text-[10px]'
-                                    : 'border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px]'
-                                }>
-                                  {m.match_type === 'JV' ? 'JV' : 'DIRECT'}
-                                </Badge>
-                              </div>
-                              <div className="flex flex-wrap gap-1 mt-1.5 max-w-[180px]">
-                                {(m.category_hits || []).slice(0, 4).map(hit => (
-                                  <span key={hit} className="text-[9px] bg-slate-100 border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
-                                    {hit}
-                                  </span>
-                                ))}
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="py-3">
-                              <div className="flex flex-col items-end gap-1.5">
-                                <Button
-                                  size="sm"
-                                  onClick={() => runL1Prediction(m)}
-                                  disabled={isPredicting}
-                                  className="h-8 text-xs bg-indigo-700 hover:bg-indigo-800 text-white w-full sm:w-auto shadow-sm"
-                                >
-                                  {isPredicting
-                                    ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Predicting...</>
-                                    : <><Sparkles className="w-3 h-3 mr-1.5" /> Run L1 Prediction</>}
-                                </Button>
-                                <div className="flex gap-1">
-                                  {m.status === 'new' && (
-                                    <Button size="sm" variant="outline" onClick={() => updateMatchStatus(m, 'reviewed')} className="h-7 text-[10px] text-slate-600">
-                                      <CheckCircle2 className="w-3 h-3 mr-1" /> Reviewed
-                                    </Button>
-                                  )}
-                                  <Button size="sm" variant="outline" onClick={() => updateMatchStatus(m, 'dismissed')} className="h-7 text-[10px] text-red-600 border-red-200 hover:bg-red-50">
-                                    <X className="w-3 h-3 mr-1" /> Dismiss
-                                  </Button>
-                                </div>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-
-          <TabsContent value="master-tenders" className="mt-4">
-            <MasterTenderDesk />
-          </TabsContent>
-
-          <TabsContent value="copilot-desk" className="mt-4">
+          <TabsContent value="copilot-desk" className="mt-4 space-y-6">
+            <CopilotTrainDropzone />
             <GeminiWorkspace
               embedded
               tenderId={isEditingTender || null}
@@ -2221,7 +1873,6 @@ export default function AdminPage() {
                 Publishing and bulk AI dropzone live on the TL and Employee desks. MD uses this list for live tenders only (10 per page).
               </CardContent>
             </Card>
-            <L1BenchmarkDropzone />
 
             <div className="grid gap-4 sm:gap-6 mt-6">
               <Card className="lg:col-span-3 tender-shadow">
@@ -2483,166 +2134,6 @@ export default function AdminPage() {
           </DialogContent>
         </Dialog>
 
-        {/* 🚀 L1 PREDICTION — competitor intel and a suggested quote for one matched bid. */}
-        <Dialog open={predictionOpen} onOpenChange={setPredictionOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-[#0A2647]">
-                <Gauge className="w-5 h-5 text-indigo-600" /> L1 Prediction &amp; Competitor Intel
-              </DialogTitle>
-              <DialogDescription className="leading-snug">
-                {prediction?.tender?.title || 'Selected tender'}
-                {prediction?.tender?.bid_no ? ` · ${prediction.tender.bid_no}` : ''}
-              </DialogDescription>
-            </DialogHeader>
-
-            {prediction && (
-              <div className="space-y-4 pt-1">
-                {/* Headline numbers */}
-                <div className="grid sm:grid-cols-3 gap-3">
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Suggested Quote</div>
-                    <div className="text-xl font-extrabold text-emerald-700 mt-0.5">
-                      {formatINR(prediction.prediction?.suggested_quote_inr)}
-                    </div>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Below Estimate By</div>
-                    <div className="text-xl font-extrabold text-indigo-700 mt-0.5 flex items-center gap-1">
-                      <TrendingDown className="w-4 h-4" />
-                      {prediction.prediction?.suggested_l1_percentage != null
-                        ? `${prediction.prediction.suggested_l1_percentage}%`
-                        : '—'}
-                    </div>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Confidence</div>
-                    <div className={`text-xl font-extrabold mt-0.5 capitalize ${
-                      prediction.prediction?.confidence === 'high' ? 'text-emerald-700'
-                        : prediction.prediction?.confidence === 'medium' ? 'text-amber-600' : 'text-slate-500'
-                    }`}>
-                      {prediction.prediction?.confidence || 'low'}
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      {prediction.history?.comparable_records || 0} comparable record(s)
-                    </div>
-                  </div>
-                </div>
-
-                {/* Historical baseline — the numbers the model was given, so the MD can
-                    sanity-check the recommendation rather than trust it blindly. */}
-                <div className="bg-white border rounded-lg p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-2">
-                    <BarChart3 className="w-3.5 h-3.5" /> Historical L1 Margins (our records)
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    <div>
-                      <div className="text-base font-bold text-slate-800">
-                        {prediction.history?.median_margin_pct != null ? `${prediction.history.median_margin_pct}%` : '—'}
-                      </div>
-                      <div className="text-[10px] text-slate-400 uppercase">Median</div>
-                    </div>
-                    <div>
-                      <div className="text-base font-bold text-slate-800">
-                        {prediction.history?.average_margin_pct != null ? `${prediction.history.average_margin_pct}%` : '—'}
-                      </div>
-                      <div className="text-[10px] text-slate-400 uppercase">Average</div>
-                    </div>
-                    <div>
-                      <div className="text-base font-bold text-slate-800">{formatINR(prediction.tender?.estimated_value)}</div>
-                      <div className="text-[10px] text-slate-400 uppercase">Est. Value</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Competitors */}
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-2">
-                    <Users className="w-3.5 h-3.5" /> Likely Competitors
-                  </div>
-                  {(prediction.prediction?.likely_competitors || []).length === 0 ? (
-                    <p className="text-sm text-slate-500 bg-slate-50 border rounded-lg p-3">
-                      No competitor names appear in our historical records for this category yet. Record L1 winners
-                      on lost bids to build this intel up.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {prediction.prediction.likely_competitors.map((c, i) => (
-                        <div key={`${c.name}-${i}`} className="flex items-start justify-between gap-3 bg-slate-50 border rounded-lg p-2.5">
-                          <div className="min-w-0">
-                            <div className="font-bold text-sm text-[#0A2647]">{c.name}</div>
-                            {c.typical_behaviour && (
-                              <div className="text-[11px] text-slate-600 leading-snug">{c.typical_behaviour}</div>
-                            )}
-                          </div>
-                          <Badge variant="outline" className="shrink-0 text-[10px] border-slate-300">
-                            <Trophy className="w-3 h-3 mr-1 text-amber-500" /> {c.wins_observed} win(s)
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Rationale */}
-                {prediction.prediction?.rationale && (
-                  <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 flex items-center gap-1.5 mb-1">
-                      <TrendingUp className="w-3.5 h-3.5" /> Strategy
-                    </div>
-                    <p className="text-sm text-slate-700 leading-relaxed">{prediction.prediction.rationale}</p>
-                  </div>
-                )}
-
-                {/* JV recommendation — pre-seeded from the matchmaker where it found a pair. */}
-                <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1.5 mb-1">
-                    <Handshake className="w-3.5 h-3.5" /> Joint Venture
-                  </div>
-                  {prediction.match?.match_type === 'JV' && prediction.match?.jv_partner ? (
-                    <p className="text-sm text-amber-900 leading-relaxed">
-                      <span className="font-bold">{prediction.match.client_company}</span> cannot meet the{' '}
-                      {formatINR(prediction.match.required_turnover)} turnover requirement alone
-                      ({formatINR(prediction.match.client_capacity)} proven). Pair with{' '}
-                      <span className="font-bold">{prediction.match.jv_partner.company_name}</span> for a combined{' '}
-                      {formatINR(prediction.match.jv_partner.combined_capacity)}.
-                    </p>
-                  ) : (
-                    <p className="text-sm text-amber-900 leading-relaxed">
-                      {prediction.prediction?.jv_recommendation || 'Not required'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Risks */}
-                {(prediction.prediction?.risks || []).length > 0 && (
-                  <div className="bg-red-50/60 border border-red-100 rounded-lg p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-red-500 flex items-center gap-1.5 mb-1.5">
-                      <ShieldAlert className="w-3.5 h-3.5" /> Risks
-                    </div>
-                    <ul className="space-y-1">
-                      {prediction.prediction.risks.map((risk, i) => (
-                        <li key={i} className="text-sm text-slate-700 flex gap-2">
-                          <span className="text-red-400 shrink-0">•</span> {risk}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <p className="text-[11px] text-slate-400 leading-snug border-t pt-3">
-                  AI-generated guidance based only on L1 outcomes recorded in this platform. Estimated values are
-                  derived from EMD at the standard 2% convention where the tender does not state a value. Verify
-                  against the tender document before quoting.
-                </p>
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setPredictionOpen(false)}>Close</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         <StationeryUploader
           client={stationeryClient}

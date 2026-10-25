@@ -298,7 +298,7 @@ export default function DocTaskGrid({
                   }
                   if (column.key === 'missingDocDetails' || column.key === 'checklistError' || column.key === 'remark') {
                     const locked = column.key === 'missingDocDetails' && row.missingDocuments !== true;
-                    const wrapping = column.key === 'missingDocDetails';
+                    const wrapping = column.key === 'missingDocDetails' || column.key === 'checklistError';
                     const note = wrapping
                       ? { ...paint, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', wordBreak: 'break-word' }
                       : paint;

@@ -1,9 +1,9 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab';
 import { signIn, useSession } from 'next-auth/react';
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { BrandMark } from '@/components/BrandLogo';
-import GeminiWorkspace from '@/components/GeminiWorkspace';
 import StationeryUploader from '@/components/StationeryUploader';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import DashboardNav from '@/components/DashboardNav';
@@ -45,7 +45,7 @@ import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Kanban, Building2, ClipboardList, AlertCircle, Contact, Loader2,
-  Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, Bot, LogIn
+  Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, LogIn
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -57,12 +57,17 @@ const BORDER_COLORS = [
   'border-orange-500', 'border-indigo-500', 'border-rose-500'
 ];
 
+const EMPLOYEE_TABS = [
+  'internal', 'doc-team', 'submitted', 'suggestions', 'officers', 'clients', 'alerts',
+  'publisher', 'ops-alerts', 'chat', 'sla',
+];
+
 export default function EmployeeDashboard() {
   const deskRole = useServerDeskRole();
   const onEmployeeDesk = deskRole === 'employee';
   const { data: session, status } = useSession();
   const [isMounted, setIsMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState('internal');
+  const [activeTab, setActiveTab] = useDeskTab('tab', 'internal', EMPLOYEE_TABS);
   const [email, setEmail] = useState('');
   const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
   const [loading, setLoading] = useState(true);
@@ -758,9 +763,6 @@ export default function EmployeeDashboard() {
     { id: 'clients-officers', label: 'Clients', items: [
       { value: 'clients', label: 'Clients DB', icon: Users, color: 'navy' },
     ] },
-    { id: 'ai-tools', label: 'AI Tools', items: [
-      { value: 'copilot-desk', label: 'Co-Pilot Chat Desk', icon: Bot, color: 'violet' },
-    ] },
     { id: 'publishing', label: 'Publishing', items: [
       { value: 'publisher', label: 'Published Tenders', icon: PlusCircle, color: 'navy' },
     ] },
@@ -1390,16 +1392,6 @@ return (
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
-
-          <TabsContent value="copilot-desk" className="w-full space-y-6">
-            <GeminiWorkspace
-              embedded
-              tenderId={isEditingTender?._id || isEditingTender?.id || null}
-              tenderLabel={isEditingTender ? (isEditingTender.title || isEditingTender.bid_no || 'this tender') : null}
-              clients={approvedClients}
-              tenders={publicTenders}
-            />
           </TabsContent>
 
           <TabsContent value="publisher" className="w-full space-y-6">
