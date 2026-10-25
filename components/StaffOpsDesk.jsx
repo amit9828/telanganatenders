@@ -13,7 +13,6 @@ import BidReportDesk from '@/components/BidReportDesk';
 import LiveTendersPaged from '@/components/workflow/LiveTendersPaged';
 import SuggestClientControls from '@/components/workflow/SuggestClientControls';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
-import GlobalSuggestionsBoard from '@/components/workflow/GlobalSuggestionsBoard';
 import DocTeamWorkspace from '@/components/doc-team/DocTeamWorkspace';
 import SubmittedTrackingBoard from '@/components/workflow/SubmittedTrackingBoard';
 import WinningBidsBoard from '@/components/workflow/WinningBidsBoard';
@@ -56,7 +55,7 @@ import {
   upsertJob,
 } from '@/lib/job-board-state';
 import {
-  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2, IndianRupee, Send
+  Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2, IndianRupee
 } from 'lucide-react';
 
 export default function StaffOpsDesk({ desk }) {
@@ -253,7 +252,6 @@ export default function StaffOpsDesk({ desk }) {
         { id: 'work', label: 'Work', items: [
           { value: 'live', label: 'Live Tenders', icon: FileText, color: 'navy' },
           { value: 'suggestion-bar', label: 'Suggestion Bar', icon: FileText, color: 'amber' },
-          { value: 'global-suggestions', label: 'Global Suggestions', icon: Send, color: 'blue' },
           { value: 'doc-team', label: 'Doc Team', icon: ClipboardList, color: 'navy' },
           { value: 'internal', label: 'Internal Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
@@ -280,7 +278,6 @@ export default function StaffOpsDesk({ desk }) {
     : [
         { id: 'work', label: 'Work', items: [
           { value: 'publisher', label: 'Publish', icon: FileText, color: 'navy' },
-          { value: 'global-suggestions', label: 'Global Suggestions', icon: Send, color: 'blue' },
           { value: 'doc-team', label: 'Doc Team', icon: ClipboardList, color: 'navy' },
           { value: 'internal', label: 'Team Board', icon: ClipboardList, color: 'blue' },
           { value: 'submitted', label: 'Submitted', icon: FileText, color: 'emerald' },
@@ -482,11 +479,8 @@ export default function StaffOpsDesk({ desk }) {
                   <OperationsStoragePanel clients={clients} uploadedBy={staffEmail || selfId} />
                 </TabsContent>
               )}
-              <TabsContent value="global-suggestions">
-                <GlobalSuggestionsBoard />
-              </TabsContent>
               <TabsContent value="doc-team">
-                <DocTeamWorkspace role={desk === 'gm' ? 'gm' : 'tl'} />
+                <DocTeamWorkspace role={desk === 'gm' ? 'gm' : 'tl'} actorEmpId={selfId} />
               </TabsContent>
               <TabsContent value="internal">
                 <InternalTrackingBoard

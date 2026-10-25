@@ -328,7 +328,10 @@ export default function AdminPage() {
       if (want.has('guests')) tasks.guests = safeFetch(`/api/guest-queries?t=${stamp}`);
       if (want.has('payments')) tasks.payments = safeFetch(`/api/payments/requests?t=${stamp}`);
       if (want.has('matches')) tasks.matches = safeFetch(`/api/bid-matches?t=${stamp}`);
-      if (want.has('wfInternal')) tasks.wfInternal = fetchWorkflowQueue('internal').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      if (want.has('wfInternal')) {
+        const sort = tab === 'team-activity' ? 'last_date' : undefined;
+        tasks.wfInternal = fetchWorkflowQueue('internal', { sort }).then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
+      }
       if (want.has('wfParked')) tasks.wfParked = fetchWorkflowQueue('parked').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSuggestions')) tasks.wfSuggestions = fetchWorkflowQueue('suggestions').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
       if (want.has('wfSubmitted')) tasks.wfSubmitted = fetchWorkflowQueue('submitted').then((data) => ({ ok: true, data })).catch(() => ({ ok: false }));
@@ -419,7 +422,7 @@ export default function AdminPage() {
       const [parked, waiting, internal] = await Promise.all([
         fetchWorkflowQueue('parked').catch(() => ({ jobs: [] })),
         fetchWorkflowQueue('suggestions').catch(() => ({ jobs: [] })),
-        fetchWorkflowQueue('internal').catch(() => ({ jobs: [] })),
+        fetchWorkflowQueue('internal', { sort: 'last_date' }).catch(() => ({ jobs: [] })),
       ]);
       const merged = [...(parked.jobs || []), ...(waiting.jobs || [])].filter(belongsOnSuggestions);
       const seen = new Set();

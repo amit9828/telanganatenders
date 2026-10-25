@@ -42,10 +42,11 @@ export async function workflowFetch(url, options = {}) {
 const QUEUE_PAGE_SIZE = 100;
 const QUEUE_MAX_PAGES = 25;
 
-export async function fetchWorkflowQueue(board = 'all', { limit = QUEUE_PAGE_SIZE } = {}) {
+export async function fetchWorkflowQueue(board = 'all', { limit = QUEUE_PAGE_SIZE, sort } = {}) {
   const qs = (page) => {
     const params = new URLSearchParams();
     if (board && board !== 'all') params.set('board', board);
+    if (sort) params.set('sort', sort);
     params.set('page', String(page));
     params.set('limit', String(limit));
     return `/api/workflow/queue?${params.toString()}`;

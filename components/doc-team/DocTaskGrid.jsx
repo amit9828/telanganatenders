@@ -10,8 +10,8 @@ const ROW_FILL = {
 
 const COLUMNS = [
   { key: 'sno', label: 'S.No', width: 56 },
-  { key: 'bidNumber', label: 'Bid Number', width: 140 },
-  { key: 'lastDate', label: 'Last Date', width: 118 },
+  { key: 'bidNumber', label: 'Bid Number', width: 200 },
+  { key: 'lastDate', label: 'Last Date', width: 150 },
   { key: 'assigned', label: 'Employee Assigned', width: 180 },
   { key: 'clientName', label: 'Client Name', width: 160 },
   { key: 'companyName', label: 'Company Name', width: 180 },
@@ -22,14 +22,17 @@ const COLUMNS = [
   { key: 'checklistError', label: 'Check list error', width: 240 },
   { key: 'workCompleted', label: 'Completed', width: 110 },
   { key: 'remark', label: 'Remark', width: 220 },
+  { key: 'status', label: 'Current Status', width: 190 },
   { key: 'delete', label: 'Delete', width: 84 },
 ];
 
+const OVERVIEW_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'clientNextUpdateDate', 'status'];
+const QUOTATION_KEYS = ['sno', 'bidNumber', 'lastDate', 'clientName', 'companyName', 'clientNextUpdateDate', 'quotationRequired', 'delete'];
 const COMPLETED_KEYS = ['bidNumber', 'clientName', 'companyName', 'assigned', 'lastDate', 'delete'];
 
 const cellStyle = {
   border: '1px solid #64748b',
-  padding: '4px 6px',
+  padding: '8px 10px',
   fontSize: 13,
   lineHeight: 1.35,
   verticalAlign: 'top',
@@ -53,7 +56,7 @@ function yesNo(value) {
   return value ? 'Yes' : 'No';
 }
 
-function DateField({ value, onCommit }) {
+function DateField({ value, confirm, onCommit }) {
   const shown = formatDisplayDate(value);
   return (
     <input
@@ -63,7 +66,11 @@ function DateField({ value, onCommit }) {
       onBlur={(event) => {
         const raw = event.target.value.trim();
         if (!raw) {
-          onCommit('');
+          if (raw !== shown && confirm && shown && !window.confirm('Are you sure you want to update the date?')) {
+            event.target.value = shown;
+            return;
+          }
+          if (shown) onCommit('');
           return;
         }
         const iso = normalizeIsoDate(raw, { defaultYear: new Date().getFullYear() });
@@ -73,7 +80,13 @@ function DateField({ value, onCommit }) {
           return;
         }
         event.target.value = formatDisplayDate(iso);
-        if (iso !== value) onCommit(iso);
+        if (iso !== value) {
+          if (confirm && !window.confirm('Are you sure you want to update the date?')) {
+            event.target.value = shown;
+            return;
+          }
+          onCommit(iso);
+        }
       }}
       style={{ width: '100%', border: 0, background: 'transparent', font: 'inherit', padding: 0 }}
     />
@@ -135,6 +148,7 @@ export default function DocTaskGrid({
   rows,
   variant = 'full',
   editable = false,
+  editorEmpId = '',
   canAssign = false,
   canDelete = false,
   assignees = [],
@@ -142,17 +156,32 @@ export default function DocTaskGrid({
   onAssign,
   onDelete,
   onDateError,
+  outline,
+  confirmDate = false,
+  allowQuotationEdit = false,
 }) {
   const ordered = [...rows].sort(compareDocTasks);
-  const columns = (variant === 'completed'
-    ? COLUMNS.filter((column) => COMPLETED_KEYS.includes(column.key))
-    : COLUMNS
-  ).filter((column) => column.key !== 'delete' || canDelete);
+  const byKey = Object.fromEntries(COLUMNS.map((column) => [column.key, column]));
+  const fullKeys = COLUMNS.map((column) => column.key).filter((key) => key !== 'status');
+  const columnKeys = variant === 'completed'
+    ? COMPLETED_KEYS
+    : variant === 'overview'
+      ? OVERVIEW_KEYS
+      : variant === 'quotation'
+        ? QUOTATION_KEYS
+        : fullKeys;
+  const columns = columnKeys
+    .filter((key) => key !== 'delete' || canDelete)
+    .map((key) => byKey[key])
+    .filter(Boolean);
 
   const fillFor = (row) => (variant === 'completed' ? '#fff' : (ROW_FILL[row.status] || '#fff'));
 
   return (
-    <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 220px)', border: '1px solid #64748b' }}>
+    <div style={{
+      overflowX: 'auto',
+      border: variant === 'completed' ? 'none' : `${outline ? 3 : 1}px solid ${outline || '#64748b'}`,
+    }}>
       <table style={{ borderCollapse: 'collapse', tableLayout: 'fixed', width: columns.reduce((sum, column) => sum + column.width, 0) }}>
         <colgroup>
           {columns.map((column) => <col key={column.key} style={{ width: column.width }} />)}
@@ -160,7 +189,7 @@ export default function DocTaskGrid({
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} style={headerStyle}>{column.label}</th>
+              <th key={column.key} style={{ ...headerStyle, minWidth: column.width, whiteSpace: 'nowrap' }}>{column.key === 'delete' && variant === 'quotation' ? 'Actions' : column.label}</th>
             ))}
           </tr>
         </thead>
@@ -172,12 +201,15 @@ export default function DocTaskGrid({
           ) : ordered.map((row, index) => {
             const fill = fillFor(row);
             const paint = { ...cellStyle, background: fill };
+            const rowEditable = editable && Boolean(editorEmpId) && String(row.assignedEmployeeId || '') === String(editorEmpId);
+            const quotationEditable = allowQuotationEdit && row.status === 'Waiting for Quotation';
             const cells = {
               sno: index + 1,
               bidNumber: row.bidNumber,
               lastDate: formatDisplayDate(row.lastDate),
               clientName: row.clientName,
               companyName: row.companyName,
+              status: row.status,
             };
             return (
               <tr key={row.id} style={{ background: fill }}>
@@ -205,11 +237,15 @@ export default function DocTaskGrid({
                     }
                     return <td key={column.key} style={paint}>{row.assignedEmployeeName || ''}</td>;
                   }
+                  if (column.key === 'bidNumber' || column.key === 'lastDate') {
+                    return <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>{cells[column.key] ?? ''}</td>;
+                  }
                   if (column.key === 'clientNextUpdateDate') {
-                    if (!editable) return <td key={column.key} style={paint}>{formatDisplayDate(row.clientNextUpdateDate)}</td>;
+                    if (!(rowEditable || quotationEditable)) return <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>{formatDisplayDate(row.clientNextUpdateDate)}</td>;
                     return (
-                      <td key={column.key} style={paint}>
+                      <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>
                         <DateField
+                          confirm={confirmDate}
                           value={row.clientNextUpdateDate}
                           onCommit={(iso) => {
                             if (iso == null) {
@@ -223,7 +259,8 @@ export default function DocTaskGrid({
                     );
                   }
                   if (column.key === 'quotationRequired' || column.key === 'missingDocuments' || column.key === 'workCompleted') {
-                    if (!editable) return <td key={column.key} style={paint}>{yesNo(row[column.key])}</td>;
+                    const fieldEditable = column.key === 'quotationRequired' ? (rowEditable || quotationEditable) : rowEditable;
+                    if (!fieldEditable) return <td key={column.key} style={paint}>{yesNo(row[column.key])}</td>;
                     return (
                       <td key={column.key} style={paint}>
                         <YesNoField
@@ -236,7 +273,7 @@ export default function DocTaskGrid({
                   }
                   if (column.key === 'missingDocDetails' || column.key === 'checklistError' || column.key === 'remark') {
                     const locked = column.key === 'missingDocDetails' && row.missingDocuments !== true;
-                    if (!editable) return <td key={column.key} style={paint}>{readText(row[column.key])}</td>;
+                    if (!rowEditable) return <td key={column.key} style={paint}>{readText(row[column.key])}</td>;
                     return (
                       <td key={column.key} style={paint}>
                         <TextField
