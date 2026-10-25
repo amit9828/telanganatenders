@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab';
 import { signIn, useSession } from 'next-auth/react';
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { BrandMark } from '@/components/BrandLogo';
@@ -57,12 +58,17 @@ const BORDER_COLORS = [
   'border-orange-500', 'border-indigo-500', 'border-rose-500'
 ];
 
+const EMPLOYEE_TABS = [
+  'internal', 'doc-team', 'submitted', 'suggestions', 'officers', 'clients', 'alerts',
+  'copilot-desk', 'publisher', 'ops-alerts', 'chat', 'sla',
+];
+
 export default function EmployeeDashboard() {
   const deskRole = useServerDeskRole();
   const onEmployeeDesk = deskRole === 'employee';
   const { data: session, status } = useSession();
   const [isMounted, setIsMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState('internal');
+  const [activeTab, setActiveTab] = useDeskTab('tab', 'internal', EMPLOYEE_TABS);
   const [email, setEmail] = useState('');
   const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
   const [loading, setLoading] = useState(true);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab';
 import { useSession } from 'next-auth/react';
 import DashboardNav from '@/components/DashboardNav';
 import PricingMasterPanel from '@/components/PricingMasterPanel';
@@ -58,12 +59,21 @@ import {
   Briefcase, FileText, Users, Bot, Activity, Target, BellRing, MessageSquare, PlusCircle, ClipboardList, UserCog, ArrowLeft, Loader2, Contact, Search, MapPin, Database, LogIn, CheckCircle2, Archive, UploadCloud, Pencil, Trash2, IndianRupee
 } from 'lucide-react';
 
+const GM_TABS = [
+  'live', 'suggestion-bar', 'doc-team', 'internal', 'submitted', 'bid-support', 'archive',
+  'matchmaker', 'master-tenders', 'copilot', 'bid-report', 'clients', 'officers', 'team',
+  'pricing', 'alerts', 'chat',
+];
+const TL_TABS = [
+  'publisher', 'doc-team', 'internal', 'submitted', 'copilot', 'clients', 'team', 'alerts', 'chat',
+];
+
 export default function StaffOpsDesk({ desk }) {
   const deskRole = useServerDeskRole();
   const onDesk = deskRole === desk;
   const { data: session } = useSession();
   const [localEmpEmail, setLocalEmpEmail] = useState('');
-  const [activeTab, setActiveTab] = useState(desk === 'tl' ? 'publisher' : 'live');
+  const [activeTab, setActiveTab] = useDeskTab('tab', desk === 'tl' ? 'publisher' : 'live', desk === 'tl' ? TL_TABS : GM_TABS);
   const [bidReportJobId, setBidReportJobId] = useState('');
   const [jobs, setJobs] = useState([]);
   const [internalJobs, setInternalJobs] = useState([]);

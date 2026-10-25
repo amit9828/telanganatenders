@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab';
 import { toast } from 'sonner';
 import { staffHeaders } from '@/components/workflow/api';
 import DocTaskOverview from '@/components/doc-team/DocTaskOverview';
@@ -35,17 +36,21 @@ async function docFetch(url, options = {}) {
   return data;
 }
 
+const SHEET_TABS = ['overview', 'workflow', 'completed'];
+
 export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useDeskTab('sheet', 'overview', SHEET_TABS);
   const [tasks, setTasks] = useState([]);
   const [overview, setOverview] = useState([]);
   const [summary, setSummary] = useState(null);
   const [assignees, setAssignees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const canLead = role === 'gm' || role === 'tl';
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ soft = false } = {}) => {
+    if (soft) setRefreshing(true);
+    else setLoading(true);
     try {
       const data = await docFetch('/api/doc-tasks');
       const loaded = data.tasks || [];
@@ -60,6 +65,7 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
       toast.error(err.message || 'Could not load the doc team sheet.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [canLead]);
 
@@ -133,8 +139,25 @@ export default function DocTeamWorkspace({ role = 'maker', actorEmpId = '' }) {
             <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>{summary[metric.key] ?? 0}</div>
           </div>
         )) : <div style={{ flex: 1 }} />}
-        <button type="button" onClick={load} style={{ border: '1px solid #64748b', background: '#fff', padding: '2px 8px', fontWeight: 700 }}>
-          Refresh
+        <button
+          type="button"
+          disabled={refreshing}
+          onClick={() => load({ soft: true })}
+          style={{ border: '1px solid #64748b', background: '#fff', padding: '2px 8px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          <span
+            aria-hidden="true"
+            className={refreshing ? 'animate-spin' : ''}
+            style={{
+              width: 12,
+              height: 12,
+              border: '2px solid #64748b',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              display: 'inline-block',
+            }}
+          />
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
       <div className="flex w-full" style={{ display: 'flex', width: '100%', gap: 8, marginBottom: 12 }}>

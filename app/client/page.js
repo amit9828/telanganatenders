@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useDeskTab } from '@/lib/use-desk-tab';
 import { useSession, signOut } from 'next-auth/react';
 import { useServerDeskRole } from '@/components/DeskAuth'; 
 import BrandLogo from '@/components/BrandLogo';
@@ -80,6 +82,8 @@ const DEFAULT_VAULT_DOCS = [
 // before our handler ever sees it, so we check here first and explain it properly.
 const VAULT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
+const CLIENT_TABS = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'store', 'billing'];
+
 export default function ClientDashboard() {
   const deskRole = useServerDeskRole();
   const onClientDesk = deskRole === 'client';
@@ -101,7 +105,12 @@ export default function ClientDashboard() {
   const [userData, setUserData] = useState(null);
   const [viewTender, setViewTender] = useState(null);
   const [clientId, setClientId] = useState('');
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useDeskTab(
+    'tab',
+    searchParams.get('step') === 'billing' ? 'store' : 'dashboard',
+    CLIENT_TABS,
+  );
   const [publicTenders, setPublicTenders] = useState([]);
   const [liveTenderSearch, setLiveTenderSearch] = useState('');
   const [quotationJob, setQuotationJob] = useState(null);
@@ -163,16 +172,6 @@ export default function ClientDashboard() {
   // ADMIN_TOKEN anyway, so a real client couldn't read it even if they tried.
   const [staffBidMatches, setStaffBidMatches] = useState([]);
   const [submittingLead, setSubmittingLead] = useState('');
-
-  // Deep-link support for ?tab= — used by the post-payment redirect so a client who
-  // paid an invoice lands back on Finance instead of the default dashboard tab.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const requested = new URLSearchParams(window.location.search).get('tab');
-    const allowed = ['dashboard', 'live_tenders', 'wins', 'vault', 'finance', 'profile', 'store', 'billing'];
-    if (requested && allowed.includes(requested)) setActiveTab(requested);
-    if (new URLSearchParams(window.location.search).get('step') === 'billing') setActiveTab('store');
-  }, []);
 
   useEffect(() => {
     setIsMounted(true);

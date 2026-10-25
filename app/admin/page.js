@@ -1,5 +1,6 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeskTab } from '@/lib/use-desk-tab'; 
 import { signOut } from 'next-auth/react'; 
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { clearDeskBypass } from '@/lib/tab-handoff';
@@ -130,13 +131,20 @@ function AdminDashboardSkeleton() {
   );
 }
 
+const ADMIN_TABS = [
+  'reports', 'finance', 'clients', 'matchmaker', 'master-tenders', 'copilot-desk', 'bid-report',
+  'team-activity', 'internal', 'submitted', 'archive', 'publisher', 'team', 'alerts',
+  'client-queries', 'chat', 'tickets', 'pricing', 'leads', 'settings', 'operations', 'live-scraped',
+];
+
 export default function AdminPage() {
   const deskRole = useServerDeskRole();
   const mdDesk = deskRole === 'md';
   const [token, setToken] = useState('');
   const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('reports');
+  const [activeTab, setActiveTab] = useDeskTab('tab', 'reports', ADMIN_TABS);
+  const [syncing, setSyncing] = useState(false);
   const [bidReportJobId, setBidReportJobId] = useState('');
   useStaffPresence(activeTab, { enabled: mdDesk });
 
@@ -1151,7 +1159,7 @@ export default function AdminPage() {
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <BrandMark size="md" />
-            <Button variant="ghost" size="sm" onClick={refresh} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Sync Live</span></Button>
+            <Button variant="ghost" size="sm" disabled={syncing} onClick={async () => { setSyncing(true); try { await refresh(); } finally { setSyncing(false); } }} className="text-xs sm:text-sm text-sky-300 hover:text-white hover:bg-white/10 transition-all duration-200"><RefreshCw className={`w-4 h-4 sm:mr-1 ${syncing ? 'animate-spin' : ''}`} /> <span className="hidden sm:inline">Sync Live</span></Button>
             <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')} className="text-xs sm:text-sm bg-transparent border-white/20 text-slate-200 hover:text-white hover:bg-white/10 transition-all duration-200">View Public Site</Button>
             <Button variant="ghost" size="sm" onClick={logout} className="text-xs sm:text-sm text-red-300 hover:text-red-200 hover:bg-red-500/15 transition-all duration-200"><LogOut className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Secure Logout</span></Button>
           </div>
