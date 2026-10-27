@@ -1,15 +1,66 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { Activity, Clock, Globe, Target, Users, Wallet } from 'lucide-react';
+import {
+  Activity, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clock, Globe, Loader2, Target, Users, Wallet,
+} from 'lucide-react';
 import { staffHeaders } from '@/components/workflow/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import {
+  ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent,
+} from '@/components/ui/chart';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const TOTAL_CELL = 'sticky bottom-0 z-10 bg-slate-100 border-t-2 border-slate-300 px-3 py-2.5 font-black';
+const BREAKDOWN = [
+  { key: 'submitted', code: 'S', label: 'Submitted' },
+  { key: 'technical', code: 'T', label: 'Technical Evaluation' },
+  { key: 'financial', code: 'F', label: 'Financial Evaluation' },
+  { key: 'total', code: 'Σ', label: 'Total Participated' },
+];
+
+function currentMonthIndex() {
+  const ist = new Date(Date.now() + IST_OFFSET_MS);
+  return ist.getUTCFullYear() * 12 + ist.getUTCMonth();
+}
+
+function monthKeyFromIndex(index) {
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
+}
+
+function monthLabelFromIndex(index) {
+  return `${MONTH_NAMES[index % 12]} ${Math.floor(index / 12)}`;
+}
+
+function BreakdownCard({ code, label, value, previous, compare }) {
+  const diff = compare && previous != null ? value - previous : null;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-[#0A2647] text-[10px] text-white">{code}</span>
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-black text-[#0A2647]">{value}</div>
+      {diff != null ? (
+        <div className="mt-0.5 text-[11px] text-slate-500">
+          Last month {previous}
+          <span className={`ml-1.5 font-bold ${diff > 0 ? 'text-emerald-600' : diff < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+            {diff > 0 ? `+${diff}` : diff}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function StatCard({ icon, label, value, accent }) {
   return (
@@ -36,16 +87,27 @@ export default function MasterReports({
   balance = 0,
 }) {
   const [range, setRange] = useState('monthly');
+  const [monthIndex, setMonthIndex] = useState(currentMonthIndex);
+  const [compare, setCompare] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
+  const latestMonth = currentMonthIndex();
+  const monthly = range === 'monthly';
 
   useEffect(() => {
     if (!active) return undefined;
     let cancelled = false;
-    const load = async () => {
+    const params = new URLSearchParams({ range });
+    if (monthly) {
+      params.set('month', monthKeyFromIndex(monthIndex));
+      if (compare) params.set('compare', '1');
+    }
+    const load = async ({ quiet = false } = {}) => {
+      if (!quiet) setLoading(true);
       try {
-        const res = await fetch(`/api/reports/master?range=${encodeURIComponent(range)}`, {
+        const res = await fetch(`/api/reports/master?${params.toString()}`, {
           credentials: 'include',
           headers: staffHeaders(),
         });
@@ -57,22 +119,51 @@ export default function MasterReports({
         }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Could not load reports.');
+      } finally {
+        if (!cancelled && !quiet) setLoading(false);
       }
     };
     load();
     const interval = setInterval(() => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') load();
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') load({ quiet: true });
     }, 60000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [active, range]);
+  }, [active, range, monthly, monthIndex, compare]);
+
+  const stepMonth = (delta) => {
+    setMonthIndex((prev) => Math.min(latestMonth, prev + delta));
+  };
 
   const workforce = report?.workforce || [];
   const funnel = report?.funnel || [];
+  const funnelTotals = funnel.reduce((sum, row) => ({
+    suggested: sum.suggested + (Number(row.suggested) || 0),
+    accepted: sum.accepted + (Number(row.accepted) || 0),
+    submitted: sum.submitted + (Number(row.submitted) || 0),
+    won: sum.won + (Number(row.won) || 0),
+  }), { suggested: 0, accepted: 0, submitted: 0, won: 0 });
   const submissions = report?.submissions || [];
-  const chartConfig = { count: { label: 'Submitted', color: '#0A2647' } };
+  const comparison = monthly && compare ? report?.comparison || null : null;
+  const breakdown = report?.breakdown || { submitted: 0, technical: 0, financial: 0, total: 0 };
+  const chartRows = useMemo(() => {
+    if (!comparison) return submissions;
+    const previous = comparison.submissions || [];
+    const length = Math.max(submissions.length, previous.length);
+    return Array.from({ length }, (_, i) => ({
+      label: String(i + 1),
+      count: submissions[i]?.count ?? 0,
+      previous: previous[i]?.count ?? 0,
+    }));
+  }, [submissions, comparison]);
+  const chartConfig = comparison
+    ? {
+      count: { label: monthLabelFromIndex(monthIndex), color: '#0A2647' },
+      previous: { label: monthLabelFromIndex(monthIndex - 1), color: '#94a3b8' },
+    }
+    : { count: { label: 'Submitted', color: '#0A2647' } };
   const tabConfig = { minutes: { label: 'Minutes', color: '#0A2647' } };
   const tabRows = (selected?.tabs || [])
     .filter((row) => row.seconds > 0)
@@ -114,19 +205,66 @@ export default function MasterReports({
 
       <Card className="border-0 ring-1 ring-slate-200/80">
         <CardHeader className="bg-slate-50/80 border-b border-slate-200/80 pb-3 rounded-t-xl">
-          <CardTitle className="text-sm text-[#0A2647]">Bids submitted</CardTitle>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-sm text-[#0A2647] flex items-center gap-2">
+              Bids submitted
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" /> : null}
+            </CardTitle>
+            {monthly ? (
+              <div className="flex flex-wrap items-center gap-1">
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Previous year" onClick={() => stepMonth(-12)}>
+                  <ChevronsLeft className="w-4 h-4" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Previous month" onClick={() => stepMonth(-1)}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="min-w-[120px] text-center text-xs font-bold text-[#0A2647]">{monthLabelFromIndex(monthIndex)}</span>
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Next month" disabled={monthIndex >= latestMonth} onClick={() => stepMonth(1)}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Next year" disabled={monthIndex + 12 > latestMonth} onClick={() => stepMonth(12)}>
+                  <ChevronsRight className="w-4 h-4" />
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={monthIndex === latestMonth} onClick={() => setMonthIndex(latestMonth)}>
+                  This month
+                </Button>
+                <Button
+                  size="sm"
+                  variant={compare ? 'default' : 'outline'}
+                  className={`h-7 text-xs ${compare ? 'bg-[#0A2647] text-white' : ''}`}
+                  onClick={() => setCompare((prev) => !prev)}
+                >
+                  Compare with last month
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </CardHeader>
-        <CardContent className="pt-4">
-          {submissions.length === 0 ? (
+        <CardContent className="pt-4 space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {BREAKDOWN.map((item) => (
+              <BreakdownCard
+                key={item.key}
+                code={item.code}
+                label={item.label}
+                value={report ? breakdown[item.key] ?? 0 : '—'}
+                previous={comparison?.breakdown?.[item.key] ?? null}
+                compare={Boolean(comparison) && Boolean(report)}
+              />
+            ))}
+          </div>
+          {chartRows.length === 0 ? (
             <p className="text-center text-sm text-slate-400 py-6">No submission data for this range.</p>
           ) : (
             <ChartContainer config={chartConfig} className="h-[220px] w-full aspect-auto">
-              <BarChart data={submissions} margin={{ left: 0, right: 8, top: 8 }}>
+              <BarChart data={chartRows} margin={{ left: 0, right: 8, top: 8 }}>
                 <CartesianGrid vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={range === 'monthly' ? 1 : 0} />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={monthly ? 1 : 0} />
                 <YAxis allowDecimals={false} width={28} />
                 <ChartTooltip content={<ChartTooltipContent />} />
+                {comparison ? <ChartLegend content={<ChartLegendContent />} /> : null}
                 <Bar dataKey="count" fill="var(--color-count)" radius={4} />
+                {comparison ? <Bar dataKey="previous" fill="var(--color-previous)" radius={4} /> : null}
               </BarChart>
             </ChartContainer>
           )}
@@ -198,6 +336,15 @@ export default function MasterReports({
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr>
+                    <td className={`${TOTAL_CELL} text-[#0A2647] uppercase tracking-wider`}>Total</td>
+                    <td className={`${TOTAL_CELL} text-[#0A2647]`}>{funnelTotals.suggested}</td>
+                    <td className={`${TOTAL_CELL} text-[#0A2647]`}>{funnelTotals.accepted}</td>
+                    <td className={`${TOTAL_CELL} text-[#0A2647]`}>{funnelTotals.submitted}</td>
+                    <td className={`${TOTAL_CELL} text-emerald-700`}>{funnelTotals.won}</td>
+                  </tr>
+                </tfoot>
               </table>
             )}
           </CardContent>
