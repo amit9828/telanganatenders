@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ const EMPTY_FORM = {
 
 const CATEGORIES = ['Product', 'Service', 'Works'];
 const PDF_MAX_BYTES = 2 * 1024 * 1024;
+const AUTOFILL_TIMEOUT_MS = 2500;
 
 function lastDateValue(value) {
   if (!value) return '';
@@ -63,6 +64,11 @@ export default function PublishTenderForm({
   const [analyzing, setAnalyzing] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [pendingJobId, setPendingJobId] = useState('');
+  const analyzeRef = useRef({ id: 0, controller: null });
+  const formRef = useRef(form);
+  formRef.current = form;
+
+  useEffect(() => () => analyzeRef.current.controller?.abort(), []);
 
   const editingId = editTender?._id || editTender?.id || null;
   const waitingIds = useMemo(
@@ -98,47 +104,49 @@ export default function PublishTenderForm({
   };
 
   const analyze = async (file) => {
+    analyzeRef.current.controller?.abort();
+    const controller = new AbortController();
+    const requestId = analyzeRef.current.id + 1;
+    analyzeRef.current = { id: requestId, controller };
+    const timer = setTimeout(() => controller.abort(), AUTOFILL_TIMEOUT_MS);
     setAnalyzing(true);
-    toast.info('AI is reading the document. Please wait...', { duration: 3000 });
     try {
       const payload = new FormData();
       payload.append('file', file);
-      payload.append('saveToDraft', 'false');
+      payload.append('mode', 'fast');
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         credentials: 'include',
         headers: staffHeaders(),
         body: payload,
+        signal: controller.signal,
       });
+      if (!res.ok || analyzeRef.current.id !== requestId) return;
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const fallback = res.status === 429
-          ? 'AI limit reached. Please wait a moment and try again, or fill the form manually.'
-          : 'AI analysis failed. Enter details manually.';
-        const msg = String(body.error || fallback);
-        toast.error(msg.length > 180 ? fallback : msg, { duration: 6000 });
-        return;
-      }
+      if (analyzeRef.current.id !== requestId) return;
       const data = body.data || {};
-      setForm((prev) => ({
+      const supply = data.emd_amount ? `EMD: ${data.emd_amount}` : '';
+      const fillEmpty = (prev) => ({
         ...prev,
-        bid_no: data.bid_no || prev.bid_no,
-        title: data.title || prev.title,
-        department: data.department || prev.department,
-        last_date: lastDateValue(data.last_date) || prev.last_date,
-        district: matchDistrict(data.district) || prev.district,
+        bid_no: prev.bid_no || data.bid_no || '',
+        title: prev.title || data.title || '',
+        department: prev.department || data.department || '',
+        last_date: prev.last_date || lastDateValue(data.last_date) || '',
+        district: prev.district || matchDistrict(data.district) || '',
         category: matchCategory(data.category) || prev.category,
-        supply_details: [
-          data.emd_amount ? `EMD: ${data.emd_amount}` : '',
-          data.turnover_req ? `Turnover Req: ${data.turnover_req}` : '',
-          (data.mandatory_docs || []).length ? `Mandatory Docs: ${data.mandatory_docs.join(', ')}` : '',
-        ].filter(Boolean).join('\n') || prev.supply_details,
-      }));
-      toast.success('AI Successfully auto-filled the tender details!');
+        supply_details: prev.supply_details || supply,
+      });
+      const before = formRef.current;
+      const after = fillEmpty(before);
+      setForm(fillEmpty);
+      const filled = ['bid_no', 'title', 'department', 'last_date', 'district', 'supply_details']
+        .some((key) => after[key] !== before[key]);
+      if (filled) toast.success('Auto-filled', { duration: 1500 });
     } catch {
-      toast.error('Network error during AI analysis. Enter details manually.', { duration: 6000 });
+      // Timed out or offline: the employee types the fields.
     } finally {
-      setAnalyzing(false);
+      clearTimeout(timer);
+      if (analyzeRef.current.id === requestId) setAnalyzing(false);
     }
   };
 
@@ -155,13 +163,13 @@ export default function PublishTenderForm({
       const base64Str = reader.result?.toString().split(',')[1] || '';
       setPdfBase64(base64Str);
       setPdfName(file.name);
-      toast.success('PDF Loaded. Starting AI Analysis...');
       analyze(file);
     };
     reader.readAsDataURL(file);
   };
 
   const reset = () => {
+    analyzeRef.current.controller?.abort();
     setForm(EMPTY_FORM);
     setPdfBase64('');
     setPdfName('');
@@ -294,20 +302,16 @@ export default function PublishTenderForm({
           </div>
           <div>
             <Label className="text-sm font-bold text-[#0A2647] mb-1 block">PDF Document {editingId && '(Optional to replace)'}</Label>
-            <div className={`border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group ${analyzing ? 'animate-pulse bg-blue-50' : ''}`}>
-              <input type="file" accept="application/pdf" onChange={onPdfChange} disabled={analyzing} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
-              {analyzing ? (
-                <div className="flex flex-col items-center">
-                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin mb-2" />
-                  <span className="text-sm font-bold text-blue-600">AI is analyzing document...</span>
-                </div>
-              ) : (
-                <>
-                  <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                  <span className="text-sm font-bold text-[#0A2647]">{pdfName || (editingId ? 'Upload new PDF to replace old' : 'Drop PDF here for AI Auto-Fill')}</span>
-                </>
-              )}
+            <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50 hover:bg-slate-100 cursor-pointer transition relative group">
+              <input type="file" accept="application/pdf" onChange={onPdfChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+              <UploadCloud className="w-6 h-6 text-[#16a34a] mx-auto mb-2 group-hover:scale-110 transition-transform" />
+              <span className="text-sm font-bold text-[#0A2647]">{pdfName || (editingId ? 'Upload new PDF to replace old' : 'Drop PDF here for AI Auto-Fill')}</span>
             </div>
+            {analyzing && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-600">
+                <Loader2 className="w-3 h-3 animate-spin" /> Auto-filling...
+              </p>
+            )}
           </div>
           <Button type="submit" disabled={publishing} className={`w-full h-11 text-base font-bold shadow-md ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}>
             {publishing ? (editingId ? 'Updating...' : 'Publishing...') : (editingId ? 'Save Changes' : 'Publish')}
