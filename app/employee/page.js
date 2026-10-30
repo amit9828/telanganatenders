@@ -44,8 +44,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
-  Briefcase, Kanban, Building2, ClipboardList, AlertCircle, Contact, Loader2,
-  Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, LogIn
+  Briefcase, Building2, ClipboardList, AlertCircle, Contact, Loader2,
+  Database, Lock, Globe, MapPin, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, LogIn
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -95,11 +95,6 @@ export default function EmployeeDashboard() {
   const [savingOfficer, setSavingOfficer] = useState(false);
   const [officerSearch, setOfficerSearch] = useState('');
 
-  const [showAddBid, setShowAddBid] = useState(false);
-  const [newBidForm, setNewBidForm] = useState({ 
-    bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
-  });
-  const [editingBid, setEditingBid] = useState(null); 
   const [suggestForm, setSuggestForm] = useState({});
 
   const [mdTaskReply, setMdTaskReply] = useState({});
@@ -188,7 +183,8 @@ export default function EmployeeDashboard() {
     try {
       const want = new Set(['employees']);
       if (tab === 'internal') { want.add('workflow'); want.add('dispatches'); }
-      else if (tab === 'submitted') { want.add('workflow'); want.add('winning'); want.add('bids'); }
+      else if (tab === 'submitted') { want.add('workflow'); want.add('winning'); }
+      else if (tab === 'suggestions') want.add('bids');
       else if (tab === 'clients') { want.add('clients'); want.add('officers'); }
       else if (tab === 'publisher') want.add('tenders');
       else if (tab === 'alerts') want.add('dispatches');
@@ -351,49 +347,6 @@ export default function EmployeeDashboard() {
       fetchLiveOperationsData(email);
     } catch (err) { toast.error("Error processing suggestion."); }
   };
-
-  const handleAddBidRow = async (e) => {
-    e.preventDefault();
-    if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
-    const isDuplicate = bids.some(b => b.bid_no === newBidForm.bid_no && b.client_email === newBidForm.client_email);
-    if(isDuplicate) return toast.error("Action Denied: This Bid Number is already active for this client!");
-
-    try {
-      const res = await fetch('/api/bids', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newBidForm)
-      });
-      if(res.ok) {
-        toast.success("New Bid Event Row Added Successfully!");
-        setNewBidForm({ bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' });
-        setShowAddBid(false); fetchLiveOperationsData(email);
-      } else toast.error("Failed to add bid row.");
-    } catch (err) { toast.error("Network Error."); }
-  };
-  
-  const handleSaveEditBid = async (e) => {
-     e.preventDefault();
-     if(!editingBid) return;
-     try {
-        const res = await fetch('/api/bids/update', {
-           method: 'PUT', headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ bid_id: editingBid._id || editingBid.id, status: editingBid.status, bid_no: editingBid.bid_no, description: editingBid.description })
-        });
-        if(res.ok) {
-           toast.success("Bid details updated successfully!");
-           setEditingBid(null); fetchLiveOperationsData(email);
-        } else toast.error("Failed to update bid details.");
-     } catch(err) { toast.error("Network Error."); }
-  };
-
-  const handleDeleteBid = async (bidId) => {
-     if(!confirm("Are you sure you want to delete this bid access from the tracker?")) return;
-     try {
-       const res = await fetch(`/api/bids?id=${bidId}`, { method: 'DELETE' });
-       if (res.ok) { toast.success("Bid tracking removed."); fetchLiveOperationsData(email); } 
-       else toast.error("Failed to remove. Backend route might need update.");
-     } catch(e) { toast.error("Network error"); }
-  }
 
   const [approvalModal, setApprovalModal] = useState({ open: false, email: '', docId: '', docName: '', clientName: '' });
   const [customFileName, setCustomFileName] = useState('');
@@ -611,24 +564,6 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error('Network Error.'); }
   };
 
-  const updateBidStatus = async (id, newStatus) => {
-    if (newStatus === 'Won' || newStatus === 'Lost') {
-      return toast.error('Won and Lost are set on the Submitted board, not this tracker.');
-    }
-
-    setBids(bids.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b));
-    try {
-      const res = await fetch('/api/bids/update', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bid_id: id, status: newStatus })
-      });
-      if (res.ok) {
-        toast.success(`Bid updated to "${newStatus}". Client Notified.`);
-        logActivity('UPDATED_BID', `Changed bid ${id} status to ${newStatus}`);
-      } else { fetchLiveOperationsData(email); }
-    } catch (err) { toast.error('Network Error during status update.'); }
-  };
-
   const onTaskFileChange = (taskId, e) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -713,13 +648,6 @@ export default function EmployeeDashboard() {
     if (typeof window !== 'undefined') window.location.replace('/');
     return null;
   }
-
-  const groupedBids = bids.reduce((acc, bid) => {
-      const key = bid.client_email || 'Unknown';
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(bid);
-      return acc;
-  }, {});
 
   const groupedSuggestions = suggestions.reduce((acc, sug) => {
       const key = sug.target_id || 'Unknown';
@@ -851,154 +779,6 @@ return (
               onArchiveJob={archiveJob}
             />
             <WinningBidsBoard jobs={wfWinning} showClientName />
-            <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
-              <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                <div>
-                   <CardTitle className="text-[#0A2647] flex items-center gap-2"><Kanban className="w-5 h-5 text-blue-600"/> Active Bid Events Tracker</CardTitle>
-                   <CardDescription>Manually add or update the progress of ongoing client bids.</CardDescription>
-                </div>
-                <Button onClick={() => setShowAddBid(!showAddBid)} className="bg-blue-600 hover:bg-blue-700 shrink-0">
-                   <PlusCircle className="w-4 h-4 mr-2"/> Add New Bid Row
-                </Button>
-              </CardHeader>
-              <CardContent className="pt-4">
-                
-                {showAddBid && (
-                   <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner">
-                      <h4 className="font-bold text-blue-900 mb-4 flex items-center"><Target className="w-4 h-4 mr-2"/> Create New Bid Tracking Row</h4>
-                      <form onSubmit={handleAddBidRow} className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Select Client *</Label>
-                            <Select required value={newBidForm.client_email} onValueChange={v => setNewBidForm({...newBidForm, client_email: v})}>
-                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
-                               <SelectContent>
-                                  {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
-                               </SelectContent>
-                            </Select>
-                         </div>
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Bid Number / ID *</Label>
-                            <Input required placeholder="e.g. GEM/2026/B/..." value={newBidForm.bid_no} onChange={e=>setNewBidForm({...newBidForm, bid_no: e.target.value})} className="mt-1 bg-white h-9" />
-                         </div>
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Initial Status *</Label>
-                            <Select required value={newBidForm.status} onValueChange={v => setNewBidForm({...newBidForm, status: v})}>
-                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select Status" /></SelectTrigger>
-                               <SelectContent>
-                                  <SelectItem value="Bid Allocated">Bid Allocated</SelectItem>
-                                  <SelectItem value="Client Approved">Client Approved</SelectItem>
-                                  <SelectItem value="Client Cancelled">Client Cancelled</SelectItem>
-                                  <SelectItem value="ADC Check">ADC Check</SelectItem>
-                                  <SelectItem value="Documents Asking">Documents Asking</SelectItem>
-                                  <SelectItem value="Documents Preparing">Documents Preparing</SelectItem>
-                                  <SelectItem value="Bid Participated">Bid Participated</SelectItem>
-                                  <SelectItem value="Technical Evaluation">Technical Evaluation</SelectItem>
-                                  <SelectItem value="Technical Qualification">Technical Qualification</SelectItem>
-                                  <SelectItem value="Financial Evaluation">Financial Evaluation</SelectItem>
-                               </SelectContent>
-                            </Select>
-                         </div>
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Submitted Date (Optional)</Label>
-                            <Input type="date" value={newBidForm.submitted_date} onChange={e=>setNewBidForm({...newBidForm, submitted_date: e.target.value})} className="mt-1 bg-white h-9" />
-                         </div>
-                         <div className="sm:col-span-3">
-                            <Label className="text-xs font-bold text-slate-600">Description of Work *</Label>
-                            <Input required placeholder="Short title of the tender work..." value={newBidForm.description} onChange={e=>setNewBidForm({...newBidForm, description: e.target.value})} className="mt-1 bg-white h-9" />
-                         </div>
-                         <div className="sm:col-span-1 flex items-end">
-                            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-9 shadow-md"><CheckCircle2 className="w-4 h-4 mr-2"/> Save Record</Button>
-                         </div>
-                      </form>
-                   </div>
-                )}
-
-                {bids.length === 0 ? (
-                  <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
-                ) : (
-                  <div className="space-y-6">
-                    {Object.entries(groupedBids).map(([clientEmail, clientBids], index) => {
-                        const clientInfo = approvedClients.find(c => c.email === clientEmail);
-                        const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
-                        const colorClass = BORDER_COLORS[index % BORDER_COLORS.length]; 
-                        
-                        return (
-                        <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
-                           <CardHeader className="bg-slate-50 border-b py-3 px-4">
-                              <div className="flex justify-between items-center">
-                                 <div>
-                                    <CardTitle className="text-xl uppercase font-black text-[#0A2647]">{cName}</CardTitle>
-                                    <CardDescription className="text-xs font-mono mt-0.5">{clientEmail}</CardDescription>
-                                 </div>
-                                 <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{clientBids.length} Active Bids</Badge>
-                              </div>
-                           </CardHeader>
-                           <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                              {clientBids.map(b => (
-                                <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
-                                  
-                                  {editingBid && (editingBid._id === b._id || editingBid.id === b.id) ? (
-                                     <form onSubmit={handleSaveEditBid} className="space-y-3">
-                                        <div>
-                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Bid Number</Label>
-                                           <Input value={editingBid.bid_no} onChange={e => setEditingBid({...editingBid, bid_no: e.target.value})} className="h-8 text-xs bg-slate-50" />
-                                        </div>
-                                        <div>
-                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Description/Shortcut</Label>
-                                           <Textarea rows={2} value={editingBid.description} onChange={e => setEditingBid({...editingBid, description: e.target.value})} className="text-xs bg-slate-50" />
-                                        </div>
-                                        <div className="flex gap-2">
-                                           <Button type="button" onClick={() => setEditingBid(null)} variant="outline" className="flex-1 h-8 text-xs"><X className="w-3 h-3 mr-1"/> Cancel</Button>
-                                           <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 h-8 text-xs"><CheckCircle2 className="w-3 h-3 mr-1"/> Save</Button>
-                                        </div>
-                                     </form>
-                                  ) : (
-                                     <div>
-                                        <div className="flex justify-between items-start mb-2">
-                                           <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
-                                              <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
-                                              <span className="text-xs font-black font-mono truncate max-w-[120px]">{b.bid_no || b.id || 'N/A'}</span>
-                                           </div>
-                                           <div className="flex gap-1 items-center">
-                                              <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm mr-1">{b.status}</Badge>
-                                              <Button variant="ghost" size="icon" onClick={() => setEditingBid(b)} className="h-6 w-6 p-0 text-slate-400 hover:text-blue-600 bg-slate-50 border"><Pencil className="w-3 h-3"/></Button>
-                                              <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-slate-50 border"><Trash2 className="w-3 h-3"/></Button>
-                                           </div>
-                                        </div>
-                                        <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight line-clamp-2">{b.description || b.title}</h4>
-                                     </div>
-                                  )}
-                                  
-                                  {!editingBid && (
-                                    <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
-                                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
-                                      <select 
-                                        className="border border-blue-300 rounded-md px-2 py-1.5 text-xs bg-blue-50 font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto shadow-sm cursor-pointer"
-                                        value={b.status}
-                                        onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
-                                      >
-                                        <option value="Bid Allocated">Bid Allocated</option>
-                                        <option value="Client Approved">Client Approved</option>
-                                        <option value="Client Cancelled">Client Cancelled</option>
-                                        <option value="ADC Check">ADC Check</option>
-                                        <option value="Documents Asking">Documents Asking</option>
-                                        <option value="Documents Preparing">Documents Preparing</option>
-                                        <option value="Bid Participated">Bid Participated</option>
-                                        <option value="Technical Evaluation">Technical Evaluation</option>
-                                        <option value="Technical Qualification">Technical Qualification</option>
-                                        <option value="Financial Evaluation">Financial Evaluation</option>
-                                      </select>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                           </CardContent>
-                        </Card>
-                        )})}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="suggestions" className="w-full space-y-6">

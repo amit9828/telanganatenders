@@ -17,7 +17,7 @@ import {
 import { toast } from 'sonner';
 import { workflowFetch } from '@/components/workflow/api';
 import { mdDeleteCardAction } from '@/components/workflow/jobDocActions';
-import { TRACKING_LABELS, currentTrackingStage, nextTrackingStage } from '@/lib/tracking-status';
+import { TRACKING_LABELS, currentTrackingStage, laterTrackingStages } from '@/lib/tracking-status';
 
 function clientGroupName(job) {
   return job.client_name || job.company_name || job.client_email || 'Unknown client';
@@ -107,8 +107,13 @@ function SubmittedTrackingBoard({
               <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {clientJobs.map((job) => {
                   const stage = currentTrackingStage(job) || TRACKING_LABELS.SUBMITTED;
-                  const canEdit = Boolean(actorEmpId) && String(job.assigned_emp_id || '') === String(actorEmpId);
-                  const next = stage === TRACKING_LABELS.BID_AWARDED ? null : nextTrackingStage(stage);
+                  const me = String(actorEmpId || '');
+                  const canEdit = Boolean(me) && (
+                    String(job.assigned_emp_id || '') === me
+                    || (job.tracking_editors || []).map(String).includes(me)
+                  );
+                  const awarded = stage === TRACKING_LABELS.BID_AWARDED;
+                  const later = awarded ? [] : laterTrackingStages(stage);
                   const cardBusy = busyId === job._id;
                   const driveLink = job.drive_bid_folder_link || '';
                   return (
@@ -121,20 +126,36 @@ function SubmittedTrackingBoard({
                           canDelete && mdDeleteCardAction(job, deleteCard),
                         ].filter(Boolean)}
                       />
-                      {canEdit && (next || stage === TRACKING_LABELS.BID_AWARDED) ? (
+                      {canEdit && awarded ? (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
                           className="h-8 w-full text-xs"
                           disabled={cardBusy}
-                          onClick={() => setConfirm({
-                            job,
-                            target: stage === TRACKING_LABELS.BID_AWARDED ? 'result' : next,
-                          })}
+                          onClick={() => setConfirm({ job, target: 'result' })}
                         >
-                          {stage === TRACKING_LABELS.BID_AWARDED ? 'Record result' : `Update to ${next}`}
+                          Record result
                         </Button>
+                      ) : canEdit && later.length > 0 ? (
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">Update stage</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {later.map((target) => (
+                              <Button
+                                key={target}
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 flex-1 min-w-[7rem] text-xs"
+                                disabled={cardBusy}
+                                onClick={() => setConfirm({ job, target })}
+                              >
+                                {target}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
                       ) : (
                         <p className="text-[11px] text-slate-500 px-1">{stage} · read-only</p>
                       )}
@@ -152,12 +173,15 @@ function SubmittedTrackingBoard({
           <AlertDialogHeader>
             <AlertDialogTitle>Update status?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to update the status?
+              {confirm?.target === 'result'
+                ? 'Are you sure you want to record the result for this bid?'
+                : `Are you sure you want to update the status to ${confirm?.target || ''}?`}
+              {confirm?.job ? ` (${confirm.job.bid_no || confirm.job.title || 'this bid'})` : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={acceptConfirm}>Okay</AlertDialogAction>
+            <AlertDialogAction onClick={acceptConfirm}>Yes, confirm</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
