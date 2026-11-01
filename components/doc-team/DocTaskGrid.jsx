@@ -1,6 +1,6 @@
 'use client';
 
-import { compareDocTasks, formatDisplayDate } from '@/lib/doc-task-dates';
+import { compareDocTasks, formatDisplayDate, isMissingDisplayDate } from '@/lib/doc-task-dates';
 
 const ROW_FILL = {
   'Waiting for Quotation': '#c084fc',
@@ -257,8 +257,17 @@ export default function DocTaskGrid({
                     }
                     return <td key={column.key} style={paint}>{row.assignedEmployeeName || ''}</td>;
                   }
-                  if (column.key === 'bidNumber' || column.key === 'lastDate') {
-                    return <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>{cells[column.key] ?? ''}</td>;
+                  if (column.key === 'bidNumber') {
+                    return <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap' }}>{cells.bidNumber ?? ''}</td>;
+                  }
+                  if (column.key === 'lastDate') {
+                    const label = cells.lastDate;
+                    const missing = isMissingDisplayDate(label);
+                    return (
+                      <td key={column.key} style={{ ...paint, whiteSpace: 'nowrap', color: missing ? '#b91c1c' : paint.color, fontWeight: missing ? 700 : undefined }}>
+                        {label}
+                      </td>
+                    );
                   }
                   if (column.key === 'clientNextUpdateDate') {
                     const note = { ...paint, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' };

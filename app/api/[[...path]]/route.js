@@ -23,6 +23,7 @@ import { findOrCreateDriveFolder, createDriveFolder, ensureEntityDriveFolder, is
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { isMdSessionCookie, mdSessionValue } from '@/lib/desk-cookie';
 import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, parseBidNumber } from '@/lib/bid-number';
+import { normalizeIsoDate } from '@/lib/doc-task-dates';
 
 function recordedPaymentAmount(payment) {
   const raw = payment?.amount ?? payment?.total_amount ?? payment?.order_amount;
@@ -2110,7 +2111,7 @@ export async function POST(request, { params }) {
       const rawBid = String(body.bid_no || '').trim();
       const title = String(body.title || '').trim();
       const department = String(body.department || '').trim();
-      const lastDate = body.last_date || '';
+      const lastDate = normalizeIsoDate(body.last_date);
       if (!rawBid || !title || !department || !lastDate) {
         return json({ error: 'Bid number, title, department, and last date are required.' }, 400);
       }
