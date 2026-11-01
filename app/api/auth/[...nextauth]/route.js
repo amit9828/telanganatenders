@@ -171,6 +171,7 @@ const handler = NextAuth({
             created_at: new Date(),
             subscription: { status: 'none', planType: null, expires_at: null, paywall: false, enforced_at: null },
             bid_balance: 0,
+            bid_purchased: 0,
             agreement_signed: false,
             onboarding_complete: false,
             ...(asVisitor ? { account_kind: 'visitor' } : {}),

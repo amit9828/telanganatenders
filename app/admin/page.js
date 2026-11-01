@@ -128,6 +128,34 @@ function AdminDashboardSkeleton() {
   );
 }
 
+function crmDate(value) {
+  if (!value) return '--';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '--';
+  const parts = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).formatToParts(d);
+  const pick = (type) => parts.find((p) => p.type === type)?.value || '';
+  return `${pick('day')}-${pick('month')}-${pick('year')}`;
+}
+
+/** Plan, bid balance, and validity for a CRM card, from the billing fields on the user. */
+function crmSubscription(client, now = new Date()) {
+  const unlimited = client?.subscription?.planType === 'UNLIMITED';
+  const payg = !unlimited && (client?.subscription?.planType === 'CUSTOM_BIDS' || Number(client?.bid_purchased) > 0 || Number(client?.bid_balance) > 0);
+  const until = unlimited ? client?.subscription?.expires_at : payg ? client?.bid_expiry : null;
+  const untilDate = until ? new Date(until) : null;
+  const expired = Boolean(untilDate && !Number.isNaN(untilDate.getTime()) && untilDate <= now)
+    || (unlimited && client?.subscription?.status !== 'active');
+  const remaining = expired ? 0 : Math.max(0, Number(client?.bid_balance) || 0);
+  const bought = Math.max(0, Number(client?.bid_purchased) || 0);
+  return {
+    plan: unlimited ? 'Unlimited' : payg ? 'Pay-as-you-go' : 'No plan',
+    bids: unlimited ? 'Bids: Unlimited' : payg ? `Bids Remaining: ${remaining}${bought > 0 ? ` / ${bought}` : ''}` : 'Bids: --',
+    validTill: until ? `Valid till: ${crmDate(until)}` : 'Valid till: --',
+    expired: (unlimited || payg) && expired,
+    active: (unlimited || payg) && !expired,
+  };
+}
+
 const ADMIN_TABS = [
   'reports', 'finance', 'clients', 'copilot-desk', 'bid-report',
   'team-activity', 'internal', 'submitted', 'archive', 'publisher', 'team', 'alerts',
@@ -312,7 +340,7 @@ export default function AdminPage() {
       if (want.has('tenders')) tasks.tenders = safeFetch(`/api/tenders?t=${stamp}`);
       if (want.has('stats')) tasks.stats = safeFetch(`/api/admin/stats?t=${stamp}`);
       if (want.has('tickets')) tasks.tickets = safeFetch(`/api/tickets?role=admin&t=${stamp}`);
-      if (want.has('clients')) tasks.clients = safeFetch(`/api/users/approved?t=${stamp}`);
+      if (want.has('clients')) tasks.clients = safeFetch(`/api/users/approved?crm=1&t=${stamp}`);
       if (want.has('dispatches')) tasks.dispatches = safeFetch(`/api/dispatches?t=${stamp}`);
       if (want.has('employees')) tasks.employees = safeFetch(`/api/employees?t=${stamp}`);
       if (want.has('ledger')) tasks.ledger = safeFetch(`/api/finance/ledger?t=${stamp}`);
@@ -1121,8 +1149,8 @@ export default function AdminPage() {
                     <div className="grid xl:grid-cols-2 gap-4">
                        {approvedClients.map(client => {
                           const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                          const wonBidsCount = client.bids ? client.bids.filter(b => b.status === 'Won').length : (client.stats?.won || 0);
-                          const totalRevenue = client.payments ? client.payments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (Number(p.amount) || 0), 0) : (client.stats?.total_paid || 0);
+                          const stats = client.crm_stats || {};
+                          const sub = crmSubscription(client);
 
                           return (
                           <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
@@ -1144,10 +1172,22 @@ export default function AdminPage() {
                                    </div>
                                    <Badge className={`border-0 h-fit ${client.billing_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{client.billing_paid ? 'Paid' : 'Unpaid'}</Badge>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{wonBidsCount}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{totalRevenue.toLocaleString()}</span></div>
+                                <div className={`mt-4 rounded-lg border p-3 text-xs ${sub.expired ? 'border-red-200 bg-red-50/60' : sub.active ? 'border-blue-200 bg-blue-50/60' : 'border-slate-200 bg-slate-50'}`}>
+                                   <div className="flex items-center justify-between mb-2">
+                                      <span className="text-[9px] uppercase font-bold text-slate-500">Subscription</span>
+                                      {sub.expired ? <Badge className="border-0 bg-red-100 text-red-700 h-5 text-[10px]">Expired</Badge> : null}
+                                   </div>
+                                   <div className="grid grid-cols-3 gap-2">
+                                      <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Plan</span><span className="font-black text-[#0A2647]">{sub.plan}</span></div>
+                                      <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Bids</span><span className="font-semibold text-slate-700">{sub.bids}</span></div>
+                                      <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Validity</span><span className={`font-semibold ${sub.expired ? 'text-red-700' : 'text-slate-700'}`}>{sub.validTill}</span></div>
+                                   </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
+                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{crmDate(stats.approved_at)}</span></div>
+                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Participated</span><span className="font-black text-[#0A2647] text-sm">{Number(stats.participated) || 0}</span></div>
+                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{Number(stats.won) || 0}</span></div>
+                                   <div className="col-span-3 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(Number(stats.revenue) || 0).toLocaleString('en-IN')}</span></div>
                                 </div>
                              </div>
                              
