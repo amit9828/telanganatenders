@@ -499,7 +499,8 @@ export default function StaffOpsDesk({ desk }) {
                   onPatchJob={patchJob}
                   onRemoveJob={removeJob}
                   onArchiveJob={archiveJob}
-                  actorEmpId=""
+                  actorEmpId={isTl ? selfId : ''}
+                  actorIsTl={isTl}
                 />
                 <WinningBidsBoard jobs={winningJobs} showClientName />
               </TabsContent>

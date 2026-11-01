@@ -33,9 +33,15 @@ function clientSections(jobs) {
   return [...groups.keys()].sort((a, b) => a.localeCompare(b)).map((name) => [name, groups.get(name)]);
 }
 
+function idKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function SubmittedTrackingBoard({
   jobs = [],
   actorEmpId = '',
+  actorTeamId = '',
+  actorIsTl = false,
   onPatchJob,
   onRemoveJob,
   onArchiveJob,
@@ -107,10 +113,14 @@ function SubmittedTrackingBoard({
               <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {clientJobs.map((job) => {
                   const stage = currentTrackingStage(job) || TRACKING_LABELS.SUBMITTED;
-                  const me = String(actorEmpId || '');
+                  const me = idKey(actorEmpId);
+                  const myTeam = idKey(actorTeamId);
+                  const editors = new Set([job.assigned_emp_id, ...(job.tracking_editors || [])].map(idKey).filter(Boolean));
+                  const teams = new Set((job.tracking_team_ids || []).map(idKey).filter(Boolean));
                   const canEdit = Boolean(me) && (
-                    String(job.assigned_emp_id || '') === me
-                    || (job.tracking_editors || []).map(String).includes(me)
+                    editors.has(me)
+                    || (actorIsTl && teams.has(me))
+                    || (!actorIsTl && Boolean(myTeam) && teams.has(myTeam))
                   );
                   const awarded = stage === TRACKING_LABELS.BID_AWARDED;
                   const later = awarded ? [] : laterTrackingStages(stage);

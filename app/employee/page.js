@@ -69,7 +69,7 @@ export default function EmployeeDashboard() {
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useDeskTab('tab', 'internal', EMPLOYEE_TABS);
   const [email, setEmail] = useState('');
-  const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
+  const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer', teamId: '' });
   const [loading, setLoading] = useState(true);
 
   const [mdTasks, setMdTasks] = useState([]);
@@ -243,7 +243,7 @@ export default function EmployeeDashboard() {
         });
         if (mine?.emp_id) {
           const canonical = String(mine.email || '').trim();
-          setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer' });
+          setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer', teamId: mine.team_id || '' });
           if (canonical) {
             rememberRealStaffIdent(canonical);
             if (canonical.toLowerCase() !== needle) setEmail(canonical);
@@ -774,6 +774,7 @@ return (
             <SubmittedTrackingBoard
               jobs={wfJobs.filter((j) => SUBMITTED_BOARD_STATUSES.includes(j.status))}
               actorEmpId={empData.id}
+              actorTeamId={empData.teamId || ''}
               onPatchJob={patchJob}
               onRemoveJob={removeJob}
               onArchiveJob={archiveJob}
