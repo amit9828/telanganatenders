@@ -250,7 +250,7 @@ export default function TeamDirectoryPanel({ actorDesk, team = [], onRefresh, im
   );
 }
 
-export function openStaffDesk(member) {
+export async function openStaffDesk(member) {
   if (typeof window === 'undefined') return;
   const email = String(member?.email || '').trim();
   const empId = String(member?.emp_id || '').trim();
@@ -259,7 +259,18 @@ export function openStaffDesk(member) {
     return;
   }
 
-  const path = deskPathForStaff(member);
-  toast.success('Opening live dashboard…');
-  openStaffBypass(path, email || empId);
+  // Open the tab inside the click so popup blockers allow it; navigate once the server agrees.
+  const win = window.open('about:blank', '_blank');
+  try {
+    const granted = await workflowFetch('/api/staff-impersonate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ident: email || empId }),
+    });
+    toast.success('Opening live dashboard…');
+    openStaffBypass(granted.path || deskPathForStaff(member), granted.ident || email || empId, win);
+  } catch (err) {
+    if (win && !win.closed) win.close();
+    toast.error(err.message || 'Could not open this desk.');
+  }
 }
