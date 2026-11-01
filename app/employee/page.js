@@ -4,7 +4,6 @@ import { useDeskTab } from '@/lib/use-desk-tab';
 import { signIn, useSession } from 'next-auth/react';
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { BrandMark } from '@/components/BrandLogo';
-import StationeryUploader from '@/components/StationeryUploader';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
@@ -40,12 +39,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; 
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
   Briefcase, Building2, ClipboardList, AlertCircle, Contact, Loader2,
-  Database, Lock, Globe, MapPin, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, LogIn
+  Database, Lock, Globe, MapPin, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, X, TrendingDown, RefreshCw, LogIn
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -98,13 +96,10 @@ export default function EmployeeDashboard() {
   const [suggestForm, setSuggestForm] = useState({});
 
   const [mdTaskReply, setMdTaskReply] = useState({});
-  const [viewClientDocs, setViewClientDocs] = useState(null);
-  const [stationeryClient, setStationeryClient] = useState(null);
 
   const [ticketReply, setTicketReply] = useState({});
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
-  const [rejectReason, setRejectReason] = useState({});
   const [teamMembers, setTeamMembers] = useState([]);
   const [l1Data, setL1Data] = useState({});
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -348,43 +343,6 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error("Error processing suggestion."); }
   };
 
-  const [approvalModal, setApprovalModal] = useState({ open: false, email: '', docId: '', docName: '', clientName: '' });
-  const [customFileName, setCustomFileName] = useState('');
-  const [overwriteDoc, setOverwriteDoc] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState('');
-
-  const openApprovalModal = (client, doc) => {
-      const cleanClientName = (client.company_name || client.client_name || 'Client').replace(/\s+/g, '_');
-      const cleanDocName = doc.name.replace(/\s+/g, '_');
-      setCustomFileName(`${cleanClientName}_${cleanDocName}`);
-      setDuplicateWarning('');
-      setOverwriteDoc(false);
-      setApprovalModal({ open: true, email: client.email, docId: doc.id, docName: doc.name, clientName: client.company_name || client.client_name });
-  };
-
-  const handleVerifyVaultDoc = async (clientEmail, docId, status, customName = null, overwrite = false) => {
-      let reason = '';
-      if (status === 'rejected') {
-          reason = rejectReason[`${clientEmail}_${docId}`];
-          if (!reason) return toast.error("Please provide a rejection reason.");
-      }
-      try {
-          const res = await fetch('/api/vault/verify', {
-             method: 'PUT', headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ email: clientEmail, docId: docId, status: status, reject_reason: reason, custom_file_name: customName, overwrite: overwrite })
-          });
-          const data = await res.json();
-          if (res.ok) {
-              toast.success(`Document marked as ${status.toUpperCase()}!`);
-              if (status === 'rejected') setRejectReason(prev => ({...prev, [`${clientEmail}_${docId}`]: ''}));
-              if (status === 'verified') { setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' }); setViewClientDocs(null); }
-              fetchLiveOperationsData(email);
-          } else if (res.status === 409) {
-              setDuplicateWarning(data.message || 'Duplicate found. Replace it?');
-          } else { toast.error("Failed to update status."); }
-      } catch (err) { toast.error("Network error."); }
-  };
-  
   const approveClient = async (clientEmail) => {
       try {
           await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: clientEmail }) });
@@ -1005,17 +963,11 @@ return (
                              </div>
                              
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
-                                <Button size="sm" onClick={() => setViewClientDocs(client)} variant="outline" className="flex-1 text-purple-600 border-purple-200 hover:bg-purple-50 h-9">
-                                   <FileText className="w-4 h-4 mr-2" /> View Vault Docs
-                                </Button>
-                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
-                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
-                                </Button>
-                                {client.drive_folder_link || client.drive_link ? (
-                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                {(client.drive_folder_link || client.drive_link) && (
+                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 h-9">
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
-                                ) : null}
+                                )}
                                 <Button size="sm" onClick={() => openClientBypass(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -1355,75 +1307,6 @@ return (
         </div>
         </div>
       </main>
-
-      {/* MODALS */}
-      <Dialog open={!!viewClientDocs} onOpenChange={() => setViewClientDocs(null)}>
-        <DialogContent className="sm:max-w-2xl bg-white">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-black text-[#0A2647] flex items-center gap-2"><FolderPlus className="w-5 h-5 text-purple-600"/> Client Vault Documents</DialogTitle>
-            <DialogDescription>Documents securely uploaded by {viewClientDocs?.company_name}</DialogDescription>
-          </DialogHeader>
-          <div className="grid sm:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1">
-            {!viewClientDocs?.vault_docs || viewClientDocs.vault_docs.length === 0 ? (
-              <p className="text-sm text-slate-500 col-span-2 text-center py-6">No documents uploaded by this client yet.</p>
-            ) : (
-              viewClientDocs.vault_docs.map(doc => (
-                 <div key={doc.id} className="border border-slate-200 p-3 rounded-lg bg-slate-50 flex flex-col justify-between gap-3 shadow-sm hover:border-purple-300 transition">
-                    <div>
-                       <p className="font-bold text-slate-800 text-sm">{doc.name}</p>
-                       <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
-                       <Badge className={`mt-2 ${doc.status === 'verified' ? 'bg-emerald-100 text-emerald-800' : doc.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'} border-0`}>{doc.status}</Badge>
-                    </div>
-                    <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50 mb-2" onClick={() => {
-                        window.open(`/api/vault/document?email=${encodeURIComponent(viewClientDocs.email)}&docId=${encodeURIComponent(doc.id)}`, '_blank');
-                    }}>
-                       <Eye className="w-4 h-4 mr-2"/> View Document
-                    </Button>
-                    
-                    {doc.status === 'uploaded' && (
-                        <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
-                           <Input placeholder="Rejection reason..." className="h-8 text-xs bg-white" value={rejectReason[`${viewClientDocs.email}_${doc.id}`] || ''} onChange={e => setRejectReason({...rejectReason, [`${viewClientDocs.email}_${doc.id}`]: e.target.value})} />
-                           <div className="flex gap-2">
-                              <Button size="sm" onClick={() => openApprovalModal(viewClientDocs, doc)} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
-                              <Button size="sm" onClick={() => handleVerifyVaultDoc(viewClientDocs.email, doc.id, 'rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs"><XCircle className="w-3.5 h-3.5 mr-1"/> Reject</Button>
-                           </div>
-                        </div>
-                    )}
-                 </div>
-              ))
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-     <Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
-        <DialogContent className="sm:max-w-md border-0 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600"/> Approve & Save Document</DialogTitle>
-            <DialogDescription>Review the file name before saving it to the database and client's Google Drive.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-             <div><Label className="font-bold text-slate-700">Client Name</Label><Input type="text" value={approvalModal.clientName} disabled className="mt-1 bg-slate-50 text-slate-500" /></div>
-             <div><Label className="font-bold text-slate-700">File Name (Auto-Generated) *</Label><Input type="text" value={customFileName} onChange={e => setCustomFileName(e.target.value)} required className="mt-1 border-2 h-11" /></div>
-             
-             {duplicateWarning && (
-                <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex flex-col gap-2">
-                   <div className="flex items-center gap-2 text-amber-800 text-sm font-bold"><AlertTriangle className="w-4 h-4"/> {duplicateWarning}</div>
-                   <label className="flex items-center gap-2 text-sm cursor-pointer font-semibold text-amber-900 mt-1"><input type="checkbox" checked={overwriteDoc} onChange={e => setOverwriteDoc(e.target.checked)} className="w-4 h-4 accent-amber-600" /> Yes, replace the existing file.</label>
-                </div>
-             )}
-
-             <Button onClick={() => handleVerifyVaultDoc(approvalModal.email, approvalModal.docId, 'verified', customFileName, overwriteDoc)} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 mt-2 font-bold text-lg shadow-md" disabled={duplicateWarning && !overwriteDoc}>
-                Confirm & Save to Drive
-             </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <StationeryUploader
-        client={stationeryClient}
-        open={!!stationeryClient}
-        onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
-      />
     </div>
   );
 }
