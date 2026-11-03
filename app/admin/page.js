@@ -6,7 +6,6 @@ import { useServerDeskRole } from '@/components/DeskAuth';
 import { clearDeskBypass } from '@/lib/tab-handoff';
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
-import StationeryUploader from '@/components/StationeryUploader';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
 import BidReportDesk from '@/components/BidReportDesk';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
@@ -259,8 +258,6 @@ export default function AdminPage() {
     removeJob(job._id);
     setWfArchive((prev) => upsertJob(prev, { ...job, archive_reason: job.archive_reason || 'Lost' }));
   }, [removeJob]);
-
-  const [stationeryClient, setStationeryClient] = useState(null);
 
   // 🚀 Today's Live Scraped Tenders (text-only GeM hunter feed)
   const [liveScrapedTenders, setLiveScrapedTenders] = useState([]);
@@ -1039,7 +1036,7 @@ export default function AdminPage() {
     const sub = crmSubscription(client);
 
     return (
-    <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
+    <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition min-w-0 overflow-hidden">
        <div>
           <div className="flex justify-between items-start mb-2">
              <div>
@@ -1077,23 +1074,20 @@ export default function AdminPage() {
           </div>
        </div>
        
-       <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
+       <div className="flex flex-wrap items-stretch gap-2 mt-4 pt-4 border-t border-slate-100">
           {client.drive_folder_link || client.drive_link ? (
-             <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+             <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 min-w-[8.5rem] whitespace-nowrap text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
                 <Database className="w-4 h-4 mr-2" /> Open Drive
              </Button>
           ) : (
-             <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+             <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 min-w-[8.5rem] whitespace-nowrap text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
                 <Database className="w-4 h-4 mr-2" /> Sync Drive Space
              </Button>
           )}
-          <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
-             <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
-          </Button>
-          <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
+          <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 min-w-[8.5rem] whitespace-nowrap bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
              <LogIn className="w-4 h-4 mr-2" /> Login as Client
           </Button>
-          <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
+          <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none shrink-0 px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
              <Trash2 className="w-4 h-4" />
           </Button>
        </div>
@@ -2144,12 +2138,6 @@ export default function AdminPage() {
           </DialogContent>
         </Dialog>
 
-
-        <StationeryUploader
-          client={stationeryClient}
-          open={!!stationeryClient}
-          onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
-        />
 
         <GeminiWorkspace
           tenderId={isEditingTender || null}
