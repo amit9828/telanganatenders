@@ -25,6 +25,7 @@ import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPan
 import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations';
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
+import { canParticipate } from '@/lib/billing-access';
 import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, bidNumberError } from '@/lib/bid-number';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { currentHandler, jobDeadline } from '@/lib/tender-deadline';
@@ -93,7 +94,7 @@ function AdminDashboardSkeleton() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
-        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <Skeleton className="w-9 h-9 rounded-xl bg-white/10" />
             <div className="space-y-1.5">
@@ -104,7 +105,7 @@ function AdminDashboardSkeleton() {
           <Skeleton className="h-8 w-24 rounded-md bg-white/10 hidden sm:block" />
         </div>
       </header>
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <main className="w-full max-w-full px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i} className="border-0 ring-1 ring-slate-200/80 bg-white">
@@ -154,6 +155,14 @@ function crmSubscription(client, now = new Date()) {
     expired: (unlimited || payg) && expired,
     active: (unlimited || payg) && !expired,
   };
+}
+
+/** Paid means a live plan per canParticipate; a lapsed plan counts as Unpaid even when billing_paid is set. */
+function splitClientsByPlan(clients, now = new Date()) {
+  const paid = [];
+  const unpaid = [];
+  for (const client of clients || []) (canParticipate(client, now) ? paid : unpaid).push(client);
+  return { paid, unpaid };
 }
 
 const ADMIN_TABS = [
@@ -1031,10 +1040,80 @@ export default function AdminPage() {
     ] },
   ];
 
+  const { paid: paidClients, unpaid: unpaidClients } = splitClientsByPlan(approvedClients);
+
+  const renderClientCard = (client) => {
+    const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
+    const stats = client.crm_stats || {};
+    const sub = crmSubscription(client);
+
+    return (
+    <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
+       <div>
+          <div className="flex justify-between items-start mb-2">
+             <div>
+                <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
+                <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                {client.phone && (
+                  <div className="mt-1">
+                    <WhatsAppVerifiedBadge
+                      email={client.email}
+                      phone={client.phone}
+                      verified={client.whatsapp_verified === true}
+                      onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
+                    />
+                  </div>
+                )}
+             </div>
+             <Badge className={`border-0 h-fit ${client.billing_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{client.billing_paid ? 'Paid' : 'Unpaid'}</Badge>
+          </div>
+          <div className={`mt-4 rounded-lg border p-3 text-xs ${sub.expired ? 'border-red-200 bg-red-50/60' : sub.active ? 'border-blue-200 bg-blue-50/60' : 'border-slate-200 bg-slate-50'}`}>
+             <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] uppercase font-bold text-slate-500">Subscription</span>
+                {sub.expired ? <Badge className="border-0 bg-red-100 text-red-700 h-5 text-[10px]">Expired</Badge> : null}
+             </div>
+             <div className="grid grid-cols-3 gap-2">
+                <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Plan</span><span className="font-black text-[#0A2647]">{sub.plan}</span></div>
+                <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Bids</span><span className="font-semibold text-slate-700">{sub.bids}</span></div>
+                <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Validity</span><span className={`font-semibold ${sub.expired ? 'text-red-700' : 'text-slate-700'}`}>{sub.validTill}</span></div>
+             </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
+             <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{crmDate(stats.approved_at)}</span></div>
+             <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Participated</span><span className="font-black text-[#0A2647] text-sm">{Number(stats.participated) || 0}</span></div>
+             <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{Number(stats.won) || 0}</span></div>
+             <div className="col-span-3 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(Number(stats.revenue) || 0).toLocaleString('en-IN')}</span></div>
+          </div>
+       </div>
+       
+       <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
+          {client.drive_folder_link || client.drive_link ? (
+             <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                <Database className="w-4 h-4 mr-2" /> Open Drive
+             </Button>
+          ) : (
+             <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                <Database className="w-4 h-4 mr-2" /> Sync Drive Space
+             </Button>
+          )}
+          <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
+             <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
+          </Button>
+          <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
+             <LogIn className="w-4 h-4 mr-2" /> Login as Client
+          </Button>
+          <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
+             <Trash2 className="w-4 h-4" />
+          </Button>
+       </div>
+    </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
-        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
              <div>
                <h1 className="font-bold text-lg leading-tight tracking-wide">MD Command Center</h1>
@@ -1050,7 +1129,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <main className="w-full max-w-full px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 items-start">
         <DashboardNav groups={ADMIN_NAV_GROUPS} activeTab={activeTab} onChange={setActiveTab} title="MD Command Center" />
         <div className="flex-1 w-full min-w-0 space-y-4 sm:space-y-6">
@@ -1142,77 +1221,27 @@ export default function AdminPage() {
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Briefcase className="w-5 h-5 text-blue-600" /> Active Clients</CardTitle>
                  <CardDescription>Every client who completed a business profile, paid or not.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+              <CardContent className="pt-4 max-h-[80vh] overflow-y-auto">
                  {approvedClients.length === 0 ? (
                     <div className="text-center py-8 text-slate-400"><Users className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-semibold">No clients with a complete profile yet.</p></div>
                  ) : (
-                    <div className="grid xl:grid-cols-2 gap-4">
-                       {approvedClients.map(client => {
-                          const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                          const stats = client.crm_stats || {};
-                          const sub = crmSubscription(client);
-
-                          return (
-                          <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
-                             <div>
-                                <div className="flex justify-between items-start mb-2">
-                                   <div>
-                                      <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
-                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
-                                      {client.phone && (
-                                        <div className="mt-1">
-                                          <WhatsAppVerifiedBadge
-                                            email={client.email}
-                                            phone={client.phone}
-                                            verified={client.whatsapp_verified === true}
-                                            onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
-                                          />
-                                        </div>
-                                      )}
-                                   </div>
-                                   <Badge className={`border-0 h-fit ${client.billing_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{client.billing_paid ? 'Paid' : 'Unpaid'}</Badge>
-                                </div>
-                                <div className={`mt-4 rounded-lg border p-3 text-xs ${sub.expired ? 'border-red-200 bg-red-50/60' : sub.active ? 'border-blue-200 bg-blue-50/60' : 'border-slate-200 bg-slate-50'}`}>
-                                   <div className="flex items-center justify-between mb-2">
-                                      <span className="text-[9px] uppercase font-bold text-slate-500">Subscription</span>
-                                      {sub.expired ? <Badge className="border-0 bg-red-100 text-red-700 h-5 text-[10px]">Expired</Badge> : null}
-                                   </div>
-                                   <div className="grid grid-cols-3 gap-2">
-                                      <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Plan</span><span className="font-black text-[#0A2647]">{sub.plan}</span></div>
-                                      <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Bids</span><span className="font-semibold text-slate-700">{sub.bids}</span></div>
-                                      <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Validity</span><span className={`font-semibold ${sub.expired ? 'text-red-700' : 'text-slate-700'}`}>{sub.validTill}</span></div>
-                                   </div>
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{crmDate(stats.approved_at)}</span></div>
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Participated</span><span className="font-black text-[#0A2647] text-sm">{Number(stats.participated) || 0}</span></div>
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{Number(stats.won) || 0}</span></div>
-                                   <div className="col-span-3 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(Number(stats.revenue) || 0).toLocaleString('en-IN')}</span></div>
-                                </div>
-                             </div>
-                             
-                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
-                                {client.drive_folder_link || client.drive_link ? (
-                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> Open Drive
-                                   </Button>
-                                ) : (
-                                   <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> Sync Drive Space
-                                   </Button>
-                                )}
-                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
-                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
-                                </Button>
-                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
-                                   <LogIn className="w-4 h-4 mr-2" /> Login as Client
-                                </Button>
-                                <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
-                                   <Trash2 className="w-4 h-4" />
-                                </Button>
-                             </div>
-                          </div>
-                       )})}
+                    <div className="space-y-6">
+                       <section>
+                          <h3 className="flex items-center gap-2 mb-3 font-black text-emerald-700 text-sm uppercase tracking-wide"><CheckCircle2 className="w-4 h-4" /> Paid Clients <Badge className="border-0 bg-emerald-100 text-emerald-800 h-5 text-[10px]">{paidClients.length}</Badge></h3>
+                          {paidClients.length === 0 ? (
+                             <p className="text-xs text-slate-400 font-semibold py-4 text-center border border-dashed rounded-lg">No clients with an active plan.</p>
+                          ) : (
+                             <div className="grid xl:grid-cols-2 2xl:grid-cols-3 gap-4">{paidClients.map(renderClientCard)}</div>
+                          )}
+                       </section>
+                       <section>
+                          <h3 className="flex items-center gap-2 mb-3 font-black text-slate-600 text-sm uppercase tracking-wide"><AlertTriangle className="w-4 h-4 text-amber-500" /> Unpaid Clients <Badge className="border-0 bg-slate-100 text-slate-600 h-5 text-[10px]">{unpaidClients.length}</Badge></h3>
+                          {unpaidClients.length === 0 ? (
+                             <p className="text-xs text-slate-400 font-semibold py-4 text-center border border-dashed rounded-lg">Every client has an active plan.</p>
+                          ) : (
+                             <div className="grid xl:grid-cols-2 2xl:grid-cols-3 gap-4">{unpaidClients.map(renderClientCard)}</div>
+                          )}
+                       </section>
                     </div>
                  )}
               </CardContent>

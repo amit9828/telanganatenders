@@ -33,6 +33,7 @@ import {
   Landmark, Search, ArrowLeft
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
+import { canParticipate, PLAN_BLOCK_MESSAGE } from '@/lib/billing-access';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
 import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
 import { openClientWorkflowFile } from '@/components/workflow/api';
@@ -837,7 +838,13 @@ export default function ClientDashboard() {
     }
   };
 
+  const planActive = canParticipate(userData);
+
   const handleAcceptWorkflowJob = async (job) => {
+    if (!canParticipate(userData)) {
+      toast.error(PLAN_BLOCK_MESSAGE);
+      return;
+    }
     if (job.quotation_required && !job.quotation?.name) {
       setQuotationFile(null);
       setQuotationJob(job);
@@ -849,6 +856,10 @@ export default function ClientDashboard() {
   const uploadQuotationAndApprove = async () => {
     const job = quotationJob;
     if (!job) return;
+    if (!canParticipate(userData)) {
+      toast.error(PLAN_BLOCK_MESSAGE);
+      return;
+    }
     if (!quotationFile) {
       toast.error('Please upload the required quotation to proceed.');
       return;
@@ -1745,6 +1756,13 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                 <CardDescription>Handpicked high-probability tenders assigned by your MD/Operations Officer.</CardDescription>
               </CardHeader>
               <CardContent className="p-5">
+                 {userData && !planActive && workflowJobs.some(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval') && (
+                    <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+                      <AlertTriangle className="w-5 h-5 shrink-0 text-red-600" />
+                      <p className="text-sm font-semibold flex-1">{PLAN_BLOCK_MESSAGE}</p>
+                      <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => setActiveTab('store')}>Recharge / Renew</Button>
+                    </div>
+                 )}
                  {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length > 0 ? (
                     <div className="grid md:grid-cols-2 gap-4">
                       {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').map((job) => (
@@ -1753,7 +1771,7 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                           job={job}
                           actions={[
                             ...clientWorkflowDocActions(job),
-                            { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
+                            { label: 'Public In Progress', variant: 'default', disabled: !planActive, onClick: () => handleAcceptWorkflowJob(job) },
                             { label: 'Reject', onClick: () => handleRejectWorkflowJob(job) },
                           ]}
                         />
