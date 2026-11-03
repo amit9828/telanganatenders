@@ -351,7 +351,7 @@ export default function StaffOpsDesk({ desk }) {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="navy-gradient text-white sticky top-0 z-30 shadow-lg">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div>
               <h1 className="font-bold text-lg">{isGm ? 'GM Desk' : 'Doc Team TL Desk'}</h1>
@@ -364,7 +364,7 @@ export default function StaffOpsDesk({ desk }) {
           </div>
         </div>
       </header>
-      <main className="container mx-auto px-4 py-6">
+      <main className="w-full max-w-full px-4 py-6">
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           <DashboardNav groups={groups} activeTab={activeTab} onChange={setActiveTab} title={isGm ? 'GM' : 'TL'} />
           <div className="flex-1 min-w-0">
@@ -435,46 +435,42 @@ export default function StaffOpsDesk({ desk }) {
               )}
               {isTl && (
                 <TabsContent value="publisher" className="space-y-6">
-                  <div className="grid lg:grid-cols-5 gap-6">
-                    <div className="lg:col-span-2 space-y-4">
-                      <CreatePublishTaskForm
-                        actorDesk="tl"
-                        actorEmpId={selfId}
-                        members={members}
-                        onCreated={patchJob}
-                      />
-                      <PublishTenderForm
-                        awaitingJobs={awaitingPublish}
-                        editTender={editTender}
-                        onCancelEdit={() => setEditTender(null)}
-                        onPublished={(published) => {
-                          setEditTender(null);
-                          if (published?.job) patchJob(published.job);
-                          const tender = published?.tender || (published?.id ? { ...published, _id: published.id } : null);
-                          if (tender?._id || tender?.id) {
-                            setTenders((prev) => upsertJob(prev, tender));
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className="lg:col-span-3">
-                      <LiveTendersPaged
-                        tenders={tenders}
-                        pdfEmail={staffEmail}
-                        pdfRole="employee"
-                        renderActions={(t) => (
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleEditTender(t)}>
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDeleteTender(t._id || t.id)}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                      />
-                    </div>
+                  <div className="grid lg:grid-cols-2 gap-6 items-start">
+                    <CreatePublishTaskForm
+                      actorDesk="tl"
+                      actorEmpId={selfId}
+                      members={members}
+                      onCreated={patchJob}
+                    />
+                    <PublishTenderForm
+                      awaitingJobs={awaitingPublish}
+                      editTender={editTender}
+                      onCancelEdit={() => setEditTender(null)}
+                      onPublished={(published) => {
+                        setEditTender(null);
+                        if (published?.job) patchJob(published.job);
+                        const tender = published?.tender || (published?.id ? { ...published, _id: published.id } : null);
+                        if (tender?._id || tender?.id) {
+                          setTenders((prev) => upsertJob(prev, tender));
+                        }
+                      }}
+                    />
                   </div>
+                  <LiveTendersPaged
+                    tenders={tenders}
+                    pdfEmail={staffEmail}
+                    pdfRole="employee"
+                    renderActions={(t) => (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleEditTender(t)}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDeleteTender(t._id || t.id)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  />
                   <OperationsStoragePanel clients={clients} uploadedBy={staffEmail || selfId} />
                 </TabsContent>
               )}

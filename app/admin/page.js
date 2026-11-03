@@ -30,6 +30,7 @@ import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, bidNumberError } from
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { currentHandler, jobDeadline } from '@/lib/tender-deadline';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile } from '@/components/workflow/api';
+import TenderPager, { pageSlice } from '@/components/workflow/TenderPager';
 import {
   applyJobToBoard,
   belongsOnInternal,
@@ -65,7 +66,7 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight, Bot, BellRing, Archive
+  Bot, BellRing, Archive
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -219,9 +220,7 @@ export default function AdminPage() {
   const [pdfName, setPdfName] = useState('');
   const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState('');
-  // 🚀 Pagination for the Published Tenders list (20 per page)
   const [tenderPage, setTenderPage] = useState(1);
-  const tendersPerPage = 10;
   const tendersListRef = useRef(null);
 
   // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
@@ -986,15 +985,7 @@ export default function AdminPage() {
     : livePublished.filter((t) =>
         [t.bid_no, t.title, t.department].some((v) => String(v || '').toLowerCase().includes(tenderNeedle))
       );
-  // 🚀 Pagination: slice filteredTenders into pages of `tendersPerPage`
-  const totalTenderPages = Math.max(1, Math.ceil(filteredTenders.length / tendersPerPage));
-  const paginatedTenders = filteredTenders.slice((tenderPage - 1) * tendersPerPage, tenderPage * tendersPerPage);
-  const goToTenderPage = (page) => {
-    const safePage = Math.min(Math.max(1, page), totalTenderPages);
-    setTenderPage(safePage);
-    // Smoothly scroll the (internally scrollable) tenders list back to the top
-    tendersListRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const { slice: paginatedTenders, safePage: safeTenderPage, totalPages: totalTenderPages } = pageSlice(filteredTenders, tenderPage);
 
   // Grouped nav (Enterprise UI/UX Blueprint, section A) — replaces the old single-row
   // flat TabsList (10 tabs wrapping into 2-3 ragged rows) with a left rail on desktop
@@ -1919,7 +1910,7 @@ export default function AdminPage() {
             </Card>
 
             <div className="grid gap-4 sm:gap-6 mt-6">
-              <Card className="lg:col-span-3 tender-shadow">
+              <Card ref={tendersListRef} className="w-full tender-shadow scroll-mt-20">
                 <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                    <div>
                       <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
@@ -1929,7 +1920,7 @@ export default function AdminPage() {
                       <Input placeholder="Search Bid No or Title..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full bg-white shadow-sm text-xs" />
                    </div>
                 </CardHeader>
-                <CardContent ref={tendersListRef} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                <CardContent className="space-y-4">
                   {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
                   {paginatedTenders.map((t) => (
                     <div
@@ -1974,32 +1965,7 @@ export default function AdminPage() {
                     </div>
                   ))}
 
-                  {/* 🚀 Pagination Controls (20 per page) */}
-                  {totalTenderPages > 1 && (
-                    <div className="flex items-center justify-center gap-4 pt-2 pb-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToTenderPage(tenderPage - 1)}
-                        disabled={tenderPage === 1}
-                        className="border-2 font-bold text-slate-600 disabled:opacity-40"
-                      >
-                        <ChevronLeft className="w-4 h-4 mr-1" /> Previous
-                      </Button>
-                      <span className="text-xs font-black text-[#0A2647] whitespace-nowrap">
-                        Page {tenderPage} of {totalTenderPages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToTenderPage(tenderPage + 1)}
-                        disabled={tenderPage === totalTenderPages}
-                        className="border-2 font-bold text-slate-600 disabled:opacity-40"
-                      >
-                        Next <ChevronRight className="w-4 h-4 ml-1" />
-                      </Button>
-                    </div>
-                  )}
+                  <TenderPager page={safeTenderPage} totalPages={totalTenderPages} onChange={setTenderPage} scrollRef={tendersListRef} />
                 </CardContent>
               </Card>
             </div>

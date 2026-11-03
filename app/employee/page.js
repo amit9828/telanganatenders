@@ -28,6 +28,7 @@ import {
   SUBMITTED_BOARD_STATUSES,
 } from '@/lib/job-board-state';
 import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
+import TenderPager, { pageSlice } from '@/components/workflow/TenderPager';
 import { consumeStaffBypass, openClientBypass, rememberRealStaffIdent } from '@/lib/tab-handoff';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -108,6 +109,7 @@ export default function EmployeeDashboard() {
   const [wfJobs, setWfJobs] = useState([]);
   const [wfWinning, setWfWinning] = useState([]);
   const activeTabRef = useRef(activeTab);
+  const tendersListRef = useRef(null);
   activeTabRef.current = activeTab;
   useStaffPresence(activeTab, { enabled: Boolean(email) });
 
@@ -627,9 +629,7 @@ export default function EmployeeDashboard() {
     : livePublished.filter((t) =>
         [t.bid_no, t.title].some((v) => String(v || '').toLowerCase().includes(tenderNeedle))
       );
-  const empTenderPages = Math.max(1, Math.ceil(filteredTenders.length / 10));
-  const safeTenderPage = Math.min(tenderPage, empTenderPages);
-  const pagedTenders = filteredTenders.slice((safeTenderPage - 1) * 10, safeTenderPage * 10);
+  const { slice: pagedTenders, safePage: safeTenderPage, totalPages: empTenderPages } = pageSlice(filteredTenders, tenderPage);
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
@@ -663,7 +663,7 @@ export default function EmployeeDashboard() {
 return (
     <div className="min-h-screen bg-slate-50">
       <header className="navy-gradient border-b border-white/10 sticky top-0 z-30 shadow-lg text-white">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
              <div>
                <h1 className="font-bold text-lg leading-tight">Operations Desk</h1>
@@ -1128,8 +1128,6 @@ return (
           </TabsContent>
 
           <TabsContent value="publisher" className="w-full space-y-6">
-            <div className="grid lg:grid-cols-5 gap-6">
-               <div className="lg:col-span-2">
                  <PublishTenderForm
                    awaitingJobs={wfJobs.filter((j) => j.status === 'AWAITING_PUBLISH')}
                    editTender={isEditingTender}
@@ -1139,8 +1137,7 @@ return (
                      fetchLiveOperationsData(email);
                    }}
                  />
-               </div>
-               <Card className="lg:col-span-3 tender-shadow self-start">
+               <Card ref={tendersListRef} className="w-full tender-shadow scroll-mt-20">
                  <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                     <div>
                        <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
@@ -1178,14 +1175,9 @@ return (
                         </div>
                       </div>
                     ))}
-                    <div className="flex items-center justify-center gap-3 pt-2">
-                      <Button variant="outline" size="sm" disabled={safeTenderPage === 1} onClick={() => setTenderPage(safeTenderPage - 1)}>Previous</Button>
-                      <span className="text-xs font-bold">Page {safeTenderPage} of {empTenderPages}</span>
-                      <Button variant="outline" size="sm" disabled={safeTenderPage === empTenderPages} onClick={() => setTenderPage(safeTenderPage + 1)}>Next</Button>
-                    </div>
+                    <TenderPager page={safeTenderPage} totalPages={empTenderPages} onChange={setTenderPage} scrollRef={tendersListRef} />
                  </CardContent>
                </Card>
-            </div>
 
             <OperationsStoragePanel clients={approvedClients} uploadedBy={email} />
           </TabsContent>
