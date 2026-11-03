@@ -41,8 +41,7 @@ function monthLabelFromIndex(index) {
   return `${MONTH_NAMES[index % 12]} ${Math.floor(index / 12)}`;
 }
 
-function BreakdownCard({ code, label, value, previous, compare }) {
-  const diff = compare && previous != null ? value - previous : null;
+function BreakdownCard({ code, label, value }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
@@ -50,14 +49,6 @@ function BreakdownCard({ code, label, value, previous, compare }) {
         {label}
       </div>
       <div className="mt-1 text-2xl font-black text-[#0A2647]">{value}</div>
-      {diff != null ? (
-        <div className="mt-0.5 text-[11px] text-slate-500">
-          Last month {previous}
-          <span className={`ml-1.5 font-bold ${diff > 0 ? 'text-emerald-600' : diff < 0 ? 'text-red-600' : 'text-slate-500'}`}>
-            {diff > 0 ? `+${diff}` : diff}
-          </span>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -241,17 +232,18 @@ export default function MasterReports({
           </div>
         </CardHeader>
         <CardContent className="pt-4 space-y-4">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {BREAKDOWN.map((item) => (
-              <BreakdownCard
-                key={item.key}
-                code={item.code}
-                label={item.label}
-                value={report ? breakdown[item.key] ?? 0 : '—'}
-                previous={comparison?.breakdown?.[item.key] ?? null}
-                compare={Boolean(comparison) && Boolean(report)}
-              />
-            ))}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Live, Submitted Board (all time)</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {BREAKDOWN.map((item) => (
+                <BreakdownCard
+                  key={item.key}
+                  code={item.code}
+                  label={item.label}
+                  value={report ? breakdown[item.key] ?? 0 : '—'}
+                />
+              ))}
+            </div>
           </div>
           {chartRows.length === 0 ? (
             <p className="text-center text-sm text-slate-400 py-6">No submission data for this range.</p>

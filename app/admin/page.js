@@ -6,7 +6,6 @@ import { useServerDeskRole } from '@/components/DeskAuth';
 import { clearDeskBypass } from '@/lib/tab-handoff';
 import { BrandMark, invalidateSettingsCache } from '@/components/BrandLogo';
 import GeminiWorkspace from '@/components/GeminiWorkspace';
-import StationeryUploader from '@/components/StationeryUploader';
 import CopilotTrainDropzone from '@/components/CopilotTrainDropzone';
 import BidReportDesk from '@/components/BidReportDesk';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
@@ -25,10 +24,12 @@ import TeamDirectoryPanel, { openStaffDesk } from '@/components/TeamDirectoryPan
 import { deskPathForStaff, DESIGNATIONS, staffRoleOf } from '@/lib/designations';
 import { openStaffBypass, openClientBypass } from '@/lib/tab-handoff';
 import { formatINR } from '@/lib/format';
+import { canParticipate } from '@/lib/billing-access';
 import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, bidNumberError } from '@/lib/bid-number';
 import { liveTendersOnly } from '@/lib/tender-sort';
 import { currentHandler, jobDeadline } from '@/lib/tender-deadline';
 import { workflowFetch, fetchWorkflowQueue, openWorkflowFile } from '@/components/workflow/api';
+import TenderPager, { pageSlice } from '@/components/workflow/TenderPager';
 import {
   applyJobToBoard,
   belongsOnInternal,
@@ -64,7 +65,7 @@ import {
   Activity, BarChart3, EyeOff, UserCog, MapPin, LogIn, UploadCloud, 
   PhoneCall, Database, Wallet, ArrowDownRight, ArrowUpRight, FileUp, Pencil, 
   FolderPlus, RefreshCw, Trophy, X, XCircle, MonitorPlay, Search, AlertTriangle, Building2, PenTool, Usercog, Globe,
-  ChevronLeft, ChevronRight, Bot, BellRing, Archive
+  Bot, BellRing, Archive
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -93,7 +94,7 @@ function AdminDashboardSkeleton() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
-        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <Skeleton className="w-9 h-9 rounded-xl bg-white/10" />
             <div className="space-y-1.5">
@@ -104,7 +105,7 @@ function AdminDashboardSkeleton() {
           <Skeleton className="h-8 w-24 rounded-md bg-white/10 hidden sm:block" />
         </div>
       </header>
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <main className="w-full max-w-full px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i} className="border-0 ring-1 ring-slate-200/80 bg-white">
@@ -126,6 +127,42 @@ function AdminDashboardSkeleton() {
       </main>
     </div>
   );
+}
+
+function crmDate(value) {
+  if (!value) return '--';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '--';
+  const parts = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).formatToParts(d);
+  const pick = (type) => parts.find((p) => p.type === type)?.value || '';
+  return `${pick('day')}-${pick('month')}-${pick('year')}`;
+}
+
+/** Plan, bid balance, and validity for a CRM card, from the billing fields on the user. */
+function crmSubscription(client, now = new Date()) {
+  const unlimited = client?.subscription?.planType === 'UNLIMITED';
+  const payg = !unlimited && (client?.subscription?.planType === 'CUSTOM_BIDS' || Number(client?.bid_purchased) > 0 || Number(client?.bid_balance) > 0);
+  const until = unlimited ? client?.subscription?.expires_at : payg ? client?.bid_expiry : null;
+  const untilDate = until ? new Date(until) : null;
+  const expired = Boolean(untilDate && !Number.isNaN(untilDate.getTime()) && untilDate <= now)
+    || (unlimited && client?.subscription?.status !== 'active');
+  const remaining = expired ? 0 : Math.max(0, Number(client?.bid_balance) || 0);
+  const bought = Math.max(0, Number(client?.bid_purchased) || 0);
+  return {
+    plan: unlimited ? 'Unlimited' : payg ? 'Pay-as-you-go' : 'No plan',
+    bids: unlimited ? 'Bids: Unlimited' : payg ? `Bids Remaining: ${remaining}${bought > 0 ? ` / ${bought}` : ''}` : 'Bids: --',
+    validTill: until ? `Valid till: ${crmDate(until)}` : 'Valid till: --',
+    expired: (unlimited || payg) && expired,
+    active: (unlimited || payg) && !expired,
+  };
+}
+
+/** Paid means a live plan per canParticipate; a lapsed plan counts as Unpaid even when billing_paid is set. */
+function splitClientsByPlan(clients, now = new Date()) {
+  const paid = [];
+  const unpaid = [];
+  for (const client of clients || []) (canParticipate(client, now) ? paid : unpaid).push(client);
+  return { paid, unpaid };
 }
 
 const ADMIN_TABS = [
@@ -182,9 +219,7 @@ export default function AdminPage() {
   const [pdfName, setPdfName] = useState('');
   const [isEditingTender, setIsEditingTender] = useState(null);
   const [tenderSearch, setTenderSearch] = useState('');
-  // 🚀 Pagination for the Published Tenders list (20 per page)
   const [tenderPage, setTenderPage] = useState(1);
-  const tendersPerPage = 10;
   const tendersListRef = useRef(null);
 
   // === దీని కింద పేస్ట్ చెయ్ (పాత కోడ్) ===
@@ -223,8 +258,6 @@ export default function AdminPage() {
     removeJob(job._id);
     setWfArchive((prev) => upsertJob(prev, { ...job, archive_reason: job.archive_reason || 'Lost' }));
   }, [removeJob]);
-
-  const [stationeryClient, setStationeryClient] = useState(null);
 
   // 🚀 Today's Live Scraped Tenders (text-only GeM hunter feed)
   const [liveScrapedTenders, setLiveScrapedTenders] = useState([]);
@@ -312,7 +345,7 @@ export default function AdminPage() {
       if (want.has('tenders')) tasks.tenders = safeFetch(`/api/tenders?t=${stamp}`);
       if (want.has('stats')) tasks.stats = safeFetch(`/api/admin/stats?t=${stamp}`);
       if (want.has('tickets')) tasks.tickets = safeFetch(`/api/tickets?role=admin&t=${stamp}`);
-      if (want.has('clients')) tasks.clients = safeFetch(`/api/users/approved?t=${stamp}`);
+      if (want.has('clients')) tasks.clients = safeFetch(`/api/users/approved?crm=1&t=${stamp}`);
       if (want.has('dispatches')) tasks.dispatches = safeFetch(`/api/dispatches?t=${stamp}`);
       if (want.has('employees')) tasks.employees = safeFetch(`/api/employees?t=${stamp}`);
       if (want.has('ledger')) tasks.ledger = safeFetch(`/api/finance/ledger?t=${stamp}`);
@@ -949,15 +982,7 @@ export default function AdminPage() {
     : livePublished.filter((t) =>
         [t.bid_no, t.title, t.department].some((v) => String(v || '').toLowerCase().includes(tenderNeedle))
       );
-  // 🚀 Pagination: slice filteredTenders into pages of `tendersPerPage`
-  const totalTenderPages = Math.max(1, Math.ceil(filteredTenders.length / tendersPerPage));
-  const paginatedTenders = filteredTenders.slice((tenderPage - 1) * tendersPerPage, tenderPage * tendersPerPage);
-  const goToTenderPage = (page) => {
-    const safePage = Math.min(Math.max(1, page), totalTenderPages);
-    setTenderPage(safePage);
-    // Smoothly scroll the (internally scrollable) tenders list back to the top
-    tendersListRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const { slice: paginatedTenders, safePage: safeTenderPage, totalPages: totalTenderPages } = pageSlice(filteredTenders, tenderPage);
 
   // Grouped nav (Enterprise UI/UX Blueprint, section A) — replaces the old single-row
   // flat TabsList (10 tabs wrapping into 2-3 ragged rows) with a left rail on desktop
@@ -1003,10 +1028,77 @@ export default function AdminPage() {
     ] },
   ];
 
+  const { paid: paidClients, unpaid: unpaidClients } = splitClientsByPlan(approvedClients);
+
+  const renderClientCard = (client) => {
+    const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
+    const stats = client.crm_stats || {};
+    const sub = crmSubscription(client);
+
+    return (
+    <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition min-w-0 overflow-hidden">
+       <div>
+          <div className="flex justify-between items-start mb-2">
+             <div>
+                <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
+                <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
+                {client.phone && (
+                  <div className="mt-1">
+                    <WhatsAppVerifiedBadge
+                      email={client.email}
+                      phone={client.phone}
+                      verified={client.whatsapp_verified === true}
+                      onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
+                    />
+                  </div>
+                )}
+             </div>
+             <Badge className={`border-0 h-fit ${client.billing_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{client.billing_paid ? 'Paid' : 'Unpaid'}</Badge>
+          </div>
+          <div className={`mt-4 rounded-lg border p-3 text-xs ${sub.expired ? 'border-red-200 bg-red-50/60' : sub.active ? 'border-blue-200 bg-blue-50/60' : 'border-slate-200 bg-slate-50'}`}>
+             <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] uppercase font-bold text-slate-500">Subscription</span>
+                {sub.expired ? <Badge className="border-0 bg-red-100 text-red-700 h-5 text-[10px]">Expired</Badge> : null}
+             </div>
+             <div className="grid grid-cols-3 gap-2">
+                <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Plan</span><span className="font-black text-[#0A2647]">{sub.plan}</span></div>
+                <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Bids</span><span className="font-semibold text-slate-700">{sub.bids}</span></div>
+                <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Validity</span><span className={`font-semibold ${sub.expired ? 'text-red-700' : 'text-slate-700'}`}>{sub.validTill}</span></div>
+             </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
+             <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{crmDate(stats.approved_at)}</span></div>
+             <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Participated</span><span className="font-black text-[#0A2647] text-sm">{Number(stats.participated) || 0}</span></div>
+             <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{Number(stats.won) || 0}</span></div>
+             <div className="col-span-3 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{(Number(stats.revenue) || 0).toLocaleString('en-IN')}</span></div>
+          </div>
+       </div>
+       
+       <div className="flex flex-wrap items-stretch gap-2 mt-4 pt-4 border-t border-slate-100">
+          {client.drive_folder_link || client.drive_link ? (
+             <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 min-w-[8.5rem] whitespace-nowrap text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                <Database className="w-4 h-4 mr-2" /> Open Drive
+             </Button>
+          ) : (
+             <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 min-w-[8.5rem] whitespace-nowrap text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
+                <Database className="w-4 h-4 mr-2" /> Sync Drive Space
+             </Button>
+          )}
+          <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 min-w-[8.5rem] whitespace-nowrap bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
+             <LogIn className="w-4 h-4 mr-2" /> Login as Client
+          </Button>
+          <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none shrink-0 px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
+             <Trash2 className="w-4 h-4" />
+          </Button>
+       </div>
+    </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <header className="navy-gradient text-white border-b border-white/10 sticky top-0 z-40 shadow-lg">
-        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
              <div>
                <h1 className="font-bold text-lg leading-tight tracking-wide">MD Command Center</h1>
@@ -1022,7 +1114,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <main className="w-full max-w-full px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 items-start">
         <DashboardNav groups={ADMIN_NAV_GROUPS} activeTab={activeTab} onChange={setActiveTab} title="MD Command Center" />
         <div className="flex-1 w-full min-w-0 space-y-4 sm:space-y-6">
@@ -1114,65 +1206,27 @@ export default function AdminPage() {
                  <CardTitle className="flex items-center gap-2 text-[#0A2647] text-lg"><Briefcase className="w-5 h-5 text-blue-600" /> Active Clients</CardTitle>
                  <CardDescription>Every client who completed a business profile, paid or not.</CardDescription>
               </CardHeader>
-              <CardContent className="pt-4 max-h-[600px] overflow-y-auto">
+              <CardContent className="pt-4 max-h-[80vh] overflow-y-auto">
                  {approvedClients.length === 0 ? (
                     <div className="text-center py-8 text-slate-400"><Users className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-semibold">No clients with a complete profile yet.</p></div>
                  ) : (
-                    <div className="grid xl:grid-cols-2 gap-4">
-                       {approvedClients.map(client => {
-                          const safeId = client?.email ? `CLI-${client.email.substring(0,4).toUpperCase()}X` : 'CLI-XXXX';
-                          const wonBidsCount = client.bids ? client.bids.filter(b => b.status === 'Won').length : (client.stats?.won || 0);
-                          const totalRevenue = client.payments ? client.payments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (Number(p.amount) || 0), 0) : (client.stats?.total_paid || 0);
-
-                          return (
-                          <div key={client._id} className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition">
-                             <div>
-                                <div className="flex justify-between items-start mb-2">
-                                   <div>
-                                      <h4 className="font-black text-[#0A2647] text-lg">{client.company_name || client.name || 'Unnamed Client'}</h4>
-                                      <p className="text-[10px] text-slate-500 font-mono tracking-widest">{client.client_id || safeId} • {client.email}</p>
-                                      {client.phone && (
-                                        <div className="mt-1">
-                                          <WhatsAppVerifiedBadge
-                                            email={client.email}
-                                            phone={client.phone}
-                                            verified={client.whatsapp_verified === true}
-                                            onChanged={(v) => setApprovedClients(prev => prev.map(c => c.email === client.email ? { ...c, whatsapp_verified: v } : c))}
-                                          />
-                                        </div>
-                                      )}
-                                   </div>
-                                   <Badge className={`border-0 h-fit ${client.billing_paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{client.billing_paid ? 'Paid' : 'Unpaid'}</Badge>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 my-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 shadow-inner">
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Approved Date</span><span className="font-semibold text-slate-700">{client.approved_at ? new Date(client.approved_at).toLocaleDateString() : '--'}</span></div>
-                                   <div><span className="text-slate-400 block text-[9px] uppercase font-bold">Total Bids Won</span><span className="font-black text-emerald-600 text-sm">{wonBidsCount}</span></div>
-                                   <div className="col-span-2 border-t border-slate-200 pt-2 mt-1 flex justify-between items-center"><span className="text-slate-500 uppercase font-bold text-[10px]">Total Revenue</span><span className="font-black text-emerald-700 text-lg">₹{totalRevenue.toLocaleString()}</span></div>
-                                </div>
-                             </div>
-                             
-                             <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
-                                {client.drive_folder_link || client.drive_link ? (
-                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> Open Drive
-                                   </Button>
-                                ) : (
-                                   <Button size="sm" onClick={() => handleSyncDrive(client.email, client.company_name || client.name)} variant="outline" className="flex-1 text-amber-600 border-amber-200 hover:bg-amber-50 h-9">
-                                      <Database className="w-4 h-4 mr-2" /> Sync Drive Space
-                                   </Button>
-                                )}
-                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
-                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
-                                </Button>
-                                <Button size="sm" onClick={() => impersonateUser('client', client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9 shadow-sm">
-                                   <LogIn className="w-4 h-4 mr-2" /> Login as Client
-                                </Button>
-                                <Button size="sm" onClick={() => deleteClientPermanently(client.email)} variant="outline" className="flex-none px-3 text-red-600 border-red-200 hover:bg-red-50 h-9 shadow-sm" title="Delete Permanently">
-                                   <Trash2 className="w-4 h-4" />
-                                </Button>
-                             </div>
-                          </div>
-                       )})}
+                    <div className="space-y-6">
+                       <section>
+                          <h3 className="flex items-center gap-2 mb-3 font-black text-emerald-700 text-sm uppercase tracking-wide"><CheckCircle2 className="w-4 h-4" /> Paid Clients <Badge className="border-0 bg-emerald-100 text-emerald-800 h-5 text-[10px]">{paidClients.length}</Badge></h3>
+                          {paidClients.length === 0 ? (
+                             <p className="text-xs text-slate-400 font-semibold py-4 text-center border border-dashed rounded-lg">No clients with an active plan.</p>
+                          ) : (
+                             <div className="grid xl:grid-cols-2 2xl:grid-cols-3 gap-4">{paidClients.map(renderClientCard)}</div>
+                          )}
+                       </section>
+                       <section>
+                          <h3 className="flex items-center gap-2 mb-3 font-black text-slate-600 text-sm uppercase tracking-wide"><AlertTriangle className="w-4 h-4 text-amber-500" /> Unpaid Clients <Badge className="border-0 bg-slate-100 text-slate-600 h-5 text-[10px]">{unpaidClients.length}</Badge></h3>
+                          {unpaidClients.length === 0 ? (
+                             <p className="text-xs text-slate-400 font-semibold py-4 text-center border border-dashed rounded-lg">Every client has an active plan.</p>
+                          ) : (
+                             <div className="grid xl:grid-cols-2 2xl:grid-cols-3 gap-4">{unpaidClients.map(renderClientCard)}</div>
+                          )}
+                       </section>
                     </div>
                  )}
               </CardContent>
@@ -1850,7 +1904,7 @@ export default function AdminPage() {
             </Card>
 
             <div className="grid gap-4 sm:gap-6 mt-6">
-              <Card className="lg:col-span-3 tender-shadow">
+              <Card ref={tendersListRef} className="w-full tender-shadow scroll-mt-20">
                 <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                    <div>
                       <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
@@ -1860,7 +1914,7 @@ export default function AdminPage() {
                       <Input placeholder="Search Bid No or Title..." value={tenderSearch} onChange={e=>setTenderSearch(e.target.value)} className="pl-9 h-9 w-full bg-white shadow-sm text-xs" />
                    </div>
                 </CardHeader>
-                <CardContent ref={tendersListRef} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                <CardContent className="space-y-4">
                   {filteredTenders.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No matching tenders found.</p>}
                   {paginatedTenders.map((t) => (
                     <div
@@ -1905,32 +1959,7 @@ export default function AdminPage() {
                     </div>
                   ))}
 
-                  {/* 🚀 Pagination Controls (20 per page) */}
-                  {totalTenderPages > 1 && (
-                    <div className="flex items-center justify-center gap-4 pt-2 pb-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToTenderPage(tenderPage - 1)}
-                        disabled={tenderPage === 1}
-                        className="border-2 font-bold text-slate-600 disabled:opacity-40"
-                      >
-                        <ChevronLeft className="w-4 h-4 mr-1" /> Previous
-                      </Button>
-                      <span className="text-xs font-black text-[#0A2647] whitespace-nowrap">
-                        Page {tenderPage} of {totalTenderPages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => goToTenderPage(tenderPage + 1)}
-                        disabled={tenderPage === totalTenderPages}
-                        className="border-2 font-bold text-slate-600 disabled:opacity-40"
-                      >
-                        Next <ChevronRight className="w-4 h-4 ml-1" />
-                      </Button>
-                    </div>
-                  )}
+                  <TenderPager page={safeTenderPage} totalPages={totalTenderPages} onChange={setTenderPage} scrollRef={tendersListRef} />
                 </CardContent>
               </Card>
             </div>
@@ -2109,12 +2138,6 @@ export default function AdminPage() {
           </DialogContent>
         </Dialog>
 
-
-        <StationeryUploader
-          client={stationeryClient}
-          open={!!stationeryClient}
-          onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
-        />
 
         <GeminiWorkspace
           tenderId={isEditingTender || null}

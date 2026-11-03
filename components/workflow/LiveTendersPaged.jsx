@@ -1,12 +1,13 @@
 'use client';
 
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, Clock, Search, FileText } from 'lucide-react';
-import { numberedPageList, staffPdfHref } from '@/components/workflow/api';
+import { Clock, Search, FileText } from 'lucide-react';
+import { staffPdfHref } from '@/components/workflow/api';
+import TenderPager, { TENDERS_PER_PAGE, pageSlice } from '@/components/workflow/TenderPager';
 import { liveTendersOnly } from '@/lib/tender-sort';
 
 function fmtDate(value) {
@@ -17,7 +18,7 @@ function fmtDate(value) {
 
 function LiveTendersPaged({
   tenders = [],
-  pageSize = 10,
+  pageSize = TENDERS_PER_PAGE,
   renderActions,
   onViewPdf,
   pdfEmail,
@@ -33,10 +34,8 @@ function LiveTendersPaged({
       [t.bid_no, t.title, t.department, t.district].some((v) => String(v || '').toLowerCase().includes(needle))
     );
   }, [tenders, q]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const slice = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const pages = numberedPageList(safePage, totalPages);
+  const listRef = useRef(null);
+  const { slice, safePage, totalPages } = pageSlice(filtered, page, pageSize);
 
   const openPdf = (t) => {
     if (onViewPdf) return onViewPdf(t._id || t.id);
@@ -44,7 +43,7 @@ function LiveTendersPaged({
   };
 
   return (
-    <Card className="tender-shadow">
+    <Card ref={listRef} className="tender-shadow w-full scroll-mt-20">
       <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
         <CardTitle className="text-[#0A2647] flex items-center gap-2 text-lg">
           Live Tenders <Badge variant="outline">{filtered.length}</Badge>
@@ -86,29 +85,7 @@ function LiveTendersPaged({
             </div>
           </div>
         ))}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center flex-wrap gap-1.5 pt-2">
-            <Button variant="outline" size="sm" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            {pages.map((p, i) => (
-              <span key={p} className="inline-flex items-center gap-1.5">
-                {i > 0 && p - pages[i - 1] > 1 && <span className="text-xs text-slate-400 px-0.5">…</span>}
-                <Button
-                  size="sm"
-                  variant={p === safePage ? 'default' : 'outline'}
-                  className={`h-8 w-8 p-0 text-xs ${p === safePage ? 'bg-[#0A2647]' : ''}`}
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </Button>
-              </span>
-            ))}
-            <Button variant="outline" size="sm" disabled={safePage === totalPages} onClick={() => setPage(safePage + 1)}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
-        )}
+        <TenderPager page={safePage} totalPages={totalPages} onChange={setPage} scrollRef={listRef} />
       </CardContent>
     </Card>
   );

@@ -33,7 +33,9 @@ import {
   Landmark, Search, ArrowLeft
 } from 'lucide-react';
 import { formatINR } from '@/lib/format';
+import { canParticipate, PLAN_BLOCK_MESSAGE } from '@/lib/billing-access';
 import CompactTenderCard, { TrackingProgressBar } from '@/components/workflow/CompactTenderCard';
+import TenderPager, { pageSlice } from '@/components/workflow/TenderPager';
 import ClientWinningBoard from '@/components/workflow/ClientWinningBoard';
 import { openClientWorkflowFile } from '@/components/workflow/api';
 import { belongsOnInternal } from '@/lib/job-board-state';
@@ -113,6 +115,8 @@ export default function ClientDashboard() {
   );
   const [publicTenders, setPublicTenders] = useState([]);
   const [liveTenderSearch, setLiveTenderSearch] = useState('');
+  const [liveTenderPage, setLiveTenderPage] = useState(1);
+  const liveTendersRef = useRef(null);
   const [quotationJob, setQuotationJob] = useState(null);
   const [quotationFile, setQuotationFile] = useState(null);
   const [buying, setBuying] = useState(false);
@@ -837,7 +841,13 @@ export default function ClientDashboard() {
     }
   };
 
+  const planActive = canParticipate(userData);
+
   const handleAcceptWorkflowJob = async (job) => {
+    if (!canParticipate(userData)) {
+      toast.error(PLAN_BLOCK_MESSAGE);
+      return;
+    }
     if (job.quotation_required && !job.quotation?.name) {
       setQuotationFile(null);
       setQuotationJob(job);
@@ -849,6 +859,10 @@ export default function ClientDashboard() {
   const uploadQuotationAndApprove = async () => {
     const job = quotationJob;
     if (!job) return;
+    if (!canParticipate(userData)) {
+      toast.error(PLAN_BLOCK_MESSAGE);
+      return;
+    }
     if (!quotationFile) {
       toast.error('Please upload the required quotation to proceed.');
       return;
@@ -937,6 +951,7 @@ export default function ClientDashboard() {
       [t.bid_no, t.title, t.department, t.district].some((v) => String(v || '').toLowerCase().includes(needle))
     );
   }, [publicTenders, liveTenderSearch]);
+  const { slice: pagedLiveTenders, safePage: safeLiveTenderPage, totalPages: liveTenderPages } = pageSlice(visibleLiveTenders, liveTenderPage);
 
   if (!onClientDesk) {
     if (typeof window !== "undefined") window.location.replace("/");
@@ -1234,7 +1249,7 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
     <div className="min-h-screen bg-slate-50 pb-20">
       <PricingPromoModal user={userData} />
       <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-40 tender-shadow">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between">
           <BrandLogo subtitle="Enterprise Portal" />
           
           <div className="flex items-center gap-4">
@@ -1308,7 +1323,7 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 space-y-6">
+      <main className="w-full max-w-full px-4 py-8 space-y-6">
         
         {/* MD CRITICAL ALERTS WITH REPLY & DISMISS */}
         {criticalAlerts.length > 0 && (
@@ -1745,6 +1760,13 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                 <CardDescription>Handpicked high-probability tenders assigned by your MD/Operations Officer.</CardDescription>
               </CardHeader>
               <CardContent className="p-5">
+                 {userData && !planActive && workflowJobs.some(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval') && (
+                    <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+                      <AlertTriangle className="w-5 h-5 shrink-0 text-red-600" />
+                      <p className="text-sm font-semibold flex-1">{PLAN_BLOCK_MESSAGE}</p>
+                      <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => setActiveTab('store')}>Recharge / Renew</Button>
+                    </div>
+                 )}
                  {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').length > 0 ? (
                     <div className="grid md:grid-cols-2 gap-4">
                       {workflowJobs.filter(j => j.status === 'AWAITING_CLIENT' || j.display_status === 'Pending Approval').map((job) => (
@@ -1753,7 +1775,7 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                           job={job}
                           actions={[
                             ...clientWorkflowDocActions(job),
-                            { label: 'Public In Progress', variant: 'default', onClick: () => handleAcceptWorkflowJob(job) },
+                            { label: 'Public In Progress', variant: 'default', disabled: !planActive, onClick: () => handleAcceptWorkflowJob(job) },
                             { label: 'Reject', onClick: () => handleRejectWorkflowJob(job) },
                           ]}
                         />
@@ -1907,24 +1929,24 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
           {/* TAB 5: PUBLIC TENDERS */}
           {/* ============================================================================== */}
           <TabsContent value="live_tenders" className="space-y-6">
-            <Card className="tender-shadow">
+            <Card ref={liveTendersRef} className="tender-shadow w-full scroll-mt-20">
               <CardHeader className="bg-slate-50 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Public Procurement Tenders</CardTitle>
+                <CardTitle className="text-[#0A2647] text-lg flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600"/> Public Procurement Tenders <Badge variant="outline">{visibleLiveTenders.length}</Badge></CardTitle>
                 <div className="relative w-full sm:w-[240px]">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <Input
                     placeholder="Search bid or title..."
                     value={liveTenderSearch}
-                    onChange={(e) => setLiveTenderSearch(e.target.value)}
+                    onChange={(e) => { setLiveTenderSearch(e.target.value); setLiveTenderPage(1); }}
                     className="pl-9 h-9 text-xs"
                   />
                 </div>
               </CardHeader>
-              <CardContent className="p-4 space-y-4 max-h-[750px] overflow-y-auto">
+              <CardContent className="p-4 space-y-4">
                  {visibleLiveTenders.length === 0 && (
                    <p className="text-sm text-slate-400 text-center py-8">No matching tenders found.</p>
                  )}
-                 {visibleLiveTenders.map((t) => (
+                 {pagedLiveTenders.map((t) => (
                    <div key={t._id || t.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-[#0A2647]/30 transition shadow-sm flex flex-col gap-3">
                      <div className="flex items-start justify-between gap-3">
                        <div className="flex-1 min-w-0">
@@ -1950,6 +1972,7 @@ if (userData && !session?.user?.is_bypass && gateStep !== 'billing' && userData.
                      </div>
                    </div>
                  ))}
+                 <TenderPager page={safeLiveTenderPage} totalPages={liveTenderPages} onChange={setLiveTenderPage} scrollRef={liveTendersRef} />
               </CardContent>
             </Card>
           </TabsContent>

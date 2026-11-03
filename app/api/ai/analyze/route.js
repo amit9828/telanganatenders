@@ -4,6 +4,8 @@ import { requireStaff } from '@/lib/staff-auth';
 import { generateContent, publicAiError } from '@/lib/gemini';
 import { EXTRACTION_PROMPT, parseAIJson, normaliseExtraction } from '@/lib/ai-extraction';
 import { isValidPDFBuffer } from '@/lib/cloudflare-r2';
+import { MIN_EXTRACT_CHARS } from '@/lib/pdf-text';
+import { CORE_FAST_FIELDS, EMPTY_FAST_FIELDS, firstPagesText, parseGemCover } from '@/lib/tender-fast-extract';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,6 +35,55 @@ function extraFields(raw) {
   };
 }
 
+const FAST_AI_TIMEOUT_MS = 1500;
+
+function raceTimeout(promise, ms) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('fast analyze timed out')), ms);
+  });
+  promise.catch(() => {});
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Pages 1-3 only: GeM labels first, then one short Flash try for whatever is still empty. */
+async function fastAnalyze(buffer) {
+  let text = '';
+  try {
+    text = await firstPagesText(buffer);
+  } catch (err) {
+    console.warn('[ai/analyze] fast text read failed:', err?.message || err);
+  }
+  if (text.length < MIN_EXTRACT_CHARS) {
+    return { success: true, data: { ...EMPTY_FAST_FIELDS }, source: 'none' };
+  }
+
+  const data = parseGemCover(text);
+  const found = Object.values(data).some(Boolean);
+  if (CORE_FAST_FIELDS.every((key) => data[key])) {
+    return { success: true, data, source: 'local' };
+  }
+
+  try {
+    const result = await raceTimeout(generateContent({
+      tier: 'flash',
+      parts: [EXTRACTION_PROMPT, text],
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 256, temperature: 0 },
+    }), FAST_AI_TIMEOUT_MS);
+    const parsed = parseAIJson(result.text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const ai = normaliseExtraction(parsed);
+      for (const key of Object.keys(data)) {
+        if (!data[key] && ai[key]) data[key] = ai[key];
+      }
+      return { success: true, data, source: 'local+ai' };
+    }
+  } catch (err) {
+    console.warn('[ai/analyze] fast AI skipped:', err?.message || err);
+  }
+  return { success: true, data, source: found ? 'local' : 'none' };
+}
+
 async function readUpload(request) {
   const contentType = String(request.headers.get('content-type') || '');
   if (contentType.includes('multipart/form-data')) {
@@ -52,6 +103,8 @@ async function readUpload(request) {
       return { error: 'The uploaded file is not a readable PDF.', status: 400 };
     }
     return {
+      buffer,
+      mode: String(form.get('mode') || ''),
       pdfBase64: buffer.toString('base64'),
       fileName: String(file.name || 'tender.pdf'),
       mimeType: 'application/pdf',
@@ -72,6 +125,8 @@ async function readUpload(request) {
     return { error: 'The uploaded file is not a readable PDF.', status: 400 };
   }
   return {
+    buffer,
+    mode: String(body.mode || ''),
     pdfBase64,
     fileName: String(body.fileName || 'tender.pdf'),
     mimeType: body.mimeType || 'application/pdf',
@@ -87,6 +142,7 @@ export async function POST(request) {
   try {
     const upload = await readUpload(request);
     if (upload.error) return json({ error: upload.error }, upload.status);
+    if (upload.mode === 'fast') return json(await fastAnalyze(upload.buffer));
 
     const { pdfBase64, fileName, mimeType, uploadedBy, saveToDraft } = upload;
     const documentPart = { inlineData: { data: pdfBase64, mimeType: mimeType || 'application/pdf' } };

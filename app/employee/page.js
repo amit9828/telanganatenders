@@ -4,7 +4,6 @@ import { useDeskTab } from '@/lib/use-desk-tab';
 import { signIn, useSession } from 'next-auth/react';
 import { useServerDeskRole } from '@/components/DeskAuth';
 import { BrandMark } from '@/components/BrandLogo';
-import StationeryUploader from '@/components/StationeryUploader';
 import WhatsAppVerifiedBadge from '@/components/WhatsAppVerifiedBadge';
 import DashboardNav from '@/components/DashboardNav';
 import InternalTrackingBoard from '@/components/workflow/InternalTrackingBoard';
@@ -29,6 +28,7 @@ import {
   SUBMITTED_BOARD_STATUSES,
 } from '@/lib/job-board-state';
 import { staffHeaders, fetchWorkflowQueue } from '@/components/workflow/api';
+import TenderPager, { pageSlice } from '@/components/workflow/TenderPager';
 import { consumeStaffBypass, openClientBypass, rememberRealStaffIdent } from '@/lib/tab-handoff';
 import { useStaffPresence } from '@/components/reports/useStaffPresence';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -40,12 +40,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; 
 import {
   ArrowLeft, Users, FileText, PlusCircle, BellRing, 
   MessageSquare, Send, CheckCircle2, ShieldCheck, 
-  Briefcase, Kanban, Building2, ClipboardList, AlertCircle, Contact, Loader2,
-  Database, Lock, Globe, MapPin, Target, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, Eye, X, FolderPlus, TrendingDown, RefreshCw, AlertTriangle, PenTool, LogIn
+  Briefcase, Building2, ClipboardList, AlertCircle, Contact, Loader2,
+  Database, Lock, Globe, MapPin, Clock, XCircle, Lightbulb, Search, Trash2, Star, Pencil, X, TrendingDown, RefreshCw, LogIn
 } from 'lucide-react';
 
 // 🚀 Single source of truth (lib/regions.js) — was hand-duplicated here and had
@@ -69,7 +68,7 @@ export default function EmployeeDashboard() {
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useDeskTab('tab', 'internal', EMPLOYEE_TABS);
   const [email, setEmail] = useState('');
-  const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer' });
+  const [empData, setEmpData] = useState({ name: 'Employee', id: 'EMP-001', role: 'Operations Officer', teamId: '' });
   const [loading, setLoading] = useState(true);
 
   const [mdTasks, setMdTasks] = useState([]);
@@ -95,21 +94,13 @@ export default function EmployeeDashboard() {
   const [savingOfficer, setSavingOfficer] = useState(false);
   const [officerSearch, setOfficerSearch] = useState('');
 
-  const [showAddBid, setShowAddBid] = useState(false);
-  const [newBidForm, setNewBidForm] = useState({ 
-    bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' 
-  });
-  const [editingBid, setEditingBid] = useState(null); 
   const [suggestForm, setSuggestForm] = useState({});
 
   const [mdTaskReply, setMdTaskReply] = useState({});
-  const [viewClientDocs, setViewClientDocs] = useState(null);
-  const [stationeryClient, setStationeryClient] = useState(null);
 
   const [ticketReply, setTicketReply] = useState({});
   const [taskForm, setTaskForm] = useState({ target_type: 'client_alert', target_id: '', subject: '', message: '' });
   const [dispatches, setDispatches] = useState([]);
-  const [rejectReason, setRejectReason] = useState({});
   const [teamMembers, setTeamMembers] = useState([]);
   const [l1Data, setL1Data] = useState({});
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -118,6 +109,7 @@ export default function EmployeeDashboard() {
   const [wfJobs, setWfJobs] = useState([]);
   const [wfWinning, setWfWinning] = useState([]);
   const activeTabRef = useRef(activeTab);
+  const tendersListRef = useRef(null);
   activeTabRef.current = activeTab;
   useStaffPresence(activeTab, { enabled: Boolean(email) });
 
@@ -188,7 +180,8 @@ export default function EmployeeDashboard() {
     try {
       const want = new Set(['employees']);
       if (tab === 'internal') { want.add('workflow'); want.add('dispatches'); }
-      else if (tab === 'submitted') { want.add('workflow'); want.add('winning'); want.add('bids'); }
+      else if (tab === 'submitted') { want.add('workflow'); want.add('winning'); }
+      else if (tab === 'suggestions') want.add('bids');
       else if (tab === 'clients') { want.add('clients'); want.add('officers'); }
       else if (tab === 'publisher') want.add('tenders');
       else if (tab === 'alerts') want.add('dispatches');
@@ -247,7 +240,7 @@ export default function EmployeeDashboard() {
         });
         if (mine?.emp_id) {
           const canonical = String(mine.email || '').trim();
-          setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer' });
+          setEmpData({ name: mine.name || 'Employee', id: mine.emp_id, role: mine.designation || mine.role || 'Operations Officer', teamId: mine.team_id || '' });
           if (canonical) {
             rememberRealStaffIdent(canonical);
             if (canonical.toLowerCase() !== needle) setEmail(canonical);
@@ -352,86 +345,6 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error("Error processing suggestion."); }
   };
 
-  const handleAddBidRow = async (e) => {
-    e.preventDefault();
-    if(!newBidForm.client_email || !newBidForm.bid_no) return toast.error("Client Email and Bid Number are required");
-    const isDuplicate = bids.some(b => b.bid_no === newBidForm.bid_no && b.client_email === newBidForm.client_email);
-    if(isDuplicate) return toast.error("Action Denied: This Bid Number is already active for this client!");
-
-    try {
-      const res = await fetch('/api/bids', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newBidForm)
-      });
-      if(res.ok) {
-        toast.success("New Bid Event Row Added Successfully!");
-        setNewBidForm({ bid_no: '', description: '', submitted_date: '', status: 'Bid Allocated', client_email: '' });
-        setShowAddBid(false); fetchLiveOperationsData(email);
-      } else toast.error("Failed to add bid row.");
-    } catch (err) { toast.error("Network Error."); }
-  };
-  
-  const handleSaveEditBid = async (e) => {
-     e.preventDefault();
-     if(!editingBid) return;
-     try {
-        const res = await fetch('/api/bids/update', {
-           method: 'PUT', headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ bid_id: editingBid._id || editingBid.id, status: editingBid.status, bid_no: editingBid.bid_no, description: editingBid.description })
-        });
-        if(res.ok) {
-           toast.success("Bid details updated successfully!");
-           setEditingBid(null); fetchLiveOperationsData(email);
-        } else toast.error("Failed to update bid details.");
-     } catch(err) { toast.error("Network Error."); }
-  };
-
-  const handleDeleteBid = async (bidId) => {
-     if(!confirm("Are you sure you want to delete this bid access from the tracker?")) return;
-     try {
-       const res = await fetch(`/api/bids?id=${bidId}`, { method: 'DELETE' });
-       if (res.ok) { toast.success("Bid tracking removed."); fetchLiveOperationsData(email); } 
-       else toast.error("Failed to remove. Backend route might need update.");
-     } catch(e) { toast.error("Network error"); }
-  }
-
-  const [approvalModal, setApprovalModal] = useState({ open: false, email: '', docId: '', docName: '', clientName: '' });
-  const [customFileName, setCustomFileName] = useState('');
-  const [overwriteDoc, setOverwriteDoc] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState('');
-
-  const openApprovalModal = (client, doc) => {
-      const cleanClientName = (client.company_name || client.client_name || 'Client').replace(/\s+/g, '_');
-      const cleanDocName = doc.name.replace(/\s+/g, '_');
-      setCustomFileName(`${cleanClientName}_${cleanDocName}`);
-      setDuplicateWarning('');
-      setOverwriteDoc(false);
-      setApprovalModal({ open: true, email: client.email, docId: doc.id, docName: doc.name, clientName: client.company_name || client.client_name });
-  };
-
-  const handleVerifyVaultDoc = async (clientEmail, docId, status, customName = null, overwrite = false) => {
-      let reason = '';
-      if (status === 'rejected') {
-          reason = rejectReason[`${clientEmail}_${docId}`];
-          if (!reason) return toast.error("Please provide a rejection reason.");
-      }
-      try {
-          const res = await fetch('/api/vault/verify', {
-             method: 'PUT', headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ email: clientEmail, docId: docId, status: status, reject_reason: reason, custom_file_name: customName, overwrite: overwrite })
-          });
-          const data = await res.json();
-          if (res.ok) {
-              toast.success(`Document marked as ${status.toUpperCase()}!`);
-              if (status === 'rejected') setRejectReason(prev => ({...prev, [`${clientEmail}_${docId}`]: ''}));
-              if (status === 'verified') { setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' }); setViewClientDocs(null); }
-              fetchLiveOperationsData(email);
-          } else if (res.status === 409) {
-              setDuplicateWarning(data.message || 'Duplicate found. Replace it?');
-          } else { toast.error("Failed to update status."); }
-      } catch (err) { toast.error("Network error."); }
-  };
-  
   const approveClient = async (clientEmail) => {
       try {
           await fetch('/api/users/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: clientEmail }) });
@@ -611,24 +524,6 @@ export default function EmployeeDashboard() {
     } catch (err) { toast.error('Network Error.'); }
   };
 
-  const updateBidStatus = async (id, newStatus) => {
-    if (newStatus === 'Won' || newStatus === 'Lost') {
-      return toast.error('Won and Lost are set on the Submitted board, not this tracker.');
-    }
-
-    setBids(bids.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b));
-    try {
-      const res = await fetch('/api/bids/update', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bid_id: id, status: newStatus })
-      });
-      if (res.ok) {
-        toast.success(`Bid updated to "${newStatus}". Client Notified.`);
-        logActivity('UPDATED_BID', `Changed bid ${id} status to ${newStatus}`);
-      } else { fetchLiveOperationsData(email); }
-    } catch (err) { toast.error('Network Error during status update.'); }
-  };
-
   const onTaskFileChange = (taskId, e) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -714,13 +609,6 @@ export default function EmployeeDashboard() {
     return null;
   }
 
-  const groupedBids = bids.reduce((acc, bid) => {
-      const key = bid.client_email || 'Unknown';
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(bid);
-      return acc;
-  }, {});
-
   const groupedSuggestions = suggestions.reduce((acc, sug) => {
       const key = sug.target_id || 'Unknown';
       if (!acc[key]) acc[key] = [];
@@ -741,9 +629,7 @@ export default function EmployeeDashboard() {
     : livePublished.filter((t) =>
         [t.bid_no, t.title].some((v) => String(v || '').toLowerCase().includes(tenderNeedle))
       );
-  const empTenderPages = Math.max(1, Math.ceil(filteredTenders.length / 10));
-  const safeTenderPage = Math.min(tenderPage, empTenderPages);
-  const pagedTenders = filteredTenders.slice((safeTenderPage - 1) * 10, safeTenderPage * 10);
+  const { slice: pagedTenders, safePage: safeTenderPage, totalPages: empTenderPages } = pageSlice(filteredTenders, tenderPage);
 
   const activeTickets = tickets.filter(t => t.status === 'OPEN');
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED');
@@ -777,7 +663,7 @@ export default function EmployeeDashboard() {
 return (
     <div className="min-h-screen bg-slate-50">
       <header className="navy-gradient border-b border-white/10 sticky top-0 z-30 shadow-lg text-white">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="w-full max-w-full px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
              <div>
                <h1 className="font-bold text-lg leading-tight">Operations Desk</h1>
@@ -846,159 +732,12 @@ return (
             <SubmittedTrackingBoard
               jobs={wfJobs.filter((j) => SUBMITTED_BOARD_STATUSES.includes(j.status))}
               actorEmpId={empData.id}
+              actorTeamId={empData.teamId || ''}
               onPatchJob={patchJob}
               onRemoveJob={removeJob}
               onArchiveJob={archiveJob}
             />
             <WinningBidsBoard jobs={wfWinning} showClientName />
-            <Card className="shadow-sm border-0 ring-1 ring-slate-200 w-full">
-              <CardHeader className="bg-slate-50/50 pb-4 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                <div>
-                   <CardTitle className="text-[#0A2647] flex items-center gap-2"><Kanban className="w-5 h-5 text-blue-600"/> Active Bid Events Tracker</CardTitle>
-                   <CardDescription>Manually add or update the progress of ongoing client bids.</CardDescription>
-                </div>
-                <Button onClick={() => setShowAddBid(!showAddBid)} className="bg-blue-600 hover:bg-blue-700 shrink-0">
-                   <PlusCircle className="w-4 h-4 mr-2"/> Add New Bid Row
-                </Button>
-              </CardHeader>
-              <CardContent className="pt-4">
-                
-                {showAddBid && (
-                   <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6 shadow-inner">
-                      <h4 className="font-bold text-blue-900 mb-4 flex items-center"><Target className="w-4 h-4 mr-2"/> Create New Bid Tracking Row</h4>
-                      <form onSubmit={handleAddBidRow} className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Select Client *</Label>
-                            <Select required value={newBidForm.client_email} onValueChange={v => setNewBidForm({...newBidForm, client_email: v})}>
-                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Choose Client" /></SelectTrigger>
-                               <SelectContent>
-                                  {approvedClients.map(c => <SelectItem key={c.email} value={c.email}>{c.client_id} ({c.company_name || c.name})</SelectItem>)}
-                               </SelectContent>
-                            </Select>
-                         </div>
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Bid Number / ID *</Label>
-                            <Input required placeholder="e.g. GEM/2026/B/..." value={newBidForm.bid_no} onChange={e=>setNewBidForm({...newBidForm, bid_no: e.target.value})} className="mt-1 bg-white h-9" />
-                         </div>
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Initial Status *</Label>
-                            <Select required value={newBidForm.status} onValueChange={v => setNewBidForm({...newBidForm, status: v})}>
-                               <SelectTrigger className="mt-1 bg-white h-9"><SelectValue placeholder="Select Status" /></SelectTrigger>
-                               <SelectContent>
-                                  <SelectItem value="Bid Allocated">Bid Allocated</SelectItem>
-                                  <SelectItem value="Client Approved">Client Approved</SelectItem>
-                                  <SelectItem value="Client Cancelled">Client Cancelled</SelectItem>
-                                  <SelectItem value="ADC Check">ADC Check</SelectItem>
-                                  <SelectItem value="Documents Asking">Documents Asking</SelectItem>
-                                  <SelectItem value="Documents Preparing">Documents Preparing</SelectItem>
-                                  <SelectItem value="Bid Participated">Bid Participated</SelectItem>
-                                  <SelectItem value="Technical Evaluation">Technical Evaluation</SelectItem>
-                                  <SelectItem value="Technical Qualification">Technical Qualification</SelectItem>
-                                  <SelectItem value="Financial Evaluation">Financial Evaluation</SelectItem>
-                               </SelectContent>
-                            </Select>
-                         </div>
-                         <div>
-                            <Label className="text-xs font-bold text-slate-600">Submitted Date (Optional)</Label>
-                            <Input type="date" value={newBidForm.submitted_date} onChange={e=>setNewBidForm({...newBidForm, submitted_date: e.target.value})} className="mt-1 bg-white h-9" />
-                         </div>
-                         <div className="sm:col-span-3">
-                            <Label className="text-xs font-bold text-slate-600">Description of Work *</Label>
-                            <Input required placeholder="Short title of the tender work..." value={newBidForm.description} onChange={e=>setNewBidForm({...newBidForm, description: e.target.value})} className="mt-1 bg-white h-9" />
-                         </div>
-                         <div className="sm:col-span-1 flex items-end">
-                            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 h-9 shadow-md"><CheckCircle2 className="w-4 h-4 mr-2"/> Save Record</Button>
-                         </div>
-                      </form>
-                   </div>
-                )}
-
-                {bids.length === 0 ? (
-                  <p className="text-center text-sm text-slate-500 py-10">No active bids in the database.</p>
-                ) : (
-                  <div className="space-y-6">
-                    {Object.entries(groupedBids).map(([clientEmail, clientBids], index) => {
-                        const clientInfo = approvedClients.find(c => c.email === clientEmail);
-                        const cName = clientInfo ? clientInfo.company_name || clientInfo.name : clientEmail;
-                        const colorClass = BORDER_COLORS[index % BORDER_COLORS.length]; 
-                        
-                        return (
-                        <Card key={clientEmail} className={`border-t-4 ${colorClass} shadow-sm overflow-hidden`}>
-                           <CardHeader className="bg-slate-50 border-b py-3 px-4">
-                              <div className="flex justify-between items-center">
-                                 <div>
-                                    <CardTitle className="text-xl uppercase font-black text-[#0A2647]">{cName}</CardTitle>
-                                    <CardDescription className="text-xs font-mono mt-0.5">{clientEmail}</CardDescription>
-                                 </div>
-                                 <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm">{clientBids.length} Active Bids</Badge>
-                              </div>
-                           </CardHeader>
-                           <CardContent className="p-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                              {clientBids.map(b => (
-                                <div key={b._id || b.id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 transition">
-                                  
-                                  {editingBid && (editingBid._id === b._id || editingBid.id === b.id) ? (
-                                     <form onSubmit={handleSaveEditBid} className="space-y-3">
-                                        <div>
-                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Bid Number</Label>
-                                           <Input value={editingBid.bid_no} onChange={e => setEditingBid({...editingBid, bid_no: e.target.value})} className="h-8 text-xs bg-slate-50" />
-                                        </div>
-                                        <div>
-                                           <Label className="text-[10px] uppercase font-bold text-slate-500">Edit Description/Shortcut</Label>
-                                           <Textarea rows={2} value={editingBid.description} onChange={e => setEditingBid({...editingBid, description: e.target.value})} className="text-xs bg-slate-50" />
-                                        </div>
-                                        <div className="flex gap-2">
-                                           <Button type="button" onClick={() => setEditingBid(null)} variant="outline" className="flex-1 h-8 text-xs"><X className="w-3 h-3 mr-1"/> Cancel</Button>
-                                           <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 h-8 text-xs"><CheckCircle2 className="w-3 h-3 mr-1"/> Save</Button>
-                                        </div>
-                                     </form>
-                                  ) : (
-                                     <div>
-                                        <div className="flex justify-between items-start mb-2">
-                                           <div className="bg-blue-50 border border-blue-200 text-blue-900 px-2 py-1 rounded shadow-sm flex items-center">
-                                              <span className="text-[10px] uppercase font-bold text-blue-500 mr-2">BID NO:</span>
-                                              <span className="text-xs font-black font-mono truncate max-w-[120px]">{b.bid_no || b.id || 'N/A'}</span>
-                                           </div>
-                                           <div className="flex gap-1 items-center">
-                                              <Badge className="bg-blue-100 text-blue-800 border-0 shadow-sm mr-1">{b.status}</Badge>
-                                              <Button variant="ghost" size="icon" onClick={() => setEditingBid(b)} className="h-6 w-6 p-0 text-slate-400 hover:text-blue-600 bg-slate-50 border"><Pencil className="w-3 h-3"/></Button>
-                                              <Button variant="ghost" size="icon" onClick={() => handleDeleteBid(b._id || b.id)} className="h-6 w-6 p-0 text-red-400 hover:text-red-600 bg-slate-50 border"><Trash2 className="w-3 h-3"/></Button>
-                                           </div>
-                                        </div>
-                                        <h4 className="font-bold text-[#0A2647] mt-2 text-sm leading-tight line-clamp-2">{b.description || b.title}</h4>
-                                     </div>
-                                  )}
-                                  
-                                  {!editingBid && (
-                                    <div className="border-t border-slate-100 pt-3 mt-1 flex flex-col sm:flex-row items-center justify-between gap-2">
-                                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Update Status</span>
-                                      <select 
-                                        className="border border-blue-300 rounded-md px-2 py-1.5 text-xs bg-blue-50 font-bold text-blue-900 outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto shadow-sm cursor-pointer"
-                                        value={b.status}
-                                        onChange={(e) => updateBidStatus(b._id || b.id, e.target.value)}
-                                      >
-                                        <option value="Bid Allocated">Bid Allocated</option>
-                                        <option value="Client Approved">Client Approved</option>
-                                        <option value="Client Cancelled">Client Cancelled</option>
-                                        <option value="ADC Check">ADC Check</option>
-                                        <option value="Documents Asking">Documents Asking</option>
-                                        <option value="Documents Preparing">Documents Preparing</option>
-                                        <option value="Bid Participated">Bid Participated</option>
-                                        <option value="Technical Evaluation">Technical Evaluation</option>
-                                        <option value="Technical Qualification">Technical Qualification</option>
-                                        <option value="Financial Evaluation">Financial Evaluation</option>
-                                      </select>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                           </CardContent>
-                        </Card>
-                        )})}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="suggestions" className="w-full space-y-6">
@@ -1224,17 +963,11 @@ return (
                              </div>
                              
                              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-100">
-                                <Button size="sm" onClick={() => setViewClientDocs(client)} variant="outline" className="flex-1 text-purple-600 border-purple-200 hover:bg-purple-50 h-9">
-                                   <FileText className="w-4 h-4 mr-2" /> View Vault Docs
-                                </Button>
-                                <Button size="sm" onClick={() => setStationeryClient(client)} variant="outline" className="flex-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-9">
-                                   <PenTool className="w-4 h-4 mr-2" /> Upload Stationery
-                                </Button>
-                                {client.drive_folder_link || client.drive_link ? (
-                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-9">
+                                {(client.drive_folder_link || client.drive_link) && (
+                                   <Button size="sm" onClick={() => window.open(client.drive_folder_link || client.drive_link, '_blank')} variant="outline" className="flex-1 h-9">
                                       <Database className="w-4 h-4 mr-2" /> Open Drive
                                    </Button>
-                                ) : null}
+                                )}
                                 <Button size="sm" onClick={() => openClientBypass(client.email)} className="flex-1 bg-[#0A2647] hover:bg-[#144272] h-9">
                                    <LogIn className="w-4 h-4 mr-2" /> Login as Client
                                 </Button>
@@ -1395,8 +1128,6 @@ return (
           </TabsContent>
 
           <TabsContent value="publisher" className="w-full space-y-6">
-            <div className="grid lg:grid-cols-5 gap-6">
-               <div className="lg:col-span-2">
                  <PublishTenderForm
                    awaitingJobs={wfJobs.filter((j) => j.status === 'AWAITING_PUBLISH')}
                    editTender={isEditingTender}
@@ -1406,8 +1137,7 @@ return (
                      fetchLiveOperationsData(email);
                    }}
                  />
-               </div>
-               <Card className="lg:col-span-3 tender-shadow self-start">
+               <Card ref={tendersListRef} className="w-full tender-shadow scroll-mt-20">
                  <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                     <div>
                        <CardTitle className="text-[#0A2647] flex items-center gap-2">Published Tenders <Badge variant="outline">{filteredTenders.length}</Badge></CardTitle>
@@ -1445,14 +1175,9 @@ return (
                         </div>
                       </div>
                     ))}
-                    <div className="flex items-center justify-center gap-3 pt-2">
-                      <Button variant="outline" size="sm" disabled={safeTenderPage === 1} onClick={() => setTenderPage(safeTenderPage - 1)}>Previous</Button>
-                      <span className="text-xs font-bold">Page {safeTenderPage} of {empTenderPages}</span>
-                      <Button variant="outline" size="sm" disabled={safeTenderPage === empTenderPages} onClick={() => setTenderPage(safeTenderPage + 1)}>Next</Button>
-                    </div>
+                    <TenderPager page={safeTenderPage} totalPages={empTenderPages} onChange={setTenderPage} scrollRef={tendersListRef} />
                  </CardContent>
                </Card>
-            </div>
 
             <OperationsStoragePanel clients={approvedClients} uploadedBy={email} />
           </TabsContent>
@@ -1574,75 +1299,6 @@ return (
         </div>
         </div>
       </main>
-
-      {/* MODALS */}
-      <Dialog open={!!viewClientDocs} onOpenChange={() => setViewClientDocs(null)}>
-        <DialogContent className="sm:max-w-2xl bg-white">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-black text-[#0A2647] flex items-center gap-2"><FolderPlus className="w-5 h-5 text-purple-600"/> Client Vault Documents</DialogTitle>
-            <DialogDescription>Documents securely uploaded by {viewClientDocs?.company_name}</DialogDescription>
-          </DialogHeader>
-          <div className="grid sm:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1">
-            {!viewClientDocs?.vault_docs || viewClientDocs.vault_docs.length === 0 ? (
-              <p className="text-sm text-slate-500 col-span-2 text-center py-6">No documents uploaded by this client yet.</p>
-            ) : (
-              viewClientDocs.vault_docs.map(doc => (
-                 <div key={doc.id} className="border border-slate-200 p-3 rounded-lg bg-slate-50 flex flex-col justify-between gap-3 shadow-sm hover:border-purple-300 transition">
-                    <div>
-                       <p className="font-bold text-slate-800 text-sm">{doc.name}</p>
-                       <p className="text-xs text-slate-500 font-mono truncate">{doc.file_name}</p>
-                       <Badge className={`mt-2 ${doc.status === 'verified' ? 'bg-emerald-100 text-emerald-800' : doc.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'} border-0`}>{doc.status}</Badge>
-                    </div>
-                    <Button size="sm" variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50 mb-2" onClick={() => {
-                        window.open(`/api/vault/document?email=${encodeURIComponent(viewClientDocs.email)}&docId=${encodeURIComponent(doc.id)}`, '_blank');
-                    }}>
-                       <Eye className="w-4 h-4 mr-2"/> View Document
-                    </Button>
-                    
-                    {doc.status === 'uploaded' && (
-                        <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
-                           <Input placeholder="Rejection reason..." className="h-8 text-xs bg-white" value={rejectReason[`${viewClientDocs.email}_${doc.id}`] || ''} onChange={e => setRejectReason({...rejectReason, [`${viewClientDocs.email}_${doc.id}`]: e.target.value})} />
-                           <div className="flex gap-2">
-                              <Button size="sm" onClick={() => openApprovalModal(viewClientDocs, doc)} className="flex-1 bg-[#16a34a] hover:bg-[#15803d] h-8 text-xs"><CheckCircle2 className="w-3.5 h-3.5 mr-1"/> Approve</Button>
-                              <Button size="sm" onClick={() => handleVerifyVaultDoc(viewClientDocs.email, doc.id, 'rejected')} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 h-8 text-xs"><XCircle className="w-3.5 h-3.5 mr-1"/> Reject</Button>
-                           </div>
-                        </div>
-                    )}
-                 </div>
-              ))
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-     <Dialog open={approvalModal.open} onOpenChange={(val) => !val && setApprovalModal({ open: false, email: '', docId: '', docName: '', clientName: '' })}>
-        <DialogContent className="sm:max-w-md border-0 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-black text-[#0A2647] flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600"/> Approve & Save Document</DialogTitle>
-            <DialogDescription>Review the file name before saving it to the database and client's Google Drive.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-             <div><Label className="font-bold text-slate-700">Client Name</Label><Input type="text" value={approvalModal.clientName} disabled className="mt-1 bg-slate-50 text-slate-500" /></div>
-             <div><Label className="font-bold text-slate-700">File Name (Auto-Generated) *</Label><Input type="text" value={customFileName} onChange={e => setCustomFileName(e.target.value)} required className="mt-1 border-2 h-11" /></div>
-             
-             {duplicateWarning && (
-                <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex flex-col gap-2">
-                   <div className="flex items-center gap-2 text-amber-800 text-sm font-bold"><AlertTriangle className="w-4 h-4"/> {duplicateWarning}</div>
-                   <label className="flex items-center gap-2 text-sm cursor-pointer font-semibold text-amber-900 mt-1"><input type="checkbox" checked={overwriteDoc} onChange={e => setOverwriteDoc(e.target.checked)} className="w-4 h-4 accent-amber-600" /> Yes, replace the existing file.</label>
-                </div>
-             )}
-
-             <Button onClick={() => handleVerifyVaultDoc(approvalModal.email, approvalModal.docId, 'verified', customFileName, overwriteDoc)} className="w-full bg-[#16a34a] hover:bg-[#15803d] h-12 mt-2 font-bold text-lg shadow-md" disabled={duplicateWarning && !overwriteDoc}>
-                Confirm & Save to Drive
-             </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <StationeryUploader
-        client={stationeryClient}
-        open={!!stationeryClient}
-        onOpenChange={(open) => { if (!open) setStationeryClient(null); }}
-      />
     </div>
   );
 }

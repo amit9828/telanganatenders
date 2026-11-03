@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { isMdSessionCookie } from '@/lib/desk-cookie';
+import { IMPERSONATION_COOKIE, impersonationAllows, isMdSessionCookie, readImpersonation } from '@/lib/desk-cookie';
 
 function deskOf(token) {
   const role = String(token?.role || '').toUpperCase().replace(/[\s-]+/g, '_');
@@ -50,7 +50,10 @@ export async function middleware(req) {
   }
 
   if (pathname === '/tl' || pathname.startsWith('/tl/')) {
-    if (desk !== 'tl' && desk !== 'md') return home(req);
+    if (desk !== 'tl' && desk !== 'md') {
+      const impersonation = await readImpersonation(req.cookies.get(IMPERSONATION_COOKIE)?.value);
+      if (!impersonationAllows(token, impersonation, 'tl', desk)) return home(req);
+    }
     return lock(NextResponse.next());
   }
 

@@ -23,6 +23,7 @@ import { findOrCreateDriveFolder, createDriveFolder, ensureEntityDriveFolder, is
 import { resolveActorRole, requireStaff, DESIGNATIONS, normalizeDesignation, isMdEmployee, matchDesignation, isGmActor, resolveStaffDesignation, resolveClientEmail } from '@/lib/staff-auth';
 import { isMdSessionCookie, mdSessionValue } from '@/lib/desk-cookie';
 import { BID_NUMBER_FORMAT_MESSAGE, DUPLICATE_BID_MESSAGE, parseBidNumber } from '@/lib/bid-number';
+import { normalizeIsoDate } from '@/lib/doc-task-dates';
 
 function recordedPaymentAmount(payment) {
   const raw = payment?.amount ?? payment?.total_amount ?? payment?.order_amount;
@@ -801,6 +802,37 @@ async function handleGET(request, { params }, attempt = 1) {
            : { password: 0, 'vault_docs.file_base64': 0, 'officer_queries.file_base64': 0 })
          .sort({ created_at: -1 })
          .toArray();
+      if (!directory && searchParams.get('crm') === '1') {
+        const emailKey = { $toLower: { $ifNull: ['$client_email', ''] } };
+        const asNumber = (field) => ({ $convert: { input: field, to: 'double', onError: 0, onNull: 0 } });
+        const [liveStats, lostStats] = await Promise.all([
+          jobsCol(db).aggregate([
+            { $match: { status: { $in: [JOB_STATUS.SUBMITTED, JOB_STATUS.WON] } } },
+            { $group: {
+              _id: emailKey,
+              participated: { $sum: 1 },
+              won: { $sum: { $cond: [{ $eq: ['$status', JOB_STATUS.WON] }, 1, 0] } },
+              revenue: { $sum: { $cond: [{ $eq: ['$status', JOB_STATUS.WON] }, asNumber('$l1_price'), 0] } },
+            } },
+          ]).toArray(),
+          db.collection('workflow_archive').aggregate([
+            { $match: { archive_reason: 'Lost' } },
+            { $group: { _id: emailKey, participated: { $sum: 1 } } },
+          ]).toArray(),
+        ]);
+        const live = new Map(liveStats.map((row) => [row._id, row]));
+        const lost = new Map(lostStats.map((row) => [row._id, row]));
+        for (const user of users) {
+          const key = String(user.email || '').toLowerCase();
+          const row = live.get(key);
+          user.crm_stats = {
+            approved_at: user.onboarding_completed_at || user.created_at || null,
+            participated: (row?.participated || 0) + (lost.get(key)?.participated || 0),
+            won: row?.won || 0,
+            revenue: row?.revenue || 0,
+          };
+        }
+      }
       console.log(`🔍 [users/approved] DB query took ${Date.now() - __t}ms | returned ${users.length} clients | TOTAL ${Date.now() - __reqStart}ms`);
       return json({ users });
     }
@@ -2079,7 +2111,7 @@ export async function POST(request, { params }) {
       const rawBid = String(body.bid_no || '').trim();
       const title = String(body.title || '').trim();
       const department = String(body.department || '').trim();
-      const lastDate = body.last_date || '';
+      const lastDate = normalizeIsoDate(body.last_date);
       if (!rawBid || !title || !department || !lastDate) {
         return json({ error: 'Bid number, title, department, and last date are required.' }, 400);
       }
@@ -2251,7 +2283,8 @@ export async function POST(request, { params }) {
             status: status || 'pending', 
             onboarding_complete: true,
             account_kind: 'client',
-            profile_score: 100 
+            profile_score: 100,
+            ...(existingProfile.onboarding_completed_at ? {} : { onboarding_completed_at: new Date() }),
           } 
         }
       );
